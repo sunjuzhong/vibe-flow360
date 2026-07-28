@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   api,
+  type Flow360DataResponse,
   type Flow360Status,
   type FolderNode,
   type ProjectRecord,
@@ -30,10 +31,14 @@ export default function WorkspacePage() {
   const [folderRoot, setFolderRoot] = useState<FolderNode | null>(null)
   const [foldersLoading, setFoldersLoading] = useState(true)
   const [foldersError, setFoldersError] = useState('')
+  const [foldersDataSource, setFoldersDataSource] = useState<'live' | 'cache'>('live')
+  const [foldersCachedAt, setFoldersCachedAt] = useState('')
   const [selectedFolder, setSelectedFolder] = useState<FolderNode | null>(null)
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [projectsMessage, setProjectsMessage] = useState('Select a folder to view its projects')
+  const [projectsDataSource, setProjectsDataSource] = useState<'live' | 'cache'>('live')
+  const [projectsCachedAt, setProjectsCachedAt] = useState('')
   const [query, setQuery] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -47,8 +52,13 @@ export default function WorkspacePage() {
   const loadFolders = () => {
     setFoldersLoading(true)
     setFoldersError('')
+    setFoldersDataSource('live')
     api.folders()
-      .then((response) => setFolderRoot(response.root))
+      .then((response) => {
+        setFolderRoot(response.data.root)
+        setFoldersDataSource(response.source)
+        setFoldersCachedAt(response.cachedAt || '')
+      })
       .catch((error) => setFoldersError(String(error).replace('Error: ', '')))
       .finally(() => setFoldersLoading(false))
   }
@@ -64,11 +74,14 @@ export default function WorkspacePage() {
     setProjectsMessage('')
     try {
       const response = await api.projects(folder.id)
-      const records = response.records ?? response.projects ?? []
+      const records = response.data.records ?? response.data.projects ?? []
       setProjects(records)
-      setProjectsMessage(response.warning || (records.length ? '' : 'This folder has no projects'))
+      setProjectsDataSource(response.source)
+      setProjectsCachedAt(response.cachedAt || '')
+      setProjectsMessage(response.data.warning || (records.length ? '' : 'This folder has no projects'))
     } catch (error) {
       setProjects([])
+      setProjectsDataSource('cache')
       setProjectsMessage(String(error).replace('Error: ', ''))
     } finally {
       setProjectsLoading(false)
@@ -128,6 +141,11 @@ export default function WorkspacePage() {
             <button onClick={loadFolders}>Retry</button>
           </div>
         )}
+        {!foldersLoading && foldersDataSource === 'cache' && (
+          <div className="panel-state compact cache-indicator">
+            <span>Cached {foldersCachedAt ? new Date(foldersCachedAt).toLocaleString() : ''}</span>
+          </div>
+        )}
         {folderRoot && (
           <FolderTree
             folders={folderRoot.subfolders}
@@ -165,6 +183,9 @@ export default function WorkspacePage() {
               <Search size={15} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…" />
             </label>
+            {projectsDataSource === 'cache' && (
+              <span className="cache-badge">Cached {projectsCachedAt ? new Date(projectsCachedAt).toLocaleString() : ''}</span>
+            )}
             <label className="toolbar-filter">
               Type:
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>

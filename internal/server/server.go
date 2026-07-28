@@ -3,7 +3,9 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -528,45 +530,59 @@ func (s *Server) approvePlan(c *gin.Context) {
 }
 
 func (s *Server) runPlan(c *gin.Context) {
-	plan, err := s.plans.Update(c.Param("plan_id"), func(plan *plans.Plan) error {
-		if plan.Status != plans.StatusApproved && plan.Status != plans.StatusFailed {
-			return fmt.Errorf("plan must be approved before execution")
-		}
-		now := time.Now().UTC()
-		plan.Status = plans.StatusRunning
-		plan.StartedAt = &now
-		plan.CompletedAt = nil
-		plan.Error = ""
-		return nil
-	})
+	existing, err := s.plans.Get(c.Param("plan_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if existing.SubmissionID != "" && existing.Status != plans.StatusFailed {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":       plans.ErrDoubleSubmitProtect,
+			"plan_status": existing.Status,
+			"submission":  existing.SubmissionID,
+		})
+		return
+	}
+
+	submissionID, err := newSubmissionID()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate submission id"})
+		return
+	}
+	plan, err := s.plans.SetRunning(existing.ID, submissionID)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 
 	result, runErr := s.flow360.RunDraft(c.Request.Context(), plan.SourceID, plan.Name, plan.Target, plan.Patch)
-	plan, persistErr := s.plans.Update(plan.ID, func(plan *plans.Plan) error {
-		now := time.Now().UTC()
-		plan.CompletedAt = &now
-		if runErr != nil {
-			plan.Status = plans.StatusFailed
-			plan.Error = "Flow360 did not accept the plan"
-			return nil
+	if runErr != nil {
+		failed, persistErr := s.plans.MarkFailed(plan.ID, runErr)
+		if persistErr != nil {
+			log.Printf("could not persist failed plan state: %v", persistErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist execution state"})
+			return
 		}
-		plan.Status = plans.StatusSubmitted
-		plan.Result = result
-		return nil
-	})
+		log.Printf("Flow360 plan execution failed: %v", runErr)
+		c.JSON(http.StatusBadGateway, failed)
+		return
+	}
+
+	submitted, persistErr := s.plans.MarkSubmitted(plan.ID, result)
 	if persistErr != nil {
+		log.Printf("could not persist submitted plan state: %v", persistErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist execution state"})
 		return
 	}
-	if runErr != nil {
-		log.Printf("Flow360 plan execution failed: %v", runErr)
-		c.JSON(http.StatusBadGateway, plan)
-		return
+	c.JSON(http.StatusOK, submitted)
+}
+
+func newSubmissionID() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
 	}
-	c.JSON(http.StatusOK, plan)
+	return "sub-" + hex.EncodeToString(b), nil
 }
 
 func (s *Server) flow360ResourceDetail(c *gin.Context) {
@@ -680,9 +696,22 @@ func (s *Server) flow360Status(c *gin.Context) {
 
 func (s *Server) flow360Projects(c *gin.Context) {
 	folderID := strings.TrimSpace(c.Query("folder_id"))
+	cacheKey := "all"
+	cacheKind := "project-list"
+	if folderID != "" {
+		cacheKey = folderID
+		cacheKind = "folder-projects"
+	}
+	if strings.EqualFold(c.Query("cache"), "only") {
+		s.serveCachedJSON(c, cacheKind, cacheKey)
+		return
+	}
 	raw, err := s.flow360.Projects(c.Request.Context(), 25, folderID)
 	if err != nil {
 		log.Printf("Flow360 project listing unavailable: %v", err)
+		if s.serveCachedJSON(c, cacheKind, cacheKey) {
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"projects":  []any{},
 			"warning":   "Flow360 project listing is temporarily unavailable",
@@ -690,7 +719,8 @@ func (s *Server) flow360Projects(c *gin.Context) {
 		})
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	s.cacheLiveJSON(cacheKind, cacheKey, raw)
+	s.writeLiveJSON(c, raw)
 }
 
 func (s *Server) flow360ProjectInfo(c *gin.Context) {
@@ -784,13 +814,21 @@ func cacheNamespace(environment, profile string) string {
 }
 
 func (s *Server) flow360Folders(c *gin.Context) {
+	if strings.EqualFold(c.Query("cache"), "only") {
+		s.serveCachedJSON(c, "folder-tree", "root")
+		return
+	}
 	raw, err := s.flow360.Folders(c.Request.Context())
 	if err != nil {
 		log.Printf("Flow360 folder tree unavailable: %v", err)
+		if s.serveCachedJSON(c, "folder-tree", "root") {
+			return
+		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 folder tree is unavailable"})
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	s.cacheLiveJSON("folder-tree", "root", raw)
+	s.writeLiveJSON(c, raw)
 }
 
 func (s *Server) chatStream(c *gin.Context) {

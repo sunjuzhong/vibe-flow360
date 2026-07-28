@@ -15,12 +15,38 @@ import (
 )
 
 const (
-	StatusDraft     = "draft"
-	StatusApproved  = "approved"
-	StatusRunning   = "running"
-	StatusSubmitted = "submitted"
-	StatusFailed    = "failed"
+	StatusDraft       = "draft"
+	StatusApproved    = "approved"
+	StatusRunning     = "running"
+	StatusSubmitted   = "submitted"
+	StatusFailed      = "failed"
+	StatusReconciling = "reconciling"
+
+	ErrNotApproved         = "plan must be approved before execution"
+	ErrAlreadySubmitted    = "plan has already been submitted to Flow360"
+	ErrValidationErrors    = "plan has validation errors"
+	ErrDoubleSubmitProtect = "plan execution is already in progress or completed"
 )
+
+type ErrorCategory string
+
+const (
+	ErrorTimeout      ErrorCategory = "timeout"
+	ErrorAuth         ErrorCategory = "authentication"
+	ErrorValidation   ErrorCategory = "validation"
+	ErrorNetwork      ErrorCategory = "network"
+	ErrorUnknown      ErrorCategory = "unknown"
+	ErrorDoubleSubmit ErrorCategory = "double_submit"
+)
+
+type RemoteIDs struct {
+	ProjectID     string `json:"project_id,omitempty"`
+	DraftID       string `json:"draft_id,omitempty"`
+	GeometryID    string `json:"geometry_id,omitempty"`
+	MeshID        string `json:"mesh_id,omitempty"`
+	CaseID        string `json:"case_id,omitempty"`
+	SolverVersion string `json:"solver_version,omitempty"`
+}
 
 type Validation struct {
 	Level   string `json:"level"`
@@ -55,6 +81,9 @@ type Plan struct {
 	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
 	Result         json.RawMessage `json:"result,omitempty"`
 	Error          string          `json:"error,omitempty"`
+	ErrorCategory  ErrorCategory   `json:"error_category,omitempty"`
+	SubmissionID   string          `json:"submission_id,omitempty"`
+	RemoteIDs      *RemoteIDs      `json:"remote_ids,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
@@ -295,19 +324,139 @@ func (s *Store) recoverInterrupted() error {
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
 		plan, readErr := s.read(id)
-		if readErr != nil || plan.Status != StatusRunning {
+		if readErr != nil {
 			continue
 		}
-		now := time.Now().UTC()
-		plan.Status = StatusFailed
-		plan.Error = "The server restarted while Flow360 submission was in progress. Verify remote resources before retrying."
-		plan.CompletedAt = &now
-		plan.UpdatedAt = now
-		if err := s.write(plan); err != nil {
-			return err
+		if plan.Status == StatusRunning {
+			now := time.Now().UTC()
+			plan.Status = StatusReconciling
+			plan.Error = "Server restarted during execution. Reconciling with Flow360 remote state..."
+			plan.ErrorCategory = ErrorUnknown
+			plan.CompletedAt = &now
+			plan.UpdatedAt = now
+			if err := s.write(plan); err != nil {
+				return err
+			}
+		}
+		if plan.Status == StatusSubmitted {
+			plan.Status = StatusReconciling
+			plan.Error = "Submitted plan needs reconciliation with Flow360."
+			plan.UpdatedAt = time.Now().UTC()
+			if err := s.write(plan); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func (s *Store) CanRun(id string) (Plan, error) {
+	plan, err := s.Get(id)
+	if err != nil {
+		return Plan{}, err
+	}
+	if plan.SubmissionID != "" {
+		return Plan{}, errors.New(ErrDoubleSubmitProtect)
+	}
+	if plan.Status != StatusApproved && plan.Status != StatusFailed && plan.Status != StatusReconciling {
+		return Plan{}, errors.New(ErrNotApproved)
+	}
+	return plan, nil
+}
+
+func classifyError(err error) ErrorCategory {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "context deadline"):
+		return ErrorTimeout
+	case strings.Contains(msg, "unauthorized"), strings.Contains(msg, "401"), strings.Contains(msg, "403"), strings.Contains(msg, "authentication"):
+		return ErrorAuth
+	case strings.Contains(msg, "validation"), strings.Contains(msg, "invalid"), strings.Contains(msg, "400"):
+		return ErrorValidation
+	case strings.Contains(msg, "connection"), strings.Contains(msg, "network"), strings.Contains(msg, "dns"), strings.Contains(msg, "502"), strings.Contains(msg, "503"):
+		return ErrorNetwork
+	default:
+		return ErrorUnknown
+	}
+}
+
+func extractRemoteIDs(result json.RawMessage) *RemoteIDs {
+	if len(result) == 0 {
+		return nil
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal(result, &data); err != nil {
+		return nil
+	}
+	ids := &RemoteIDs{}
+	if pid, ok := data["project_id"].(string); ok {
+		ids.ProjectID = pid
+	}
+	if did, ok := data["draft_id"].(string); ok {
+		ids.DraftID = did
+	}
+	if gid, ok := data["geometry_id"].(string); ok {
+		ids.GeometryID = gid
+	}
+	if mid, ok := data["mesh_id"].(string); ok {
+		ids.MeshID = mid
+	}
+	if cid, ok := data["case_id"].(string); ok {
+		ids.CaseID = cid
+	}
+	if sv, ok := data["solver_version"].(string); ok {
+		ids.SolverVersion = sv
+	}
+	if ids.ProjectID == "" && ids.DraftID == "" && ids.GeometryID == "" && ids.MeshID == "" && ids.CaseID == "" {
+		return nil
+	}
+	return ids
+}
+
+func (s *Store) SetRunning(id, submissionID string) (Plan, error) {
+	return s.Update(id, func(plan *Plan) error {
+		if plan.Status != StatusApproved && plan.Status != StatusFailed {
+			return errors.New(ErrNotApproved)
+		}
+		now := time.Now().UTC()
+		plan.Status = StatusRunning
+		plan.StartedAt = &now
+		plan.CompletedAt = nil
+		plan.Error = ""
+		plan.ErrorCategory = ""
+		plan.SubmissionID = submissionID
+		return nil
+	})
+}
+
+func (s *Store) MarkSubmitted(id string, result json.RawMessage) (Plan, error) {
+	remoteIDs := extractRemoteIDs(result)
+	return s.Update(id, func(plan *Plan) error {
+		now := time.Now().UTC()
+		plan.Status = StatusSubmitted
+		plan.CompletedAt = &now
+		plan.Result = result
+		plan.RemoteIDs = remoteIDs
+		plan.Error = ""
+		plan.ErrorCategory = ""
+		return nil
+	})
+}
+
+func (s *Store) MarkFailed(id string, runErr error) (Plan, error) {
+	category := classifyError(runErr)
+	return s.Update(id, func(plan *Plan) error {
+		now := time.Now().UTC()
+		plan.Status = StatusFailed
+		plan.CompletedAt = &now
+		plan.Error = runErr.Error()
+		plan.ErrorCategory = category
+		plan.SubmissionID = ""
+		return nil
+	})
 }
 
 func validTarget(sourceType, target string) bool {

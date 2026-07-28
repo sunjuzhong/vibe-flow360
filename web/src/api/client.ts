@@ -136,12 +136,22 @@ export type SimulationPlan = {
   differences: PlanDifference[]
   validations: PlanValidation[]
   command_preview: string[]
-  status: 'draft' | 'approved' | 'running' | 'submitted' | 'failed'
+  status: 'draft' | 'approved' | 'running' | 'submitted' | 'failed' | 'reconciling'
   approved_at?: string
   started_at?: string
   completed_at?: string
   result?: Record<string, unknown>
   error?: string
+  error_category?: string
+  submission_id?: string
+  remote_ids?: {
+    project_id?: string
+    draft_id?: string
+    geometry_id?: string
+    mesh_id?: string
+    case_id?: string
+    solver_version?: string
+  }
   created_at: string
   updated_at: string
 }
@@ -214,9 +224,10 @@ async function responseError(response: Response): Promise<Error> {
 
 export const api = {
   flow360Status: () => json<Flow360Status>('/api/flow360/status'),
-  projects: (folderId?: string) =>
-    json<ProjectListResponse>(`/api/flow360/projects${folderId ? `?folder_id=${encodeURIComponent(folderId)}` : ''}`),
-  folders: () => json<FolderTreeResponse>('/api/flow360/folders'),
+  projects: (folderId?: string, cacheOnly = false) =>
+    flow360JSON<ProjectListResponse>(`/api/flow360/projects${folderId ? `?folder_id=${encodeURIComponent(folderId)}` : ''}${cacheOnly ? '?cache=only' : ''}`),
+  folders: (cacheOnly = false) =>
+    flow360JSON<FolderTreeResponse>(`/api/flow360/folders${cacheOnly ? '?cache=only' : ''}`),
   projectInfo: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectInfo>(`/api/flow360/projects/${encodeURIComponent(projectId)}${cacheOnly ? '?cache=only' : ''}`),
   projectTree: (projectId: string, cacheOnly = false) =>

@@ -45,7 +45,17 @@ function statusLabel(status: SimulationPlan['status']) {
     running: 'Submitting',
     submitted: 'Submitted',
     failed: 'Failed',
+    reconciling: 'Reconciling',
   }[status]
+}
+
+const errorCategoryLabels: Record<string, string> = {
+  timeout: 'Flow360 timed out',
+  authentication: 'Authentication failed',
+  validation: 'Validation rejected',
+  network: 'Network error',
+  unknown: 'Unknown error',
+  double_submit: 'Double-submit blocked',
 }
 
 export default function PlanPanel({
@@ -162,6 +172,11 @@ export default function PlanPanel({
 
   const run = async () => {
     if (!selected || !executeConfirmed || loading || submittingAction) return
+    if (selected.status !== 'approved' && selected.status !== 'failed') return
+    if (selected.submission_id && selected.status !== 'failed') {
+      setError('This plan has already been submitted to Flow360 and is protected from double-submit.')
+      return
+    }
     if (!window.confirm(`Submit “${selected.name}” to Flow360? This may create billable cloud resources.`)) return
     setLoading(true)
     setSubmittingAction('run')
@@ -303,7 +318,28 @@ export default function PlanPanel({
                   <p className="plan-command-note">The generated temporary patch path and credentials are intentionally not shown.</p>
                 </section>
 
-                {selected.error && <div className="plan-error"><AlertCircle size={14} />{selected.error}</div>}
+                {selected.error && (
+                  <div className="plan-error">
+                    <AlertCircle size={14} />
+                    <span>
+                      <strong>{selected.error_category ? errorCategoryLabels[selected.error_category] ?? selected.error_category : 'Execution failed'}</strong>
+                      <small>{selected.error}</small>
+                    </span>
+                  </div>
+                )}
+                {selected.status === 'reconciling' && (
+                  <div className="plan-progress"><RefreshCw size={15} className="spin" /> Reconciling with Flow360 remote state after restart…</div>
+                )}
+                {selected.status === 'submitted' && selected.remote_ids && (
+                  <section className="plan-review-section">
+                    <h3><CheckCircle2 size={15} /> Flow360 remote IDs</h3>
+                    <div className="remote-ids">
+                      {Object.entries(selected.remote_ids).map(([key, value]) => value ? (
+                        <span key={key} className="remote-id-chip"><code>{key}</code><strong>{value}</strong></span>
+                      ) : null)}
+                    </div>
+                  </section>
+                )}
                 {error && <div className="plan-error"><AlertCircle size={14} />{error}</div>}
 
                 {selected.status === 'draft' && (

@@ -2,6 +2,8 @@ package plans
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -88,5 +90,185 @@ func TestStorePersistsPlan(t *testing.T) {
 	}
 	if loaded.Name != created.Name || loaded.Status != StatusDraft {
 		t.Fatalf("unexpected persisted plan %#v", loaded)
+	}
+}
+
+func TestStoreCanRunEnforcesApprovalAndNoSubmission(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "vm-1", SourceType: "VolumeMesh",
+		Target: "case", Name: "baseline", Intent: "Run baseline.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CanRun(created.ID); err == nil {
+		t.Fatal("expected draft plan to be rejected")
+	}
+
+	_, err = store.Update(created.ID, func(plan *Plan) error {
+		plan.Status = StatusApproved
+		plan.ApprovedAt = &plan.UpdatedAt
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := store.CanRun(created.ID)
+	if err != nil {
+		t.Fatalf("approved plan should be runnable, got %v", err)
+	}
+	if plan.Status != StatusApproved {
+		t.Fatalf("expected approved status, got %q", plan.Status)
+	}
+
+	_, err = store.SetRunning(created.ID, "sub-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CanRun(created.ID); err == nil || !strings.Contains(err.Error(), ErrDoubleSubmitProtect) {
+		t.Fatalf("expected double-submit protection, got %v", err)
+	}
+}
+
+func TestStoreMarkSubmittedStoresRemoteIDs(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "vm-1", SourceType: "VolumeMesh",
+		Target: "case", Name: "baseline", Intent: "Run baseline.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(created.ID, func(p *Plan) error { p.Status = StatusApproved; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetRunning(created.ID, "sub-abc"); err != nil {
+		t.Fatal(err)
+	}
+	result := json.RawMessage(`{"project_id":"p1","draft_id":"d1","case_id":"c1","solver_version":"2025.1"}`)
+	submitted, err := store.MarkSubmitted(created.ID, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submitted.Status != StatusSubmitted {
+		t.Fatalf("expected submitted, got %q", submitted.Status)
+	}
+	if submitted.RemoteIDs == nil || submitted.RemoteIDs.CaseID != "c1" {
+		t.Fatalf("expected remote case id, got %#v", submitted.RemoteIDs)
+	}
+	if submitted.SubmissionID != "sub-abc" {
+		t.Fatalf("expected submission id preserved, got %q", submitted.SubmissionID)
+	}
+}
+
+func TestStoreMarkFailedClassifiesError(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "vm-1", SourceType: "VolumeMesh",
+		Target: "case", Name: "baseline", Intent: "Run baseline.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(created.ID, func(p *Plan) error { p.Status = StatusApproved; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetRunning(created.ID, "sub-err"); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := store.MarkFailed(created.ID, errors.New("request timeout while contacting Flow360"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.Status != StatusFailed {
+		t.Fatalf("expected failed, got %q", failed.Status)
+	}
+	if failed.ErrorCategory != ErrorTimeout {
+		t.Fatalf("expected timeout category, got %q", failed.ErrorCategory)
+	}
+	if failed.SubmissionID != "" {
+		t.Fatalf("expected submission id cleared, got %q", failed.SubmissionID)
+	}
+}
+
+func TestStoreRecoverInterruptedMarksRunningPlansReconciling(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "vm-1", SourceType: "VolumeMesh",
+		Target: "case", Name: "baseline", Intent: "Run baseline.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(created.ID, func(p *Plan) error {
+		p.Status = StatusRunning
+		p.StartedAt = &p.UpdatedAt
+		p.SubmissionID = "sub-1"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.recoverInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != StatusReconciling {
+		t.Fatalf("expected reconciling after restart, got %q", loaded.Status)
+	}
+	if loaded.SubmissionID == "" {
+		t.Fatal("expected submission id to be preserved across recovery")
+	}
+}
+
+func TestClassifyErrorDetectsCategories(t *testing.T) {
+	cases := []struct {
+		msg      string
+		category ErrorCategory
+	}{
+		{"request timeout", ErrorTimeout},
+		{"context deadline exceeded", ErrorTimeout},
+		{"unauthorized", ErrorAuth},
+		{"401 forbidden", ErrorAuth},
+		{"validation rejected", ErrorValidation},
+		{"invalid payload", ErrorValidation},
+		{"503 service unavailable", ErrorNetwork},
+		{"network unreachable", ErrorNetwork},
+		{"something unexpected", ErrorUnknown},
+	}
+	for _, c := range cases {
+		got := classifyError(errors.New(c.msg))
+		if got != c.category {
+			t.Fatalf("message %q: expected %q, got %q", c.msg, c.category, got)
+		}
+	}
+}
+
+func TestExtractRemoteIDsSelectsKnownFields(t *testing.T) {
+	result := json.RawMessage(`{"project_id":"p1","draft_id":"d1","case_id":"c1","solver_version":"2025.1","unrelated":"x"}`)
+	ids := extractRemoteIDs(result)
+	if ids == nil {
+		t.Fatal("expected remote ids")
+	}
+	if ids.ProjectID != "p1" || ids.DraftID != "d1" || ids.CaseID != "c1" || ids.SolverVersion != "2025.1" {
+		t.Fatalf("unexpected ids: %#v", ids)
+	}
+	if extractRemoteIDs(json.RawMessage(`{"unrelated":"x"}`)) != nil {
+		t.Fatal("expected nil when no known ids")
 	}
 }

@@ -16,7 +16,12 @@ var allowedKinds = map[string]struct{}{
 	"project-tree":    {},
 	"project-items":   {},
 	"resource-detail": {},
+	"folder-tree":     {},
+	"project-list":    {},
+	"folder-projects": {},
 }
+
+const DefaultTTL = 15 * time.Minute
 
 type Entry struct {
 	Key      string          `json:"key"`
@@ -105,6 +110,54 @@ func (s *Store) Get(kind, key string) (Entry, error) {
 		return Entry{}, errors.New("cache entry is invalid")
 	}
 	return entry, nil
+}
+
+func (s *Store) GetFresh(kind, key string, ttl time.Duration) (Entry, error) {
+	entry, err := s.Get(kind, key)
+	if err != nil {
+		return Entry{}, err
+	}
+	if ttl > 0 && time.Since(entry.CachedAt) > ttl {
+		return Entry{}, errors.New("cache entry is expired")
+	}
+	return entry, nil
+}
+
+func (s *Store) Cleanup(ttl time.Duration) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	removed := 0
+	for kind := range allowedKinds {
+		dir := filepath.Join(s.dir, kind)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return removed, err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			payload, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			var e Entry
+			if err := json.Unmarshal(payload, &e); err != nil {
+				os.Remove(filepath.Join(dir, entry.Name()))
+				removed++
+				continue
+			}
+			if ttl > 0 && time.Since(e.CachedAt) > ttl {
+				os.Remove(filepath.Join(dir, entry.Name()))
+				removed++
+			}
+		}
+	}
+	return removed, nil
 }
 
 func validate(kind, key string, data json.RawMessage) error {
