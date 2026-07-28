@@ -1,0 +1,519 @@
+package server
+
+import (
+	"bufio"
+	"context"
+	"embed"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/vibesim/internal/agent"
+	"github.com/sjzsdu/vibesim/internal/flow360"
+	importplans "github.com/sjzsdu/vibesim/internal/imports"
+	"github.com/sjzsdu/vibesim/internal/plans"
+)
+
+//go:embed dist
+var webFS embed.FS
+
+type Server struct {
+	router  *gin.Engine
+	flow360 *flow360.Client
+	agent   *agent.Service
+	plans   *plans.Store
+	imports *importplans.Store
+}
+
+func New() *Server {
+	router := gin.New()
+	router.Use(gin.Logger(), gin.Recovery())
+	dataDir := strings.TrimSpace(os.Getenv("VIBESIM_DATA_DIR"))
+	if dataDir == "" {
+		dataDir = ".vibesim"
+	}
+	planStore, err := plans.NewStore(filepath.Join(dataDir, "plans"))
+	if err != nil {
+		panic(err)
+	}
+	importStore, err := importplans.New(filepath.Join(dataDir, "imports"))
+	if err != nil {
+		panic(err)
+	}
+
+	app := &Server{
+		router:  router,
+		flow360: flow360.NewClient(),
+		agent:   agent.NewService(),
+		plans:   planStore,
+		imports: importStore,
+	}
+	app.routes()
+	return app
+}
+
+func (s *Server) Run(addr string) error {
+	return s.router.Run(addr)
+}
+
+func (s *Server) routes() {
+	api := s.router.Group("/api")
+	{
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"ok": true, "service": "vibesim"})
+		})
+		api.GET("/flow360/status", s.flow360Status)
+		api.GET("/flow360/projects", s.flow360Projects)
+		api.GET("/flow360/folders", s.flow360Folders)
+		api.GET("/flow360/projects/:project_id", s.flow360ProjectInfo)
+		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
+		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
+		api.GET("/flow360/resources/:resource_type/:resource_id", s.flow360ResourceDetail)
+		api.GET("/flow360/resources/:resource_type/:resource_id/logs", s.flow360ResourceLogs)
+		api.GET("/plans", s.listPlans)
+		api.POST("/plans", s.createPlan)
+		api.GET("/plans/:plan_id", s.getPlan)
+		api.POST("/plans/:plan_id/approve", s.approvePlan)
+		api.POST("/plans/:plan_id/run", s.runPlan)
+		api.POST("/imports", s.stageImport)
+		api.GET("/imports/:import_id", s.getImport)
+		api.POST("/imports/:import_id/approve", s.approveImport)
+		api.POST("/imports/:import_id/run", s.runImport)
+		api.GET("/agent/state", func(c *gin.Context) {
+			c.JSON(http.StatusOK, s.agent.State())
+		})
+		api.POST("/agent/chat/stream", s.chatStream)
+	}
+
+	dist, err := fs.Sub(webFS, "dist")
+	if err != nil {
+		panic(err)
+	}
+	indexHTML, err := fs.ReadFile(dist, "index.html")
+	if err != nil {
+		panic(err)
+	}
+	s.router.NoRoute(func(c *gin.Context) {
+		path := strings.TrimPrefix(c.Request.URL.Path, "/")
+		if path != "" {
+			if _, err := fs.Stat(dist, path); err == nil {
+				c.FileFromFS(path, http.FS(dist))
+				return
+			}
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
+	})
+}
+
+func (s *Server) stageImport(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<30)
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or oversized upload"})
+		return
+	}
+	sourceType := strings.TrimSpace(c.PostForm("source_type"))
+	if sourceType != "geometry" && sourceType != "surface-mesh" && sourceType != "volume-mesh" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported source type"})
+		return
+	}
+	name := strings.TrimSpace(c.PostForm("name"))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project name is required"})
+		return
+	}
+	files := c.Request.MultipartForm.File["files"]
+	if len(files) == 0 || len(files) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "choose between 1 and 20 files"})
+		return
+	}
+	plan := importplans.Plan{Name: name, SourceType: sourceType, Unit: strings.TrimSpace(c.PostForm("unit")), Workflow: strings.TrimSpace(c.PostForm("workflow")), SolverVersion: strings.TrimSpace(c.PostForm("solver_version")), FolderID: strings.TrimSpace(c.PostForm("folder_id"))}
+	if plan.Unit == "" {
+		plan.Unit = "m"
+	}
+	if plan.Workflow == "" {
+		plan.Workflow = "standard"
+	}
+	for _, file := range files {
+		clean := filepath.Base(file.Filename)
+		if clean == "." || clean == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
+			return
+		}
+		plan.Files = append(plan.Files, clean)
+		plan.SizeBytes += file.Size
+	}
+	plan.Command = []string{"flow360", "project", "create", "<staged-files>", "--from", sourceType, "--name", name, "--unit", plan.Unit}
+	created, dir, err := s.imports.Create(plan)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not stage import"})
+		return
+	}
+	for index, header := range files {
+		input, openErr := header.Open()
+		if openErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "could not read upload"})
+			return
+		}
+		output, createErr := os.OpenFile(filepath.Join(dir, "files", created.Files[index]), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if createErr == nil {
+			_, createErr = io.Copy(output, input)
+			output.Close()
+		}
+		input.Close()
+		if createErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist upload"})
+			return
+		}
+	}
+	c.JSON(http.StatusCreated, created)
+}
+
+func (s *Server) getImport(c *gin.Context) {
+	plan, err := s.imports.Get(c.Param("import_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, plan)
+}
+
+func (s *Server) approveImport(c *gin.Context) {
+	plan, err := s.imports.Update(c.Param("import_id"), func(plan *importplans.Plan) error {
+		if plan.Status != "draft" {
+			return fmt.Errorf("only a draft import can be approved")
+		}
+		plan.Status = "approved"
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, plan)
+}
+
+func (s *Server) runImport(c *gin.Context) {
+	plan, err := s.imports.Update(c.Param("import_id"), func(plan *importplans.Plan) error {
+		if plan.Status != "approved" && plan.Status != "failed" {
+			return fmt.Errorf("import must be approved before execution")
+		}
+		plan.Status = "running"
+		plan.Error = ""
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	result, runErr := s.flow360.CreateProject(c.Request.Context(), s.imports.FilePaths(plan), plan.SourceType, plan.Name, plan.Unit, plan.Workflow, plan.SolverVersion, plan.FolderID)
+	plan, _ = s.imports.Update(plan.ID, func(plan *importplans.Plan) error {
+		if runErr != nil {
+			plan.Status = "failed"
+			plan.Error = "Flow360 did not accept the project import"
+		} else {
+			plan.Status = "submitted"
+			plan.Result = result
+		}
+		return nil
+	})
+	if runErr != nil {
+		log.Printf("Flow360 project import failed: %v", runErr)
+		c.JSON(http.StatusBadGateway, plan)
+		return
+	}
+	c.JSON(http.StatusOK, plan)
+}
+
+type createPlanRequest struct {
+	ProjectID   string          `json:"project_id"`
+	ProjectName string          `json:"project_name"`
+	SourceID    string          `json:"source_id"`
+	SourceType  string          `json:"source_type"`
+	SourceName  string          `json:"source_name"`
+	Target      string          `json:"target"`
+	Name        string          `json:"name"`
+	Intent      string          `json:"intent"`
+	Patch       json.RawMessage `json:"patch"`
+}
+
+func (s *Server) createPlan(c *gin.Context) {
+	var request createPlanRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid plan request"})
+		return
+	}
+	detail, err := s.flow360.ResourceDetail(c.Request.Context(), request.SourceType, request.SourceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var info struct {
+		ProjectID string `json:"project_id"`
+		Name      string `json:"name"`
+	}
+	if len(detail.Info) == 0 || json.Unmarshal(detail.Info, &info) != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 source metadata is unavailable"})
+		return
+	}
+	if info.ProjectID != request.ProjectID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source resource does not belong to this project"})
+		return
+	}
+	plan, err := s.plans.Create(plans.CreateInput{
+		ProjectID: request.ProjectID, ProjectName: request.ProjectName,
+		SourceID: request.SourceID, SourceType: detail.Type, SourceName: info.Name,
+		Target: request.Target, Name: request.Name, Intent: request.Intent,
+		Patch: request.Patch, Baseline: detail.SimulationParams,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, plan)
+}
+
+func (s *Server) listPlans(c *gin.Context) {
+	list, err := s.plans.List(strings.TrimSpace(c.Query("project_id")), strings.TrimSpace(c.Query("source_id")))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list local plans"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"plans": list})
+}
+
+func (s *Server) getPlan(c *gin.Context) {
+	plan, err := s.plans.Get(c.Param("plan_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, plan)
+}
+
+func (s *Server) approvePlan(c *gin.Context) {
+	plan, err := s.plans.Update(c.Param("plan_id"), func(plan *plans.Plan) error {
+		if plan.Status != plans.StatusDraft {
+			return fmt.Errorf("only a draft plan can be approved")
+		}
+		for _, validation := range plan.Validations {
+			if validation.Level == "error" {
+				return fmt.Errorf("plan has validation errors")
+			}
+		}
+		now := time.Now().UTC()
+		plan.Status = plans.StatusApproved
+		plan.ApprovedAt = &now
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, plan)
+}
+
+func (s *Server) runPlan(c *gin.Context) {
+	plan, err := s.plans.Update(c.Param("plan_id"), func(plan *plans.Plan) error {
+		if plan.Status != plans.StatusApproved && plan.Status != plans.StatusFailed {
+			return fmt.Errorf("plan must be approved before execution")
+		}
+		now := time.Now().UTC()
+		plan.Status = plans.StatusRunning
+		plan.StartedAt = &now
+		plan.CompletedAt = nil
+		plan.Error = ""
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, runErr := s.flow360.RunDraft(c.Request.Context(), plan.SourceID, plan.Name, plan.Target, plan.Patch)
+	plan, persistErr := s.plans.Update(plan.ID, func(plan *plans.Plan) error {
+		now := time.Now().UTC()
+		plan.CompletedAt = &now
+		if runErr != nil {
+			plan.Status = plans.StatusFailed
+			plan.Error = "Flow360 did not accept the plan"
+			return nil
+		}
+		plan.Status = plans.StatusSubmitted
+		plan.Result = result
+		return nil
+	})
+	if persistErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist execution state"})
+		return
+	}
+	if runErr != nil {
+		log.Printf("Flow360 plan execution failed: %v", runErr)
+		c.JSON(http.StatusBadGateway, plan)
+		return
+	}
+	c.JSON(http.StatusOK, plan)
+}
+
+func (s *Server) flow360ResourceDetail(c *gin.Context) {
+	detail, err := s.flow360.ResourceDetail(
+		c.Request.Context(),
+		c.Param("resource_type"),
+		c.Param("resource_id"),
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, detail)
+}
+
+func (s *Server) flow360ResourceLogs(c *gin.Context) {
+	tail, err := strconv.Atoi(c.DefaultQuery("tail", "200"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tail must be an integer"})
+		return
+	}
+	output, err := s.flow360.ResourceLogs(
+		c.Request.Context(),
+		c.Param("resource_type"),
+		c.Param("resource_id"),
+		tail,
+	)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 logs are unavailable"})
+		return
+	}
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", output)
+}
+
+func (s *Server) flow360Status(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
+	defer cancel()
+	c.JSON(http.StatusOK, s.flow360.Status(ctx))
+}
+
+func (s *Server) flow360Projects(c *gin.Context) {
+	folderID := strings.TrimSpace(c.Query("folder_id"))
+	raw, err := s.flow360.Projects(c.Request.Context(), 25, folderID)
+	if err != nil {
+		log.Printf("Flow360 project listing unavailable: %v", err)
+		c.JSON(http.StatusOK, gin.H{
+			"projects":  []any{},
+			"warning":   "Flow360 project listing is temporarily unavailable",
+			"folder_id": folderID,
+		})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+func (s *Server) flow360ProjectInfo(c *gin.Context) {
+	s.flow360ProjectJSON(c, s.flow360.ProjectInfo)
+}
+
+func (s *Server) flow360ProjectTree(c *gin.Context) {
+	s.flow360ProjectJSON(c, s.flow360.ProjectTree)
+}
+
+func (s *Server) flow360ProjectItems(c *gin.Context) {
+	s.flow360ProjectJSON(c, s.flow360.ProjectItems)
+}
+
+func (s *Server) flow360ProjectJSON(
+	c *gin.Context,
+	load func(context.Context, string) (json.RawMessage, error),
+) {
+	projectID := strings.TrimSpace(c.Param("project_id"))
+	if projectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project_id is required"})
+		return
+	}
+	raw, err := load(c.Request.Context(), projectID)
+	if err != nil {
+		log.Printf("Flow360 project resource unavailable: %v", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 project resource is unavailable"})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+func (s *Server) flow360Folders(c *gin.Context) {
+	raw, err := s.flow360.Folders(c.Request.Context())
+	if err != nil {
+		log.Printf("Flow360 folder tree unavailable: %v", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 folder tree is unavailable"})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+func (s *Server) chatStream(c *gin.Context) {
+	var request agent.ChatRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "streaming is unavailable"})
+		return
+	}
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	writeEvent(c.Writer, flusher, gin.H{"type": "start"})
+
+	reply, err := s.agent.Chat(c.Request.Context(), request)
+	if err != nil {
+		writeEvent(c.Writer, flusher, gin.H{"type": "error", "error": err.Error()})
+		return
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(reply))
+	scanner.Split(scanWordsWithWhitespace)
+	for scanner.Scan() {
+		writeEvent(c.Writer, flusher, gin.H{"type": "delta", "delta": scanner.Text()})
+	}
+	writeEvent(c.Writer, flusher, gin.H{"type": "done"})
+}
+
+func writeEvent(w http.ResponseWriter, flusher http.Flusher, value any) {
+	data, _ := json.Marshal(value)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
+func scanWordsWithWhitespace(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for index := 0; index < len(data); {
+		r, size := utf8.DecodeRune(data[index:])
+		index += size
+		if r == ' ' || r == '\n' || r == '\t' {
+			for index < len(data) {
+				next, nextSize := utf8.DecodeRune(data[index:])
+				if next != ' ' && next != '\n' && next != '\t' {
+					break
+				}
+				index += nextSize
+			}
+			return index, data[:index], nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}

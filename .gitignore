@@ -1,0 +1,8 @@
+.DS_Store
+vibesim
+web/node_modules/
+web/dist/
+internal/server/dist/*
+!internal/server/dist/index.html
+.env
+.vibesim/
