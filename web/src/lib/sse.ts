@@ -8,7 +8,7 @@ export async function readSSE(
   response: Response,
   onEvent: (event: StreamEvent) => void,
 ) {
-  if (!response.body) throw new Error('响应不支持流式读取')
+  if (!response.body) throw new Error('Response body does not support streaming')
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''

@@ -80,6 +80,8 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
 		api.GET("/flow360/resources/:resource_type/:resource_id", s.flow360ResourceDetail)
 		api.GET("/flow360/resources/:resource_type/:resource_id/logs", s.flow360ResourceLogs)
+		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)
+		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)
 		api.GET("/plans/:plan_id", s.getPlan)
@@ -104,10 +106,15 @@ func (s *Server) routes() {
 		panic(err)
 	}
 	s.router.NoRoute(func(c *gin.Context) {
-		path := strings.TrimPrefix(c.Request.URL.Path, "/")
-		if path != "" {
-			if _, err := fs.Stat(dist, path); err == nil {
-				c.FileFromFS(path, http.FS(dist))
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/api/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		trimmed := strings.TrimPrefix(path, "/")
+		if trimmed != "" {
+			if _, err := fs.Stat(dist, trimmed); err == nil {
+				c.FileFromFS(trimmed, http.FS(dist))
 				return
 			}
 		}
@@ -136,12 +143,24 @@ func (s *Server) stageImport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "choose between 1 and 20 files"})
 		return
 	}
-	plan := importplans.Plan{Name: name, SourceType: sourceType, Unit: strings.TrimSpace(c.PostForm("unit")), Workflow: strings.TrimSpace(c.PostForm("workflow")), SolverVersion: strings.TrimSpace(c.PostForm("solver_version")), FolderID: strings.TrimSpace(c.PostForm("folder_id"))}
+	rawTags := strings.TrimSpace(c.PostForm("tags"))
+	var tags []string
+	if rawTags != "" {
+		for _, t := range strings.Split(rawTags, ",") {
+			trimmed := strings.TrimSpace(t)
+			if trimmed != "" {
+				tags = append(tags, trimmed)
+			}
+		}
+	}
+	plan := importplans.Plan{Name: name, SourceType: sourceType, Unit: strings.TrimSpace(c.PostForm("unit")), Workflow: strings.TrimSpace(c.PostForm("workflow")), SolverVersion: strings.TrimSpace(c.PostForm("solver_version")), FolderID: strings.TrimSpace(c.PostForm("folder_id")), Tags: tags}
 	if plan.Unit == "" {
 		plan.Unit = "m"
 	}
-	if plan.Workflow == "" {
+	if sourceType == "geometry" && plan.Workflow == "" {
 		plan.Workflow = "standard"
+	} else if sourceType != "geometry" {
+		plan.Workflow = ""
 	}
 	for _, file := range files {
 		clean := filepath.Base(file.Filename)
@@ -152,7 +171,40 @@ func (s *Server) stageImport(c *gin.Context) {
 		plan.Files = append(plan.Files, clean)
 		plan.SizeBytes += file.Size
 	}
+	allowedExtensions := map[string][]string{
+		"geometry":     {".step", ".stp", ".igs", ".iges", ".brep", ".cax", ".catpart", ".catproduct"},
+		"surface-mesh": {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
+		"volume-mesh":  {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
+	}
+	allowed := allowedExtensions[sourceType]
+	for _, file := range files {
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		found := false
+		for _, allowedExt := range allowed {
+			if ext == allowedExt {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unsupported file extension %q for %s import (allowed: %s)", ext, sourceType, strings.Join(allowed, ", "))})
+			return
+		}
+	}
+
 	plan.Command = []string{"flow360", "project", "create", "<staged-files>", "--from", sourceType, "--name", name, "--unit", plan.Unit}
+	if sourceType == "geometry" && plan.Workflow != "" {
+		plan.Command = append(plan.Command, "--workflow", plan.Workflow)
+	}
+	if plan.SolverVersion != "" {
+		plan.Command = append(plan.Command, "--solver-version", plan.SolverVersion)
+	}
+	if plan.FolderID != "" {
+		plan.Command = append(plan.Command, "--folder-id", plan.FolderID)
+	}
+	for _, tag := range plan.Tags {
+		plan.Command = append(plan.Command, "--tag", tag)
+	}
 	created, dir, err := s.imports.Create(plan)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not stage import"})
@@ -161,16 +213,23 @@ func (s *Server) stageImport(c *gin.Context) {
 	for index, header := range files {
 		input, openErr := header.Open()
 		if openErr != nil {
+			_ = s.imports.Abort(created.ID)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "could not read upload"})
 			return
 		}
-		output, createErr := os.OpenFile(filepath.Join(dir, "files", created.Files[index]), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if createErr == nil {
-			_, createErr = io.Copy(output, input)
-			output.Close()
-		}
-		input.Close()
+		targetName := created.Files[index]
+		output, createErr := os.OpenFile(filepath.Join(dir, "files", targetName), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if createErr != nil {
+			input.Close()
+			_ = s.imports.Abort(created.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist upload"})
+			return
+		}
+		_, copyErr := io.Copy(output, input)
+		output.Close()
+		input.Close()
+		if copyErr != nil {
+			_ = s.imports.Abort(created.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist upload"})
 			return
 		}
@@ -215,7 +274,7 @@ func (s *Server) runImport(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	result, runErr := s.flow360.CreateProject(c.Request.Context(), s.imports.FilePaths(plan), plan.SourceType, plan.Name, plan.Unit, plan.Workflow, plan.SolverVersion, plan.FolderID)
+	result, runErr := s.flow360.CreateProject(c.Request.Context(), s.imports.FilePaths(plan), plan.SourceType, plan.Name, plan.Unit, plan.Workflow, plan.SolverVersion, plan.FolderID, plan.Tags)
 	plan, _ = s.imports.Update(plan.ID, func(plan *importplans.Plan) error {
 		if runErr != nil {
 			plan.Status = "failed"
@@ -391,6 +450,45 @@ func (s *Server) flow360ResourceLogs(c *gin.Context) {
 	)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 logs are unavailable"})
+		return
+	}
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", output)
+}
+
+func (s *Server) flow360ResourceDownload(c *gin.Context) {
+	resultPath := strings.TrimSpace(c.Query("path"))
+	if resultPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path query parameter is required"})
+		return
+	}
+	output, contentType, err := s.flow360.ResourceResult(
+		c.Request.Context(),
+		c.Param("resource_type"),
+		c.Param("resource_id"),
+		resultPath,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(resultPath)))
+	c.Data(http.StatusOK, contentType, output)
+}
+
+func (s *Server) flow360ResourcePreview(c *gin.Context) {
+	resultPath := strings.TrimSpace(c.Query("path"))
+	if resultPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path query parameter is required"})
+		return
+	}
+	output, err := s.flow360.ResourceResultPreview(
+		c.Request.Context(),
+		c.Param("resource_type"),
+		c.Param("resource_id"),
+		resultPath,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", output)

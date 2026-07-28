@@ -111,7 +111,7 @@ export default function PlanPanel({
         throw new Error('Patch must be a JSON object')
       }
     } catch (cause) {
-      setError(`SimulationParams patch 无效：${String(cause).replace('Error: ', '')}`)
+      setError(`Invalid SimulationParams patch: ${String(cause).replace('Error: ', '')}`)
       return
     }
     setLoading(true)

@@ -20,6 +20,7 @@ type Plan struct {
 	Workflow      string          `json:"workflow"`
 	SolverVersion string          `json:"solver_version,omitempty"`
 	FolderID      string          `json:"folder_id,omitempty"`
+	Tags          []string        `json:"tags,omitempty"`
 	Files         []string        `json:"files"`
 	SizeBytes     int64           `json:"size_bytes"`
 	Status        string          `json:"status"`
@@ -127,4 +128,17 @@ func (s *Store) write(plan Plan) error {
 		return err
 	}
 	return os.Rename(name, path)
+}
+
+func (s *Store) Abort(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !strings.HasPrefix(id, "import-") || strings.ContainsAny(id, `/\`) {
+		return errors.New("invalid import id")
+	}
+	return os.RemoveAll(filepath.Join(s.dir, id))
+}
+
+func (s *Store) FilesDir(planID string) string {
+	return filepath.Join(s.dir, planID, "files")
 }

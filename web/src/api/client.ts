@@ -142,6 +142,7 @@ export type SimulationPlan = {
 
 export type ImportPlan = {
   id: string; name: string; source_type: string; unit: string; workflow: string
+  solver_version?: string; folder_id?: string; tags?: string[]
   files: string[]; size_bytes: number; status: string; command_preview: string[]
   error?: string; result?: Record<string, unknown>
 }
@@ -162,6 +163,16 @@ async function mutate<T>(path: string, body?: unknown): Promise<T> {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || payload.message || response.statusText)
   return payload as T
+}
+
+async function responseError(response: Response): Promise<Error> {
+  const body = await response.text()
+  let message = body || response.statusText
+  try {
+    const payload = JSON.parse(body)
+    message = payload.error || payload.message || message
+  } catch { /* The response is plain text. */ }
+  return new Error(message)
 }
 
 export const api = {
@@ -192,6 +203,26 @@ export const api = {
       throw new Error(message)
     }
     return body
+  },
+  downloadResult: async (resourceType: string, resourceId: string, resultPath: string) => {
+    const response = await fetch(
+      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/download?path=${encodeURIComponent(resultPath)}`,
+    )
+    if (!response.ok) throw await responseError(response)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = resultPath.split('/').pop() || 'download'
+    a.click()
+    URL.revokeObjectURL(url)
+  },
+  previewResult: async (resourceType: string, resourceId: string, resultPath: string) => {
+    const response = await fetch(
+      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/preview?path=${encodeURIComponent(resultPath)}`,
+    )
+    if (!response.ok) throw await responseError(response)
+    return response.text()
   },
   plans: (projectId: string, sourceId?: string) =>
     json<{ plans: SimulationPlan[] }>(

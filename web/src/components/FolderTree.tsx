@@ -1,6 +1,18 @@
-import { ChevronDown, Folder, FolderOpen } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, Folder, FolderOpen, Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import type { FolderNode } from '../api/client'
+
+function hasMatchingDescendant(node: FolderNode, query: string): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  if (node.name.toLowerCase().includes(q)) return true
+  if (node.subfolders) {
+    for (const child of node.subfolders) {
+      if (hasMatchingDescendant(child, query)) return true
+    }
+  }
+  return false
+}
 
 function Branch({
   node,
@@ -9,6 +21,7 @@ function Branch({
   expanded,
   onToggle,
   onSelect,
+  searchQuery,
 }: {
   node: FolderNode
   depth: number
@@ -16,28 +29,33 @@ function Branch({
   expanded: Set<string>
   onToggle: (id: string) => void
   onSelect: (node: FolderNode) => void
+  searchQuery: string
 }) {
   const hasChildren = Boolean(node.subfolders?.length)
   const isExpanded = expanded.has(node.id)
+  const matchesSearch = !searchQuery || node.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const childMatches = hasChildren && hasMatchingDescendant(node, searchQuery)
+
+  if (searchQuery && !matchesSearch && !childMatches) return null
 
   return (
     <div className="folder-branch">
       <div className={`folder-line ${selected === node.id ? 'selected' : ''}`} style={{ paddingLeft: 5 + depth * 13 }}>
         {hasChildren ? (
           <button
-            className={`folder-expand ${isExpanded ? 'expanded' : ''}`}
+            className={`folder-expand ${isExpanded || searchQuery ? 'expanded' : ''}`}
             onClick={() => onToggle(node.id)}
-            aria-label={`${isExpanded ? '收起' : '展开'} ${node.name}`}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`}
           >
             <ChevronDown size={12} />
           </button>
         ) : <span className="folder-expand-spacer" />}
         <button className="folder-select" onClick={() => onSelect(node)} title={node.name}>
-          {isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+          {isExpanded || searchQuery ? <FolderOpen size={14} /> : <Folder size={14} />}
           <span>{node.name}</span>
         </button>
       </div>
-      {hasChildren && isExpanded && node.subfolders.map((child) => (
+      {hasChildren && (isExpanded || searchQuery) && node.subfolders.map((child) => (
         <Branch
           key={child.id}
           node={child}
@@ -46,6 +64,7 @@ function Branch({
           expanded={expanded}
           onToggle={onToggle}
           onSelect={onSelect}
+          searchQuery={searchQuery}
         />
       ))}
     </div>
@@ -62,6 +81,7 @@ export default function FolderTree({
   onSelect: (node: FolderNode) => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
 
   const toggle = (id: string) => {
     setExpanded((current) => {
@@ -72,8 +92,28 @@ export default function FolderTree({
     })
   }
 
+  const totalFolders = useMemo(() => {
+    let count = 0
+    const walk = (nodes: FolderNode[]) => {
+      count += nodes.length
+      nodes.forEach((n) => walk(n.subfolders))
+    }
+    walk(folders)
+    return count
+  }, [folders])
+
   return (
     <div className="workspace-folder-tree">
+      <div className="folder-search">
+        <Search size={12} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search folders…"
+        />
+        {query && <button className="folder-search-clear" onClick={() => setQuery('')} aria-label="Clear search">×</button>}
+      </div>
+      <div className="folder-tree-count">{totalFolders} folders</div>
       {folders.map((folder) => (
         <Branch
           key={folder.id}
@@ -83,8 +123,10 @@ export default function FolderTree({
           expanded={expanded}
           onToggle={toggle}
           onSelect={onSelect}
+          searchQuery={query}
         />
       ))}
+      {query && <div className="folder-search-hint">Showing folders matching "{query}"</div>}
     </div>
   )
 }

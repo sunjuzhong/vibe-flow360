@@ -5,7 +5,7 @@ import type { Flow360Status } from '../api/client'
 export default function TopBar({ status }: { status: Flow360Status | null }) {
   return (
     <header className="product-topbar">
-      <Link className="brand brand-link" to="/" aria-label="返回 VibeSim 首页">
+      <Link className="brand brand-link" to="/" aria-label="Return to home">
         <span className="brand-mark"><Sparkles size={17} /></span>
         <span>VibeSim</span>
         <span className="brand-beta">BETA</span>

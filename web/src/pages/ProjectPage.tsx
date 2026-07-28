@@ -24,7 +24,7 @@ import ResourceDetailPanel, { resourceStatus } from '../components/ResourceDetai
 import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
 import TopBar from '../components/TopBar'
 
-const stages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
+const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
 const resourceSuggestions: Record<string, string[]> = {
   Geometry: ['检查这个 Geometry 的建模前提', '规划 Surface Mesh', '有哪些输入还需要确认？'],
@@ -60,6 +60,7 @@ export default function ProjectPage() {
   const [detailError, setDetailError] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const loadProject = useCallback(async () => {
     setLoading(true)
@@ -110,6 +111,15 @@ export default function ProjectPage() {
     navigate(`/projects/${projectId}/resources/${resource.id}`)
   }
 
+  const stages = useMemo(() => {
+    if (!root) return allStages
+    const rootType = root.type
+    if (rootType === 'Geometry') return allStages
+    if (rootType === 'SurfaceMesh') return ['SurfaceMesh', 'VolumeMesh', 'Case']
+    if (rootType === 'VolumeMesh') return ['VolumeMesh', 'Case']
+    return allStages
+  }, [root])
+
   const selectedStage = Math.max(0, stages.indexOf(selected?.type ?? ''))
 
   const loadDetail = useCallback(async () => {
@@ -135,6 +145,9 @@ export default function ProjectPage() {
       <TopBar status={flowStatus} />
       <header className="project-header">
         <div className="project-breadcrumb">
+          <button className="mobile-sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle resource tree">
+            <GitBranch size={15} />
+          </button>
           <Link to="/"><ArrowLeft size={15} /> Workspace</Link>
           <ChevronRight size={13} />
           <span>{project?.name || 'Project'}</span>
@@ -173,14 +186,15 @@ export default function ProjectPage() {
       )}
 
       {!loading && !error && project && root && selected && (
-        <div className="project-workbench">
+        <div className={`project-workbench ${sidebarOpen ? 'sidebar-open' : ''}`}>
+          <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />
           <aside className="resource-sidebar">
             <div className="workbench-panel-title"><GitBranch size={15} /><span>Resource tree</span></div>
-            <ResourceTree root={root} items={items} selected={selected.id} onSelect={selectResource} />
+            <ResourceTree root={root} items={items} selected={selected.id} onSelect={(r) => { selectResource(r); setSidebarOpen(false) }} />
           </aside>
 
           <main className="resource-workspace">
-            <div className="resource-stage-strip">
+            <div className="resource-stage-strip adaptive">
               {stages.map((stage, index) => (
                 <div className={`${index === selectedStage ? 'current' : ''} ${index < selectedStage ? 'before' : ''}`} key={stage}>
                   <span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span>

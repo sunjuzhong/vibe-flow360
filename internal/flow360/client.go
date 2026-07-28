@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -167,6 +168,66 @@ func (c *Client) ResourceLogs(ctx context.Context, resourceType, resourceID stri
 	return c.run(ctx, "logs", resourceID, "--tail", fmt.Sprint(tail))
 }
 
+func (c *Client) ResourceResult(ctx context.Context, resourceType, resourceID, resultPath string) ([]byte, string, error) {
+	command, _, err := resourceCommand(resourceType)
+	if err != nil {
+		return nil, "", err
+	}
+	if command != "case" {
+		return nil, "", fmt.Errorf("result artifacts are only available for Case resources")
+	}
+	output, err := c.downloadCaseResult(ctx, resourceID, resultPath)
+	if err != nil {
+		return nil, "", err
+	}
+	ext := strings.ToLower(filepath.Ext(resultPath))
+	switch ext {
+	case ".csv", ".txt", ".dat":
+		return output, "text/plain; charset=utf-8", nil
+	default:
+		return output, "application/octet-stream", nil
+	}
+}
+
+func (c *Client) ResourceResultPreview(ctx context.Context, resourceType, resourceID, resultPath string) ([]byte, error) {
+	command, _, err := resourceCommand(resourceType)
+	if err != nil {
+		return nil, err
+	}
+	if command != "case" {
+		return nil, fmt.Errorf("result artifacts are only available for Case resources")
+	}
+	ext := strings.ToLower(filepath.Ext(resultPath))
+	if ext != ".csv" && ext != ".txt" && ext != ".dat" {
+		return nil, fmt.Errorf("preview is only available for text files (.csv, .txt, .dat)")
+	}
+	return c.downloadCaseResult(ctx, resourceID, resultPath)
+}
+
+func (c *Client) downloadCaseResult(ctx context.Context, resourceID, resultPath string) ([]byte, error) {
+	tempDir, err := os.MkdirTemp("", "vibesim-result-*")
+	if err != nil {
+		return nil, fmt.Errorf("create result workspace: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outputPath := filepath.Join(tempDir, firstNonEmpty(filepath.Base(resultPath), "result"))
+	if _, err := c.runWithTimeout(
+		ctx,
+		5*time.Minute,
+		"case", "results", "get", resourceID, resultPath,
+		"--output", outputPath,
+		"--overwrite",
+	); err != nil {
+		return nil, err
+	}
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("read downloaded result: %w", err)
+	}
+	return output, nil
+}
+
 func (c *Client) RunDraft(ctx context.Context, sourceID, name, target string, patch json.RawMessage) (json.RawMessage, error) {
 	temp, err := os.CreateTemp("", "vibesim-plan-*.json")
 	if err != nil {
@@ -208,7 +269,7 @@ func (c *Client) RunDraft(ctx context.Context, sourceID, name, target string, pa
 	return fallback, nil
 }
 
-func (c *Client) CreateProject(ctx context.Context, files []string, sourceType, name, unit, workflow, solverVersion, folderID string) (json.RawMessage, error) {
+func (c *Client) CreateProject(ctx context.Context, files []string, sourceType, name, unit, workflow, solverVersion, folderID string, tags []string) (json.RawMessage, error) {
 	args := []string{"project", "create"}
 	args = append(args, files...)
 	args = append(args, "--from", sourceType, "--name", name, "--unit", unit)
@@ -220,6 +281,9 @@ func (c *Client) CreateProject(ctx context.Context, files []string, sourceType, 
 	}
 	if folderID != "" {
 		args = append(args, "--folder-id", folderID)
+	}
+	for _, tag := range tags {
+		args = append(args, "--tag", tag)
 	}
 	output, err := c.runWithTimeout(ctx, 5*time.Minute, args...)
 	if err != nil {

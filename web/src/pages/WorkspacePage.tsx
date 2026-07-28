@@ -75,15 +75,40 @@ export default function WorkspacePage() {
     }
   }
 
+  const [sortBy, setSortBy] = useState<'name' | 'updated' | 'type' | 'solver'>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [filterType, setFilterType] = useState('all')
+
   const filteredProjects = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    if (!normalized) return projects
-    return projects.filter((project) =>
-      project.name.toLowerCase().includes(normalized) ||
-      project.root_item_type.toLowerCase().includes(normalized) ||
-      project.solver_version.toLowerCase().includes(normalized)
-    )
-  }, [projects, query])
+    let result = projects
+    if (normalized) {
+      result = result.filter((project) =>
+        project.name.toLowerCase().includes(normalized) ||
+        project.root_item_type.toLowerCase().includes(normalized) ||
+        project.solver_version.toLowerCase().includes(normalized)
+      )
+    }
+    if (filterType !== 'all') {
+      result = result.filter((project) => project.root_item_type === filterType)
+    }
+    result = [...result].sort((a, b) => {
+      let cmp = 0
+      switch (sortBy) {
+        case 'name': cmp = a.name.localeCompare(b.name); break
+        case 'updated': cmp = (b.created_at || '').localeCompare(a.created_at || ''); break
+        case 'type': cmp = a.root_item_type.localeCompare(b.root_item_type); break
+        case 'solver': cmp = a.solver_version.localeCompare(b.solver_version); break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return result
+  }, [projects, query, filterType, sortBy, sortDir])
+
+  const toggleSort = (col: typeof sortBy) => {
+    if (sortBy === col) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('asc') }
+  }
 
   return (
     <div className={`product-page ${chatOpen ? 'chat-visible' : ''}`}>
@@ -91,7 +116,7 @@ export default function WorkspacePage() {
       <aside className="workspace-sidebar">
         <div className="sidebar-heading">
           <div><span className="eyebrow">FLOW360</span><h2>Workspace</h2></div>
-          <button className="icon-button" onClick={loadFolders} disabled={foldersLoading} aria-label="刷新文件夹">
+          <button className="icon-button" onClick={loadFolders} disabled={foldersLoading} aria-label="Refresh folders">
             <RefreshCw size={15} className={foldersLoading ? 'spin' : ''} />
           </button>
         </div>
@@ -140,6 +165,27 @@ export default function WorkspacePage() {
               <Search size={15} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…" />
             </label>
+            <label className="toolbar-filter">
+              Type:
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                <option value="all">All</option>
+                <option value="Geometry">Geometry</option>
+                <option value="SurfaceMesh">Surface Mesh</option>
+                <option value="VolumeMesh">Volume Mesh</option>
+              </select>
+            </label>
+            <label className="toolbar-filter">
+              Sort:
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+                <option value="name">Name</option>
+                <option value="updated">Created</option>
+                <option value="type">Type</option>
+                <option value="solver">Solver</option>
+              </select>
+            </label>
+            <button className="toolbar-refresh" onClick={() => setSortDir((d) => d === 'asc' ? 'desc' : 'asc')} aria-label="Toggle sort direction">
+              {sortDir === 'asc' ? '↑' : '↓'}
+            </button>
             <span>{filteredProjects.length} projects</span>
             <button
               className="toolbar-refresh"

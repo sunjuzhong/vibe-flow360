@@ -1,5 +1,5 @@
 import { Activity, Box, Boxes, ChevronDown, ScanLine, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectItem, ResourceNode } from '../api/client'
 
 export function ResourceIcon({ type, size = 15 }: { type: string; size?: number }) {
@@ -9,6 +9,15 @@ export function ResourceIcon({ type, size = 15 }: { type: string; size?: number 
   return <Activity size={size} />
 }
 
+function findAncestors(node: ResourceNode, targetId: string, path: string[] = []): string[] | null {
+  if (node.id === targetId) return path
+  for (const child of node.children) {
+    const result = findAncestors(child, targetId, [...path, node.id])
+    if (result) return result
+  }
+  return null
+}
+
 function TreeBranch({
   node,
   depth,
@@ -16,6 +25,7 @@ function TreeBranch({
   expanded,
   onToggle,
   onSelect,
+  onRef,
 }: {
   node: ResourceNode
   depth: number
@@ -23,17 +33,31 @@ function TreeBranch({
   expanded: Set<string>
   onToggle: (id: string) => void
   onSelect: (node: ResourceNode) => void
+  onRef: (id: string, el: HTMLDivElement | null) => void
 }) {
   const hasChildren = Boolean(node.children?.length)
   const isExpanded = expanded.has(node.id)
+  const lineRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    onRef(node.id, lineRef.current)
+    return () => onRef(node.id, null)
+  }, [node.id, onRef])
+
+  const isSelected = selected === node.id
+
   return (
     <div>
-      <div className={`resource-tree-line ${selected === node.id ? 'selected' : ''}`} style={{ paddingLeft: 8 + depth * 14 }}>
+      <div
+        ref={lineRef}
+        className={`resource-tree-line ${isSelected ? 'selected' : ''}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+      >
         {hasChildren ? (
           <button
             className={`resource-expand ${isExpanded ? 'expanded' : ''}`}
             onClick={() => onToggle(node.id)}
-            aria-label={`${isExpanded ? '收起' : '展开'} ${node.name}`}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`}
           >
             <ChevronDown size={12} />
           </button>
@@ -53,6 +77,7 @@ function TreeBranch({
           expanded={expanded}
           onToggle={onToggle}
           onSelect={onSelect}
+          onRef={onRef}
         />
       ))}
     </div>
@@ -72,6 +97,38 @@ export default function ResourceTree({
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set([root.id]))
   const [query, setQuery] = useState('')
+  const lineRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  const setLineRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) lineRefs.current.set(id, el)
+    else lineRefs.current.delete(id)
+  }, [])
+
+  useEffect(() => {
+    const ancestors = findAncestors(root, selected)
+    if (ancestors) {
+      setExpanded((prev) => {
+        const next = new Set(prev)
+        ancestors.forEach((id) => next.add(id))
+        next.add(root.id)
+        return next
+      })
+    }
+  }, [root, selected])
+
+  useEffect(() => {
+    if (query.trim()) return
+    const el = lineRefs.current.get(selected)
+    if (el && scrollContainerRef.current) {
+      const container = scrollContainerRef.current
+      const elRect = el.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const offset = elRect.top - containerRect.top - container.clientHeight / 2 + el.clientHeight / 2
+      container.scrollBy({ top: offset, behavior: 'smooth' })
+    }
+  }, [selected, query])
+
   const matches = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     if (!normalized) return []
@@ -97,7 +154,7 @@ export default function ResourceTree({
         <Search size={14} />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter resources…" />
       </label>
-      <div className="resource-tree-scroll">
+      <div ref={scrollContainerRef} className="resource-tree-scroll">
         {query.trim() ? (
           matches.length ? matches.map((item) => (
             <button
@@ -117,6 +174,7 @@ export default function ResourceTree({
             expanded={expanded}
             onToggle={toggle}
             onSelect={onSelect}
+            onRef={setLineRef}
           />
         )}
       </div>

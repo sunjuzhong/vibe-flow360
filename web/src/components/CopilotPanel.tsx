@@ -65,7 +65,7 @@ export default function CopilotPanel({
     } catch (error) {
       setMessages((current) => current.map((message, index) =>
         index === current.length - 1
-          ? { role: 'assistant', content: `无法完成请求：${String(error)}`, error: true }
+          ? { role: 'assistant', content: `Request failed: ${String(error)}`, error: true }
           : message
       ))
     } finally {
@@ -86,11 +86,15 @@ export default function CopilotPanel({
   }
 
   return (
-    <aside className={`copilot-panel ${open ? 'open' : ''}`}>
+    <aside
+      className={`copilot-panel ${open ? 'open' : ''}`}
+      aria-hidden={!open}
+      inert={!open}
+    >
       <div className="copilot-header">
         <span className="ai-avatar"><Sparkles size={17} /></span>
         <div><strong>Simulation Copilot</strong><span>{agent?.mode === 'ai' ? agent.model : 'Local planning mode'}</span></div>
-        <button className="icon-button" onClick={onClose} aria-label="关闭 AI 对话"><X size={18} /></button>
+        <button className="icon-button" onClick={onClose} aria-label="Close AI assistant"><X size={18} /></button>
       </div>
       <div className="copilot-context"><MessageSquareText size={14} /><span>{contextLabel}</span></div>
       <div className="copilot-messages">
