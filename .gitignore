@@ -5,3 +5,8 @@ web/dist/
 internal/server/dist/
 .env
 .vibesim/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

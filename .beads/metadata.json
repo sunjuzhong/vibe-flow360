@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "flow360_cli",
+  "project_id": "8be269de-8b98-4eb4-a6a6-3cf9f4545da0"
+}
