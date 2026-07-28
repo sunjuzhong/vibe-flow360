@@ -1,8 +1,8 @@
 package imports
 
 import (
-	"crypto/sha256"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,17 +18,17 @@ import (
 )
 
 const (
-	MaxFileSizeDefault   int64         = 2 * 1024 * 1024 * 1024 // 2 GB per file
-	MaxTotalSizeDefault  int64         = 5 * 1024 * 1024 * 1024 // 5 GB total
+	MaxFileSizeDefault  int64         = 2 * 1024 * 1024 * 1024 // 2 GB per file
+	MaxTotalSizeDefault int64         = 5 * 1024 * 1024 * 1024 // 5 GB total
 	MaxFileCountDefault               = 20
-	DefaultCleanupAge    time.Duration = 24 * time.Hour
+	DefaultCleanupAge   time.Duration = 24 * time.Hour
 )
 
 type FileInfo struct {
-	Name     string `json:"name"`
-	SizeBytes int64 `json:"size_bytes"`
-	Hash     string `json:"hash"`
-	MimeType string `json:"mime_type"`
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"size_bytes"`
+	Hash      string `json:"hash"`
+	MimeType  string `json:"mime_type"`
 }
 
 type Plan struct {
@@ -53,11 +53,11 @@ type Plan struct {
 }
 
 type Store struct {
-	dir               string
-	maxFileSize       int64
-	maxTotalSize      int64
-	maxFileCount      int
-	mu                sync.Mutex
+	dir          string
+	maxFileSize  int64
+	maxTotalSize int64
+	maxFileCount int
+	mu           sync.Mutex
 }
 
 func New(dir string) (*Store, error) {
@@ -418,15 +418,19 @@ func detectMIME(data []byte) string {
 		return "application/octet-stream"
 	}
 	switch {
-	case len(data) >= 8 && string(data[:8]) == "CGNS" || len(data) >= 4 && (string(data[:4]) == "CGNS" || string(data[:4]) == "ADF\0" || string(data[:4]) == "HDF5"):
+	case len(data) >= 4 && string(data[:4]) == "CGNS":
 		return "application/x-cgns"
+	case len(data) >= 4 && string(data[:4]) == "ADF\x00":
+		return "application/x-cgns"
+	case len(data) >= 4 && string(data[:4]) == "HDF5":
+		return "application/x-hdf5"
 	case len(data) >= 5 && (string(data[:5]) == "$CASE" || string(data[:5]) == "$DATA" || string(data[:5]) == "$GRID"):
 		return "text/ascii-nastran"
 	case len(data) >= 2 && (data[0] == 0x00 && data[1] == 0x00):
 		return "application/binary"
-	case len(data) >= 4 && string(data[:4]) == "VTK\0":
+	case len(data) >= 4 && string(data[:4]) == "VTK\x00":
 		return "application/x-vtk"
-	case len(data) >= 4 && (data[0] == 'P' && data[1] == 'F'):
+	case len(data) >= 2 && data[0] == 'P' && data[1] == 'F':
 		return "text/x-step"
 	default:
 		return "application/octet-stream"

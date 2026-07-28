@@ -147,10 +147,29 @@ export type SimulationPlan = {
 }
 
 export type ImportPlan = {
-  id: string; name: string; source_type: string; unit: string; workflow: string
-  solver_version?: string; folder_id?: string; tags?: string[]
-  files: string[]; size_bytes: number; status: string; command_preview: string[]
-  error?: string; result?: Record<string, unknown>
+  id: string
+  name: string
+  source_type: string
+  unit: string
+  unit_confirmed: boolean
+  workflow: string
+  solver_version?: string
+  folder_id?: string
+  tags?: string[]
+  files: ImportFileInfo[]
+  size_bytes: number
+  content_hash: string
+  status: string
+  command_preview: string[]
+  error?: string
+  result?: Record<string, unknown>
+}
+
+export type ImportFileInfo = {
+  name: string
+  size_bytes: number
+  hash: string
+  mime_type: string
 }
 
 async function json<T>(path: string): Promise<T> {
@@ -267,7 +286,18 @@ export const api = {
     if (!response.ok) throw new Error(body.error || response.statusText)
     return body as ImportPlan
   },
+  listImports: (folderId?: string) => {
+    const params = new URLSearchParams()
+    if (folderId) params.set('folder_id', folderId)
+    return json<ImportPlan[]>(`/api/imports${params.toString() ? `?${params.toString()}` : ''}`)
+  },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run`),
+  abortImport: async (id: string) => {
+    const response = await fetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || response.statusText)
+    return body
+  },
   agentState: () => json<AgentState>('/api/agent/state'),
 }

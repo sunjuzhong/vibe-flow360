@@ -109,7 +109,7 @@ export default function ResourceDetailPanel({
   const [resultError, setResultError] = useState('')
   const [resultAction, setResultAction] = useState<{ path: string; kind: 'preview' | 'download' } | null>(null)
   const previewOpen = previewResult !== null
-  const previewRef = useFocusTrap(previewOpen, () => setPreviewResult(null), 'button.icon-button')
+  const previewRef = useFocusTrap<HTMLDivElement>(previewOpen, () => setPreviewResult(null), 'button.icon-button')
 
   const tabs = useMemo(() => {
     const next = [...baseTabs]

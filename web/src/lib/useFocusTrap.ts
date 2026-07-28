@@ -8,12 +8,12 @@ import { useEffect, useRef } from 'react'
  * wire refs for every button/input inside the dialog. Safe to call on an
  * element that contains no focusable children — it just becomes inert.
  */
-export function useFocusTrap(
+export function useFocusTrap<T extends HTMLElement>(
   open: boolean,
   onClose: () => void,
   autoFocusSelector?: string,
-): React.RefObject<HTMLDivElement | null> {
-  const scopeRef = useRef<HTMLDivElement | null>(null)
+): React.RefObject<T | null> {
+  const scopeRef = useRef<T | null>(null)
   const previouslyFocusedRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {

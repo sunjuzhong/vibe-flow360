@@ -45,7 +45,7 @@ export default function ResourceTree({
   const nodeIndex = useMemo(() => buildNodeIndex(root), [root])
   const descendantCounts = useMemo(() => buildDescendantCount(root), [root])
 
-  const setLineRef = useCallback((id: string, el: HTMLDivElement | null) => {
+  const setLineRef = useCallback((id: string, el: HTMLElement | null) => {
     if (el) lineRefs.current.set(id, el)
     else lineRefs.current.delete(id)
   }, [])

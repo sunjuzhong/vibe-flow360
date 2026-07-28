@@ -72,7 +72,29 @@ func New() *Server {
 		cache:   cacheStore,
 	}
 	app.routes()
+
+	go app.startImportCleanupLoop()
+
 	return app
+}
+
+func (s *Server) startImportCleanupLoop() {
+	cleanup := func() {
+		removed, err := s.imports.Cleanup(importplans.DefaultCleanupAge)
+		if err != nil {
+			log.Printf("Import cleanup error: %v", err)
+		} else if removed > 0 {
+			log.Printf("Cleaned up %d expired import staging directories", removed)
+		}
+	}
+
+	cleanup()
+
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		cleanup()
+	}
 }
 
 func (s *Server) Run(addr string) error {
@@ -138,27 +160,31 @@ func (s *Server) routes() {
 }
 
 func (s *Server) stageImport(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<30)
-	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or oversized upload"})
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<30)
+
+	sourceType := strings.TrimSpace(c.Query("source_type"))
+	if sourceType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source_type query parameter is required"})
 		return
 	}
-	sourceType := strings.TrimSpace(c.PostForm("source_type"))
-	if sourceType != "geometry" && sourceType != "surface-mesh" && sourceType != "volume-mesh" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported source type"})
-		return
-	}
-	name := strings.TrimSpace(c.PostForm("name"))
+
+	name := strings.TrimSpace(c.Query("name"))
 	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "project name is required"})
 		return
 	}
-	files := c.Request.MultipartForm.File["files"]
-	if len(files) == 0 || len(files) > 20 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "choose between 1 and 20 files"})
+
+	unit := strings.TrimSpace(c.DefaultQuery("unit", "m"))
+	workflow := strings.TrimSpace(c.DefaultQuery("workflow", ""))
+	solverVersion := strings.TrimSpace(c.DefaultQuery("solver_version", ""))
+	folderID := strings.TrimSpace(c.DefaultQuery("folder_id", ""))
+	rawTags := strings.TrimSpace(c.DefaultQuery("tags", ""))
+
+	if sourceType != "geometry" && sourceType != "surface-mesh" && sourceType != "volume-mesh" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported source type"})
 		return
 	}
-	rawTags := strings.TrimSpace(c.PostForm("tags"))
+
 	var tags []string
 	if rawTags != "" {
 		for _, t := range strings.Split(rawTags, ",") {
@@ -168,7 +194,18 @@ func (s *Server) stageImport(c *gin.Context) {
 			}
 		}
 	}
-	plan := importplans.Plan{Name: name, SourceType: sourceType, Unit: strings.TrimSpace(c.PostForm("unit")), Workflow: strings.TrimSpace(c.PostForm("workflow")), SolverVersion: strings.TrimSpace(c.PostForm("solver_version")), FolderID: strings.TrimSpace(c.PostForm("folder_id")), Tags: tags}
+
+	plan := importplans.Plan{
+		Name:          name,
+		SourceType:    sourceType,
+		Unit:          unit,
+		UnitConfirmed: sourceType != "geometry",
+		Workflow:      workflow,
+		SolverVersion: solverVersion,
+		FolderID:      folderID,
+		Tags:          tags,
+	}
+
 	if plan.Unit == "" {
 		plan.Unit = "m"
 	}
@@ -177,23 +214,54 @@ func (s *Server) stageImport(c *gin.Context) {
 	} else if sourceType != "geometry" {
 		plan.Workflow = ""
 	}
-	for _, file := range files {
-		clean := filepath.Base(file.Filename)
-		if clean == "." || clean == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
-			return
-		}
-		plan.Files = append(plan.Files, clean)
-		plan.SizeBytes += file.Size
+
+	reader, err := c.Request.MultipartReader()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart request"})
+		return
 	}
+
+	created, _, err := s.imports.Create(plan)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not stage import"})
+		return
+	}
+
 	allowedExtensions := map[string][]string{
 		"geometry":     {".step", ".stp", ".igs", ".iges", ".brep", ".cax", ".catpart", ".catproduct"},
 		"surface-mesh": {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
 		"volume-mesh":  {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
 	}
 	allowed := allowedExtensions[sourceType]
-	for _, file := range files {
-		ext := strings.ToLower(filepath.Ext(file.Filename))
+
+	var files []importplans.FileInfo
+	var totalSize int64
+	consecutiveErrors := 0
+
+	for {
+		part, partErr := reader.NextPart()
+		if partErr == io.EOF {
+			break
+		}
+		if partErr != nil {
+			consecutiveErrors++
+			if consecutiveErrors > 3 {
+				_ = s.imports.Abort(created.ID)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "upload stream error"})
+				return
+			}
+			continue
+		}
+
+		if part.FileName() == "" {
+			part.Close()
+			continue
+		}
+
+		consecutiveErrors = 0
+
+		filename := part.FileName()
+		ext := strings.ToLower(filepath.Ext(filename))
 		found := false
 		for _, allowedExt := range allowed {
 			if ext == allowedExt {
@@ -202,54 +270,77 @@ func (s *Server) stageImport(c *gin.Context) {
 			}
 		}
 		if !found {
+			part.Close()
+			_ = s.imports.Abort(created.ID)
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unsupported file extension %q for %s import (allowed: %s)", ext, sourceType, strings.Join(allowed, ", "))})
+			return
+		}
+
+		if len(files) >= 20 {
+			part.Close()
+			_ = s.imports.Abort(created.ID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "maximum file count exceeded (20)"})
+			return
+		}
+
+		fileInfo, addErr := s.imports.AddFile(created.ID, filename, part)
+		part.Close()
+		if addErr != nil {
+			_ = s.imports.Abort(created.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": addErr.Error()})
+			return
+		}
+
+		files = append(files, fileInfo)
+		totalSize += fileInfo.SizeBytes
+
+		if totalSize > importplans.MaxTotalSizeDefault {
+			_ = s.imports.Abort(created.ID)
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "total upload exceeds maximum size"})
 			return
 		}
 	}
 
-	plan.Command = []string{"flow360", "project", "create", "<staged-files>", "--from", sourceType, "--name", name, "--unit", plan.Unit}
-	if sourceType == "geometry" && plan.Workflow != "" {
-		plan.Command = append(plan.Command, "--workflow", plan.Workflow)
-	}
-	if plan.SolverVersion != "" {
-		plan.Command = append(plan.Command, "--solver-version", plan.SolverVersion)
-	}
-	if plan.FolderID != "" {
-		plan.Command = append(plan.Command, "--folder-id", plan.FolderID)
-	}
-	for _, tag := range plan.Tags {
-		plan.Command = append(plan.Command, "--tag", tag)
-	}
-	created, dir, err := s.imports.Create(plan)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not stage import"})
+	if len(files) == 0 {
+		_ = s.imports.Abort(created.ID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no files uploaded"})
 		return
 	}
-	for index, header := range files {
-		input, openErr := header.Open()
-		if openErr != nil {
-			_ = s.imports.Abort(created.ID)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "could not read upload"})
-			return
-		}
-		targetName := created.Files[index]
-		output, createErr := os.OpenFile(filepath.Join(dir, "files", targetName), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if createErr != nil {
-			input.Close()
-			_ = s.imports.Abort(created.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist upload"})
-			return
-		}
-		_, copyErr := io.Copy(output, input)
-		output.Close()
-		input.Close()
-		if copyErr != nil {
-			_ = s.imports.Abort(created.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist upload"})
-			return
-		}
+
+	command := []string{"flow360", "project", "create", "<staged-files>", "--from", sourceType, "--name", name, "--unit", plan.Unit}
+	if sourceType == "geometry" && plan.Workflow != "" {
+		command = append(command, "--workflow", plan.Workflow)
 	}
-	c.JSON(http.StatusCreated, created)
+	if plan.SolverVersion != "" {
+		command = append(command, "--solver-version", plan.SolverVersion)
+	}
+	if plan.FolderID != "" {
+		command = append(command, "--folder-id", plan.FolderID)
+	}
+	for _, tag := range plan.Tags {
+		command = append(command, "--tag", tag)
+	}
+
+	finalized, err := s.imports.FinalizePlan(created.ID, files, totalSize, command)
+	if err != nil {
+		_ = s.imports.Abort(created.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, finalized)
+}
+
+func (s *Server) listImports(c *gin.Context) {
+	folderID := strings.TrimSpace(c.Query("folder_id"))
+	statusFilter := strings.TrimSpace(c.Query("status"))
+
+	plans, err := s.imports.List(folderID, statusFilter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, plans)
 }
 
 func (s *Server) getImport(c *gin.Context) {
@@ -266,6 +357,9 @@ func (s *Server) approveImport(c *gin.Context) {
 		if plan.Status != "draft" {
 			return fmt.Errorf("only a draft import can be approved")
 		}
+		if plan.SourceType == "geometry" && !plan.UnitConfirmed {
+			return fmt.Errorf("geometry imports require unit confirmation before approval")
+		}
 		plan.Status = "approved"
 		return nil
 	})
@@ -281,6 +375,9 @@ func (s *Server) runImport(c *gin.Context) {
 		if plan.Status != "approved" && plan.Status != "failed" {
 			return fmt.Errorf("import must be approved before execution")
 		}
+		if plan.SourceType == "geometry" && !plan.UnitConfirmed {
+			return fmt.Errorf("geometry imports require unit confirmation before execution")
+		}
 		plan.Status = "running"
 		plan.Error = ""
 		return nil
@@ -289,7 +386,30 @@ func (s *Server) runImport(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	result, runErr := s.flow360.CreateProject(c.Request.Context(), s.imports.FilePaths(plan), plan.SourceType, plan.Name, plan.Unit, plan.Workflow, plan.SolverVersion, plan.FolderID, plan.Tags)
+
+	if plan.ContentHash != "" {
+		existing, hashErr := s.imports.FindByContentHash(plan.ContentHash)
+		if hashErr == nil && existing.ID != plan.ID {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":           "identical import already submitted",
+				"existing_import": existing,
+			})
+			return
+		}
+	}
+
+	result, runErr := s.flow360.CreateProject(
+		c.Request.Context(),
+		s.imports.FilePaths(plan),
+		plan.SourceType,
+		plan.Name,
+		plan.Unit,
+		plan.Workflow,
+		plan.SolverVersion,
+		plan.FolderID,
+		plan.Tags,
+	)
+
 	plan, _ = s.imports.Update(plan.ID, func(plan *importplans.Plan) error {
 		if runErr != nil {
 			plan.Status = "failed"
@@ -300,12 +420,23 @@ func (s *Server) runImport(c *gin.Context) {
 		}
 		return nil
 	})
+
 	if runErr != nil {
 		log.Printf("Flow360 project import failed: %v", runErr)
 		c.JSON(http.StatusBadGateway, plan)
 		return
 	}
+
 	c.JSON(http.StatusOK, plan)
+}
+
+func (s *Server) abortImport(c *gin.Context) {
+	err := s.imports.Abort(c.Param("import_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "aborted"})
 }
 
 type createPlanRequest struct {
