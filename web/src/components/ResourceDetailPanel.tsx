@@ -11,8 +11,9 @@ import {
   ScrollText,
   GitCompare,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ResourceDetail } from '../api/client'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 type Tab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
 
@@ -107,6 +108,8 @@ export default function ResourceDetailPanel({
   const [previewResult, setPreviewResult] = useState<{ path: string; content: string } | null>(null)
   const [resultError, setResultError] = useState('')
   const [resultAction, setResultAction] = useState<{ path: string; kind: 'preview' | 'download' } | null>(null)
+  const previewOpen = previewResult !== null
+  const previewRef = useFocusTrap(previewOpen, () => setPreviewResult(null), 'button.icon-button')
 
   const tabs = useMemo(() => {
     const next = [...baseTabs]
@@ -192,9 +195,34 @@ export default function ResourceDetailPanel({
           {cachedAt && <span>Saved {new Date(cachedAt).toLocaleString()}</span>}
         </div>
       )}
-      <nav className="resource-tabs" aria-label="Resource details">
+      <nav className="resource-tabs" aria-label="Resource details" role="tablist">
         {tabs.map(({ id, label, icon: Icon, disabled, badge }) => (
-          <button className={`${tab === id ? 'active' : ''} ${disabled ? 'disabled' : ''}`} key={id} onClick={() => !disabled && setTab(id)} disabled={disabled} aria-disabled={disabled}>
+          <button
+            className={`${tab === id ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
+            key={id}
+            onClick={() => !disabled && setTab(id)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault()
+                const direction = event.key === 'ArrowRight' ? 1 : -1
+                const index = tabs.findIndex((t) => t.id === id)
+                let next = index
+                for (let i = 0; i < tabs.length; i++) {
+                  next = (next + direction + tabs.length) % tabs.length
+                  if (!tabs[next].disabled) break
+                }
+                const nextId = tabs[next].id
+                const nextEl = (event.currentTarget.parentElement?.children[next] as HTMLElement | undefined)
+                nextEl?.focus()
+                setTab(nextId)
+              }
+            }}
+            disabled={disabled}
+            aria-disabled={disabled}
+            role="tab"
+            aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
+          >
             <Icon size={14} /> {label}
             {id === 'results' && <span>{results.length}</span>}
             {badge && <em className="tab-badge">{badge}</em>}
@@ -255,10 +283,20 @@ export default function ResourceDetailPanel({
               </div>
             )}
             {previewResult && (
-              <div className="result-preview-modal" role="dialog" aria-label="Result preview">
+              <div
+                ref={previewRef}
+                className="result-preview-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Result preview"
+              >
                 <div className="result-preview-header">
                   <strong>{previewResult.path}</strong>
-                  <button className="icon-button" onClick={() => setPreviewResult(null)} aria-label="Close preview">×</button>
+                  <button
+                    className="icon-button"
+                    onClick={() => setPreviewResult(null)}
+                    aria-label="Close preview"
+                  >×</button>
                 </div>
                 <pre className="result-preview-content">{previewResult.content}</pre>
               </div>

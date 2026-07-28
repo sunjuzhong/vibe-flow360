@@ -918,6 +918,71 @@ button { color: inherit; }
 .resource-search-result strong { font-size: 8px; }.resource-search-result small { margin-top: 2px; color: #92968d; font-family: 'DM Mono'; font-size: 6px; }
 .resource-tree-empty { padding: 20px 10px; color: #94988f; font-size: 9px; text-align: center; }
 
+/* lf5.10: resource tree toolbar for type filters and view modes */
+.resource-tree-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 6px;
+  border-bottom: 1px solid #e4e5dd;
+}
+.resource-type-filters { display: flex; flex-wrap: wrap; gap: 4px; }
+.resource-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid #d5d7ce;
+  border-radius: 999px;
+  background: #fafaf7;
+  color: #6b7066;
+  font-size: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.resource-type-chip:hover { border-color: #a8bd6b; }
+.resource-type-chip.active { color: #4f6810; background: #eef4dc; border-color: #a8bd6b; }
+.resource-view-mode { display: inline-flex; border: 1px solid #d5d7ce; border-radius: 7px; overflow: hidden; }
+.resource-view-mode button {
+  padding: 4px 8px;
+  border: 0;
+  border-right: 1px solid #e4e5de;
+  background: #fafaf7;
+  color: #72776c;
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.resource-view-mode button:last-child { border-right: 0; }
+.resource-view-mode button.active { background: #282b25; color: #f4f6ed; }
+
+.resource-group { margin: 8px 0; }
+.resource-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 4px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: #54584e;
+  background: #eef4dc;
+  font-size: 9px;
+  font-weight: 700;
+}
+.resource-group-title span {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.55);
+  color: #6a7358;
+  font-family: 'DM Mono', monospace;
+  font-size: 7px;
+}
+
 .resource-workspace { min-width: 0; padding: 22px clamp(18px, 3vw, 40px) 45px; overflow-y: auto; background: #f6f6f1; }
 .resource-stage-strip { display: grid; grid-template-columns: repeat(4, 1fr); max-width: 620px; margin: 0 auto 24px; }
 .resource-stage-strip > div { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #a0a49b; }

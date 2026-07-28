@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type ProjectInfo, type ResourceNode, type SimulationPlan } from '../api/client'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
   Geometry: [
@@ -71,7 +72,9 @@ export default function PlanPanel({
   const [reviewed, setReviewed] = useState(false)
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [submittingAction, setSubmittingAction] = useState<'approve' | 'run' | 'compile' | null>(null)
   const [error, setError] = useState('')
+  const panelRef = useFocusTrap(open, onClose, 'input,textarea,select,button.primary,button.execute,button:not(.icon-button)')
 
   const loadPlans = useCallback(async () => {
     try {
@@ -103,6 +106,7 @@ export default function PlanPanel({
 
   const createPlan = async (event: FormEvent) => {
     event.preventDefault()
+    if (loading || submittingAction) return
     setError('')
     let parsedPatch: Record<string, unknown>
     try {
@@ -115,6 +119,7 @@ export default function PlanPanel({
       return
     }
     setLoading(true)
+    setSubmittingAction('compile')
     try {
       const plan = await api.createPlan({
         project_id: project.id,
@@ -134,12 +139,14 @@ export default function PlanPanel({
       setError(String(cause).replace('Error: ', ''))
     } finally {
       setLoading(false)
+      setSubmittingAction(null)
     }
   }
 
   const approve = async () => {
-    if (!selected || !reviewed) return
+    if (!selected || !reviewed || loading || submittingAction) return
     setLoading(true)
+    setSubmittingAction('approve')
     setError('')
     try {
       const plan = await api.approvePlan(selected.id)
@@ -149,13 +156,15 @@ export default function PlanPanel({
       setError(String(cause).replace('Error: ', ''))
     } finally {
       setLoading(false)
+      setSubmittingAction(null)
     }
   }
 
   const run = async () => {
-    if (!selected || !executeConfirmed) return
+    if (!selected || !executeConfirmed || loading || submittingAction) return
     if (!window.confirm(`Submit “${selected.name}” to Flow360? This may create billable cloud resources.`)) return
     setLoading(true)
+    setSubmittingAction('run')
     setError('')
     try {
       const plan = await api.runPlan(selected.id)
@@ -169,6 +178,7 @@ export default function PlanPanel({
       if (latest) setSelected(latest)
     } finally {
       setLoading(false)
+      setSubmittingAction(null)
     }
   }
 
@@ -176,7 +186,13 @@ export default function PlanPanel({
 
   return (
     <div className="plan-overlay" role="presentation">
-      <section className="plan-panel" role="dialog" aria-modal="true" aria-label="Simulation execution plan">
+      <section
+        ref={panelRef}
+        className="plan-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Simulation execution plan"
+      >
         <header className="plan-header">
           <span className="plan-header-icon"><GitPullRequestDraft size={18} /></span>
           <div><strong>Simulation plan</strong><span>{resource.type} · {resource.name}</span></div>
@@ -227,9 +243,15 @@ export default function PlanPanel({
                 </label>
                 {error && <div className="plan-error"><AlertCircle size={14} />{error}</div>}
                 <div className="plan-form-actions">
-                  <button type="button" onClick={onClose}>Cancel</button>
-                  <button className="primary" disabled={loading || !name.trim() || !intent.trim()}>
-                    {loading ? <RefreshCw size={14} className="spin" /> : <ShieldCheck size={14} />} Compile & validate
+                  <button type="button" onClick={onClose} disabled={loading || !!submittingAction}>Cancel</button>
+                  <button
+                    className="primary"
+                    disabled={loading || !!submittingAction || !name.trim() || !intent.trim()}
+                    type="submit"
+                  >
+                    {loading && submittingAction === 'compile'
+                      ? <RefreshCw size={14} className="spin" />
+                      : <ShieldCheck size={14} />} Compile & validate
                   </button>
                 </div>
               </form>
@@ -287,8 +309,14 @@ export default function PlanPanel({
                 {selected.status === 'draft' && (
                   <div className="approval-card">
                     <label><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the target, validation, and exact parameter diff.</span></label>
-                    <button className="primary" disabled={!reviewed || hasValidationError || loading} onClick={() => void approve()}>
-                      {loading ? <RefreshCw size={14} className="spin" /> : <Check size={14} />} Approve this exact plan
+                    <button
+                      className="primary"
+                      disabled={!reviewed || hasValidationError || loading || !!submittingAction}
+                      onClick={() => void approve()}
+                    >
+                      {loading && submittingAction === 'approve'
+                        ? <RefreshCw size={14} className="spin" />
+                        : <Check size={14} />} Approve this exact plan
                     </button>
                   </div>
                 )}
@@ -297,8 +325,14 @@ export default function PlanPanel({
                   <div className="execution-card">
                     <div><Play size={17} /><span><strong>Remote execution</strong><small>This calls Flow360 and may create billable cloud resources.</small></span></div>
                     <label><input type="checkbox" checked={executeConfirmed} onChange={(event) => setExecuteConfirmed(event.target.checked)} /><span>I understand this will submit the approved plan.</span></label>
-                    <button className="execute" disabled={!executeConfirmed || loading} onClick={() => void run()}>
-                      {loading ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Submit to Flow360
+                    <button
+                      className="execute"
+                      disabled={!executeConfirmed || loading || !!submittingAction}
+                      onClick={() => void run()}
+                    >
+                      {loading && submittingAction === 'run'
+                        ? <RefreshCw size={14} className="spin" />
+                        : <Play size={14} />} Submit to Flow360
                     </button>
                   </div>
                 )}

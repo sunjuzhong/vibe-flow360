@@ -3,6 +3,7 @@ import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api, type AgentState } from '../api/client'
 import { readSSE } from '../lib/sse'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 type Message = {
   role: 'user' | 'assistant'
@@ -28,6 +29,7 @@ export default function CopilotPanel({
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const panelRef = useFocusTrap(open, onClose, 'textarea')
 
   useEffect(() => {
     api.agentState().then(setAgent).catch(() => setAgent(null))
@@ -87,8 +89,12 @@ export default function CopilotPanel({
 
   return (
     <aside
+      ref={panelRef}
       className={`copilot-panel ${open ? 'open' : ''}`}
       aria-hidden={!open}
+      aria-modal={open}
+      aria-label="Simulation Copilot"
+      role="dialog"
       inert={!open}
     >
       <div className="copilot-header">

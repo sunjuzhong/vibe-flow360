@@ -101,9 +101,11 @@ func (s *Server) routes() {
 		api.POST("/plans/:plan_id/approve", s.approvePlan)
 		api.POST("/plans/:plan_id/run", s.runPlan)
 		api.POST("/imports", s.stageImport)
+		api.GET("/imports", s.listImports)
 		api.GET("/imports/:import_id", s.getImport)
 		api.POST("/imports/:import_id/approve", s.approveImport)
 		api.POST("/imports/:import_id/run", s.runImport)
+		api.DELETE("/imports/:import_id", s.abortImport)
 		api.GET("/agent/state", func(c *gin.Context) {
 			c.JSON(http.StatusOK, s.agent.State())
 		})
@@ -464,15 +466,20 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		if s.serveCachedJSON(c, "resource-detail", cacheKey) {
 			return
 		}
+		// No snapshot available — the caller cannot trust a partial payload.
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":         "Flow360 resource detail is unavailable",
+			"partial":       detail,
+			"operation_err": detail.Errors,
+		})
+		return
 	}
 	raw, err := json.Marshal(detail)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode resource detail"})
 		return
 	}
-	if len(detail.Errors) == 0 {
-		s.cacheLiveJSON("resource-detail", cacheKey, raw)
-	}
+	s.cacheLiveJSON("resource-detail", cacheKey, raw)
 	s.writeLiveJSON(c, raw)
 }
 
