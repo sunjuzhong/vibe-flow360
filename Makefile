@@ -1,4 +1,4 @@
-.PHONY: dev web server build test clean
+.PHONY: dev web server build test clean install
 
 web:
 	cd web && npm run build
@@ -13,6 +13,10 @@ dev:
 
 build: web
 	go build -buildvcs=false -o vibesim ./cmd/server
+
+install: build
+	install -d /Users/juzhongsun/.local/bin
+	install -m 755 vibesim /Users/juzhongsun/.local/bin/vibesim
 
 test:
 	go test ./...

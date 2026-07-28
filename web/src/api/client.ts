@@ -103,6 +103,12 @@ export type ResourceDetail = {
   errors?: Record<string, string>
 }
 
+export type Flow360DataResponse<T> = {
+  data: T
+  source: 'live' | 'cache'
+  cachedAt?: string
+}
+
 export type PlanValidation = {
   level: 'success' | 'warning' | 'error'
   field?: string
@@ -154,6 +160,18 @@ async function json<T>(path: string): Promise<T> {
   return body as T
 }
 
+async function flow360JSON<T>(path: string): Promise<Flow360DataResponse<T>> {
+  const response = await fetch(path)
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error || response.statusText)
+  const source = response.headers.get('X-VibeSim-Data-Source') === 'cache' ? 'cache' : 'live'
+  return {
+    data: body as T,
+    source,
+    cachedAt: response.headers.get('X-VibeSim-Cached-At') || undefined,
+  }
+}
+
 async function mutate<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -180,15 +198,15 @@ export const api = {
   projects: (folderId?: string) =>
     json<ProjectListResponse>(`/api/flow360/projects${folderId ? `?folder_id=${encodeURIComponent(folderId)}` : ''}`),
   folders: () => json<FolderTreeResponse>('/api/flow360/folders'),
-  projectInfo: (projectId: string) =>
-    json<ProjectInfo>(`/api/flow360/projects/${encodeURIComponent(projectId)}`),
-  projectTree: (projectId: string) =>
-    json<ProjectTreeResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/tree`),
-  projectItems: (projectId: string) =>
-    json<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items`),
-  resourceDetail: (resourceType: string, resourceId: string) =>
-    json<ResourceDetail>(
-      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`,
+  projectInfo: (projectId: string, cacheOnly = false) =>
+    flow360JSON<ProjectInfo>(`/api/flow360/projects/${encodeURIComponent(projectId)}${cacheOnly ? '?cache=only' : ''}`),
+  projectTree: (projectId: string, cacheOnly = false) =>
+    flow360JSON<ProjectTreeResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/tree${cacheOnly ? '?cache=only' : ''}`),
+  projectItems: (projectId: string, cacheOnly = false) =>
+    flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
+  resourceDetail: (resourceType: string, resourceId: string, cacheOnly = false) =>
+    flow360JSON<ResourceDetail>(
+      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${cacheOnly ? '?cache=only' : ''}`,
     ),
   resourceLogs: async (resourceType: string, resourceId: string, tail = 200) => {
     const response = await fetch(

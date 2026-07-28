@@ -25,6 +25,8 @@ type Props = {
   resourceType: string
   resourceId: string
   onRetry: () => void
+  dataSource?: 'live' | 'cache'
+  cachedAt?: string
 }
 
 const baseTabs: TabDef[] = [
@@ -92,6 +94,8 @@ export default function ResourceDetailPanel({
   resourceType,
   resourceId,
   onRetry,
+  dataSource = 'live',
+  cachedAt = '',
 }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
   const [logs, setLogs] = useState('')
@@ -182,6 +186,12 @@ export default function ResourceDetailPanel({
 
   return (
     <section className="resource-detail-card">
+      {dataSource === 'cache' && (
+        <div className="resource-cache-notice">
+          Cached resource snapshot
+          {cachedAt && <span>Saved {new Date(cachedAt).toLocaleString()}</span>}
+        </div>
+      )}
       <nav className="resource-tabs" aria-label="Resource details">
         {tabs.map(({ id, label, icon: Icon, disabled, badge }) => (
           <button className={`${tab === id ? 'active' : ''} ${disabled ? 'disabled' : ''}`} key={id} onClick={() => !disabled && setTab(id)} disabled={disabled} aria-disabled={disabled}>
@@ -203,7 +213,10 @@ export default function ResourceDetailPanel({
         {tab === 'overview' && (
           <div className="detail-overview">
             <div className="detail-section-heading">
-              <div><strong>Resource metadata</strong><span>Live data from Flow360</span></div>
+              <div>
+                <strong>Resource metadata</strong>
+                <span>{dataSource === 'cache' ? 'Go snapshot from local disk' : 'Live data from Flow360'}</span>
+              </div>
               <span className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>{resourceStatus(detail)}</span>
             </div>
             <dl className="detail-field-grid">

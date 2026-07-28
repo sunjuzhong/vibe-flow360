@@ -22,6 +22,7 @@ import (
 	"github.com/sjzsdu/vibesim/internal/flow360"
 	importplans "github.com/sjzsdu/vibesim/internal/imports"
 	"github.com/sjzsdu/vibesim/internal/plans"
+	"github.com/sjzsdu/vibesim/internal/projectcache"
 )
 
 //go:embed dist
@@ -33,6 +34,7 @@ type Server struct {
 	agent   *agent.Service
 	plans   *plans.Store
 	imports *importplans.Store
+	cache   *projectcache.Store
 }
 
 func New() *Server {
@@ -42,6 +44,7 @@ func New() *Server {
 	if dataDir == "" {
 		dataDir = ".vibesim"
 	}
+	flowClient := flow360.NewClient()
 	planStore, err := plans.NewStore(filepath.Join(dataDir, "plans"))
 	if err != nil {
 		panic(err)
@@ -50,13 +53,23 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	cacheStore, err := projectcache.New(filepath.Join(
+		dataDir,
+		"cache",
+		"flow360",
+		cacheNamespace(flowClient.Environment, flowClient.Profile),
+	))
+	if err != nil {
+		panic(err)
+	}
 
 	app := &Server{
 		router:  router,
-		flow360: flow360.NewClient(),
+		flow360: flowClient,
 		agent:   agent.NewService(),
 		plans:   planStore,
 		imports: importStore,
+		cache:   cacheStore,
 	}
 	app.routes()
 	return app
@@ -424,16 +437,43 @@ func (s *Server) runPlan(c *gin.Context) {
 }
 
 func (s *Server) flow360ResourceDetail(c *gin.Context) {
+	resourceType := c.Param("resource_type")
+	resourceID := c.Param("resource_id")
+	cacheKey := resourceType + "/" + resourceID
+	if strings.EqualFold(c.Query("cache"), "only") {
+		s.serveCachedJSON(c, "resource-detail", cacheKey)
+		return
+	}
 	detail, err := s.flow360.ResourceDetail(
 		c.Request.Context(),
-		c.Param("resource_type"),
-		c.Param("resource_id"),
+		resourceType,
+		resourceID,
 	)
 	if err != nil {
+		if s.serveCachedJSON(c, "resource-detail", cacheKey) {
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, detail)
+	// ResourceDetail is assembled from several Flow360 CLI calls. The client
+	// intentionally returns partial data with HTTP success when one or more of
+	// those calls fail, so treat that result as degraded: prefer the last
+	// complete snapshot and never overwrite it with partial data.
+	if len(detail.Errors) > 0 {
+		if s.serveCachedJSON(c, "resource-detail", cacheKey) {
+			return
+		}
+	}
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode resource detail"})
+		return
+	}
+	if len(detail.Errors) == 0 {
+		s.cacheLiveJSON("resource-detail", cacheKey, raw)
+	}
+	s.writeLiveJSON(c, raw)
 }
 
 func (s *Server) flow360ResourceLogs(c *gin.Context) {
@@ -516,19 +556,20 @@ func (s *Server) flow360Projects(c *gin.Context) {
 }
 
 func (s *Server) flow360ProjectInfo(c *gin.Context) {
-	s.flow360ProjectJSON(c, s.flow360.ProjectInfo)
+	s.flow360ProjectJSON(c, "project-info", s.flow360.ProjectInfo)
 }
 
 func (s *Server) flow360ProjectTree(c *gin.Context) {
-	s.flow360ProjectJSON(c, s.flow360.ProjectTree)
+	s.flow360ProjectJSON(c, "project-tree", s.flow360.ProjectTree)
 }
 
 func (s *Server) flow360ProjectItems(c *gin.Context) {
-	s.flow360ProjectJSON(c, s.flow360.ProjectItems)
+	s.flow360ProjectJSON(c, "project-items", s.flow360.ProjectItems)
 }
 
 func (s *Server) flow360ProjectJSON(
 	c *gin.Context,
+	kind string,
 	load func(context.Context, string) (json.RawMessage, error),
 ) {
 	projectID := strings.TrimSpace(c.Param("project_id"))
@@ -536,13 +577,72 @@ func (s *Server) flow360ProjectJSON(
 		c.JSON(http.StatusBadRequest, gin.H{"error": "project_id is required"})
 		return
 	}
+	if strings.EqualFold(c.Query("cache"), "only") {
+		s.serveCachedJSON(c, kind, projectID)
+		return
+	}
 	raw, err := load(c.Request.Context(), projectID)
 	if err != nil {
 		log.Printf("Flow360 project resource unavailable: %v", err)
+		if s.serveCachedJSON(c, kind, projectID) {
+			return
+		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Flow360 project resource is unavailable"})
 		return
 	}
+	s.cacheLiveJSON(kind, projectID, raw)
+	s.writeLiveJSON(c, raw)
+}
+
+func (s *Server) cacheLiveJSON(kind, key string, raw json.RawMessage) {
+	if _, err := s.cache.Put(kind, key, raw); err != nil {
+		log.Printf("Could not cache Flow360 %s %q: %v", kind, key, err)
+	}
+}
+
+func (s *Server) serveCachedJSON(c *gin.Context, kind, key string) bool {
+	entry, err := s.cache.Get(kind, key)
+	if err != nil {
+		if strings.EqualFold(c.Query("cache"), "only") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "local snapshot is unavailable"})
+			return true
+		}
+		return false
+	}
+	c.Header("X-VibeSim-Data-Source", "cache")
+	c.Header("X-VibeSim-Cached-At", entry.CachedAt.Format(time.RFC3339Nano))
+	c.Header("Warning", `110 - "Response is a cached Flow360 snapshot"`)
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", entry.Data)
+	return true
+}
+
+func (s *Server) writeLiveJSON(c *gin.Context, raw json.RawMessage) {
+	c.Header("X-VibeSim-Data-Source", "live")
+	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+func cacheNamespace(environment, profile string) string {
+	environment = strings.ToLower(strings.TrimSpace(environment))
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if environment == "" {
+		environment = "production"
+	}
+	if profile == "" {
+		profile = "default"
+	}
+	value := environment + "-" + profile
+	var result strings.Builder
+	for _, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z', char >= '0' && char <= '9', char == '-', char == '_':
+			result.WriteRune(char)
+		default:
+			result.WriteByte('-')
+		}
+	}
+	return strings.Trim(result.String(), "-")
 }
 
 func (s *Server) flow360Folders(c *gin.Context) {

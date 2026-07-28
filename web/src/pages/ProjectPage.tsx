@@ -19,9 +19,11 @@ import {
   type ResourceNode,
 } from '../api/client'
 import CopilotPanel from '../components/CopilotPanel'
+import GeometryWorkspace from '../components/GeometryWorkspace'
 import PlanPanel from '../components/PlanPanel'
 import ResourceDetailPanel, { resourceStatus } from '../components/ResourceDetailPanel'
 import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
+import SurfaceMeshWorkspace from '../components/SurfaceMeshWorkspace'
 import TopBar from '../components/TopBar'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
@@ -61,24 +63,63 @@ export default function ProjectPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
+  const [projectCachedAt, setProjectCachedAt] = useState('')
+  const [cacheWarning, setCacheWarning] = useState('')
+  const [detailDataSource, setDetailDataSource] = useState<'live' | 'cache'>('live')
+  const [detailCachedAt, setDetailCachedAt] = useState('')
 
   const loadProject = useCallback(async () => {
     setLoading(true)
     setError('')
+    setCacheWarning('')
+    let cachedLoaded = false
+    let cachedAt = ''
+    try {
+      const [cachedInfo, cachedTree, cachedItems] = await Promise.all([
+        api.projectInfo(projectId, true),
+        api.projectTree(projectId, true),
+        api.projectItems(projectId, true),
+      ])
+      setProject(cachedInfo.data)
+      setRoot(cachedTree.data.root)
+      setItems(cachedItems.data.items)
+      setProjectDataSource('cache')
+      cachedAt = cachedInfo.cachedAt || cachedTree.cachedAt || cachedItems.cachedAt || ''
+      setProjectCachedAt(cachedAt)
+      setLoading(false)
+      cachedLoaded = true
+      if (!resourceId) {
+        navigate(`/projects/${projectId}/resources/${cachedTree.data.root.id}`, { replace: true })
+      }
+    } catch {
+      // A cache miss is expected on the first visit.
+    }
     try {
       const [info, tree, itemList] = await Promise.all([
         api.projectInfo(projectId),
         api.projectTree(projectId),
         api.projectItems(projectId),
       ])
-      setProject(info)
-      setRoot(tree.root)
-      setItems(itemList.items)
+      setProject(info.data)
+      setRoot(tree.data.root)
+      setItems(itemList.data.items)
+      const cachedResponse = [info, tree, itemList].find((response) => response.source === 'cache')
+      setProjectDataSource(cachedResponse ? 'cache' : 'live')
+      setProjectCachedAt(cachedResponse?.cachedAt || '')
+      if (cachedResponse) {
+        setCacheWarning(`Live refresh failed. Showing the Go snapshot saved ${new Date(cachedResponse.cachedAt || cachedAt).toLocaleString()}.`)
+      }
       if (!resourceId) {
-        navigate(`/projects/${projectId}/resources/${tree.root.id}`, { replace: true })
+        navigate(`/projects/${projectId}/resources/${tree.data.root.id}`, { replace: true })
       }
     } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
+      const message = String(cause).replace('Error: ', '')
+      if (cachedLoaded) {
+        setCacheWarning(`Live refresh failed. Showing the Go snapshot saved ${new Date(cachedAt).toLocaleString()}.`)
+      } else {
+        setError(message)
+      }
     } finally {
       setLoading(false)
     }
@@ -122,23 +163,51 @@ export default function ProjectPage() {
 
   const selectedStage = Math.max(0, stages.indexOf(selected?.type ?? ''))
 
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async (cacheFirst = true) => {
     if (!selected) return
     setDetailLoading(true)
     setDetailError('')
     setDetail(null)
+    let cachedLoaded = false
+    if (cacheFirst) {
+      try {
+        const cached = await api.resourceDetail(selected.type, selected.id, true)
+        setDetail(cached.data)
+        setDetailLoading(false)
+        setDetailDataSource('cache')
+        setDetailCachedAt(cached.cachedAt || '')
+        cachedLoaded = true
+      } catch {
+        // A cache miss is expected on the first visit.
+      }
+    }
     try {
-      setDetail(await api.resourceDetail(selected.type, selected.id))
+      const response = await api.resourceDetail(selected.type, selected.id)
+      setDetail(response.data)
+      setDetailDataSource(response.source)
+      setDetailCachedAt(response.cachedAt || '')
     } catch (cause) {
-      setDetailError(String(cause).replace('Error: ', ''))
+      if (!cachedLoaded) {
+        setDetailError(String(cause).replace('Error: ', ''))
+      }
     } finally {
       setDetailLoading(false)
     }
-  }, [selected])
+  }, [projectId, selected])
 
   useEffect(() => {
     void loadDetail()
   }, [loadDetail])
+
+  useEffect(() => {
+    if (!selected || !detail) return
+    const status = resourceStatus(detail).toLowerCase()
+    if (['completed', 'processed', 'success', 'failed', 'error'].includes(status)) return
+    const timer = window.setInterval(() => {
+      void loadDetail(false)
+    }, 10_000)
+    return () => window.clearInterval(timer)
+  }, [detail, loadDetail, selected])
 
   return (
     <div className={`project-page ${chatOpen ? 'chat-visible' : ''}`}>
@@ -156,7 +225,14 @@ export default function ProjectPage() {
           <div>
             <p className="eyebrow">FLOW360 PROJECT</p>
             <h1>{project?.name || (loading ? 'Loading project…' : 'Project unavailable')}</h1>
-            {project && <p>{project.solver_version} · {items.length} resources · {project.id}</p>}
+            {project && (
+              <p className="project-source-line">
+                {project.solver_version} · {items.length} resources · {project.id}
+                <span className={`project-source-badge ${projectDataSource}`}>
+                  {projectDataSource === 'cache' ? `Cached · ${new Date(projectCachedAt).toLocaleString()}` : 'Live'}
+                </span>
+              </p>
+            )}
           </div>
           <div className="project-header-actions">
             <button onClick={() => void loadProject()} disabled={loading}>
@@ -184,6 +260,7 @@ export default function ProjectPage() {
           <Link to="/">Back to workspace</Link>
         </div>
       )}
+      {cacheWarning && <div className="project-cache-warning"><AlertCircle size={14} />{cacheWarning}</div>}
 
       {!loading && !error && project && root && selected && (
         <div className={`project-workbench ${sidebarOpen ? 'sidebar-open' : ''}`}>
@@ -216,13 +293,34 @@ export default function ProjectPage() {
               </div>
             </section>
 
+            {selected.type === 'Geometry' && (
+              <GeometryWorkspace
+                detail={detail}
+                onPlanSurfaceMesh={() => {
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
+              />
+            )}
+            {selected.type === 'SurfaceMesh' && (
+              <SurfaceMeshWorkspace
+                detail={detail}
+                onPlanVolumeMesh={() => {
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
+              />
+            )}
+
             <ResourceDetailPanel
               detail={detail}
               loading={detailLoading}
               error={detailError}
               resourceType={selected.type}
               resourceId={selected.id}
-              onRetry={() => void loadDetail()}
+              onRetry={() => void loadDetail(false)}
+              dataSource={detailDataSource}
+              cachedAt={detailCachedAt}
             />
           </main>
 
