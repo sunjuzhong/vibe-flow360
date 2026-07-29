@@ -8,6 +8,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -188,6 +189,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview-mesh", s.flow360ResourceMeshPreview)
+		api.GET("/flow360/resources/:resource_type/:resource_id/visualization/*asset_path", s.flow360ResourceVisualizationAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
 		api.POST("/flow360/compare", s.compareCases)
 		api.POST("/flow360/sweep", s.generateSweepPlan)
@@ -755,6 +757,21 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if resourceType == "Geometry" && s.mirror != nil {
+		manifest, manifestErr := s.mirror.GeometryVisualizationManifest(resourceID)
+		if manifestErr == nil {
+			assetURL := fmt.Sprintf(
+				"/api/flow360/resources/Geometry/%s/visualization/manifest.json",
+				resourceID,
+			)
+			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)
+			if previewErr == nil {
+				c.Header("Cache-Control", "private, max-age=60")
+				c.JSON(http.StatusOK, preview)
+				return
+			}
+		}
+	}
 
 	preview, err := s.flow360.ResourcePreviewManifest(
 		c.Request.Context(),
@@ -772,6 +789,36 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
+	resourceType := c.Param("resource_type")
+	resourceID := c.Param("resource_id")
+	if err := flow360.ValidateResourcePath(resourceType, resourceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if resourceType != "Geometry" || s.mirror == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "visualization asset is unavailable"})
+		return
+	}
+	relative := strings.TrimPrefix(c.Param("asset_path"), "/")
+	payload, err := s.mirror.GeometryVisualizationFile(resourceID, relative)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "visualization asset is unavailable"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	contentType := "application/octet-stream"
+	if relative == "manifest.json" {
+		contentType = "application/json; charset=utf-8"
+	}
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, contentType, payload)
 }
 
 func (s *Server) flow360CaseConvergence(c *gin.Context) {

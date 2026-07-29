@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { Flow360UVFLoader } from '../../lib/uvf-three'
 
 export type MeshGroupData = {
   id: string
@@ -53,7 +54,10 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
+  const assetDisposeRef = useRef<(() => void) | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
+  const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
+  const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
 
   const createScene = useCallback((container: HTMLDivElement) => {
     const scene = new THREE.Scene()
@@ -91,32 +95,60 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     return { scene, camera, renderer }
   }, [])
 
-  const updateGeometry = useCallback(async (manifest: ViewerManifest) => {
+  const updateGeometry = useCallback(async (
+    manifest: ViewerManifest,
+    signal: AbortSignal,
+    onProgress: (progress: number) => void,
+  ) => {
     const scene = sceneRef.current
     if (!scene) return
 
-    for (const [, mesh] of meshesRef.current) {
-      scene.remove(mesh)
-      mesh.geometry.dispose()
-    }
+    assetDisposeRef.current?.()
+    assetDisposeRef.current = null
     meshesRef.current.clear()
     if (assetRef.current) {
       scene.remove(assetRef.current)
       assetRef.current = null
     }
+    setAssetStats(null)
 
     if (!manifest.asset_url) return
-    const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
-    const root = gltf.scene
+    let root: THREE.Object3D
+    if (manifest.format === 'flow360-uvf') {
+      const asset = await new Flow360UVFLoader().load(manifest.asset_url, {
+        signal,
+        onProgress: ({ progress }) => onProgress(progress),
+      })
+      if (signal.aborted) {
+        asset.dispose()
+        return
+      }
+      root = asset.object
+      assetDisposeRef.current = asset.dispose
+      setAssetStats({ faces: asset.faces, edges: asset.edges })
+    } else {
+      const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
+      if (signal.aborted) {
+        disposeObject(gltf.scene)
+        return
+      }
+      root = gltf.scene
+      assetDisposeRef.current = () => disposeObject(root)
+    }
     const fallbackGroup = manifest.groups[0]
     root.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return
-      const group = manifest.groups.find((candidate) =>
-        object.name.toLowerCase().includes(candidate.name.toLowerCase()),
-      ) ?? fallbackGroup
+      const embeddedGroupID = String(object.userData.groupId ?? '')
+      const group = manifest.groups.find((candidate) => candidate.id === embeddedGroupID)
+        ?? manifest.groups.find((candidate) =>
+          object.name.toLowerCase().includes(candidate.name.toLowerCase()),
+        )
+        ?? fallbackGroup
       const groupId = group?.id ?? object.uuid
       object.userData.groupId = groupId
       if (group) {
+        const previous = Array.isArray(object.material) ? object.material : [object.material]
+        previous.forEach((material) => material.dispose())
         object.material = new THREE.MeshPhongMaterial({
           color: new THREE.Color(group.color),
           transparent: true,
@@ -178,6 +210,8 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       window.removeEventListener('resize', handleResize)
       renderer.dispose()
       controlsRef.current?.dispose()
+      assetDisposeRef.current?.()
+      assetDisposeRef.current = null
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement)
       }
@@ -186,8 +220,26 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
 
   useEffect(() => {
     if (manifest && state.status === 'ready') {
-      void updateGeometry(manifest)
+      const controller = new AbortController()
+      setAssetState({ status: 'loading', progress: 0 })
+      void updateGeometry(
+        manifest,
+        controller.signal,
+        (progress) => setAssetState({ status: 'loading', progress }),
+      )
+        .then(() => {
+          if (!controller.signal.aborted) setAssetState({ status: 'ready' })
+        })
+        .catch((cause) => {
+          if (controller.signal.aborted) return
+          setAssetState({
+            status: 'error',
+            message: cause instanceof Error ? cause.message : String(cause),
+          })
+        })
+      return () => controller.abort()
     }
+    setAssetState(state)
   }, [manifest, state.status, updateGeometry])
 
   useEffect(() => {
@@ -260,26 +312,15 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     }
   }
 
-  if (state.status === 'loading') {
-    return (
-      <div className="viewer-3d viewer-loading">
-        <div className="viewer-spinner" />
-        <p>Loading 3D preview... {Math.round(state.progress * 100)}%</p>
-      </div>
-    )
-  }
-
-  if (state.status === 'error') {
-    return (
-      <div className="viewer-3d viewer-error">
-        <span className="viewer-error-icon">⚠️</span>
-        <p>{state.message}</p>
-      </div>
-    )
-  }
+  const visibleState = state.status === 'ready' ? assetState : state
 
   return (
-    <div className="viewer-3d-container">
+    <div
+      className="viewer-3d-container"
+      data-viewer-format={manifest?.format ?? ''}
+      data-viewer-faces={assetStats?.faces ?? ''}
+      data-viewer-edges={assetStats?.edges ?? ''}
+    >
       <div
         ref={containerRef}
         className="viewer-3d"
@@ -290,6 +331,24 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
         aria-label="3D geometry viewer"
         tabIndex={0}
       />
+      {visibleState.status === 'loading' && (
+        <div className="viewer-overlay viewer-loading">
+          <div className="viewer-spinner" />
+          <p>Loading 3D preview... {Math.round(visibleState.progress * 100)}%</p>
+        </div>
+      )}
+      {visibleState.status === 'error' && (
+        <div className="viewer-overlay viewer-error">
+          <span className="viewer-error-icon">⚠️</span>
+          <p>{visibleState.message}</p>
+        </div>
+      )}
+      {assetStats && visibleState.status === 'ready' && (
+        <div className="viewer-asset-stats">
+          <span>{assetStats.faces} faces</span>
+          <span>{assetStats.edges} edges</span>
+        </div>
+      )}
       {manifest && (
         <div className="viewer-legend">
           <div className="viewer-legend-header">
@@ -322,4 +381,13 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       )}
     </div>
   )
+}
+
+function disposeObject(root: THREE.Object3D) {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Line)) return
+    object.geometry.dispose()
+    const materials = Array.isArray(object.material) ? object.material : [object.material]
+    materials.forEach((material) => material.dispose())
+  })
 }

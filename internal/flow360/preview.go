@@ -3,6 +3,7 @@ package flow360
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -38,6 +39,128 @@ type MeshGroup struct {
 	Visible   bool   `json:"visible"`
 	Triangles int    `json:"triangles,omitempty"`
 	Vertices  int    `json:"vertices,omitempty"`
+}
+
+type uvfEntry struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Properties   uvfProperties
+	Resources    uvfResources
+	Attributions struct {
+		Faces []string `json:"faces"`
+	} `json:"attributions"`
+}
+
+type uvfProperties struct {
+	BoundsMin       [3]float64 `json:"boundsMin"`
+	BoundsMax       [3]float64 `json:"boundsMax"`
+	BufferLocations struct {
+		Indices []struct {
+			StartIndex int `json:"startIndex"`
+			EndIndex   int `json:"endIndex"`
+		} `json:"indices"`
+	} `json:"bufferLocations"`
+}
+
+type uvfResources struct {
+	Buffers struct {
+		Type     string `json:"type"`
+		Default  int    `json:"default"`
+		Sections []struct {
+			Name   string `json:"name"`
+			Length int    `json:"length"`
+		} `json:"sections"`
+		Levels []struct {
+			Sections []struct {
+				Name   string `json:"name"`
+				Length int    `json:"length"`
+			} `json:"sections"`
+		} `json:"levels"`
+	} `json:"buffers"`
+}
+
+func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL string) (MeshPreview, error) {
+	if err := ValidateResourcePath("Geometry", resourceID); err != nil {
+		return MeshPreview{}, err
+	}
+	var entries []uvfEntry
+	if err := json.Unmarshal(manifest, &entries); err != nil {
+		return MeshPreview{}, errors.New("invalid Geometry UVF manifest")
+	}
+	preview := MeshPreview{
+		AssetURL: assetURL,
+		Format:   "flow360-uvf",
+		Groups:   []MeshGroup{},
+	}
+	groupIndex := 0
+	boundsSet := false
+	for _, entry := range entries {
+		switch entry.Type {
+		case "SolidGeometry":
+			if entry.Properties.BoundsMin != entry.Properties.BoundsMax {
+				if !boundsSet {
+					preview.BoundingBox.Min = entry.Properties.BoundsMin
+					preview.BoundingBox.Max = entry.Properties.BoundsMax
+					boundsSet = true
+				} else {
+					for index := 0; index < 3; index++ {
+						preview.BoundingBox.Min[index] = minFloat(preview.BoundingBox.Min[index], entry.Properties.BoundsMin[index])
+						preview.BoundingBox.Max[index] = maxFloat(preview.BoundingBox.Max[index], entry.Properties.BoundsMax[index])
+					}
+				}
+			}
+			sections := entry.Resources.Buffers.Sections
+			if entry.Resources.Buffers.Type == "lod" &&
+				entry.Resources.Buffers.Default >= 0 &&
+				entry.Resources.Buffers.Default < len(entry.Resources.Buffers.Levels) {
+				sections = entry.Resources.Buffers.Levels[entry.Resources.Buffers.Default].Sections
+			}
+			for _, section := range sections {
+				if section.Name == "position" {
+					preview.Vertices += section.Length / (4 * 3)
+				}
+			}
+		case "Face":
+			triangles := 0
+			for _, location := range entry.Properties.BufferLocations.Indices {
+				if location.EndIndex > location.StartIndex {
+					triangles += (location.EndIndex - location.StartIndex) / 3
+				}
+			}
+			preview.Elements += triangles
+			name := entry.Name
+			if strings.TrimSpace(name) == "" {
+				name = entry.ID
+			}
+			preview.Groups = append(preview.Groups, MeshGroup{
+				ID:        entry.ID,
+				Name:      name,
+				Color:     colorPalette[groupIndex%len(colorPalette)],
+				Visible:   true,
+				Triangles: triangles,
+			})
+			groupIndex++
+		}
+	}
+	if preview.AssetURL == "" || len(preview.Groups) == 0 || preview.Vertices == 0 {
+		return MeshPreview{}, errors.New("Geometry UVF manifest has no renderable faces")
+	}
+	return preview, nil
+}
+
+func minFloat(left, right float64) float64 {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxFloat(left, right float64) float64 {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func (c *Client) ResourcePreviewManifest(ctx context.Context, resourceType, resourceID string) (MeshPreview, error) {

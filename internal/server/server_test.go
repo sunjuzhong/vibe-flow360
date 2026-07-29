@@ -17,6 +17,7 @@ import (
 	"github.com/sjzsdu/vibesim/internal/flow360"
 	"github.com/sjzsdu/vibesim/internal/plans"
 	"github.com/sjzsdu/vibesim/internal/projectcache"
+	"github.com/sjzsdu/vibesim/internal/projectmirror"
 )
 
 func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
@@ -353,6 +354,102 @@ func TestResourceMeshPreviewRejectsUnsupportedType(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestGeometryMeshPreviewUsesLocalUVFManifest(t *testing.T) {
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage(`[
+		{
+			"id":"body-1",
+			"type":"SolidGeometry",
+			"properties":{"boundsMin":[-1,-1,-1],"boundsMax":[1,1,1]},
+			"resources":{"buffers":{"type":"buffers","path":"body.bin","sections":[
+				{"name":"position","length":36}
+			]}}
+		},
+		{
+			"id":"face-1",
+			"name":"Face 1",
+			"type":"Face",
+			"properties":{"bufferLocations":{"indices":[
+				{"startIndex":0,"endIndex":3}
+			]}}
+		}
+	]`)
+	if _, err := mirror.PutGeometryVisualization(
+		"prj-1",
+		"geo-1",
+		manifest,
+		map[string][]byte{"body.bin": make([]byte, 36)},
+	); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+		mirror:  mirror,
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "geo-1"},
+	}
+	app.flow360ResourceMeshPreview(context)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var preview flow360.MeshPreview
+	if err := json.Unmarshal(recorder.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.Format != "flow360-uvf" || len(preview.Groups) != 1 {
+		t.Fatalf("unexpected preview %#v", preview)
+	}
+}
+
+func TestGeometryVisualizationAssetServesOnlyManifestAndBins(t *testing.T) {
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mirror.PutGeometryVisualization(
+		"prj-1",
+		"geo-1",
+		json.RawMessage(`[{"type":"Face"}]`),
+		map[string][]byte{"nested/body.bin": {1, 2, 3}},
+	); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{mirror: mirror}
+	call := func(path string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/asset", nil)
+		context.Params = gin.Params{
+			{Key: "resource_type", Value: "Geometry"},
+			{Key: "resource_id", Value: "geo-1"},
+			{Key: "asset_path", Value: "/" + path},
+		}
+		app.flow360ResourceVisualizationAsset(context)
+		return recorder
+	}
+	if recorder := call("manifest.json"); recorder.Code != http.StatusOK ||
+		!strings.Contains(recorder.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("manifest response %d %#v", recorder.Code, recorder.Header())
+	}
+	if recorder := call("nested/body.bin"); recorder.Code != http.StatusOK ||
+		!bytes.Equal(recorder.Body.Bytes(), []byte{1, 2, 3}) {
+		t.Fatalf("bin response %d %v", recorder.Code, recorder.Body.Bytes())
+	}
+	for _, path := range []string{"../manifest.json", "detail.json", "/tmp/body.bin"} {
+		if recorder := call(path); recorder.Code == http.StatusOK {
+			t.Fatalf("unsafe path %q was served", path)
+		}
 	}
 }
 

@@ -22,6 +22,7 @@ type projectSyncClient interface {
 	ProjectTree(context.Context, string) (json.RawMessage, error)
 	ProjectItems(context.Context, string) (json.RawMessage, error)
 	ResourceDetail(context.Context, string, string) (flow360.ResourceDetail, error)
+	GeometryVisualization(context.Context, string) (flow360.GeometryVisualization, error)
 }
 
 type projectSyncItem struct {
@@ -200,8 +201,21 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 					err = fmt.Errorf("partial Flow360 detail: %s", strings.Join(keys, ", "))
 				}
 				var raw json.RawMessage
+				var visualization flow360.GeometryVisualization
 				if err == nil {
 					raw, err = json.Marshal(detail)
+				}
+				if err == nil && item.Type == "Geometry" {
+					visualization, err = client.GeometryVisualization(ctx, item.ID)
+				}
+				var artifacts map[string]projectmirror.ArtifactStatus
+				if err == nil && item.Type == "Geometry" {
+					artifacts, err = s.mirror.PutGeometryVisualization(
+						projectID,
+						item.ID,
+						visualization.Manifest,
+						visualization.Bins,
+					)
 				}
 				if err == nil {
 					err = s.mirror.PutResource(projectID, item.Type, item.ID, raw)
@@ -219,6 +233,7 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 					manifest.FailedResources++
 				} else {
 					status.Status = "completed"
+					status.Artifacts = artifacts
 					status.SyncedAt = time.Now().UTC()
 					manifest.SyncedResources++
 				}

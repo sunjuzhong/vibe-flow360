@@ -46,9 +46,10 @@ export default function GeometryWorkspace({
     detail ? 'Geometry' : null,
     resourceId ?? detail?.id ?? null,
   )
-  const unit = findFirst(detail?.info, new Set(['length_unit', 'lengthunit', 'unit']))
-    ?? findFirst(detail?.simulation_params, new Set(['length_unit', 'lengthunit']))
+  const unit = findFirst(detail?.info, new Set(['length_unit', 'lengthunit', 'project_length_unit', 'unit']))
+    ?? findFirst(detail?.simulation_params, new Set(['length_unit', 'lengthunit', 'project_length_unit']))
   const entityCount = findFirst(detail?.summary, new Set(['face_count', 'surface_count', 'entity_count', '_count']))
+    ?? manifest?.groups.length
   const status = resourceStatus(detail)
   const checks = [
     { label: 'Geometry processing is complete', ready: ['completed', 'processed', 'success'].includes(status.toLowerCase()) },

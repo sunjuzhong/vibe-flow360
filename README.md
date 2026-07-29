@@ -159,13 +159,19 @@ ID:
   tree.json
   items.json
   resources/<Geometry|SurfaceMesh|VolumeMesh|Case>/<resource-id>/detail.json
+  resources/Geometry/<geometry-id>/visualize/manifest/
+    manifest.json
+    <buffer>.bin
 ```
 
 Each resource detail contains `info`, `state`, `summary`, raw
-`simulation_params`, and—for Cases—the result artifact list. The default
-`metadata-only` policy deliberately does not download large CAD, mesh, surface,
-volume, or Case result binaries. Small result histories used by convergence
-analysis are downloaded separately under `.vibesim/cases/<case-id>/`.
+`simulation_params`, and—for Cases—the result artifact list. Geometry UVF
+tessellation manifests and their referenced `.bin` buffers are synchronized
+atomically for Three.js display. The
+`metadata+geometry-visualization` policy still deliberately excludes large CAD,
+mesh, surface, volume, and Case result archives. Small result histories used by
+convergence analysis are downloaded separately under
+`.vibesim/cases/<case-id>/`.
 
 ## Architecture
 

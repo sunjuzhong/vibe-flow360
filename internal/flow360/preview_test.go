@@ -164,3 +164,42 @@ func TestExtractAssetURLAcceptsOnlyHTTPSGLTF(t *testing.T) {
 		}
 	}
 }
+
+func TestGeometryUVFPreviewBuildsFaceGroupsAndBounds(t *testing.T) {
+	manifest := json.RawMessage(`[
+		{
+			"id":"body-1",
+			"type":"SolidGeometry",
+			"properties":{"boundsMin":[-2,-1,0],"boundsMax":[2,1,3]},
+			"resources":{"buffers":{"type":"buffers","sections":[
+				{"name":"position","length":144}
+			]}}
+		},
+		{
+			"id":"face-1",
+			"name":"Wing",
+			"type":"Face",
+			"properties":{"bufferLocations":{"indices":[
+				{"startIndex":0,"endIndex":6}
+			]}}
+		}
+	]`)
+	preview, err := GeometryUVFPreview(
+		"geo-1",
+		manifest,
+		"/api/flow360/resources/Geometry/geo-1/visualization/manifest.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Format != "flow360-uvf" || preview.Vertices != 12 || preview.Elements != 2 {
+		t.Fatalf("unexpected preview %#v", preview)
+	}
+	if preview.BoundingBox.Min != [3]float64{-2, -1, 0} ||
+		preview.BoundingBox.Max != [3]float64{2, 1, 3} {
+		t.Fatalf("unexpected bounds %#v", preview.BoundingBox)
+	}
+	if len(preview.Groups) != 1 || preview.Groups[0].ID != "face-1" || preview.Groups[0].Triangles != 2 {
+		t.Fatalf("unexpected groups %#v", preview.Groups)
+	}
+}

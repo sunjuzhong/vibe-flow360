@@ -136,6 +136,13 @@ export type ProjectSyncResource = {
   type: string
   status: 'pending' | 'syncing' | 'completed' | 'failed'
   error?: string
+  artifacts?: Record<string, {
+    path: string
+    local_path: string
+    size_bytes: number
+    status: string
+    synced_at: string
+  }>
   synced_at?: string
 }
 
@@ -144,7 +151,7 @@ export type ProjectSyncManifest = {
   project_id: string
   namespace: string
   local_path: string
-  artifact_policy: 'metadata-only'
+  artifact_policy: 'metadata-only' | 'metadata+geometry-visualization'
   status: 'syncing' | 'completed' | 'partial' | 'failed'
   total_resources: number
   synced_resources: number

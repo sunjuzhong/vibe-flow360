@@ -19,11 +19,24 @@ import (
 )
 
 type fakeProjectSyncClient struct {
-	mu       sync.Mutex
-	details  map[string]flow360.ResourceDetail
-	failures map[string]error
-	calls    map[string]int
-	delay    time.Duration
+	mu                   sync.Mutex
+	details              map[string]flow360.ResourceDetail
+	failures             map[string]error
+	visualizationFailure error
+	calls                map[string]int
+	delay                time.Duration
+}
+
+func (f *fakeProjectSyncClient) GeometryVisualization(context.Context, string) (flow360.GeometryVisualization, error) {
+	if f.visualizationFailure != nil {
+		return flow360.GeometryVisualization{}, f.visualizationFailure
+	}
+	return flow360.GeometryVisualization{
+		Manifest: json.RawMessage(`[
+			{"type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"body.bin"}}}
+		]`),
+		Bins: map[string][]byte{"body.bin": {1, 2, 3}},
+	}, nil
 }
 
 func (f *fakeProjectSyncClient) ProjectInfo(context.Context, string) (json.RawMessage, error) {
@@ -117,6 +130,8 @@ func TestSyncProjectWritesEveryResourceAndCompatibilityCache(t *testing.T) {
 		"tree.json",
 		"items.json",
 		filepath.Join("resources", "Geometry", "geo-1", "detail.json"),
+		filepath.Join("resources", "Geometry", "geo-1", "visualize", "manifest", "manifest.json"),
+		filepath.Join("resources", "Geometry", "geo-1", "visualize", "manifest", "body.bin"),
 		filepath.Join("resources", "Case", "case-1", "detail.json"),
 	} {
 		if _, err := os.Stat(filepath.Join(projectDir, relative)); err != nil {
@@ -125,6 +140,9 @@ func TestSyncProjectWritesEveryResourceAndCompatibilityCache(t *testing.T) {
 	}
 	if _, err := app.cache.Get("resource-detail", "Case/case-1"); err != nil {
 		t.Fatalf("compatibility cache is missing: %v", err)
+	}
+	if len(manifest.Resources["Geometry/geo-1"].Artifacts) != 2 {
+		t.Fatalf("Geometry artifacts were not recorded: %#v", manifest.Resources["Geometry/geo-1"])
 	}
 }
 
