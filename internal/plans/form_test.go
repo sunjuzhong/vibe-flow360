@@ -11,7 +11,7 @@ func TestValidateFormValuesSupportsSchemaDrivenTypes(t *testing.T) {
 		"type":"object",
 		"required":["length","enabled","mode","tags"],
 		"properties":{
-			"length":{"type":"quantity","value_schema":{"type":"number","exclusiveMinimum":0}},
+			"length":{"type":"quantity","unit_options":["m","mm"],"value_schema":{"type":"number","exclusiveMinimum":0}},
 			"enabled":{"type":"boolean"},
 			"mode":{"type":"enum","options":["steady","unsteady"]},
 			"tags":{"type":"array","minItems":1,"items":{"type":"string"}}
@@ -30,12 +30,54 @@ func TestValidateFormValuesSupportsSchemaDrivenTypes(t *testing.T) {
 		"unknown":  json.RawMessage(`{"length":{"value":1},"enabled":true,"mode":"steady","tags":["a"],"other":1}`),
 		"negative": json.RawMessage(`{"length":{"value":0},"enabled":true,"mode":"steady","tags":["a"]}`),
 		"enum":     json.RawMessage(`{"length":{"value":1},"enabled":true,"mode":"invalid","tags":["a"]}`),
+		"unit":     json.RawMessage(`{"length":{"value":1,"units":"parsec"},"enabled":true,"mode":"steady","tags":["a"]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := ValidateFormValues(schema, value); err == nil {
 				t.Fatal("expected invalid dynamic form values to be rejected")
 			}
 		})
+	}
+}
+
+func TestExpandFormValuesUpdatesExistingBoundaryModelFromServerChoices(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object","required":["models"],"properties":{"models":{
+			"type":"entity_assignment",
+			"model_choices":[{"value":"existing:0","label":"Wall","model_type":"Wall","entity_property":"surfaces","index":0}],
+			"entity_choices":[
+				{"value":"face-1","label":"face-1","payload":{"name":"face-1","private_attribute_entity_type_name":"Surface","private_attribute_id":"face-1"}},
+				{"value":"face-2","label":"face-2","payload":{"name":"face-2","private_attribute_entity_type_name":"Surface","private_attribute_id":"face-2"}}
+			]
+		}}
+	}`)
+	values := json.RawMessage(`{"models":{"model":"existing:0","entities":["face-1","face-2"]}}`)
+	current := json.RawMessage(`{"models":[
+		{"type":"Wall","name":"Wall","entities":{"stored_entities":[{"name":"*"}]},"private_attribute_id":"wall-id"},
+		{"type":"Fluid","name":"Fluid"}
+	]}`)
+	if err := ValidateFormValues(schema, values); err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := ExpandFormValues(schema, values, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(expanded, &result); err != nil {
+		t.Fatal(err)
+	}
+	models := result["models"].([]any)
+	wall := models[0].(map[string]any)
+	if _, exists := wall["entities"]; exists {
+		t.Fatal("legacy entity assignment was not removed")
+	}
+	surfaces := wall["surfaces"].(map[string]any)["stored_entities"].([]any)
+	if len(surfaces) != 2 || wall["private_attribute_id"] != "wall-id" {
+		t.Fatalf("boundary assignment did not preserve and update the model: %#v", wall)
+	}
+	if models[1].(map[string]any)["type"] != "Fluid" {
+		t.Fatal("unrelated models were not preserved")
 	}
 }
 

@@ -16,7 +16,10 @@ type formNode struct {
 	Items            *formNode           `json:"items,omitempty"`
 	Variants         []formNode          `json:"variants,omitempty"`
 	Options          []any               `json:"options,omitempty"`
+	UnitOptions      []string            `json:"unit_options,omitempty"`
 	ValueSchema      *formNode           `json:"value_schema,omitempty"`
+	ModelChoices     []formChoice        `json:"model_choices,omitempty"`
+	EntityChoices    []formChoice        `json:"entity_choices,omitempty"`
 	Minimum          *float64            `json:"minimum,omitempty"`
 	Maximum          *float64            `json:"maximum,omitempty"`
 	ExclusiveMinimum *float64            `json:"exclusiveMinimum,omitempty"`
@@ -25,6 +28,15 @@ type formNode struct {
 	MaxLength        *int                `json:"maxLength,omitempty"`
 	MinItems         *int                `json:"minItems,omitempty"`
 	MaxItems         *int                `json:"maxItems,omitempty"`
+}
+
+type formChoice struct {
+	Value          string         `json:"value"`
+	Label          string         `json:"label"`
+	ModelType      string         `json:"model_type,omitempty"`
+	EntityProperty string         `json:"entity_property,omitempty"`
+	Index          *int           `json:"index,omitempty"`
+	Payload        map[string]any `json:"payload,omitempty"`
 }
 
 func ValidateFormValues(schema, values json.RawMessage) error {
@@ -110,9 +122,42 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 			return err
 		}
 		if units, exists := object["units"]; exists {
-			if _, ok := units.(string); !ok {
+			unit, ok := units.(string)
+			if !ok {
 				return fmt.Errorf("%s.units must be a string", label)
 			}
+			if len(schema.UnitOptions) > 0 && !containsString(schema.UnitOptions, unit) {
+				return fmt.Errorf("%s.units is not supported by the active Flow360 schema", label)
+			}
+		}
+	case "entity_assignment":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be an entity assignment", label)
+		}
+		for key := range object {
+			if key != "model" && key != "entities" {
+				return fmt.Errorf("%s.%s is not supported", label, key)
+			}
+		}
+		model, ok := object["model"].(string)
+		if !ok || findFormChoice(schema.ModelChoices, model) == nil {
+			return fmt.Errorf("%s.model is not one of the allowed boundary models", label)
+		}
+		entities, ok := object["entities"].([]any)
+		if !ok || len(entities) == 0 {
+			return fmt.Errorf("%s.entities must contain at least one Geometry surface", label)
+		}
+		seen := map[string]bool{}
+		for _, raw := range entities {
+			entity, ok := raw.(string)
+			if !ok || findFormChoice(schema.EntityChoices, entity) == nil {
+				return fmt.Errorf("%s.entities contains an unknown Geometry surface", label)
+			}
+			if seen[entity] {
+				return fmt.Errorf("%s.entities contains a duplicate Geometry surface", label)
+			}
+			seen[entity] = true
 		}
 	case "number", "integer":
 		number, ok := value.(float64)
@@ -172,6 +217,119 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 		return fmt.Errorf("%s uses unsupported form type %q", label, schema.Type)
 	}
 	return nil
+}
+
+func ExpandFormValues(schema, values, current json.RawMessage) (json.RawMessage, error) {
+	var root formNode
+	var submitted any
+	var currentValue any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		return nil, errors.New("dynamic form schema is unsupported")
+	}
+	if err := json.Unmarshal(values, &submitted); err != nil {
+		return nil, errors.New("dynamic form values must be valid JSON")
+	}
+	if err := json.Unmarshal(current, &currentValue); err != nil {
+		return nil, errors.New("current SimulationParams are invalid")
+	}
+	expanded, err := expandFormValue(root, submitted, currentValue, 0)
+	if err != nil {
+		return nil, err
+	}
+	result, err := json.Marshal(expanded)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func expandFormValue(schema formNode, value, current any, depth int) (any, error) {
+	if depth > 32 {
+		return nil, errors.New("dynamic form nesting exceeds the limit")
+	}
+	if schema.Type == "object" {
+		object, _ := value.(map[string]any)
+		currentObject, _ := current.(map[string]any)
+		result := make(map[string]any, len(object))
+		for key, child := range object {
+			expanded, err := expandFormValue(schema.Properties[key], child, currentObject[key], depth+1)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = expanded
+		}
+		return result, nil
+	}
+	if schema.Type != "entity_assignment" {
+		return value, nil
+	}
+	submission, _ := value.(map[string]any)
+	selected := findFormChoice(schema.ModelChoices, submission["model"].(string))
+	if selected == nil {
+		return nil, errors.New("boundary model selection is stale")
+	}
+	models, ok := current.([]any)
+	if !ok {
+		return nil, errors.New("current SimulationParams models are unavailable")
+	}
+	models = append([]any(nil), models...)
+	model := map[string]any{
+		"type": selected.ModelType,
+		"name": selected.ModelType,
+	}
+	if selected.Index != nil {
+		if *selected.Index < 0 || *selected.Index >= len(models) {
+			return nil, errors.New("boundary model selection is stale")
+		}
+		existing, ok := models[*selected.Index].(map[string]any)
+		if !ok {
+			return nil, errors.New("selected boundary model is invalid")
+		}
+		model = cloneObject(existing)
+	}
+	entityIDs, _ := submission["entities"].([]any)
+	entities := make([]any, 0, len(entityIDs))
+	for _, raw := range entityIDs {
+		choice := findFormChoice(schema.EntityChoices, raw.(string))
+		if choice == nil {
+			return nil, errors.New("Geometry surface selection is stale")
+		}
+		entities = append(entities, cloneObject(choice.Payload))
+	}
+	delete(model, "entities")
+	model[selected.EntityProperty] = map[string]any{"stored_entities": entities}
+	if selected.Index == nil {
+		models = append(models, model)
+	} else {
+		models[*selected.Index] = model
+	}
+	return models, nil
+}
+
+func findFormChoice(choices []formChoice, value string) *formChoice {
+	for index := range choices {
+		if choices[index].Value == value {
+			return &choices[index]
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneObject(value map[string]any) map[string]any {
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
 }
 
 func requiredFormKeys(value any) []string {

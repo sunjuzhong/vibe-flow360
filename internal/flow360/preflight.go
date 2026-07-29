@@ -168,12 +168,14 @@ func (b *cappedBuffer) Write(payload []byte) (int, error) {
 const simulationPreflightBridge = `
 import copy
 import json
+import re
 import sys
 import warnings
 
 from flow360.component.simulation import services
 from flow360_schema import __version__ as schema_version
 from flow360_schema.models.simulation.simulation_params import SimulationParams
+from unyt import Unit
 
 request_path = sys.argv[1]
 with open(request_path, "r", encoding="utf-8") as stream:
@@ -229,6 +231,35 @@ def metadata(node):
     ):
         if key in node:
             result[key] = copy.deepcopy(node[key])
+    return result
+
+COMMON_UNITS = (
+    "meter", "mm", "cm", "km", "inch", "ft",
+    "meter/second", "km/hr", "mph", "knot",
+    "second", "minute", "hr",
+    "Pa", "kPa", "MPa", "bar", "psi",
+    "K", "degC", "degF",
+    "kg/m**3", "g/cm**3",
+    "Pa*s", "cP",
+    "degree", "radian",
+    "Hz", "rpm",
+    "N", "lbf", "N*m", "W", "kW", "W/m**2", "J",
+    "kg", "g", "meter**2", "cm**2", "ft**2", "meter**3",
+    "meter/second**2", "1/meter",
+)
+
+def compatible_units(unit):
+    result = [unit]
+    try:
+        base = Unit(unit)
+    except Exception:
+        return result
+    for candidate in COMMON_UNITS:
+        try:
+            if candidate not in result and base.same_dimensions_as(Unit(candidate)):
+                result.append(candidate)
+        except Exception:
+            continue
     return result
 
 def alternatives(node):
@@ -338,6 +369,7 @@ def normalize(node):
                 **base,
                 "type": "quantity",
                 "unit": value_schema["$units"],
+                "unit_options": compatible_units(value_schema["$units"]),
                 "value_schema": numeric,
             }
         required = set(node.get("required", []))
@@ -356,8 +388,103 @@ def normalize(node):
         return {**base, "type": node_type}
     return {**base, "type": "json"}
 
-def issue_payload(raw, level):
+def inferred_location(raw):
     location = raw.get("loc", [])
+    if location:
+        return location
+    message = raw.get("msg", "")
+    context = raw.get("ctx", {})
+    if isinstance(context, dict):
+        message += " " + str(context.get("error", ""))
+    properties = full_schema.get("properties", {})
+    quoted_field = chr(96) + r"([A-Za-z_][A-Za-z0-9_]*)" + chr(96)
+    for token in re.findall(quoted_field, message):
+        if token in properties:
+            return [token]
+    return []
+
+def model_entity_property(model_schema):
+    model_schema = dereference(model_schema)
+    for name, candidate in model_schema.get("properties", {}).items():
+        entity_schema = dereference(candidate)
+        title = str(entity_schema.get("title", ""))
+        stored = entity_schema.get("properties", {}).get("stored_entities", {})
+        if "EntityList[" in title and "Surface" in title and stored:
+            return name
+    return None
+
+def entity_assignment_schema(issue):
+    info = (
+        params.get("private_attribute_asset_cache", {})
+        .get("project_entity_info", {})
+    )
+    face_ids = info.get("face_ids", [])
+    missing = [name for name in face_ids if name in issue.get("message", "")]
+    if not missing:
+        return None
+
+    models_node = full_schema.get("properties", {}).get("models", {})
+    _, model_arrays = alternatives(models_node)
+    array_node = next(
+        (dereference(item) for item in model_arrays if dereference(item).get("type") == "array"),
+        {},
+    )
+    items_node = array_node.get("items", {})
+    _, variants = alternatives(items_node)
+    variant_by_type = {}
+    for variant in variants:
+        expanded = dereference(variant)
+        type_schema = expanded.get("properties", {}).get("type", {})
+        model_type = type_schema.get("const")
+        entity_property = model_entity_property(expanded)
+        if model_type and entity_property:
+            variant_by_type[model_type] = (expanded, entity_property)
+
+    choices = []
+    for index, model in enumerate(params.get("models") or []):
+        model_type = model.get("type") if isinstance(model, dict) else None
+        if model_type not in variant_by_type:
+            continue
+        _, entity_property = variant_by_type[model_type]
+        choices.append({
+            "value": f"existing:{index}",
+            "label": f"{model.get('name') or model_type} · {model_type}",
+            "model_type": model_type,
+            "entity_property": entity_property,
+            "index": index,
+        })
+    for model_type, (variant, entity_property) in variant_by_type.items():
+        choices.append({
+            "value": f"new:{model_type}",
+            "label": f"New {variant.get('title') or model_type}",
+            "model_type": model_type,
+            "entity_property": entity_property,
+        })
+    if not choices:
+        return None
+
+    entities = [{
+        "value": name,
+        "label": name,
+        "payload": {
+            "name": name,
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": name,
+            "private_attribute_tag_key": "faceId",
+            "private_attribute_sub_components": [name],
+        },
+    } for name in missing]
+    return {
+        "type": "entity_assignment",
+        "title": "Assign boundary conditions",
+        "description": "Choose the physical boundary model and assign every unclassified Geometry surface.",
+        "model_choices": choices,
+        "entity_choices": entities,
+        "default_model": choices[0]["value"],
+    }
+
+def issue_payload(raw, level):
+    location = inferred_location(raw)
     stages = raw.get("ctx", {}).get("relevant_for", [])
     if isinstance(stages, str):
         stages = [stages]
@@ -401,6 +528,10 @@ for issue in issues:
         continue
     seen_paths.add(path_key)
     leaf = normalize(schema_at_path(projected_path))
+    if projected_path == ["models"]:
+        assignment = entity_assignment_schema(issue)
+        if assignment is not None:
+            leaf = assignment
     leaf["path"] = ".".join(str(part) for part in projected_path)
     leaf["required"] = True
     cursor = form_schema

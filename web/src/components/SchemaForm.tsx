@@ -105,6 +105,7 @@ function SchemaField({
   }
   if (schema.type === 'quantity') {
     const object = isRecord(value) ? value : {}
+    const unitOptions = schema.unit_options?.length ? schema.unit_options : [schema.unit ?? '']
     return (
       <label className="schema-field" htmlFor={fieldID}>
         <FieldLabel schema={schema} title={title} path={path} />
@@ -119,14 +120,70 @@ function SchemaField({
             value={String(object.value ?? '')}
             onChange={(event) => onChange({ ...object, value: event.target.value })}
           />
-          <input
+          <select
             aria-label={`${title} unit`}
             value={String(object.units ?? schema.unit ?? '')}
             onChange={(event) => onChange({ ...object, units: event.target.value })}
             required
-          />
+          >
+            {unitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+          </select>
         </span>
       </label>
+    )
+  }
+  if (schema.type === 'entity_assignment') {
+    const draft = isRecord(value) ? value : {}
+    const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
+    const entityChoices = schema.entity_choices ?? []
+    const allSelected = entityChoices.length > 0 && entityChoices.every((choice) => selected.includes(choice.value))
+    return (
+      <fieldset className="schema-object schema-entity-assignment">
+        <legend>{title}</legend>
+        {schema.description && <p>{schema.description}</p>}
+        <label className="schema-field" htmlFor={`${fieldID}-model`}>
+          <span className="schema-field-label"><strong>Boundary condition model *</strong></span>
+          <select
+            id={`${fieldID}-model`}
+            required
+            value={String(draft.model ?? schema.default_model ?? '')}
+            onChange={(event) => onChange({ ...draft, model: event.target.value })}
+          >
+            {(schema.model_choices ?? []).map((choice) => (
+              <option key={choice.value} value={choice.value}>{choice.label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="schema-entity-header">
+          <strong>Unassigned Geometry surfaces *</strong>
+          <button
+            type="button"
+            onClick={() => onChange({
+              ...draft,
+              entities: allSelected ? [] : entityChoices.map((choice) => choice.value),
+            })}
+          >
+            {allSelected ? 'Clear all' : 'Select all'}
+          </button>
+        </div>
+        <div className="schema-entity-grid">
+          {entityChoices.map((choice) => (
+            <label key={choice.value}>
+              <input
+                type="checkbox"
+                checked={selected.includes(choice.value)}
+                onChange={(event) => onChange({
+                  ...draft,
+                  entities: event.target.checked
+                    ? [...selected, choice.value]
+                    : selected.filter((item) => item !== choice.value),
+                })}
+              />
+              <code>{choice.label}</code>
+            </label>
+          ))}
+        </div>
+      </fieldset>
     )
   }
   if (schema.type === 'boolean') {
@@ -244,6 +301,8 @@ export function initialValue(schema: DynamicFormSchema): unknown {
       return []
     case 'quantity':
       return { value: '', units: schema.unit ?? '' }
+    case 'entity_assignment':
+      return { model: schema.default_model ?? schema.model_choices?.[0]?.value ?? '', entities: [] }
     case 'boolean':
       return false
     case 'enum':
@@ -274,6 +333,16 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown): unkno
       const units = String(object.units ?? schema.unit ?? '').trim()
       if (!units) throw new Error(`${schema.title || schema.path || 'Quantity'} requires a unit.`)
       return { value: numeric, units }
+    }
+    case 'entity_assignment': {
+      const object = isRecord(value) ? value : {}
+      const model = String(object.model ?? '').trim()
+      const entities = Array.isArray(object.entities)
+        ? object.entities.filter((item): item is string => typeof item === 'string')
+        : []
+      if (!model) throw new Error(`${schema.title || 'Boundary assignment'} requires a model.`)
+      if (!entities.length) throw new Error(`${schema.title || 'Boundary assignment'} requires at least one surface.`)
+      return { model, entities }
     }
     case 'number':
     case 'integer': {

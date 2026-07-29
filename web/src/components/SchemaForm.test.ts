@@ -56,4 +56,25 @@ describe('schema-driven Flow360 form', () => {
       value: { value: '30', units: 'm/s' },
     })).toEqual({ value: 30, units: 'm/s' })
   })
+
+  it('serializes a schema-provided entity assignment', () => {
+    const schema: DynamicFormSchema = {
+      type: 'entity_assignment',
+      title: 'Assign boundaries',
+      default_model: 'existing:0',
+      model_choices: [{ value: 'existing:0', label: 'Wall · Wall' }],
+      entity_choices: [
+        { value: 'face-1', label: 'face-1' },
+        { value: 'face-2', label: 'face-2' },
+      ],
+    }
+    expect(initialValue(schema)).toEqual({ model: 'existing:0', entities: [] })
+    expect(serializeValue(schema, {
+      model: 'existing:0',
+      entities: ['face-1', 'face-2'],
+    })).toEqual({
+      model: 'existing:0',
+      entities: ['face-1', 'face-2'],
+    })
+  })
 })

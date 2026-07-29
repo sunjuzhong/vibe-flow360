@@ -1500,6 +1500,12 @@ button { color: inherit; }
 .schema-boolean > input { width: 15px; min-height: 15px; margin-top: 2px; accent-color: #7e9929; }
 .schema-array-item { display: grid; grid-template-columns: minmax(0,1fr) 32px; align-items: start; gap: 7px; margin-bottom: 7px; }
 .schema-array > button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid #ced2c7; border-radius: 6px; background: #fff; font-size: 7px; }
+.schema-entity-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 15px 0 8px; color: #5c6357; font-size: 8px; }
+.schema-entity-header button { padding: 5px 8px; border: 1px solid #ced2c7; border-radius: 6px; background: #fff; font-size: 7px; }
+.schema-entity-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 7px; }
+.schema-entity-grid label { display: flex; align-items: center; gap: 8px; padding: 9px; border: 1px solid #dde0d7; border-radius: 7px; background: #fff; }
+.schema-entity-grid input { accent-color: #7e9929; }
+.schema-entity-grid code { overflow: hidden; color: #65705b; font: 7px 'DM Mono'; text-overflow: ellipsis; }
 .schema-form-error { margin: 0 20px 12px; padding: 9px; border-radius: 6px; color: #a04d3d; background: #f6dfda; font-size: 8px; }
 .schema-form-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #daddd4; background: #f3f4ee; }
 .schema-form-dialog > footer button { min-height: 35px; padding: 0 13px; border: 1px solid #cdd1c6; border-radius: 7px; color: #63695e; background: #fff; font-size: 8px; }

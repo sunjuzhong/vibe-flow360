@@ -535,16 +535,35 @@ func (s *Store) SetBaseline(id string, baseline json.RawMessage) (Plan, error) {
 }
 
 func (s *Store) ApplyInputs(id string, revision int, values json.RawMessage) (Plan, error) {
-	if len(values) == 0 || len(values) > 256<<10 {
-		return Plan{}, errors.New("dynamic form values must be between 1 byte and 256 KB")
+	return s.applyInputs(id, revision, values, false)
+}
+
+// ApplySchemaInputs accepts values expanded exclusively from a server-issued
+// form schema. Expansion may preserve Flow360 private entity metadata from the
+// stored baseline; browser-submitted values never enter this method directly.
+func (s *Store) ApplySchemaInputs(id string, revision int, values json.RawMessage) (Plan, error) {
+	return s.applyInputs(id, revision, values, true)
+}
+
+func (s *Store) applyInputs(id string, revision int, values json.RawMessage, schemaExpanded bool) (Plan, error) {
+	maxSize := 256 << 10
+	if schemaExpanded {
+		// Schema expansion may preserve an existing models array containing
+		// Flow360 entity metadata that was never sent by the browser.
+		maxSize = 2 << 20
+	}
+	if len(values) == 0 || len(values) > maxSize {
+		return Plan{}, fmt.Errorf("dynamic form values must be between 1 byte and %d KB", maxSize>>10)
 	}
 	var valueObject map[string]any
 	if err := json.Unmarshal(values, &valueObject); err != nil {
 		return Plan{}, errors.New("dynamic form values must be a JSON object")
 	}
-	for _, validation := range validatePatch(valueObject) {
-		if validation.Level == "error" {
-			return Plan{}, errors.New(validation.Message)
+	if !schemaExpanded {
+		for _, validation := range validatePatch(valueObject) {
+			if validation.Level == "error" {
+				return Plan{}, errors.New(validation.Message)
+			}
 		}
 	}
 	return s.Update(id, func(plan *Plan) error {

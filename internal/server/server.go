@@ -617,7 +617,17 @@ func (s *Server) applyPlanInputs(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
-	updated, err := s.plans.ApplyInputs(plan.ID, request.Revision, request.Values)
+	current, err := plans.MergedSimulationParams(plan)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	expanded, err := plans.ExpandFormValues(plan.Preflight.FormSchema, request.Values, current)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	updated, err := s.plans.ApplySchemaInputs(plan.ID, request.Revision, expanded)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return

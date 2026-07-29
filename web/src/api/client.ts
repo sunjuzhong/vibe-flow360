@@ -204,8 +204,17 @@ export type PlanDifference = {
   kind: 'added' | 'removed' | 'changed'
 }
 
+export type DynamicFormChoice = {
+  value: string
+  label: string
+  model_type?: string
+  entity_property?: string
+  index?: number
+  payload?: Record<string, unknown>
+}
+
 export type DynamicFormSchema = {
-  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'json'
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'entity_assignment' | 'json'
   title?: string
   description?: string
   default?: unknown
@@ -217,7 +226,11 @@ export type DynamicFormSchema = {
   variants?: DynamicFormSchema[]
   options?: unknown[]
   unit?: string
+  unit_options?: string[]
   value_schema?: DynamicFormSchema
+  model_choices?: DynamicFormChoice[]
+  entity_choices?: DynamicFormChoice[]
+  default_model?: string
   minimum?: number
   maximum?: number
   exclusiveMinimum?: number
