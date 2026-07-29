@@ -140,6 +140,13 @@ func TestPreflightSimulationParamsWithPlanFixture(t *testing.T) {
 	if len(models["model_choices"].([]any)) == 0 || len(models["entity_choices"].([]any)) != 6 {
 		t.Fatalf("expected model and six Geometry entity choices, got %#v", models)
 	}
+	recommendation, ok := models["recommendation"].(map[string]any)
+	if !ok || recommendation["confidence"] != "high" {
+		t.Fatalf("expected a high-confidence inherited model recommendation, got %#v", models)
+	}
+	if len(models["default_entities"].([]any)) != 6 {
+		t.Fatalf("expected all reported surfaces to be preselected, got %#v", models)
+	}
 
 	modelChoice := models["default_model"].(string)
 	entityChoices := models["entity_choices"].([]any)

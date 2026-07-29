@@ -213,6 +213,14 @@ export type DynamicFormChoice = {
   payload?: Record<string, unknown>
 }
 
+export type DynamicFormRecommendation = {
+  title: string
+  reason: string
+  confidence: 'high' | 'medium' | 'low'
+  evidence?: string[]
+  provenance?: string
+}
+
 export type DynamicFormSchema = {
   type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'entity_assignment' | 'json'
   title?: string
@@ -231,6 +239,8 @@ export type DynamicFormSchema = {
   model_choices?: DynamicFormChoice[]
   entity_choices?: DynamicFormChoice[]
   default_model?: string
+  default_entities?: string[]
+  recommendation?: DynamicFormRecommendation
   minimum?: number
   maximum?: number
   exclusiveMinimum?: number

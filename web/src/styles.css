@@ -1506,6 +1506,24 @@ button { color: inherit; }
 .schema-entity-grid label { display: flex; align-items: center; gap: 8px; padding: 9px; border: 1px solid #dde0d7; border-radius: 7px; background: #fff; }
 .schema-entity-grid input { accent-color: #7e9929; }
 .schema-entity-grid code { overflow: hidden; color: #65705b; font: 7px 'DM Mono'; text-overflow: ellipsis; }
+.schema-ai-recommendation { padding: 14px; border: 1px solid #bfd66b; border-radius: 9px; background: linear-gradient(135deg,#f4f9df,#eef5d4); }
+.schema-ai-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.schema-ai-heading > span { display: flex; align-items: center; gap: 6px; color: #627d17; font-size: 8px; }
+.schema-ai-heading em { padding: 4px 7px; border-radius: 999px; background: #dceba8; color: #597215; font-size: 6px; font-style: normal; text-transform: uppercase; }
+.schema-ai-recommendation h3 { margin: 10px 0 5px; color: #333c27; font-size: 13px; }
+.schema-ai-recommendation > p { margin: 0; color: #626b59; font-size: 8px; line-height: 1.55; }
+.schema-ai-summary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+.schema-ai-summary span { padding: 9px; border: 1px solid #d9e5af; border-radius: 7px; background: #fff9; }
+.schema-ai-summary small,.schema-ai-summary strong { display: block; }
+.schema-ai-summary small { color: #8a927e; font-size: 6px; }
+.schema-ai-summary strong { margin-top: 3px; color: #4f5d42; font-size: 8px; }
+.schema-ai-recommendation details { margin-top: 10px; color: #68715d; font-size: 7px; }
+.schema-ai-recommendation summary { cursor: pointer; font-weight: 700; }
+.schema-ai-recommendation ul { margin: 7px 0 0; padding-left: 18px; line-height: 1.6; }
+.schema-change-recommendation { display: inline-flex; align-items: center; gap: 5px; margin-top: 11px; padding: 6px 9px; border: 1px solid #b8c98a; border-radius: 6px; color: #596b2a; background: #fff; font-size: 7px; }
+.schema-change-recommendation svg { transition: transform .2s ease; }
+.schema-change-recommendation svg.expanded { transform: rotate(180deg); }
+.schema-assignment-editor { margin-top: 12px; }
 .schema-form-error { margin: 0 20px 12px; padding: 9px; border-radius: 6px; color: #a04d3d; background: #f6dfda; font-size: 8px; }
 .schema-form-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #daddd4; background: #f3f4ee; }
 .schema-form-dialog > footer button { min-height: 35px; padding: 0 13px; border: 1px solid #cdd1c6; border-radius: 7px; color: #63695e; background: #fff; font-size: 8px; }

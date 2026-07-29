@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 
 type SchemaFormDialogProps = {
@@ -22,6 +22,7 @@ export default function SchemaFormDialog({
   const initial = useMemo(() => initialValue(schema), [schema])
   const [value, setValue] = useState<unknown>(initial)
   const [error, setError] = useState('')
+  const hasRecommendation = schemaHasRecommendation(schema)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -40,9 +41,13 @@ export default function SchemaFormDialog({
       <form className="schema-form-dialog" onSubmit={submit} aria-label="Complete Flow360 inputs">
         <header>
           <div>
-            <p className="eyebrow">FLOW360 SCHEMA PREFLIGHT</p>
-            <h2>Complete required simulation inputs</h2>
-            <span>The form is generated from the installed Flow360 schema.</span>
+            <p className="eyebrow">{hasRecommendation ? 'VIBE SIMULATE RECOVERY' : 'FLOW360 SCHEMA PREFLIGHT'}</p>
+            <h2>{hasRecommendation ? 'The Agent found a recovery path' : 'Complete required simulation inputs'}</h2>
+            <span>
+              {hasRecommendation
+                ? 'Review the evidence and apply the recommendation. No CFD parameter entry is required.'
+                : 'The form is generated from the installed Flow360 schema.'}
+            </span>
           </div>
           <button type="button" className="icon-button" onClick={onCancel} aria-label="Close required inputs">
             <X size={18} />
@@ -64,7 +69,11 @@ export default function SchemaFormDialog({
         <footer>
           <button type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
           <button className="primary" type="submit" disabled={submitting}>
-            {submitting ? 'Validating with Flow360…' : 'Apply inputs & validate again'}
+            {submitting
+              ? 'Validating with Flow360…'
+              : hasRecommendation
+                ? 'Apply AI recommendation & validate'
+                : 'Apply inputs & validate again'}
           </button>
         </footer>
       </form>
@@ -133,58 +142,7 @@ function SchemaField({
     )
   }
   if (schema.type === 'entity_assignment') {
-    const draft = isRecord(value) ? value : {}
-    const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
-    const entityChoices = schema.entity_choices ?? []
-    const allSelected = entityChoices.length > 0 && entityChoices.every((choice) => selected.includes(choice.value))
-    return (
-      <fieldset className="schema-object schema-entity-assignment">
-        <legend>{title}</legend>
-        {schema.description && <p>{schema.description}</p>}
-        <label className="schema-field" htmlFor={`${fieldID}-model`}>
-          <span className="schema-field-label"><strong>Boundary condition model *</strong></span>
-          <select
-            id={`${fieldID}-model`}
-            required
-            value={String(draft.model ?? schema.default_model ?? '')}
-            onChange={(event) => onChange({ ...draft, model: event.target.value })}
-          >
-            {(schema.model_choices ?? []).map((choice) => (
-              <option key={choice.value} value={choice.value}>{choice.label}</option>
-            ))}
-          </select>
-        </label>
-        <div className="schema-entity-header">
-          <strong>Unassigned Geometry surfaces *</strong>
-          <button
-            type="button"
-            onClick={() => onChange({
-              ...draft,
-              entities: allSelected ? [] : entityChoices.map((choice) => choice.value),
-            })}
-          >
-            {allSelected ? 'Clear all' : 'Select all'}
-          </button>
-        </div>
-        <div className="schema-entity-grid">
-          {entityChoices.map((choice) => (
-            <label key={choice.value}>
-              <input
-                type="checkbox"
-                checked={selected.includes(choice.value)}
-                onChange={(event) => onChange({
-                  ...draft,
-                  entities: event.target.checked
-                    ? [...selected, choice.value]
-                    : selected.filter((item) => item !== choice.value),
-                })}
-              />
-              <code>{choice.label}</code>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-    )
+    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} />
   }
   if (schema.type === 'boolean') {
     return (
@@ -282,6 +240,107 @@ function SchemaField({
   )
 }
 
+function EntityAssignmentField({
+  schema,
+  value,
+  onChange,
+  fieldID,
+  title,
+}: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  fieldID: string
+  title: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const draft = isRecord(value) ? value : {}
+  const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
+  const entityChoices = schema.entity_choices ?? []
+  const allSelected = entityChoices.length > 0 && entityChoices.every((choice) => selected.includes(choice.value))
+  const model = String(draft.model ?? schema.default_model ?? '')
+  const modelLabel = schema.model_choices?.find((choice) => choice.value === model)?.label ?? model
+  const recommendation = schema.recommendation
+  return (
+    <fieldset className="schema-object schema-entity-assignment">
+      <legend>{title}</legend>
+      {recommendation ? (
+        <div className="schema-ai-recommendation">
+          <div className="schema-ai-heading">
+            <span><Sparkles size={15} /><strong>AI recommendation</strong></span>
+            <em className={`confidence-${recommendation.confidence}`}>{recommendation.confidence} confidence</em>
+          </div>
+          <h3>{recommendation.title}</h3>
+          <p>{recommendation.reason}</p>
+          <div className="schema-ai-summary">
+            <span><small>Boundary model</small><strong>{modelLabel}</strong></span>
+            <span><small>Surfaces</small><strong>{selected.length} selected</strong></span>
+          </div>
+          {recommendation.evidence?.length ? (
+            <details>
+              <summary>Why the Agent recommends this</summary>
+              <ul>{recommendation.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+            </details>
+          ) : null}
+          <button type="button" className="schema-change-recommendation" onClick={() => setEditing((current) => !current)}>
+            <ChevronDown size={13} className={editing ? 'expanded' : ''} />
+            {editing ? 'Hide choices' : 'Change recommendation'}
+          </button>
+        </div>
+      ) : schema.description ? <p>{schema.description}</p> : null}
+      {(!recommendation || editing) && (
+        <div className="schema-assignment-editor">
+          <label className="schema-field" htmlFor={`${fieldID}-model`}>
+            <span className="schema-field-label">
+              <strong>How should these surfaces behave?</strong>
+              <small>Select a Flow360 boundary model only if the AI recommendation does not match your engineering intent.</small>
+            </span>
+            <select
+              id={`${fieldID}-model`}
+              required
+              value={model}
+              onChange={(event) => onChange({ ...draft, model: event.target.value })}
+            >
+              {(schema.model_choices ?? []).map((choice) => (
+                <option key={choice.value} value={choice.value}>{choice.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className="schema-entity-header">
+            <strong>Geometry surfaces included</strong>
+            <button
+              type="button"
+              onClick={() => onChange({
+                ...draft,
+                entities: allSelected ? [] : entityChoices.map((choice) => choice.value),
+              })}
+            >
+              {allSelected ? 'Clear all' : 'Select all'}
+            </button>
+          </div>
+          <div className="schema-entity-grid">
+            {entityChoices.map((choice) => (
+              <label key={choice.value}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(choice.value)}
+                  onChange={(event) => onChange({
+                    ...draft,
+                    entities: event.target.checked
+                      ? [...selected, choice.value]
+                      : selected.filter((item) => item !== choice.value),
+                  })}
+                />
+                <code>{choice.label}</code>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </fieldset>
+  )
+}
+
 function FieldLabel({ schema, title, path }: { schema: DynamicFormSchema; title: string; path: string }) {
   return (
     <span className="schema-field-label">
@@ -302,7 +361,10 @@ export function initialValue(schema: DynamicFormSchema): unknown {
     case 'quantity':
       return { value: '', units: schema.unit ?? '' }
     case 'entity_assignment':
-      return { model: schema.default_model ?? schema.model_choices?.[0]?.value ?? '', entities: [] }
+      return {
+        model: schema.default_model ?? schema.model_choices?.[0]?.value ?? '',
+        entities: schema.default_entities ?? [],
+      }
     case 'boolean':
       return false
     case 'enum':
@@ -377,4 +439,11 @@ function isUnionDraft(value: unknown): value is UnionDraft {
 
 function humanize(value: string) {
   return value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function schemaHasRecommendation(schema: DynamicFormSchema): boolean {
+  if (schema.recommendation) return true
+  return Object.values(schema.properties ?? {}).some(schemaHasRecommendation)
+    || (schema.variants ?? []).some(schemaHasRecommendation)
+    || Boolean(schema.items && schemaHasRecommendation(schema.items))
 }

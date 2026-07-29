@@ -62,13 +62,19 @@ describe('schema-driven Flow360 form', () => {
       type: 'entity_assignment',
       title: 'Assign boundaries',
       default_model: 'existing:0',
+      default_entities: ['face-1', 'face-2'],
+      recommendation: {
+        title: 'Keep Wall',
+        reason: 'The existing Wall selected every surface.',
+        confidence: 'high',
+      },
       model_choices: [{ value: 'existing:0', label: 'Wall · Wall' }],
       entity_choices: [
         { value: 'face-1', label: 'face-1' },
         { value: 'face-2', label: 'face-2' },
       ],
     }
-    expect(initialValue(schema)).toEqual({ model: 'existing:0', entities: [] })
+    expect(initialValue(schema)).toEqual({ model: 'existing:0', entities: ['face-1', 'face-2'] })
     expect(serializeValue(schema, {
       model: 'existing:0',
       entities: ['face-1', 'face-2'],

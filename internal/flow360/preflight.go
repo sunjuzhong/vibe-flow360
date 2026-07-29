@@ -185,6 +185,7 @@ if request.get("schema_version") != 1:
     raise ValueError("unsupported preflight request version")
 
 params = request["params"]
+original_params = copy.deepcopy(params)
 root_type = request.get("root_type")
 if root_type == "Case":
     root_type = None
@@ -415,7 +416,7 @@ def model_entity_property(model_schema):
 
 def entity_assignment_schema(issue):
     info = (
-        params.get("private_attribute_asset_cache", {})
+        original_params.get("private_attribute_asset_cache", {})
         .get("project_entity_info", {})
     )
     face_ids = info.get("face_ids", [])
@@ -441,7 +442,8 @@ def entity_assignment_schema(issue):
             variant_by_type[model_type] = (expanded, entity_property)
 
     choices = []
-    for index, model in enumerate(params.get("models") or []):
+    wildcard_candidates = []
+    for index, model in enumerate(original_params.get("models") or []):
         model_type = model.get("type") if isinstance(model, dict) else None
         if model_type not in variant_by_type:
             continue
@@ -453,6 +455,12 @@ def entity_assignment_schema(issue):
             "entity_property": entity_property,
             "index": index,
         })
+        legacy_entities = model.get("entities", {}).get("stored_entities", [])
+        if any(
+            isinstance(entity, dict) and entity.get("name") == "*"
+            for entity in legacy_entities
+        ):
+            wildcard_candidates.append(f"existing:{index}")
     for model_type, (variant, entity_property) in variant_by_type.items():
         choices.append({
             "value": f"new:{model_type}",
@@ -474,13 +482,38 @@ def entity_assignment_schema(issue):
             "private_attribute_sub_components": [name],
         },
     } for name in missing]
+    recommended_model = wildcard_candidates[0] if len(wildcard_candidates) == 1 else choices[0]["value"]
+    inherited_wildcard = len(wildcard_candidates) == 1
+    recommended_choice = next(
+        choice for choice in choices if choice["value"] == recommended_model
+    )
+    reason = (
+        f"The existing {recommended_choice['model_type']} model targeted all physical surfaces with '*'. "
+        f"After Geometry expansion, Flow360 needs those {len(missing)} concrete surfaces assigned explicitly."
+        if inherited_wildcard else
+        f"Reuse the existing {recommended_choice['model_type']} boundary model for the unassigned Geometry surfaces."
+    )
+    evidence = [
+        f"Flow360 reports {len(missing)} unassigned physical surfaces.",
+        f"Existing model: {recommended_choice['label']}.",
+    ]
+    if inherited_wildcard:
+        evidence.append("The existing model used the wildcard selector '*', which expresses an all-surfaces intent.")
     return {
         "type": "entity_assignment",
-        "title": "Assign boundary conditions",
-        "description": "Choose the physical boundary model and assign every unclassified Geometry surface.",
+        "title": "Resolve unassigned surfaces",
+        "description": "The Agent prepared a boundary assignment from the current simulation intent and Flow360 evidence.",
         "model_choices": choices,
         "entity_choices": entities,
-        "default_model": choices[0]["value"],
+        "default_model": recommended_model,
+        "default_entities": missing,
+        "recommendation": {
+            "title": f"Keep {recommended_choice['model_type']} for all {len(missing)} surfaces",
+            "reason": reason,
+            "confidence": "high" if inherited_wildcard else "medium",
+            "evidence": evidence,
+            "provenance": "inherited_existing_model",
+        },
     }
 
 def issue_payload(raw, level):
