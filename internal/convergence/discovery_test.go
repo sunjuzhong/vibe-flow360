@@ -120,6 +120,35 @@ func TestDiscoveryFullAssessment(t *testing.T) {
 	}
 }
 
+func TestPreferredResultsChooseCanonicalHistoryFiles(t *testing.T) {
+	selected := preferredRemoteResults([]string{
+		"results/X_slicing_forceDistribution.csv",
+		"results/surface_forces_v2.csv",
+		"results/total_forces_v2.csv",
+		"results/linear_residual_v2.csv",
+		"results/nonlinear_residual_v2.csv",
+	})
+	if selected["forces"] != "results/total_forces_v2.csv" {
+		t.Fatalf("unexpected force result %q", selected["forces"])
+	}
+	if selected["residuals"] != "results/nonlinear_residual_v2.csv" {
+		t.Fatalf("unexpected residual result %q", selected["residuals"])
+	}
+}
+
+func TestPreferredFileReplacesLegacySlicingCache(t *testing.T) {
+	selected, ok := preferredFile([]ResultFile{
+		{Path: "/cache/X_slicing_forceDistribution.csv", Type: "forces"},
+		{Path: "/cache/total_forces_v2.csv", Type: "forces"},
+	}, "forces")
+	if !ok || filepath.Base(selected.Path) != "total_forces_v2.csv" {
+		t.Fatalf("unexpected preferred local result %#v", selected)
+	}
+	if resultPreference("/cache/X_slicing_forceDistribution.csv", "forces") >= 30 {
+		t.Fatal("legacy slicing cache must not suppress canonical result discovery")
+	}
+}
+
 func TestClassifyResultFile(t *testing.T) {
 	tests := []struct {
 		path string

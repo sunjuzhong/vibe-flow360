@@ -445,6 +445,58 @@ func TestStore_FindByContentHash(t *testing.T) {
 	}
 }
 
+func TestStoreStartUsesContentAndOptionsForAtomicDeduplication(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	createReady := func(name, solver string) Plan {
+		t.Helper()
+		created, _, err := store.Create(Plan{
+			Name: name, SourceType: "surface-mesh", Unit: "m", SolverVersion: solver,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := store.AddFile(created.ID, "mesh.ugrid", bytes.NewBufferString("same mesh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		finalized, err := store.FinalizePlan(created.ID, []FileInfo{file}, file.SizeBytes, []string{"flow360"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		approved, err := store.Update(finalized.ID, func(plan *Plan) error {
+			plan.Status = "approved"
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return approved
+	}
+
+	first := createReady("baseline", "25.10")
+	if _, duplicate, err := store.Start(first.ID); err != nil || duplicate != nil {
+		t.Fatalf("first start failed: duplicate=%v err=%v", duplicate, err)
+	}
+
+	same := createReady("baseline", "25.10")
+	unchanged, duplicate, err := store.Start(same.ID)
+	if err != nil || duplicate == nil || duplicate.ID != first.ID {
+		t.Fatalf("expected duplicate of %s, got %#v err=%v", first.ID, duplicate, err)
+	}
+	if unchanged.Status != "approved" {
+		t.Fatalf("duplicate plan was left in %q, want approved", unchanged.Status)
+	}
+
+	different := createReady("new solver", "26.1")
+	started, duplicate, err := store.Start(different.ID)
+	if err != nil || duplicate != nil || started.Status != "running" {
+		t.Fatalf("different options should run: status=%q duplicate=%v err=%v", started.Status, duplicate, err)
+	}
+}
+
 func TestComputeContentHash(t *testing.T) {
 	files := []FileInfo{
 		{Name: "a.dat", Hash: "hash1"},

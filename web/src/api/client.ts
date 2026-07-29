@@ -155,6 +155,7 @@ export type Flow360DataResponse<T> = {
   data: T
   source: 'live' | 'cache'
   cachedAt?: string
+  stale?: boolean
 }
 
 export type PlanValidation = {
@@ -230,6 +231,50 @@ export type ImportFileInfo = {
   mime_type: string
 }
 
+export type CaseComparison = {
+  id: string
+  name: string
+  status: string
+  params: Record<string, unknown>
+  convergence: {
+    status: string
+    reason: string
+  }
+  kpis: Array<{
+    name: string
+    value: number
+    unit?: string
+    converged: boolean
+    source: string
+  }>
+}
+
+export type CompareResult = {
+  cases: CaseComparison[]
+  diffs: Array<{ path: string; baseline: unknown; other: unknown; compared_to?: string }>
+  ranking?: Array<{ id: string; name: string; score: number; reason: string }>
+}
+
+export type SweepParameter = {
+  name: string
+  values: number[]
+}
+
+export type SweepResult = {
+  plan: {
+    id: string
+    baseline_case_id: string
+    parameters: SweepParameter[]
+    total_cases: number
+    combinations: number[][]
+    over_budget: boolean
+    max_recommended: number
+    metadata?: Record<string, string>
+  }
+  warnings: string[]
+  plans: SimulationPlan[]
+}
+
 async function json<T>(path: string): Promise<T> {
   const response = await fetch(path)
   const body = await response.json().catch(() => ({}))
@@ -246,6 +291,7 @@ async function flow360JSON<T>(path: string): Promise<Flow360DataResponse<T>> {
     data: body as T,
     source,
     cachedAt: response.headers.get('X-VibeSim-Cached-At') || undefined,
+    stale: response.headers.get('X-VibeSim-Cache-Stale') === 'true',
   }
 }
 
@@ -272,8 +318,12 @@ async function responseError(response: Response): Promise<Error> {
 
 export const api = {
   flow360Status: () => json<Flow360Status>('/api/flow360/status'),
-  projects: (folderId?: string, cacheOnly = false) =>
-    flow360JSON<ProjectListResponse>(`/api/flow360/projects${folderId ? `?folder_id=${encodeURIComponent(folderId)}` : ''}${cacheOnly ? '?cache=only' : ''}`),
+  projects: (folderId?: string, cacheOnly = false) => {
+    const params = new URLSearchParams()
+    if (folderId) params.set('folder_id', folderId)
+    if (cacheOnly) params.set('cache', 'only')
+    return flow360JSON<ProjectListResponse>(`/api/flow360/projects${params.size ? `?${params}` : ''}`)
+  },
   folders: (cacheOnly = false) =>
     flow360JSON<FolderTreeResponse>(`/api/flow360/folders${cacheOnly ? '?cache=only' : ''}`),
   projectInfo: (projectId: string, cacheOnly = false) =>
@@ -320,6 +370,17 @@ export const api = {
     if (!response.ok) throw await responseError(response)
     return response.text()
   },
+  compareCases: (caseIds: string[]) =>
+    mutate<CompareResult>('/api/flow360/compare', { case_ids: caseIds, baseline: caseIds[0] }),
+  sweep: (input: {
+    baseline_case_id: string
+    project_id: string
+    project_name?: string
+    baseline_name?: string
+    parameters: SweepParameter[]
+    create_plans?: boolean
+    confirmed?: boolean
+  }) => mutate<SweepResult>('/api/flow360/sweep', input),
   plans: (projectId: string, sourceId?: string) =>
     json<{ plans: SimulationPlan[] }>(
       `/api/plans?project_id=${encodeURIComponent(projectId)}${sourceId ? `&source_id=${encodeURIComponent(sourceId)}` : ''}`,

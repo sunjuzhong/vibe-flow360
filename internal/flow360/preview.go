@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -67,6 +69,10 @@ func (c *Client) geometryPreview(ctx context.Context, resourceID string) (MeshPr
 			{ID: "body", Name: "Body", Color: "#789521", Visible: true},
 		},
 	}
+	preview.AssetURL = extractAssetURL(&detail)
+	if preview.AssetURL == "" {
+		return MeshPreview{}, fmt.Errorf("Flow360 CLI metadata does not expose a browser-renderable Geometry asset")
+	}
 
 	if bbox := extractBoundingBox(&detail); bbox != nil {
 		preview.BoundingBox = *bbox
@@ -101,6 +107,10 @@ func (c *Client) surfaceMeshPreview(ctx context.Context, resourceID string) (Mes
 		Groups: []MeshGroup{
 			{ID: "surface", Name: "Surface", Color: "#2b7de9", Visible: true},
 		},
+	}
+	preview.AssetURL = extractAssetURL(&detail)
+	if preview.AssetURL == "" {
+		return MeshPreview{}, fmt.Errorf("Flow360 CLI metadata does not expose a browser-renderable SurfaceMesh asset")
 	}
 
 	if bbox := extractBoundingBox(&detail); bbox != nil {
@@ -150,6 +160,10 @@ func (c *Client) volumeMeshPreview(ctx context.Context, resourceID string) (Mesh
 			{ID: "volume", Name: "Volume", Color: "#f97316", Visible: true},
 		},
 	}
+	preview.AssetURL = extractAssetURL(&detail)
+	if preview.AssetURL == "" {
+		return MeshPreview{}, fmt.Errorf("Flow360 CLI metadata does not expose a browser-renderable VolumeMesh asset")
+	}
 
 	if bbox := extractBoundingBox(&detail); bbox != nil {
 		preview.BoundingBox = *bbox
@@ -184,6 +198,44 @@ func (c *Client) volumeMeshPreview(ctx context.Context, resourceID string) (Mesh
 	}
 
 	return preview, nil
+}
+
+func extractAssetURL(detail *ResourceDetail) string {
+	if detail == nil {
+		return ""
+	}
+	for _, raw := range []json.RawMessage{detail.Info, detail.Summary, detail.State} {
+		if value := findAssetURL(rawToMap(raw)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func findAssetURL(data map[string]any) string {
+	for key, value := range data {
+		lower := strings.ToLower(key)
+		if strings.Contains(lower, "preview") || strings.Contains(lower, "asset") || strings.Contains(lower, "gltf") || strings.Contains(lower, "glb") {
+			if candidate, ok := value.(string); ok && safePreviewURL(candidate) {
+				return candidate
+			}
+		}
+		if nested, ok := value.(map[string]any); ok {
+			if candidate := findAssetURL(nested); candidate != "" {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func safePreviewURL(candidate string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(candidate))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return false
+	}
+	path := strings.ToLower(parsed.Path)
+	return strings.HasSuffix(path, ".glb") || strings.HasSuffix(path, ".gltf")
 }
 
 var colorPalette = []string{
@@ -272,9 +324,10 @@ func extractInt(m map[string]any, keys ...string) int {
 				n, _ := v.Int64()
 				return int(n)
 			case string:
-				var n int
-				fmt.Sscanf(v, "%d", &n)
-				return n
+				n, err := strconv.Atoi(strings.TrimSpace(v))
+				if err == nil {
+					return n
+				}
 			}
 		}
 	}

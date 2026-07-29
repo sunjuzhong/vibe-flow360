@@ -14,7 +14,7 @@ import {
 import { useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { Viewer3D, type ViewerSelection } from './viewer/Viewer3D'
+import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
@@ -183,7 +183,7 @@ export default function VolumeMeshWorkspace({
       </div>
 
       <div className="viewer-section">
-        <Viewer3D
+        <LazyViewer3D
           manifest={manifest}
           state={viewerState}
           selection={viewerSelection}

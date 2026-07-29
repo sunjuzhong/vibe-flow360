@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -80,8 +81,52 @@ func New() *Server {
 	app.routes()
 
 	go app.startImportCleanupLoop()
+	go app.startCacheCleanupLoop()
+	go app.reconcileInterruptedPlans()
 
 	return app
+}
+
+func (s *Server) reconcileInterruptedPlans() {
+	list, err := s.plans.List("", "")
+	if err != nil {
+		log.Printf("Could not list plans for reconciliation: %v", err)
+		return
+	}
+	for _, plan := range list {
+		if plan.Status != plans.StatusReconciling {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		result, lookupErr := s.flow360.FindDraftByName(ctx, plan.ProjectID, plan.Name)
+		cancel()
+		if lookupErr != nil {
+			if _, err := s.plans.MarkReconcilePending(plan.ID, lookupErr); err != nil {
+				log.Printf("Could not persist reconciliation state for %s: %v", plan.ID, err)
+			}
+			continue
+		}
+		if _, err := s.plans.MarkSubmitted(plan.ID, result); err != nil {
+			log.Printf("Could not persist reconciled plan %s: %v", plan.ID, err)
+		}
+	}
+}
+
+func (s *Server) startCacheCleanupLoop() {
+	cleanup := func() {
+		removed, err := s.cache.Cleanup(projectcache.DefaultRetention)
+		if err != nil {
+			log.Printf("Flow360 cache cleanup error: %v", err)
+		} else if removed > 0 {
+			log.Printf("Cleaned up %d expired Flow360 cache snapshots", removed)
+		}
+	}
+	cleanup()
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		cleanup()
+	}
 }
 
 func (s *Server) startImportCleanupLoop() {
@@ -382,31 +427,17 @@ func (s *Server) approveImport(c *gin.Context) {
 }
 
 func (s *Server) runImport(c *gin.Context) {
-	plan, err := s.imports.Update(c.Param("import_id"), func(plan *importplans.Plan) error {
-		if plan.Status != "approved" && plan.Status != "failed" {
-			return fmt.Errorf("import must be approved before execution")
-		}
-		if plan.SourceType == "geometry" && !plan.UnitConfirmed {
-			return fmt.Errorf("geometry imports require unit confirmation before execution")
-		}
-		plan.Status = "running"
-		plan.Error = ""
-		return nil
-	})
+	plan, duplicate, err := s.imports.Start(c.Param("import_id"))
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
-	if plan.ContentHash != "" {
-		existing, hashErr := s.imports.FindByContentHash(plan.ContentHash)
-		if hashErr == nil && existing.ID != plan.ID {
-			c.JSON(http.StatusConflict, gin.H{
-				"error":           "identical import already submitted",
-				"existing_import": existing,
-			})
-			return
-		}
+	if duplicate != nil {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":           "identical import is already running or submitted",
+			"existing_import": duplicate,
+		})
+		return
 	}
 
 	result, runErr := s.flow360.CreateProject(
@@ -750,11 +781,12 @@ func (s *Server) flow360CaseConvergence(c *gin.Context) {
 		workDir,
 	)
 	if err != nil {
+		assessment := convergence.NewAssessment(convergence.StatusInsufficientData, "result discovery failed")
 		c.JSON(http.StatusOK, gin.H{
-			"status":  convergence.StatusInsufficientData,
-			"reason":  err.Error(),
-			"files":   []any{},
-			"overall": convergence.NewAssessment(convergence.StatusInsufficientData, "result discovery failed"),
+			"status":      convergence.StatusInsufficientData,
+			"reason":      err.Error(),
+			"files":       []any{},
+			"assessments": map[string]convergence.Assessment{"overall": assessment},
 		})
 		return
 	}
@@ -805,6 +837,14 @@ func (s *Server) compareCases(c *gin.Context) {
 	if len(req.CaseIDs) < 2 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least 2 case IDs are required for comparison"})
 		return
+	}
+	if req.Baseline != "" {
+		for index, id := range req.CaseIDs {
+			if id == req.Baseline {
+				req.CaseIDs[0], req.CaseIDs[index] = req.CaseIDs[index], req.CaseIDs[0]
+				break
+			}
+		}
 	}
 
 	kpiKeys := req.KPIKeys
@@ -857,13 +897,90 @@ func (s *Server) compareCases(c *gin.Context) {
 	}
 
 	result := comparison.CompareCases(baseline, others, kpiKeys)
+	for i := range result.Cases {
+		assessment, assessments := s.caseConvergenceEvidence(c.Request.Context(), result.Cases[i].ID)
+		result.Cases[i].Convergence = assessment
+		if resultKPIs := kpisFromConvergence(assessments, kpiKeys, assessment.Status == convergence.StatusConverged); len(resultKPIs) > 0 {
+			result.Cases[i].KPIs = resultKPIs
+		}
+		for j := range result.Cases[i].KPIs {
+			result.Cases[i].KPIs[j].Converged = assessment.Status == convergence.StatusConverged
+		}
+	}
+	result.Ranking = comparison.RankCases(result.Cases)
 
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) caseConvergenceEvidence(ctx context.Context, caseID string) (convergence.Assessment, map[string]convergence.Assessment) {
+	discovery, err := convergence.DiscoverCaseResults(ctx, caseID, s.flow360, s.workDir)
+	if err != nil {
+		return convergence.NewAssessment(convergence.StatusInsufficientData, err.Error()), nil
+	}
+	assessments := discovery.FullAssessment()
+	combined := convergence.NewAssessment(convergence.StatusInsufficientData, "no convergence evidence available")
+	for _, kind := range []string{"forces", "residuals", "overall"} {
+		assessment, ok := assessments[kind]
+		if !ok {
+			continue
+		}
+		if assessment.Status == convergence.StatusNotConverged {
+			return assessment, assessments
+		}
+		if assessment.Status == convergence.StatusConverged {
+			combined = assessment
+			continue
+		}
+		if combined.Reason == "no convergence evidence available" {
+			combined = assessment
+		}
+	}
+	return combined, assessments
+}
+
+func kpisFromConvergence(assessments map[string]convergence.Assessment, keys []string, converged bool) []comparison.KPIData {
+	forceAssessment, ok := assessments["forces"]
+	if !ok {
+		return nil
+	}
+	metricsByName := make(map[string]convergence.Metric, len(forceAssessment.Metrics))
+	for name, metric := range forceAssessment.Metrics {
+		metricsByName[normalizeKPIName(name)] = metric
+	}
+	result := make([]comparison.KPIData, 0, len(keys))
+	for _, key := range keys {
+		metric, exists := metricsByName[normalizeKPIName(key)]
+		if !exists {
+			continue
+		}
+		result = append(result, comparison.KPIData{
+			Name:      key,
+			Value:     metric.Final,
+			Converged: converged,
+			Source:    "Flow360 total forces history",
+		})
+	}
+	return result
+}
+
+func normalizeKPIName(value string) string {
+	var result strings.Builder
+	for _, r := range strings.ToLower(value) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
 type sweepRequest struct {
 	BaselineCaseID string                      `json:"baseline_case_id"`
+	ProjectID      string                      `json:"project_id"`
+	ProjectName    string                      `json:"project_name,omitempty"`
+	BaselineName   string                      `json:"baseline_name,omitempty"`
 	Parameters     []comparison.SweepParameter `json:"parameters"`
+	CreatePlans    bool                        `json:"create_plans,omitempty"`
+	Confirmed      bool                        `json:"confirmed,omitempty"`
 }
 
 func (s *Server) generateSweepPlan(c *gin.Context) {
@@ -881,18 +998,93 @@ func (s *Server) generateSweepPlan(c *gin.Context) {
 	plan := comparison.GenerateSweepPlan(req.BaselineCaseID, req.Parameters)
 
 	warnings := comparison.ValidateSweepPlan(plan)
-	if len(warnings) > 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"plan":     plan,
-			"warnings": warnings,
-		})
+	if !req.CreatePlans {
+		c.JSON(http.StatusOK, gin.H{"plan": plan, "warnings": warnings, "plans": []any{}})
 		return
 	}
+	if !req.Confirmed {
+		c.JSON(http.StatusConflict, gin.H{"error": "explicit sweep plan confirmation is required"})
+		return
+	}
+	if plan.OverBudget || plan.TotalCases == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "sweep size is not executable", "plan": plan, "warnings": warnings})
+		return
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project_id is required when creating sweep plans"})
+		return
+	}
+	baseline, err := s.flow360.ResourceDetail(c.Request.Context(), "Case", req.BaselineCaseID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "baseline Case is unavailable"})
+		return
+	}
+	created := make([]plans.Plan, 0, plan.TotalCases)
+	for index, combination := range plan.Combinations {
+		patch := sweepPatch(plan.Parameters, combination)
+		patchRaw, _ := json.Marshal(patch)
+		keyRaw, _ := json.Marshal(struct {
+			CaseID string
+			Params []comparison.SweepParameter
+			Values []float64
+		}{req.BaselineCaseID, plan.Parameters, combination})
+		key := fmt.Sprintf("sweep-%x", sha256.Sum256(keyRaw))
+		createdPlan, createErr := s.plans.Create(plans.CreateInput{
+			ProjectID:      req.ProjectID,
+			ProjectName:    req.ProjectName,
+			SourceID:       req.BaselineCaseID,
+			SourceType:     "Case",
+			SourceName:     req.BaselineName,
+			Target:         "case",
+			Name:           fmt.Sprintf("%s sweep %02d", firstNonEmpty(req.BaselineName, "Case"), index+1),
+			Intent:         "Reviewed parameter sweep: " + comparison.FormatCombination(plan.Parameters, combination),
+			Patch:          patchRaw,
+			Baseline:       baseline.SimulationParams,
+			IdempotencyKey: key,
+		})
+		if createErr != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": createErr.Error(), "plan": plan, "warnings": warnings, "plans": created})
+			return
+		}
+		created = append(created, createdPlan)
+	}
+	c.JSON(http.StatusOK, gin.H{"plan": plan, "warnings": warnings, "plans": created})
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"plan":     plan,
-		"warnings": []string{},
-	})
+func sweepPatch(parameters []comparison.SweepParameter, values []float64) map[string]any {
+	root := map[string]any{}
+	for i, parameter := range parameters {
+		if i >= len(values) {
+			break
+		}
+		segments := strings.Split(strings.Trim(parameter.Name, "."), ".")
+		current := root
+		for j, segment := range segments {
+			if segment == "" {
+				continue
+			}
+			if j == len(segments)-1 {
+				current[segment] = values[i]
+				continue
+			}
+			next, ok := current[segment].(map[string]any)
+			if !ok {
+				next = map[string]any{}
+				current[segment] = next
+			}
+			current = next
+		}
+	}
+	return root
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *Server) fetchCaseResource(ctx context.Context, caseID string) (flow360.ResourceDetail, error) {
@@ -1001,8 +1193,43 @@ func (s *Server) flow360ProjectJSON(
 }
 
 func (s *Server) cacheLiveJSON(kind, key string, raw json.RawMessage) {
+	if !cacheableSnapshot(kind, raw) {
+		log.Printf("Skipped incomplete Flow360 %s snapshot for %q", kind, key)
+		return
+	}
 	if _, err := s.cache.Put(kind, key, raw); err != nil {
 		log.Printf("Could not cache Flow360 %s %q: %v", kind, key, err)
+	}
+}
+
+func cacheableSnapshot(kind string, raw json.RawMessage) bool {
+	if !json.Valid(raw) {
+		return false
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return false
+	}
+	switch kind {
+	case "folder-tree", "project-tree":
+		root, ok := payload["root"].(map[string]any)
+		id, hasID := root["id"].(string)
+		return ok && hasID && strings.TrimSpace(id) != ""
+	case "project-list", "folder-projects":
+		for _, key := range []string{"records", "projects"} {
+			if records, ok := payload[key].([]any); ok {
+				return len(records) > 0
+			}
+		}
+		return false
+	case "project-items":
+		_, ok := payload["items"].([]any)
+		return ok
+	case "project-info", "resource-detail":
+		id, ok := payload["id"].(string)
+		return ok && strings.TrimSpace(id) != ""
+	default:
+		return false
 	}
 }
 
@@ -1017,6 +1244,9 @@ func (s *Server) serveCachedJSON(c *gin.Context, kind, key string) bool {
 	}
 	c.Header("X-VibeSim-Data-Source", "cache")
 	c.Header("X-VibeSim-Cached-At", entry.CachedAt.Format(time.RFC3339Nano))
+	if time.Since(entry.CachedAt) > projectcache.DefaultTTL {
+		c.Header("X-VibeSim-Cache-Stale", "true")
+	}
 	c.Header("Warning", `110 - "Response is a cached Flow360 snapshot"`)
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "application/json; charset=utf-8", entry.Data)

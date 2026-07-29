@@ -200,11 +200,3 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
-
-func compact(data []byte) string {
-	value := strings.Join(strings.Fields(string(data)), " ")
-	if len(value) > 500 {
-		return value[:500] + "…"
-	}
-	return value
-}

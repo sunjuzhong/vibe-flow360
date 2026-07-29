@@ -22,24 +22,25 @@ type KPIData struct {
 }
 
 type DiffEntry struct {
-	Path     string      `json:"path"`
-	Baseline interface{} `json:"baseline"`
-	Other    interface{} `json:"other"`
+	Path       string      `json:"path"`
+	Baseline   interface{} `json:"baseline"`
+	Other      interface{} `json:"other"`
+	ComparedTo string      `json:"compared_to,omitempty"`
 }
 
 type CompareResult struct {
-	Cases  []CaseComparison `json:"cases"`
-	Diffs  []DiffEntry      `json:"diffs"`
-	Ranking []RankedCase    `json:"ranking,omitempty"`
+	Cases   []CaseComparison `json:"cases"`
+	Diffs   []DiffEntry      `json:"diffs"`
+	Ranking []RankedCase     `json:"ranking,omitempty"`
 }
 
 type CaseComparison struct {
-	ID          string                `json:"id"`
-	Name        string                `json:"name"`
-	Status      string                `json:"status"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Status      string                 `json:"status"`
 	Params      map[string]interface{} `json:"params"`
-	Convergence convergence.Assessment  `json:"convergence"`
-	KPIs        []KPIData             `json:"kpis"`
+	Convergence convergence.Assessment `json:"convergence"`
+	KPIs        []KPIData              `json:"kpis"`
 }
 
 type RankedCase struct {
@@ -47,20 +48,30 @@ type RankedCase struct {
 	Name        string                 `json:"name"`
 	Score       float64                `json:"score"`
 	Reason      string                 `json:"reason"`
-	Convergence convergence.Assessment  `json:"convergence"`
+	Convergence convergence.Assessment `json:"convergence"`
 }
 
 func CompareCases(baseline map[string]interface{}, others []map[string]interface{}, kpiKeys []string) CompareResult {
 	var diffs []DiffEntry
-	if len(others) > 0 {
-		diffs = computeDiff(baseline, others[0], "")
+	for _, other := range others {
+		comparedTo := caseIDFromParams(other)
+		if comparedTo == "" {
+			comparedTo = caseNameFromParams(other)
+		}
+		baselineParams := semanticParams(baseline)
+		otherParams := semanticParams(other)
+		for _, difference := range computeDiff(baselineParams, otherParams, "") {
+			difference.ComparedTo = comparedTo
+			diffs = append(diffs, difference)
+		}
 	}
 
 	result := CompareResult{
 		Diffs: diffs,
 	}
 
-	for _, other := range others {
+	allCases := append([]map[string]interface{}{baseline}, others...)
+	for _, other := range allCases {
 		cc := CaseComparison{
 			ID:     caseIDFromParams(other),
 			Name:   caseNameFromParams(other),
@@ -71,7 +82,45 @@ func CompareCases(baseline map[string]interface{}, others []map[string]interface
 		result.Cases = append(result.Cases, cc)
 	}
 
+	result.Ranking = RankCases(result.Cases)
 	return result
+}
+
+func semanticParams(input map[string]interface{}) map[string]interface{} {
+	value, ok := input["simulation_params"].(map[string]interface{})
+	if !ok {
+		value = input
+	}
+	normalized, _ := normalizeForCompare(value).(map[string]interface{})
+	return normalized
+}
+
+func normalizeForCompare(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{}, len(typed))
+		for key, child := range typed {
+			lower := strings.ToLower(key)
+			if key == "_id" || strings.HasPrefix(lower, "private_attribute") {
+				continue
+			}
+			result[key] = normalizeForCompare(child)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for index, child := range typed {
+			result[index] = normalizeForCompare(child)
+		}
+		sort.SliceStable(result, func(i, j int) bool {
+			left, _ := json.Marshal(result[i])
+			right, _ := json.Marshal(result[j])
+			return string(left) < string(right)
+		})
+		return result
+	default:
+		return typed
+	}
 }
 
 func computeDiff(a, b map[string]interface{}, prefix string) []DiffEntry {
@@ -140,7 +189,7 @@ func jsonEqual(a, b interface{}) bool {
 }
 
 func extractKPIs(params map[string]interface{}, keys []string) []KPIData {
-	var kpis []KPIData
+	kpis := make([]KPIData, 0)
 	for _, key := range keys {
 		val := findValue(params, key)
 		if val == nil {

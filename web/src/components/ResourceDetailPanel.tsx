@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ResourceDetail } from '../api/client'
+import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
 type Tab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
@@ -110,13 +111,19 @@ export default function ResourceDetailPanel({
   const [resultAction, setResultAction] = useState<{ path: string; kind: 'preview' | 'download' } | null>(null)
   const previewOpen = previewResult !== null
   const previewRef = useFocusTrap<HTMLDivElement>(previewOpen, () => setPreviewResult(null), 'button.icon-button')
+  const {
+    result: convergence,
+    loading: convergenceLoading,
+    error: convergenceError,
+    refetch: refetchConvergence,
+  } = useConvergenceAssessment(resourceType === 'Case' ? resourceId : null)
 
   const tabs = useMemo(() => {
     const next = [...baseTabs]
     if (resourceType === 'Case') {
       next.push({ id: 'results', label: 'Results', icon: FileOutput })
-      next.push({ id: 'convergence', label: 'Convergence', icon: BarChart3, disabled: true, badge: 'Soon' })
-      next.push({ id: 'compare', label: 'Compare', icon: GitCompare, disabled: true, badge: 'Soon' })
+      next.push({ id: 'convergence', label: 'Convergence', icon: BarChart3 })
+      next.push({ id: 'compare', label: 'Compare', icon: GitCompare })
     }
     next.push({ id: 'logs', label: 'Logs', icon: ScrollText })
     return next
@@ -364,20 +371,57 @@ export default function ResourceDetailPanel({
         )}
 
         {tab === 'convergence' && (
-          <div className="coming-soon-panel">
-            <BarChart3 size={18} />
-            <strong>Residual convergence</strong>
-            <p>Coming soon. This feature will display residual history plots from result CSV files.</p>
-            <small>You can already download result CSV files from the Results tab and plot them locally.</small>
+          <div className="convergence-panel">
+            <div className="detail-section-heading">
+              <div>
+                <strong>Deterministic convergence assessment</strong>
+                <span>Residual and force histories are analyzed by the Go service, not inferred by AI.</span>
+              </div>
+              <button className="toolbar-refresh" onClick={() => refetchConvergence()} disabled={convergenceLoading}>
+                <RefreshCw size={13} className={convergenceLoading ? 'spin' : ''} /> Refresh
+              </button>
+            </div>
+            {convergenceLoading && <div className="detail-empty"><RefreshCw size={16} className="spin" /> Analyzing result files…</div>}
+            {convergenceError && <div className="detail-log-error"><AlertCircle size={15} />{convergenceError}</div>}
+            {convergence && (
+              <>
+                <div className={`convergence-banner convergence-${convergence.status}`}>
+                  <BarChart3 size={18} />
+                  <div><strong>{humanize(convergence.status)}</strong><p>{convergence.reason}</p></div>
+                </div>
+                {Object.entries(convergence.assessments).map(([name, assessment]) => (
+                  <div className="convergence-metrics" key={name}>
+                    <h4>{humanize(name)}</h4>
+                    <p>{assessment.reason}</p>
+                    <small>
+                      Window {assessment.window_size} · threshold {assessment.threshold} · {assessment.algorithm_version}
+                    </small>
+                    <dl className="detail-field-grid">
+                      {Object.entries(assessment.metrics ?? {}).map(([metricName, metric]) => (
+                        <div key={metricName}>
+                          <dt>{metricName}</dt>
+                          <dd>{metric.final} · {metric.stable ? 'stable' : 'unstable'}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
         {tab === 'compare' && (
-          <div className="coming-soon-panel">
+          <div className="compare-panel">
             <GitCompare size={18} />
-            <strong>Case comparison</strong>
-            <p>Coming soon. This feature will let you compare results across multiple Cases in the same Project.</p>
-            <small>To compare manually, download result CSV files from each Case's Results tab.</small>
+            <strong>Compare this Case</strong>
+            <p>Select another Case from this Project to compare SimulationParams, KPI sources, and convergence risk.</p>
+            <a
+              className="geometry-plan-action"
+              href={`/projects/${encodeURIComponent(String(detail.info?.project_id ?? ''))}/compare?cases=${encodeURIComponent(resourceId)}`}
+            >
+              Open Case Compare
+            </a>
           </div>
         )}
 

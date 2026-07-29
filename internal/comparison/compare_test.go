@@ -72,9 +72,37 @@ func TestCompareCasesNoDifferences(t *testing.T) {
 	}
 }
 
+func TestCompareCasesIgnoresPrivateMetadataAndArrayOrder(t *testing.T) {
+	baseline := map[string]interface{}{
+		"id":   "case-a",
+		"name": "Case A",
+		"simulation_params": map[string]interface{}{
+			"models": []interface{}{
+				map[string]interface{}{"name": "wall", "_id": "generated-a"},
+				map[string]interface{}{"name": "fluid", "private_attribute_id": "one"},
+			},
+		},
+	}
+	other := map[string]interface{}{
+		"id":   "case-b",
+		"name": "Case B",
+		"simulation_params": map[string]interface{}{
+			"models": []interface{}{
+				map[string]interface{}{"name": "fluid", "private_attribute_id": "two"},
+				map[string]interface{}{"name": "wall", "_id": "generated-b"},
+			},
+		},
+	}
+
+	result := CompareCases(baseline, []map[string]interface{}{other}, nil)
+	if len(result.Diffs) != 0 {
+		t.Fatalf("expected generated metadata and array order to be ignored, got %#v", result.Diffs)
+	}
+}
+
 func TestCompareCasesMissingKey(t *testing.T) {
 	baseline := map[string]interface{}{
-		"name": "Case A",
+		"name":  "Case A",
 		"extra": "value",
 	}
 

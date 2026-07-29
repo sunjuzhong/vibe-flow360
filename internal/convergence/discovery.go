@@ -12,9 +12,9 @@ import (
 )
 
 type ResultFile struct {
-	Path    string `json:"path"`
-	Type    string `json:"type"`
-	Size    int64  `json:"size"`
+	Path string `json:"path"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
 }
 
 type Discovery struct {
@@ -35,14 +35,55 @@ func DiscoverCaseResults(ctx context.Context, caseID string, remoteClient *flow3
 		}
 	}
 
-	if remoteClient != nil {
+	residualPreference := 0
+	forcePreference := 0
+	for _, file := range discovery.Files {
+		if file.Type == "residuals" {
+			residualPreference = max(residualPreference, resultPreference(file.Path, "residuals"))
+		}
+		if file.Type == "forces" {
+			forcePreference = max(forcePreference, resultPreference(file.Path, "forces"))
+		}
+	}
+
+	if remoteClient != nil && (residualPreference < 30 || forcePreference < 30) {
 		results, err := remoteClient.ListCaseResults(ctx, caseID)
 		if err == nil {
-			for _, r := range results {
+			candidates := preferredRemoteResults(results)
+			for resultType, r := range candidates {
+				if resultType == "residuals" && residualPreference >= resultPreference(r, resultType) {
+					continue
+				}
+				if resultType == "forces" && forcePreference >= resultPreference(r, resultType) {
+					continue
+				}
+				localPath, downloadErr := remoteClient.DownloadCaseResultTo(
+					ctx,
+					caseID,
+					r,
+					localDir,
+					50*1024*1024,
+				)
+				if downloadErr != nil {
+					discovery.Files = append(discovery.Files, ResultFile{Path: r, Type: resultType})
+					continue
+				}
+				info, _ := os.Stat(localPath)
+				var size int64
+				if info != nil {
+					size = info.Size()
+				}
 				discovery.Files = append(discovery.Files, ResultFile{
-					Path: r,
-					Type: classifyResultFile(r),
+					Path: localPath,
+					Type: resultType,
+					Size: size,
 				})
+				if resultType == "residuals" {
+					residualPreference = resultPreference(localPath, resultType)
+				}
+				if resultType == "forces" {
+					forcePreference = resultPreference(localPath, resultType)
+				}
 			}
 		}
 	}
@@ -102,47 +143,98 @@ func classifyResultFile(path string) string {
 }
 
 func (d *Discovery) AnalyzeResiduals() (Assessment, error) {
-	for _, f := range d.Files {
-		if f.Type == "residuals" {
-			file, err := os.Open(f.Path)
-			if err != nil {
-				return NewAssessment(StatusInsufficientData, fmt.Sprintf("cannot open residual file: %s", err)), nil
-			}
-			defer file.Close()
-
-			reader := io.LimitReader(file, 50*1024*1024)
-			rows, err := ParseResidualsCSV(reader)
-			if err != nil {
-				return NewAssessment(StatusInsufficientData, fmt.Sprintf("parse residual CSV failed: %s", err)), nil
-			}
-
-			analyzer := NewAnalyzer()
-			return analyzer.AnalyzeResiduals(rows), nil
+	if f, ok := preferredFile(d.Files, "residuals"); ok {
+		file, err := os.Open(f.Path)
+		if err != nil {
+			return NewAssessment(StatusInsufficientData, fmt.Sprintf("cannot open residual file: %s", err)), nil
 		}
+		defer file.Close()
+
+		reader := io.LimitReader(file, 50*1024*1024)
+		rows, err := ParseResidualsCSV(reader)
+		if err != nil {
+			return NewAssessment(StatusInsufficientData, fmt.Sprintf("parse residual CSV failed: %s", err)), nil
+		}
+
+		analyzer := NewAnalyzer()
+		return analyzer.AnalyzeResiduals(rows), nil
 	}
 	return NewAssessment(StatusInsufficientData, "no residual file found"), nil
 }
 
 func (d *Discovery) AnalyzeForces() (Assessment, error) {
-	for _, f := range d.Files {
-		if f.Type == "forces" {
-			file, err := os.Open(f.Path)
-			if err != nil {
-				return NewAssessment(StatusInsufficientData, fmt.Sprintf("cannot open force file: %s", err)), nil
-			}
-			defer file.Close()
-
-			reader := io.LimitReader(file, 50*1024*1024)
-			rows, err := ParseForcesCSV(reader)
-			if err != nil {
-				return NewAssessment(StatusInsufficientData, fmt.Sprintf("parse force CSV failed: %s", err)), nil
-			}
-
-			analyzer := NewAnalyzer()
-			return analyzer.AnalyzeForces(rows), nil
+	if f, ok := preferredFile(d.Files, "forces"); ok {
+		file, err := os.Open(f.Path)
+		if err != nil {
+			return NewAssessment(StatusInsufficientData, fmt.Sprintf("cannot open force file: %s", err)), nil
 		}
+		defer file.Close()
+
+		reader := io.LimitReader(file, 50*1024*1024)
+		rows, err := ParseForcesCSV(reader)
+		if err != nil {
+			return NewAssessment(StatusInsufficientData, fmt.Sprintf("parse force CSV failed: %s", err)), nil
+		}
+
+		analyzer := NewAnalyzer()
+		return analyzer.AnalyzeForces(rows), nil
 	}
 	return NewAssessment(StatusInsufficientData, "no force file found"), nil
+}
+
+func preferredRemoteResults(results []string) map[string]string {
+	selected := map[string]string{}
+	for _, path := range results {
+		kind := classifyResultFile(path)
+		if kind != "residuals" && kind != "forces" {
+			continue
+		}
+		current := selected[kind]
+		if current == "" || resultPreference(path, kind) > resultPreference(current, kind) {
+			selected[kind] = path
+		}
+	}
+	return selected
+}
+
+func preferredFile(files []ResultFile, kind string) (ResultFile, bool) {
+	var selected ResultFile
+	found := false
+	for _, file := range files {
+		if file.Type != kind {
+			continue
+		}
+		if !found || resultPreference(file.Path, kind) > resultPreference(selected.Path, kind) {
+			selected = file
+			found = true
+		}
+	}
+	return selected, found
+}
+
+func resultPreference(path, kind string) int {
+	name := strings.ToLower(filepath.Base(path))
+	switch kind {
+	case "residuals":
+		switch {
+		case strings.Contains(name, "nonlinear_residual"):
+			return 30
+		case strings.Contains(name, "linear_residual"):
+			return 20
+		default:
+			return 10
+		}
+	case "forces":
+		switch {
+		case strings.Contains(name, "total_forces"):
+			return 30
+		case strings.Contains(name, "surface_forces"):
+			return 20
+		default:
+			return 10
+		}
+	}
+	return 0
 }
 
 func (d *Discovery) FullAssessment() map[string]Assessment {

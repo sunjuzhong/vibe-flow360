@@ -236,6 +236,61 @@ func TestStoreRecoverInterruptedMarksRunningPlansReconciling(t *testing.T) {
 	}
 }
 
+func TestStoreRecoveryKeepsSubmittedPlansSubmitted(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "vm-1", SourceType: "VolumeMesh",
+		Target: "case", Name: "baseline", Intent: "Run baseline.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(created.ID, func(plan *Plan) error {
+		plan.Status = StatusSubmitted
+		plan.SubmissionID = "sub-1"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewStore(store.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := reopened.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != StatusSubmitted {
+		t.Fatalf("submitted plan regressed to %q after restart", loaded.Status)
+	}
+}
+
+func TestStoreCreateIsIdempotentByKey(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := CreateInput{
+		ProjectID: "prj-1", SourceID: "case-1", SourceType: "Case",
+		Target: "case", Name: "alpha 5", Intent: "Sweep alpha.", Patch: json.RawMessage(`{"alpha":5}`),
+		IdempotencyKey: "sweep-case-1-alpha-5",
+	}
+	first, err := store.Create(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Create(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("idempotent create produced %q and %q", first.ID, second.ID)
+	}
+}
+
 func TestClassifyErrorDetectsCategories(t *testing.T) {
 	cases := []struct {
 		msg      string

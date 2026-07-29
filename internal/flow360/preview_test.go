@@ -2,6 +2,7 @@ package flow360
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 )
 
@@ -93,8 +94,8 @@ func TestExtractBoundingBoxSameMinMaxReturnsNil(t *testing.T) {
 
 func TestExtractInt(t *testing.T) {
 	m := map[string]any{
-		"cell_count":   float64(10000),
-		"num_cells":    float64(20000),
+		"cell_count":    float64(10000),
+		"num_cells":     float64(20000),
 		"element_count": "30000",
 	}
 
@@ -142,5 +143,24 @@ func TestMeshPreviewMarshal(t *testing.T) {
 	}
 	if len(decoded.Groups) != 1 || decoded.Groups[0].ID != "region-0" {
 		t.Fatalf("unexpected groups: %v", decoded.Groups)
+	}
+}
+
+func TestExtractAssetURLAcceptsOnlyHTTPSGLTF(t *testing.T) {
+	detail := &ResourceDetail{
+		Info: json.RawMessage(`{"asset":{"preview_url":"https://assets.example.test/wing.glb?signature=abc"}}`),
+	}
+	if got := extractAssetURL(detail); got != "https://assets.example.test/wing.glb?signature=abc" {
+		t.Fatalf("unexpected asset URL %q", got)
+	}
+	for _, candidate := range []string{
+		"http://assets.example.test/wing.glb",
+		"file:///tmp/wing.glb",
+		"https://assets.example.test/wing.zip",
+	} {
+		detail.Info = json.RawMessage(`{"preview_url":` + strconv.Quote(candidate) + `}`)
+		if got := extractAssetURL(detail); got != "" {
+			t.Fatalf("unsafe asset URL was accepted: %q", got)
+		}
 	}
 }

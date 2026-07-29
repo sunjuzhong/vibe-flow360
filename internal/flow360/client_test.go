@@ -2,6 +2,7 @@ package flow360
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -123,5 +124,59 @@ func TestResourceResultRejectsNonCaseResources(t *testing.T) {
 	_, _, err := client.ResourceResult(context.Background(), "Geometry", "geo-123", "result.csv")
 	if err == nil || !strings.Contains(err.Error(), "only available for Case") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCollectResultPathsSupportsRecordsEnvelope(t *testing.T) {
+	var payload any
+	if err := json.Unmarshal([]byte(`{"records":[{"name":"residuals.csv","path":"results/residuals.csv"},{"name":"forces.csv"}]}`), &payload); err != nil {
+		t.Fatal(err)
+	}
+	got := collectResultPaths(payload)
+	if len(got) != 2 || got[0] != "results/residuals.csv" || got[1] != "forces.csv" {
+		t.Fatalf("unexpected result paths: %#v", got)
+	}
+}
+
+func TestListCaseResultsAllowsFlow360LogPrefix(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+printf '[00:00:00] INFO: profile loaded\n'
+printf '{"records":[{"path":"results/nonlinear_residual_v2.csv"},{"path":"results/total_forces_v2.csv"}]}\n'
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	paths, err := client.ListCaseResults(context.Background(), "case-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[0] != "results/nonlinear_residual_v2.csv" {
+		t.Fatalf("unexpected paths: %#v", paths)
+	}
+}
+
+func TestFindDraftByNameReturnsRemoteDraftID(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+printf '{"records":[{"id":"draft-other","name":"Other"},{"id":"draft-123","name":"Recovered run","case_id":"case-456"}]}\n'
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	raw, err := client.FindDraftByName(context.Background(), "prj-1", "Recovered run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["draft_id"] != "draft-123" || result["case_id"] != "case-456" {
+		t.Fatalf("unexpected reconciliation result: %#v", result)
 	}
 }

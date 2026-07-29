@@ -12,6 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/vibesim/internal/agent"
+	"github.com/sjzsdu/vibesim/internal/comparison"
+	"github.com/sjzsdu/vibesim/internal/convergence"
 	"github.com/sjzsdu/vibesim/internal/flow360"
 	"github.com/sjzsdu/vibesim/internal/plans"
 	"github.com/sjzsdu/vibesim/internal/projectcache"
@@ -32,6 +34,47 @@ func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestCacheableSnapshotRejectsEmptyWorkspaceResponses(t *testing.T) {
+	tests := []struct {
+		kind string
+		raw  json.RawMessage
+		want bool
+	}{
+		{"folder-tree", json.RawMessage(`{"root":{"id":"ROOT.FLOW360","name":"Workspace"}}`), true},
+		{"folder-tree", json.RawMessage(`{"root":{}}`), false},
+		{"project-list", json.RawMessage(`{"records":[{"id":"prj-1"}]}`), true},
+		{"project-list", json.RawMessage(`{"records":[]}`), false},
+		{"resource-detail", json.RawMessage(`{"id":"case-1","type":"Case"}`), true},
+		{"resource-detail", json.RawMessage(`{"type":"Case"}`), false},
+	}
+	for _, test := range tests {
+		if got := cacheableSnapshot(test.kind, test.raw); got != test.want {
+			t.Fatalf("%s %s: got %v, want %v", test.kind, test.raw, got, test.want)
+		}
+	}
+}
+
+func TestSweepPatchBuildsNestedMergePatch(t *testing.T) {
+	patch := sweepPatch(
+		[]comparison.SweepParameter{
+			{Name: "operating_condition.alpha.value"},
+			{Name: "models.turbulence_model.constants.c1"},
+		},
+		[]float64{5, 1.2},
+	)
+	operating := patch["operating_condition"].(map[string]any)
+	alpha := operating["alpha"].(map[string]any)
+	if alpha["value"] != float64(5) {
+		t.Fatalf("unexpected alpha patch: %#v", patch)
+	}
+	models := patch["models"].(map[string]any)
+	turbulence := models["turbulence_model"].(map[string]any)
+	constants := turbulence["constants"].(map[string]any)
+	if constants["c1"] != 1.2 {
+		t.Fatalf("unexpected turbulence patch: %#v", patch)
 	}
 }
 
@@ -401,5 +444,54 @@ func TestGenerateSweepValidatesBaselineCaseID(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestGenerateSweepPreviewReturnsArrayContracts(t *testing.T) {
+	app := &Server{}
+
+	body := `{"baseline_case_id":"case-1","parameters":[{"name":"alpha","values":[0,5,10]}]}`
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/sweep", strings.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.generateSweepPlan(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Warnings []string `json:"warnings"`
+		Plans    []any    `json:"plans"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Warnings == nil || response.Plans == nil {
+		t.Fatalf("expected empty JSON arrays, got %s", recorder.Body.String())
+	}
+}
+
+func TestKPIsFromConvergenceUsesForceHistory(t *testing.T) {
+	assessments := map[string]convergence.Assessment{
+		"forces": {
+			Status: convergence.StatusConverged,
+			Metrics: map[string]convergence.Metric{
+				"CL": {Name: "CL", Final: 0.42},
+				"CD": {Name: "CD", Final: 0.018},
+			},
+		},
+	}
+
+	kpis := kpisFromConvergence(assessments, []string{"Cl", "Cd", "Cm"}, true)
+	if len(kpis) != 2 {
+		t.Fatalf("expected 2 KPIs, got %#v", kpis)
+	}
+	if kpis[0].Name != "Cl" || kpis[0].Value != 0.42 || kpis[0].Source != "Flow360 total forces history" {
+		t.Fatalf("unexpected lift KPI: %#v", kpis[0])
+	}
+	if !kpis[1].Converged {
+		t.Fatalf("expected converged KPI: %#v", kpis[1])
 	}
 }

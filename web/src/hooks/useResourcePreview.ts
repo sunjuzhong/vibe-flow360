@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ViewerManifest, ViewerState } from '../components/viewer/Viewer3D'
+import type { ViewerManifest, ViewerState } from '../components/viewer/LazyViewer3D'
 
 export function useResourcePreview(resourceType: string | null, resourceId: string | null) {
   const [manifest, setManifest] = useState<ViewerManifest | null>(null)

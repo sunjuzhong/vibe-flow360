@@ -12,7 +12,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   api,
-  type Flow360DataResponse,
   type Flow360Status,
   type FolderNode,
   type ProjectRecord,
@@ -49,29 +48,55 @@ export default function WorkspacePage() {
     })
   }
 
-  const loadFolders = () => {
+  const loadFolders = async () => {
     setFoldersLoading(true)
     setFoldersError('')
     setFoldersDataSource('live')
-    api.folders()
-      .then((response) => {
-        setFolderRoot(response.data.root)
-        setFoldersDataSource(response.source)
-        setFoldersCachedAt(response.cachedAt || '')
-      })
-      .catch((error) => setFoldersError(String(error).replace('Error: ', '')))
-      .finally(() => setFoldersLoading(false))
+    let cachedLoaded = false
+    try {
+      const cached = await api.folders(true)
+      setFolderRoot(cached.data.root)
+      setFoldersDataSource('cache')
+      setFoldersCachedAt(cached.cachedAt || '')
+      cachedLoaded = true
+      setFoldersLoading(false)
+    } catch {
+      // A first-visit cache miss is expected.
+    }
+    try {
+      const response = await api.folders()
+      setFolderRoot(response.data.root)
+      setFoldersDataSource(response.source)
+      setFoldersCachedAt(response.cachedAt || '')
+    } catch (error) {
+      if (!cachedLoaded) setFoldersError(String(error).replace('Error: ', ''))
+    } finally {
+      setFoldersLoading(false)
+    }
   }
 
   useEffect(() => {
     loadStatus()
-    loadFolders()
+    void loadFolders()
   }, [])
 
   const loadProjects = async (folder: FolderNode) => {
     setSelectedFolder(folder)
     setProjectsLoading(true)
     setProjectsMessage('')
+    let cachedLoaded = false
+    try {
+      const cached = await api.projects(folder.id, true)
+      const records = cached.data.records ?? cached.data.projects ?? []
+      setProjects(records)
+      setProjectsDataSource('cache')
+      setProjectsCachedAt(cached.cachedAt || '')
+      setProjectsMessage(records.length ? '' : 'This folder has no cached projects')
+      cachedLoaded = true
+      setProjectsLoading(false)
+    } catch {
+      // A first-visit cache miss is expected.
+    }
     try {
       const response = await api.projects(folder.id)
       const records = response.data.records ?? response.data.projects ?? []
@@ -80,9 +105,10 @@ export default function WorkspacePage() {
       setProjectsCachedAt(response.cachedAt || '')
       setProjectsMessage(response.data.warning || (records.length ? '' : 'This folder has no projects'))
     } catch (error) {
-      setProjects([])
-      setProjectsDataSource('cache')
-      setProjectsMessage(String(error).replace('Error: ', ''))
+      if (!cachedLoaded) {
+        setProjects([])
+        setProjectsMessage(String(error).replace('Error: ', ''))
+      }
     } finally {
       setProjectsLoading(false)
     }
@@ -129,7 +155,7 @@ export default function WorkspacePage() {
       <aside className="workspace-sidebar">
         <div className="sidebar-heading">
           <div><span className="eyebrow">FLOW360</span><h2>Workspace</h2></div>
-          <button className="icon-button" onClick={loadFolders} disabled={foldersLoading} aria-label="Refresh folders">
+          <button className="icon-button" onClick={() => void loadFolders()} disabled={foldersLoading} aria-label="Refresh folders">
             <RefreshCw size={15} className={foldersLoading ? 'spin' : ''} />
           </button>
         </div>
@@ -138,7 +164,7 @@ export default function WorkspacePage() {
           <div className="panel-state compact error">
             <AlertCircle size={16} />
             <span>{foldersError}</span>
-            <button onClick={loadFolders}>Retry</button>
+            <button onClick={() => void loadFolders()}>Retry</button>
           </div>
         )}
         {!foldersLoading && foldersDataSource === 'cache' && (

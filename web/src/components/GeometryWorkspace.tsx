@@ -2,7 +2,7 @@ import { Box, CheckCircle2, CircleDashed, GitPullRequestDraft, Ruler, ScanLine, 
 import { useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { Viewer3D, type ViewerSelection } from './viewer/Viewer3D'
+import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 
 function findFirst(value: unknown, keys: Set<string>): unknown {
@@ -59,7 +59,7 @@ export default function GeometryWorkspace({
   return (
     <section className="geometry-workspace">
       <div className="viewer-section">
-        <Viewer3D
+        <LazyViewer3D
           manifest={manifest}
           state={viewerState}
           selection={viewerSelection}

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronRight,
   GitBranch,
+  GitCompare,
   GitPullRequestDraft,
   MessageSquareText,
   RefreshCw,
@@ -243,6 +244,11 @@ export default function ProjectPage() {
             {selected && (
               <button onClick={() => { setChatOpen(false); setPlanOpen(true) }}>
                 <GitPullRequestDraft size={15} /> Plan next step
+              </button>
+            )}
+            {items.some((item) => item.type === 'Case') && (
+              <button onClick={() => navigate(`/projects/${projectId}/compare`)}>
+                <GitCompare size={15} /> Compare Cases
               </button>
             )}
             <button className="ai-action" onClick={() => setChatOpen(true)}>

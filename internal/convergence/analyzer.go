@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -373,10 +374,14 @@ func ParseResidualsCSV(r io.Reader) ([]ResidualRow, error) {
 
 		row := ResidualRow{Residuals: make(map[string]float64)}
 		if iterIdx >= 0 && iterIdx < len(record) {
-			fmt.Sscanf(strings.TrimSpace(record[iterIdx]), "%d", &row.Iteration)
+			if value, parseErr := strconv.Atoi(strings.TrimSpace(record[iterIdx])); parseErr == nil {
+				row.Iteration = value
+			}
 		}
 		if timeIdx >= 0 && timeIdx < len(record) {
-			fmt.Sscanf(strings.TrimSpace(record[timeIdx]), "%f", &row.Time)
+			if value, parseErr := strconv.ParseFloat(strings.TrimSpace(record[timeIdx]), 64); parseErr == nil {
+				row.Time = value
+			}
 		}
 		for i, h := range cleanHeaders {
 			if i >= len(record) {
@@ -433,10 +438,14 @@ func ParseForcesCSV(r io.Reader) ([]ForceRow, error) {
 
 		row := ForceRow{Forces: make(map[string]float64)}
 		if iterIdx >= 0 && iterIdx < len(record) {
-			fmt.Sscanf(strings.TrimSpace(record[iterIdx]), "%d", &row.Iteration)
+			if value, parseErr := strconv.Atoi(strings.TrimSpace(record[iterIdx])); parseErr == nil {
+				row.Iteration = value
+			}
 		}
 		if timeIdx >= 0 && timeIdx < len(record) {
-			fmt.Sscanf(strings.TrimSpace(record[timeIdx]), "%f", &row.Time)
+			if value, parseErr := strconv.ParseFloat(strings.TrimSpace(record[timeIdx]), 64); parseErr == nil {
+				row.Time = value
+			}
 		}
 		for i, h := range cleanHeaders {
 			if i >= len(record) {

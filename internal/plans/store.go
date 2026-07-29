@@ -82,6 +82,7 @@ type Plan struct {
 	Result         json.RawMessage `json:"result,omitempty"`
 	Error          string          `json:"error,omitempty"`
 	ErrorCategory  ErrorCategory   `json:"error_category,omitempty"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	SubmissionID   string          `json:"submission_id,omitempty"`
 	RemoteIDs      *RemoteIDs      `json:"remote_ids,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
@@ -89,16 +90,17 @@ type Plan struct {
 }
 
 type CreateInput struct {
-	ProjectID   string
-	ProjectName string
-	SourceID    string
-	SourceType  string
-	SourceName  string
-	Target      string
-	Name        string
-	Intent      string
-	Patch       json.RawMessage
-	Baseline    json.RawMessage
+	ProjectID      string
+	ProjectName    string
+	SourceID       string
+	SourceType     string
+	SourceName     string
+	Target         string
+	Name           string
+	Intent         string
+	Patch          json.RawMessage
+	Baseline       json.RawMessage
+	IdempotencyKey string
 }
 
 type Store struct {
@@ -128,6 +130,11 @@ func (s *Store) Create(input CreateInput) (Plan, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if plan.IdempotencyKey != "" {
+		if existing, ok := s.findByIdempotencyKey(plan.IdempotencyKey); ok {
+			return existing, nil
+		}
+	}
 	if err := s.write(plan); err != nil {
 		return Plan{}, err
 	}
@@ -264,9 +271,27 @@ func Compile(input CreateInput) (Plan, error) {
 		Validations:    validations,
 		CommandPreview: []string{"flow360", "draft", "run", input.SourceID, "--name", input.Name, "--patch", "<generated-plan-patch.json>", "--up-to", input.Target},
 		Status:         StatusDraft,
+		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}, nil
+}
+
+func (s *Store) findByIdempotencyKey(key string) (Plan, bool) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return Plan{}, false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		plan, err := s.read(strings.TrimSuffix(entry.Name(), ".json"))
+		if err == nil && plan.IdempotencyKey == key {
+			return plan, true
+		}
+	}
+	return Plan{}, false
 }
 
 func (s *Store) read(id string) (Plan, error) {
@@ -338,14 +363,6 @@ func (s *Store) recoverInterrupted() error {
 				return err
 			}
 		}
-		if plan.Status == StatusSubmitted {
-			plan.Status = StatusReconciling
-			plan.Error = "Submitted plan needs reconciliation with Flow360."
-			plan.UpdatedAt = time.Now().UTC()
-			if err := s.write(plan); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -358,10 +375,24 @@ func (s *Store) CanRun(id string) (Plan, error) {
 	if plan.SubmissionID != "" {
 		return Plan{}, errors.New(ErrDoubleSubmitProtect)
 	}
-	if plan.Status != StatusApproved && plan.Status != StatusFailed && plan.Status != StatusReconciling {
+	if plan.Status != StatusApproved && plan.Status != StatusFailed {
 		return Plan{}, errors.New(ErrNotApproved)
 	}
 	return plan, nil
+}
+
+func (s *Store) MarkReconcilePending(id string, reconcileErr error) (Plan, error) {
+	return s.Update(id, func(plan *Plan) error {
+		if plan.Status != StatusReconciling {
+			return errors.New("only interrupted plans can be reconciled")
+		}
+		plan.Error = "Remote submission is still uncertain; execution remains locked to prevent duplicate Flow360 resources."
+		if reconcileErr != nil {
+			plan.Error += " " + reconcileErr.Error()
+			plan.ErrorCategory = classifyError(reconcileErr)
+		}
+		return nil
+	})
 }
 
 func classifyError(err error) ErrorCategory {

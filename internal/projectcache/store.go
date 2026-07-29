@@ -21,7 +21,10 @@ var allowedKinds = map[string]struct{}{
 	"folder-projects": {},
 }
 
-const DefaultTTL = 15 * time.Minute
+const (
+	DefaultTTL       = 15 * time.Minute
+	DefaultRetention = 30 * 24 * time.Hour
+)
 
 type Entry struct {
 	Key      string          `json:"key"`

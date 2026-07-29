@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -264,6 +263,51 @@ func (s *Store) Update(id string, fn func(*Plan) error) (Plan, error) {
 	return plan, s.write(plan)
 }
 
+// Start atomically reserves an import for execution. It rejects another
+// running or submitted import only when both the uploaded content and all
+// Flow360 creation options are identical. This keeps retries idempotent
+// without blocking legitimate imports of the same files with new settings.
+func (s *Store) Start(id string) (Plan, *Plan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	plan, err := s.read(id)
+	if err != nil {
+		return Plan{}, nil, err
+	}
+	if plan.Status != "approved" && plan.Status != "failed" {
+		return Plan{}, nil, errors.New("import must be approved before execution")
+	}
+	if plan.SourceType == "geometry" && !plan.UnitConfirmed {
+		return Plan{}, nil, errors.New("geometry imports require unit confirmation before execution")
+	}
+
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return Plan{}, nil, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == plan.ID || !strings.HasPrefix(entry.Name(), "import-") {
+			continue
+		}
+		existing, readErr := s.read(entry.Name())
+		if readErr != nil {
+			continue
+		}
+		if (existing.Status == "running" || existing.Status == "submitted") && sameExecution(existing, plan) {
+			return plan, &existing, nil
+		}
+	}
+
+	plan.Status = "running"
+	plan.Error = ""
+	plan.UpdatedAt = time.Now().UTC()
+	if err := s.write(plan); err != nil {
+		return Plan{}, nil, err
+	}
+	return plan, nil, nil
+}
+
 func (s *Store) FindByContentHash(hash string) (Plan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -287,6 +331,33 @@ func (s *Store) FindByContentHash(hash string) (Plan, error) {
 	}
 
 	return Plan{}, errors.New("no existing import with this content hash")
+}
+
+func sameExecution(a, b Plan) bool {
+	if a.ContentHash == "" || a.ContentHash != b.ContentHash {
+		return false
+	}
+	if a.Name != b.Name ||
+		a.SourceType != b.SourceType ||
+		a.Unit != b.Unit ||
+		a.Workflow != b.Workflow ||
+		a.SolverVersion != b.SolverVersion ||
+		a.FolderID != b.FolderID {
+		return false
+	}
+	if len(a.Tags) != len(b.Tags) {
+		return false
+	}
+	aTags := append([]string(nil), a.Tags...)
+	bTags := append([]string(nil), b.Tags...)
+	sort.Strings(aTags)
+	sort.Strings(bTags)
+	for i := range aTags {
+		if aTags[i] != bTags[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) FilePaths(plan Plan) []string {
@@ -443,17 +514,4 @@ func computeContentHash(files []FileInfo) string {
 		h.Write([]byte(f.Hash))
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-type hasherWriter struct {
-	w io.Writer
-	h hash.Hash
-}
-
-func (hw *hasherWriter) Write(p []byte) (n int, err error) {
-	n, err = hw.w.Write(p)
-	if n > 0 {
-		hw.h.Write(p[:n])
-	}
-	return
 }

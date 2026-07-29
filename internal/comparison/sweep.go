@@ -6,11 +6,11 @@ import (
 )
 
 type SweepParameter struct {
-	Name     string  `json:"name"`
-	Values   []float64 `json:"values"`
-	Min      float64 `json:"min,omitempty"`
-	Max      float64 `json:"max,omitempty"`
-	Steps    int     `json:"steps,omitempty"`
+	Name   string    `json:"name"`
+	Values []float64 `json:"values"`
+	Min    float64   `json:"min,omitempty"`
+	Max    float64   `json:"max,omitempty"`
+	Steps  int       `json:"steps,omitempty"`
 }
 
 type SweepPlan struct {
@@ -101,7 +101,7 @@ func cartesianProduct(lists [][]float64) [][]float64 {
 }
 
 func ValidateSweepPlan(plan SweepPlan) []string {
-	var warnings []string
+	warnings := make([]string, 0)
 
 	for _, p := range plan.Parameters {
 		if len(p.Name) == 0 {

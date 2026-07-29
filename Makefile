@@ -5,10 +5,10 @@ web:
 	rm -rf internal/server/dist
 	cp -R web/dist internal/server/dist
 
-server:
+server: web
 	go run ./cmd/server
 
-dev:
+dev: web
 	go run ./cmd/server
 
 build: web
@@ -18,7 +18,7 @@ install: build
 	install -d /Users/juzhongsun/.local/bin
 	install -m 755 vibesim /Users/juzhongsun/.local/bin/vibesim
 
-test:
+test: web
 	go test ./...
 	cd web && npm run test
 

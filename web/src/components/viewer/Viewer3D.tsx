@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 export type MeshGroupData = {
   id: string
@@ -48,7 +50,9 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
+  const assetRef = useRef<THREE.Object3D | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
 
   const createScene = useCallback((container: HTMLDivElement) => {
@@ -65,6 +69,10 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     renderer.setSize(width, height)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     container.appendChild(renderer.domElement)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.screenSpacePanning = true
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.6)
     scene.add(ambient)
@@ -78,11 +86,12 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     sceneRef.current = scene
     cameraRef.current = camera
     rendererRef.current = renderer
+    controlsRef.current = controls
 
     return { scene, camera, renderer }
   }, [])
 
-  const updateGeometry = useCallback((manifest: ViewerManifest) => {
+  const updateGeometry = useCallback(async (manifest: ViewerManifest) => {
     const scene = sceneRef.current
     if (!scene) return
 
@@ -91,58 +100,41 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       mesh.geometry.dispose()
     }
     meshesRef.current.clear()
-
-    const { min, max } = manifest.bounding_box
-    const size = new THREE.Vector3(
-      Math.max(max[0] - min[0], 0.1),
-      Math.max(max[1] - min[1], 0.1),
-      Math.max(max[2] - min[2], 0.1)
-    )
-    const center = new THREE.Vector3(
-      (min[0] + max[0]) / 2,
-      (min[1] + max[1]) / 2,
-      (min[2] + max[2]) / 2
-    )
-
-    const maxDim = Math.max(size.x, size.y, size.z)
-    const scale = 2 / maxDim
-
-    manifest.groups.forEach((group, idx) => {
-      const geometry = new THREE.BoxGeometry(
-        size.x * 0.8,
-        size.y * 0.8,
-        size.z * 0.8
-      )
-      const material = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(group.color),
-        transparent: true,
-        opacity: group.visible ? 0.85 : 0.15,
-        side: THREE.DoubleSide,
-        shininess: 50,
-      })
-      const mesh = new THREE.Mesh(geometry, material)
-      const offset = (idx - (manifest.groups.length - 1) / 2) * 0.3
-      mesh.position.copy(center).multiplyScalar(scale)
-      mesh.position.x += offset
-      mesh.userData.groupId = group.id
-      scene.add(mesh)
-      meshesRef.current.set(group.id, mesh)
-    })
-
-    if (manifest.format === 'volume-mesh' || manifest.format === 'surface-mesh') {
-      const wireGeo = new THREE.BoxGeometry(size.x * scale, size.y * scale, size.z * scale)
-      const wireMat = new THREE.MeshBasicMaterial({
-        color: 0x789521,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.3,
-      })
-      const wireMesh = new THREE.Mesh(wireGeo, wireMat)
-      wireMesh.position.copy(center).multiplyScalar(scale)
-      wireMesh.userData.groupId = '__wireframe__'
-      scene.add(wireMesh)
-      meshesRef.current.set('__wireframe__', wireMesh)
+    if (assetRef.current) {
+      scene.remove(assetRef.current)
+      assetRef.current = null
     }
+
+    if (!manifest.asset_url) return
+    const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
+    const root = gltf.scene
+    const fallbackGroup = manifest.groups[0]
+    root.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return
+      const group = manifest.groups.find((candidate) =>
+        object.name.toLowerCase().includes(candidate.name.toLowerCase()),
+      ) ?? fallbackGroup
+      const groupId = group?.id ?? object.uuid
+      object.userData.groupId = groupId
+      if (group) {
+        object.material = new THREE.MeshPhongMaterial({
+          color: new THREE.Color(group.color),
+          transparent: true,
+          opacity: group.visible ? 0.9 : 0.12,
+          side: THREE.DoubleSide,
+        })
+      }
+      meshesRef.current.set(`${groupId}-${object.uuid}`, object)
+    })
+    const bounds = new THREE.Box3().setFromObject(root)
+    const size = bounds.getSize(new THREE.Vector3())
+    const center = bounds.getCenter(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z, 0.001)
+    const scale = 2 / maxDim
+    root.scale.setScalar(scale)
+    root.position.copy(center.multiplyScalar(-scale))
+    scene.add(root)
+    assetRef.current = root
 
     const camera = cameraRef.current
     if (camera) {
@@ -150,6 +142,8 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       const height = 2.2
       camera.position.set(dist, height, dist)
       camera.lookAt(0, 0, 0)
+      controlsRef.current?.target.set(0, 0, 0)
+      controlsRef.current?.update()
     }
   }, [])
 
@@ -163,6 +157,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     const animate = () => {
       rafId = requestAnimationFrame(animate)
       renderer.render(scene, cameraRef.current!)
+      controlsRef.current?.update()
     }
     animate()
 
@@ -182,6 +177,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       cancelAnimationFrame(rafId)
       window.removeEventListener('resize', handleResize)
       renderer.dispose()
+      controlsRef.current?.dispose()
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement)
       }
@@ -190,13 +186,14 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
 
   useEffect(() => {
     if (manifest && state.status === 'ready') {
-      updateGeometry(manifest)
+      void updateGeometry(manifest)
     }
   }, [manifest, state.status, updateGeometry])
 
   useEffect(() => {
     if (!selection || !meshesRef.current.size) return
-    for (const [groupId, mesh] of meshesRef.current) {
+    for (const [, mesh] of meshesRef.current) {
+      const groupId = String(mesh.userData.groupId ?? '')
       const mat = mesh.material as THREE.MeshPhongMaterial
       if (groupId === selection.groupId) {
         mat.opacity = 1.0

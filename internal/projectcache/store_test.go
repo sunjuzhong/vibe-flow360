@@ -282,15 +282,21 @@ func TestStoreUsesSeparateNamespacesForDifferentKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store.Put("folder-projects", "folder-1", json.RawMessage(`{"projects":[{"id":"p1"}]}`))
-	store.Put("folder-projects", "folder-2", json.RawMessage(`{"projects":[{"id":"p2"}]}`))
+	if _, err := store.Put("folder-projects", "folder-1", json.RawMessage(`{"projects":[{"id":"p1"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put("folder-projects", "folder-2", json.RawMessage(`{"projects":[{"id":"p2"}]}`)); err != nil {
+		t.Fatal(err)
+	}
 
 	entry1, err := store.Get("folder-projects", "folder-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var data1 map[string]interface{}
-	json.Unmarshal(entry1.Data, &data1)
+	if err := json.Unmarshal(entry1.Data, &data1); err != nil {
+		t.Fatal(err)
+	}
 	projects1 := data1["projects"].([]interface{})
 	if len(projects1) != 1 || projects1[0].(map[string]interface{})["id"] != "p1" {
 		t.Fatal("folder-1 data mismatch")
@@ -301,7 +307,9 @@ func TestStoreUsesSeparateNamespacesForDifferentKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	var data2 map[string]interface{}
-	json.Unmarshal(entry2.Data, &data2)
+	if err := json.Unmarshal(entry2.Data, &data2); err != nil {
+		t.Fatal(err)
+	}
 	projects2 := data2["projects"].([]interface{})
 	if len(projects2) != 1 || projects2[0].(map[string]interface{})["id"] != "p2" {
 		t.Fatal("folder-2 data mismatch")
@@ -315,7 +323,9 @@ func TestStoreDirectoryPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store.Put("folder-tree", "root", json.RawMessage(`{"root":{}}`))
+	if _, err := store.Put("folder-tree", "root", json.RawMessage(`{"root":{}}`)); err != nil {
+		t.Fatal(err)
+	}
 
 	kindDir := filepath.Join(dir, "folder-tree")
 	info, err := os.Stat(kindDir)

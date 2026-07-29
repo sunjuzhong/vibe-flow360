@@ -41,7 +41,6 @@ type ResourceDetail struct {
 	SimulationParams json.RawMessage   `json:"simulation_params,omitempty"`
 	Results          json.RawMessage   `json:"results,omitempty"`
 	Errors           map[string]string `json:"errors,omitempty"`
-	mu               sync.Mutex
 }
 
 func NewClient() *Client {
@@ -137,15 +136,18 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 		})
 	}
 
-	var wait sync.WaitGroup
+	var (
+		wait sync.WaitGroup
+		mu   sync.Mutex
+	)
 	for _, item := range operations {
 		item := item
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
 			raw, commandErr := c.jsonCommand(ctx, item.args...)
-			detail.mu.Lock()
-			defer detail.mu.Unlock()
+			mu.Lock()
+			defer mu.Unlock()
 			if commandErr != nil {
 				detail.Errors[item.name] = item.name + " is unavailable"
 				return
@@ -154,7 +156,6 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 		}()
 	}
 	wait.Wait()
-	detail.mu = sync.Mutex{}
 	return detail, nil
 }
 
@@ -228,42 +229,85 @@ func (c *Client) downloadCaseResult(ctx context.Context, resourceID, resultPath 
 	return output, nil
 }
 
+func (c *Client) DownloadCaseResultTo(ctx context.Context, resourceID, resultPath, outputDir string, maxSize int64) (string, error) {
+	if strings.TrimSpace(outputDir) == "" {
+		return "", errors.New("result output directory is required")
+	}
+	if err := os.MkdirAll(outputDir, 0o700); err != nil {
+		return "", fmt.Errorf("create case result directory: %w", err)
+	}
+	name := filepath.Base(resultPath)
+	if name == "." || name == "" || name == ".." {
+		return "", errors.New("invalid result path")
+	}
+	outputPath := filepath.Join(outputDir, name)
+	if _, err := c.runWithTimeout(
+		ctx,
+		5*time.Minute,
+		"case", "results", "get", resourceID, resultPath,
+		"--output", outputPath,
+		"--overwrite",
+	); err != nil {
+		return "", err
+	}
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect downloaded result: %w", err)
+	}
+	if maxSize > 0 && info.Size() > maxSize {
+		_ = os.Remove(outputPath)
+		return "", fmt.Errorf("result file exceeds %d byte analysis limit", maxSize)
+	}
+	if err := os.Chmod(outputPath, 0o600); err != nil {
+		return "", err
+	}
+	return outputPath, nil
+}
+
 func (c *Client) ListCaseResults(ctx context.Context, caseID string) ([]string, error) {
 	output, err := c.runWithTimeout(
 		ctx,
 		1*time.Minute,
 		"case", "results", "list", caseID,
-		"--format", "json",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list case results: %w", err)
 	}
 
-	var results []string
-
-	var raw []any
-	if err := json.Unmarshal(output, &raw); err != nil {
-		var asObjects []map[string]any
-		if err2 := json.Unmarshal(output, &asObjects); err2 != nil {
-			return nil, fmt.Errorf("parse results list: %w", err)
-		}
-		for _, item := range asObjects {
-			if path, ok := item["path"].(string); ok {
-				results = append(results, path)
-			}
-			if name, ok := item["name"].(string); ok {
-				results = append(results, name)
-			}
-		}
-		return results, nil
+	raw, err := extractJSON(output)
+	if err != nil {
+		return nil, fmt.Errorf("parse results list: %w", err)
 	}
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("parse results list: %w", err)
+	}
+	return collectResultPaths(payload), nil
+}
 
-	for _, item := range raw {
-		if s, ok := item.(string); ok {
-			results = append(results, s)
+func collectResultPaths(value any) []string {
+	var result []string
+	switch typed := value.(type) {
+	case string:
+		return []string{typed}
+	case []any:
+		for _, item := range typed {
+			result = append(result, collectResultPaths(item)...)
+		}
+	case map[string]any:
+		if path, ok := typed["path"].(string); ok && path != "" {
+			return []string{path}
+		}
+		if name, ok := typed["name"].(string); ok && name != "" {
+			return []string{name}
+		}
+		for _, key := range []string{"records", "results", "items", "files"} {
+			if nested, ok := typed[key]; ok {
+				result = append(result, collectResultPaths(nested)...)
+			}
 		}
 	}
-	return results, nil
+	return result
 }
 
 func (c *Client) RunDraft(ctx context.Context, sourceID, name, target string, patch json.RawMessage) (json.RawMessage, error) {
@@ -305,6 +349,56 @@ func (c *Client) RunDraft(ctx context.Context, sourceID, name, target string, pa
 		return nil, marshalErr
 	}
 	return fallback, nil
+}
+
+// FindDraftByName discovers a draft created before a server interruption.
+// It is intentionally read-only and is used to reconcile an uncertain local
+// submission without issuing another billable run.
+func (c *Client) FindDraftByName(ctx context.Context, projectID, name string) (json.RawMessage, error) {
+	raw, err := c.jsonCommand(ctx, "draft", "list", "--project-id", projectID)
+	if err != nil {
+		return nil, err
+	}
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("parse Flow360 draft list: %w", err)
+	}
+	records := collectRecords(payload)
+	for _, record := range records {
+		recordName, _ := record["name"].(string)
+		if strings.TrimSpace(recordName) != strings.TrimSpace(name) {
+			continue
+		}
+		if id, ok := record["id"].(string); ok && id != "" {
+			record["draft_id"] = id
+		}
+		result, err := json.Marshal(record)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+	return nil, errors.New("matching Flow360 draft was not found")
+}
+
+func collectRecords(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []any:
+		result := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if record, ok := item.(map[string]any); ok {
+				result = append(result, record)
+			}
+		}
+		return result
+	case map[string]any:
+		for _, key := range []string{"records", "drafts", "items"} {
+			if nested, ok := typed[key]; ok {
+				return collectRecords(nested)
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Client) CreateProject(ctx context.Context, files []string, sourceType, name, unit, workflow, solverVersion, folderID string, tags []string) (json.RawMessage, error) {
