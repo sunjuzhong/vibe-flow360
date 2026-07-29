@@ -204,6 +204,46 @@ export type PlanDifference = {
   kind: 'added' | 'removed' | 'changed'
 }
 
+export type DynamicFormSchema = {
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'json'
+  title?: string
+  description?: string
+  default?: unknown
+  path?: string
+  required?: string[] | boolean
+  nullable?: boolean
+  properties?: Record<string, DynamicFormSchema>
+  items?: DynamicFormSchema
+  variants?: DynamicFormSchema[]
+  options?: unknown[]
+  unit?: string
+  value_schema?: DynamicFormSchema
+  minimum?: number
+  maximum?: number
+  exclusiveMinimum?: number
+  exclusiveMaximum?: number
+  minLength?: number
+  maxLength?: number
+  minItems?: number
+  maxItems?: number
+}
+
+export type PlanPreflight = {
+  schema_version: number
+  validator_version?: string
+  valid: boolean
+  validated_revision: number
+  issues: Array<{
+    level: 'error' | 'warning'
+    code: string
+    path?: string
+    message: string
+    stages?: string[]
+  }>
+  form_schema: DynamicFormSchema
+  validated_at: string
+}
+
 export type SimulationPlan = {
   id: string
   project_id: string
@@ -215,6 +255,8 @@ export type SimulationPlan = {
   name: string
   intent: string
   patch: Record<string, unknown>
+  revision: number
+  preflight?: PlanPreflight
   differences: PlanDifference[]
   validations: PlanValidation[]
   command_preview: string[]
@@ -433,6 +475,10 @@ export const api = {
     intent: string
     patch: Record<string, unknown>
   }) => mutate<SimulationPlan>('/api/plans', input),
+  preflightPlan: (planId: string) =>
+    mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/preflight`),
+  applyPlanInputs: (planId: string, revision: number, values: Record<string, unknown>) =>
+    mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/inputs`, { revision, values }),
   approvePlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/approve`),
   runPlan: (planId: string) =>

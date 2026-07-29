@@ -17,6 +17,7 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type ProjectInfo, type ResourceNode, type SimulationPlan } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import SchemaFormDialog from './SchemaForm'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
   Geometry: [
@@ -83,6 +84,8 @@ export default function PlanPanel({
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [submittingAction, setSubmittingAction] = useState<'approve' | 'run' | 'compile' | null>(null)
+  const [schemaFormOpen, setSchemaFormOpen] = useState(false)
+  const [preflightLoading, setPreflightLoading] = useState(false)
   const [error, setError] = useState('')
   const panelRef = useFocusTrap(open, onClose, 'input,textarea,select,button.primary,button.execute,button:not(.icon-button)')
 
@@ -105,13 +108,20 @@ export default function PlanPanel({
     setPatch('{}')
     setReviewed(false)
     setExecuteConfirmed(false)
+    setSchemaFormOpen(false)
     setError('')
     void loadPlans()
   }, [loadPlans, open, options, resource.name])
 
   const hasValidationError = useMemo(
-    () => selected?.validations.some((item) => item.level === 'error') ?? false,
+    () => (selected?.validations.some((item) => item.level === 'error') ?? false)
+      || (selected?.preflight?.issues.some((item) => item.level === 'error') ?? true),
     [selected],
+  )
+  const preflightErrors = selected?.preflight?.issues.filter((issue) => issue.level === 'error') ?? []
+  const preflightReady = Boolean(
+    selected?.preflight?.valid
+    && selected.preflight.validated_revision === selected.revision,
   )
 
   const createPlan = async (event: FormEvent) => {
@@ -145,11 +155,55 @@ export default function PlanPanel({
       setSelected(plan)
       setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)])
       setShowForm(false)
+      setSchemaFormOpen(Boolean(
+        !plan.preflight?.valid
+        && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
+      ))
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
       setLoading(false)
       setSubmittingAction(null)
+    }
+  }
+
+  const refreshPreflight = async () => {
+    if (!selected || preflightLoading) return
+    setPreflightLoading(true)
+    setError('')
+    try {
+      const plan = await api.preflightPlan(selected.id)
+      setSelected(plan)
+      setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
+      setSchemaFormOpen(Boolean(
+        !plan.preflight?.valid
+        && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
+      ))
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setPreflightLoading(false)
+    }
+  }
+
+  const applySchemaInputs = async (values: Record<string, unknown>) => {
+    if (!selected || preflightLoading) return
+    setPreflightLoading(true)
+    setError('')
+    try {
+      const plan = await api.applyPlanInputs(selected.id, selected.revision, values)
+      setSelected(plan)
+      setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
+      setReviewed(false)
+      setExecuteConfirmed(false)
+      setSchemaFormOpen(Boolean(
+        !plan.preflight?.valid
+        && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
+      ))
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setPreflightLoading(false)
     }
   }
 
@@ -224,7 +278,14 @@ export default function PlanPanel({
               <button
                 className={!showForm && selected?.id === plan.id ? 'active' : ''}
                 key={plan.id}
-                onClick={() => { setSelected(plan); setShowForm(false); setReviewed(false); setExecuteConfirmed(false); setError('') }}
+                onClick={() => {
+                  setSelected(plan)
+                  setShowForm(false)
+                  setReviewed(false)
+                  setExecuteConfirmed(false)
+                  setSchemaFormOpen(false)
+                  setError('')
+                }}
               >
                 <span><strong>{plan.name}</strong><small>{statusLabel(plan.status)} · {new Date(plan.created_at).toLocaleString()}</small></span>
                 <span className={`plan-status-dot status-${plan.status}`} />
@@ -283,6 +344,66 @@ export default function PlanPanel({
                   <ArrowRight size={16} />
                   <span><small>Run up to</small><strong>{selected.target.replace('-', ' ')}</strong><em>new branch</em></span>
                 </div>
+
+                <section className="plan-review-section">
+                  <h3>
+                    <ShieldCheck size={15} /> Flow360 schema preflight
+                    <span>{preflightReady ? 'Ready' : `${preflightErrors.length} required`}</span>
+                  </h3>
+                  {selected.preflight ? (
+                    <>
+                      <div className={`preflight-summary ${preflightReady ? 'ready' : 'needs-input'}`}>
+                        <span>
+                          <strong>
+                            {preflightReady
+                              ? 'SimulationParams are ready for this target'
+                              : 'Additional simulation inputs are required'}
+                          </strong>
+                          <small>
+                            Flow360 schema {selected.preflight.validator_version || 'installed'}
+                            {' · '}plan revision {selected.revision}
+                          </small>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => preflightReady ? void refreshPreflight() : setSchemaFormOpen(true)}
+                          disabled={
+                            preflightLoading
+                            || (!preflightReady && !Object.keys(selected.preflight.form_schema.properties ?? {}).length)
+                          }
+                        >
+                          {preflightLoading
+                            ? <RefreshCw size={14} className="spin" />
+                            : preflightReady ? <RefreshCw size={14} /> : <GitPullRequestDraft size={14} />}
+                          {preflightReady ? 'Validate again' : 'Resolve missing inputs'}
+                        </button>
+                      </div>
+                      {selected.preflight.issues.length > 0 && (
+                        <div className="preflight-issues">
+                          {selected.preflight.issues.map((issue, index) => (
+                            <div className={`validation-${issue.level}`} key={`${issue.path}-${index}`}>
+                              {issue.level === 'warning'
+                                ? <TriangleAlert size={14} />
+                                : <AlertCircle size={14} />}
+                              <span>
+                                <strong>{issue.stages?.join(' → ') || issue.code}</strong>
+                                <code>{issue.path || 'schema'}</code>
+                                <small>{issue.message}</small>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="plan-neutral preflight-not-run">
+                      <span>Preflight has not run for this plan.</span>
+                      <button type="button" onClick={() => void refreshPreflight()} disabled={preflightLoading}>
+                        Run preflight
+                      </button>
+                    </div>
+                  )}
+                </section>
 
                 <section className="plan-review-section">
                   <h3><ShieldCheck size={15} /> Deterministic validation</h3>
@@ -347,7 +468,7 @@ export default function PlanPanel({
                     <label><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the target, validation, and exact parameter diff.</span></label>
                     <button
                       className="primary"
-                      disabled={!reviewed || hasValidationError || loading || !!submittingAction}
+                      disabled={!reviewed || !preflightReady || hasValidationError || loading || !!submittingAction}
                       onClick={() => void approve()}
                     >
                       {loading && submittingAction === 'approve'
@@ -357,7 +478,7 @@ export default function PlanPanel({
                   </div>
                 )}
 
-                {(selected.status === 'approved' || selected.status === 'failed') && (
+                {(selected.status === 'approved' || selected.status === 'failed') && preflightReady && (
                   <div className="execution-card">
                     <div><Play size={17} /><span><strong>Remote execution</strong><small>This calls Flow360 and may create billable cloud resources.</small></span></div>
                     <label><input type="checkbox" checked={executeConfirmed} onChange={(event) => setExecuteConfirmed(event.target.checked)} /><span>I understand this will submit the approved plan.</span></label>
@@ -378,6 +499,15 @@ export default function PlanPanel({
                   <div className="plan-success"><CheckCircle2 size={17} /><span><strong>Flow360 accepted the plan</strong><small>The Project tree is refreshing for newly created resources.</small></span></div>
                 )}
                 <div className="plan-timestamps"><Clock3 size={12} /> Last updated {new Date(selected.updated_at).toLocaleString()}</div>
+                {schemaFormOpen && selected.preflight && (
+                  <SchemaFormDialog
+                    schema={selected.preflight.form_schema}
+                    issues={preflightErrors}
+                    submitting={preflightLoading}
+                    onCancel={() => setSchemaFormOpen(false)}
+                    onSubmit={(values) => void applySchemaInputs(values)}
+                  />
+                )}
               </div>
             ) : null}
           </main>

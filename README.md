@@ -48,12 +48,14 @@ The repository now contains a working local Web prototype:
 - read-only Flow360 folder-tree access;
 - branching Project workbench with resource state, parameters, results, and logs;
 - durable local execution plans with semantic SimulationParams diffs;
+- local Flow360-schema preflight with recursive, schema-generated forms for
+  missing SimulationParams values;
 - deterministic validation and a separate explicit approval gate;
 - approved `flow360 draft run` submission with persisted recovery state.
 
 Chat cannot submit billable work. Remote execution is available only from a
-compiled plan after the user reviews the exact diff, approves that immutable
-plan, and confirms submission again.
+compiled plan after Flow360 schema preflight succeeds, the user reviews the
+exact diff, approves that immutable plan, and confirms submission again.
 
 The Web loads the online folder tree first, then requests projects for the
 selected folder. Folder-scoped listing also avoids a current Flow360 CLI issue

@@ -338,10 +338,20 @@ Use typed endpoints:
 POST /api/projects/plan
 POST /api/projects
 POST /api/projects/:id/branches/plan
+POST /api/plans/:id/preflight
+POST /api/plans/:id/inputs
 POST /api/plans/:id/approve
 POST /api/plans/:id/run
 POST /api/cases/:id/variations/plan
 ```
+
+Plan preflight validates the merged SimulationParams with the installed
+Flow360 schema. Validation errors are projected into a minimal form schema;
+the Web renders that schema recursively and posts typed values to `inputs`.
+The server validates the payload against the same form schema, JSON
+merge-patches it into the plan, increments the revision, and runs preflight
+again. Approval and remote execution remain locked unless the current revision
+has a successful preflight.
 
 A locally persisted plan contains:
 

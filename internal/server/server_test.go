@@ -3,8 +3,11 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -314,6 +317,108 @@ func TestPlanFromActionRejectsNonCreatePlanKind(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestPlanPreflightBlocksApprovalAndAcceptsSchemaFormInputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	fakeResult := `#!/bin/sh
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"missing","path":"meshing.defaults.length","message":"Field required","stages":["SurfaceMesh"]}],"form_schema":{"type":"object","required":["meshing"],"properties":{"meshing":{"type":"object","required":["defaults"],"properties":{"defaults":{"type":"object","required":["length"],"properties":{"length":{"type":"quantity","unit":"meter","value_schema":{"type":"number","exclusiveMinimum":0},"required":true}}}}}}}}'
+`
+	if err := os.WriteFile(fakePython, []byte(fakeResult), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+	store, err := plans.NewStore(filepath.Join(temp, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(plans.CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "surface-mesh", Name: "mesh", Intent: "Build a surface mesh.",
+		Baseline: json.RawMessage(`{"simulation_params":{"version":"test","meshing":{"defaults":{}}}}`),
+		Patch:    json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		plans: store,
+		flow360: &flow360.Client{
+			Binary: "flow360",
+		},
+	}
+
+	preflightRecorder := httptest.NewRecorder()
+	preflightContext, _ := gin.CreateTestContext(preflightRecorder)
+	preflightContext.Request = httptest.NewRequest(http.MethodPost, "/api/plans/"+created.ID+"/preflight", nil)
+	preflightContext.Params = gin.Params{{Key: "plan_id", Value: created.ID}}
+	app.preflightPlan(preflightContext)
+	if preflightRecorder.Code != http.StatusOK {
+		t.Fatalf("preflight status %d: %s", preflightRecorder.Code, preflightRecorder.Body)
+	}
+	var preflighted plans.Plan
+	if err := json.Unmarshal(preflightRecorder.Body.Bytes(), &preflighted); err != nil {
+		t.Fatal(err)
+	}
+	if preflighted.Preflight == nil || preflighted.Preflight.Valid || preflighted.Revision != 1 {
+		t.Fatalf("unexpected preflight plan %#v", preflighted)
+	}
+
+	approvalRecorder := httptest.NewRecorder()
+	approvalContext, _ := gin.CreateTestContext(approvalRecorder)
+	approvalContext.Request = httptest.NewRequest(http.MethodPost, "/api/plans/"+created.ID+"/approve", nil)
+	approvalContext.Params = gin.Params{{Key: "plan_id", Value: created.ID}}
+	app.approvePlan(approvalContext)
+	if approvalRecorder.Code != http.StatusConflict {
+		t.Fatalf("invalid preflight approval got %d, want 409", approvalRecorder.Code)
+	}
+
+	inputBody := bytes.NewBufferString(`{"revision":1,"values":{"meshing":{"defaults":{"length":{"value":0.01,"units":"m"}}}}}`)
+	inputRecorder := httptest.NewRecorder()
+	inputContext, _ := gin.CreateTestContext(inputRecorder)
+	inputContext.Request = httptest.NewRequest(http.MethodPost, "/api/plans/"+created.ID+"/inputs", inputBody)
+	inputContext.Request.Header.Set("Content-Type", "application/json")
+	inputContext.Params = gin.Params{{Key: "plan_id", Value: created.ID}}
+	app.applyPlanInputs(inputContext)
+	if inputRecorder.Code != http.StatusOK {
+		t.Fatalf("input status %d: %s", inputRecorder.Code, inputRecorder.Body)
+	}
+	var updated plans.Plan
+	if err := json.Unmarshal(inputRecorder.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Revision != 2 || !strings.Contains(string(updated.Patch), `"length"`) {
+		t.Fatalf("dynamic input was not merged: %#v", updated)
+	}
+}
+
+func TestPublicExecutionErrorDoesNotExposeTraceback(t *testing.T) {
+	got := publicExecutionError(errors.New("Traceback /Users/private/source Fail to generate simulation config"))
+	if strings.Contains(got.Error(), "Traceback") || strings.Contains(got.Error(), "/Users/") {
+		t.Fatalf("private traceback leaked: %v", got)
+	}
+	if !strings.Contains(strings.ToLower(got.Error()), "validation") {
+		t.Fatalf("validation action was lost: %v", got)
+	}
+}
+
+func TestApplyPlanInputsRejectsOversizedBody(t *testing.T) {
+	app := &Server{}
+	body := bytes.NewBufferString(`{"revision":1,"values":{"field":"` +
+		strings.Repeat("x", maxPlanInputsRequestBytes) + `"}}`)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/plans/plan-1/inputs", body)
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "plan_id", Value: "plan-1"}}
+
+	app.applyPlanInputs(context)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized input got %d, want 413: %s", recorder.Code, recorder.Body)
 	}
 }
 

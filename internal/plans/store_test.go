@@ -79,7 +79,9 @@ func TestStorePersistsPlan(t *testing.T) {
 	}
 	created, err := store.Create(CreateInput{
 		ProjectID: "prj-1", SourceID: "vm-1", SourceType: "VolumeMesh",
-		Target: "case", Name: "baseline", Intent: "Run baseline.", Patch: json.RawMessage(`{}`),
+		Target: "case", Name: "baseline", Intent: "Run baseline.",
+		Baseline: json.RawMessage(`{"simulation_params":{"version":"test"}}`),
+		Patch:    json.RawMessage(`{}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +92,20 @@ func TestStorePersistsPlan(t *testing.T) {
 	}
 	if loaded.Name != created.Name || loaded.Status != StatusDraft {
 		t.Fatalf("unexpected persisted plan %#v", loaded)
+	}
+	if len(loaded.Baseline) == 0 {
+		t.Fatal("baseline was not persisted")
+	}
+	public, err := json.Marshal(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var publicObject map[string]any
+	if err := json.Unmarshal(public, &publicObject); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := publicObject["baseline"]; exists {
+		t.Fatal("private baseline leaked through the public plan JSON")
 	}
 }
 
@@ -115,6 +131,12 @@ func TestStoreCanRunEnforcesApprovalAndNoSubmission(t *testing.T) {
 		return nil
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetPreflight(created.ID, Preflight{
+		SchemaVersion: 1, Valid: true, ValidatedRevision: created.Revision,
+		FormSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := store.CanRun(created.ID)
@@ -149,6 +171,12 @@ func TestStoreMarkSubmittedStoresRemoteIDs(t *testing.T) {
 	if _, err := store.Update(created.ID, func(p *Plan) error { p.Status = StatusApproved; return nil }); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.SetPreflight(created.ID, Preflight{
+		SchemaVersion: 1, Valid: true, ValidatedRevision: created.Revision,
+		FormSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.SetRunning(created.ID, "sub-abc"); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +209,12 @@ func TestStoreMarkFailedClassifiesError(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.Update(created.ID, func(p *Plan) error { p.Status = StatusApproved; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetPreflight(created.ID, Preflight{
+		SchemaVersion: 1, Valid: true, ValidatedRevision: created.Revision,
+		FormSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.SetRunning(created.ID, "sub-err"); err != nil {

@@ -196,6 +196,8 @@ func (s *Server) routes() {
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)
 		api.GET("/plans/:plan_id", s.getPlan)
+		api.POST("/plans/:plan_id/preflight", s.preflightPlan)
+		api.POST("/plans/:plan_id/inputs", s.applyPlanInputs)
 		api.POST("/plans/:plan_id/approve", s.approvePlan)
 		api.POST("/plans/:plan_id/run", s.runPlan)
 		api.POST("/imports", s.stageImport)
@@ -547,6 +549,7 @@ func (s *Server) createPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	plan = s.runPlanPreflight(c.Request.Context(), plan)
 	c.JSON(http.StatusCreated, plan)
 }
 
@@ -568,10 +571,124 @@ func (s *Server) getPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, plan)
 }
 
+func (s *Server) preflightPlan(c *gin.Context) {
+	plan, err := s.plans.Get(c.Param("plan_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	plan = s.runPlanPreflight(c.Request.Context(), plan)
+	c.JSON(http.StatusOK, plan)
+}
+
+type applyPlanInputsRequest struct {
+	Revision int             `json:"revision"`
+	Values   json.RawMessage `json:"values"`
+}
+
+const maxPlanInputsRequestBytes = 300 << 10
+
+func (s *Server) applyPlanInputs(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPlanInputsRequestBytes)
+	var request applyPlanInputsRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "dynamic form submission is too large"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dynamic form submission"})
+		return
+	}
+	plan, err := s.plans.Get(c.Param("plan_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if plan.Preflight == nil || plan.Preflight.ValidatedRevision != plan.Revision {
+		c.JSON(http.StatusConflict, gin.H{"error": "run Flow360 schema preflight before submitting inputs"})
+		return
+	}
+	if request.Revision != plan.Revision {
+		c.JSON(http.StatusConflict, gin.H{"error": "plan revision is stale"})
+		return
+	}
+	if err := plans.ValidateFormValues(plan.Preflight.FormSchema, request.Values); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	updated, err := s.plans.ApplyInputs(plan.ID, request.Revision, request.Values)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	updated = s.runPlanPreflight(c.Request.Context(), updated)
+	c.JSON(http.StatusOK, updated)
+}
+
+func (s *Server) runPlanPreflight(ctx context.Context, plan plans.Plan) plans.Plan {
+	if len(plan.Baseline) == 0 || plan.Revision == 0 {
+		detail, err := s.flow360.ResourceDetail(ctx, plan.SourceType, plan.SourceID)
+		if err != nil || len(detail.SimulationParams) == 0 {
+			return s.persistUnavailablePreflight(plan, "Flow360 source SimulationParams are unavailable")
+		}
+		updated, err := s.plans.SetBaseline(plan.ID, detail.SimulationParams)
+		if err != nil {
+			return s.persistUnavailablePreflight(plan, "Could not store the Flow360 SimulationParams baseline")
+		}
+		plan = updated
+	}
+	merged, err := plans.MergedSimulationParams(plan)
+	if err != nil {
+		return s.persistUnavailablePreflight(plan, err.Error())
+	}
+	result, err := s.flow360.PreflightSimulationParams(ctx, plan.SourceType, plan.Target, merged)
+	if err != nil {
+		log.Printf("Flow360 schema preflight failed for %s: %v", plan.ID, err)
+		return s.persistUnavailablePreflight(plan, "Flow360 schema preflight is temporarily unavailable")
+	}
+	issues := make([]plans.PreflightIssue, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		issues = append(issues, plans.PreflightIssue{
+			Level: issue.Level, Code: issue.Code, Path: issue.Path,
+			Message: issue.Message, Stages: issue.Stages,
+		})
+	}
+	updated, err := s.plans.SetPreflight(plan.ID, plans.Preflight{
+		SchemaVersion: result.SchemaVersion, ValidatorVersion: result.ValidatorVersion,
+		Valid: result.Valid, ValidatedRevision: plan.Revision,
+		Issues: issues, FormSchema: result.FormSchema,
+	})
+	if err != nil {
+		log.Printf("Could not persist Flow360 schema preflight for %s: %v", plan.ID, err)
+		return plan
+	}
+	return updated
+}
+
+func (s *Server) persistUnavailablePreflight(plan plans.Plan, message string) plans.Plan {
+	formSchema := json.RawMessage(`{"type":"object","properties":{},"required":[]}`)
+	updated, err := s.plans.SetPreflight(plan.ID, plans.Preflight{
+		SchemaVersion: 1, Valid: false, ValidatedRevision: plan.Revision,
+		Issues: []plans.PreflightIssue{{
+			Level: "error", Code: "preflight_unavailable", Message: message,
+		}},
+		FormSchema: formSchema,
+	})
+	if err != nil {
+		log.Printf("Could not persist unavailable preflight state for %s: %v", plan.ID, err)
+		return plan
+	}
+	return updated
+}
+
 func (s *Server) approvePlan(c *gin.Context) {
 	plan, err := s.plans.Update(c.Param("plan_id"), func(plan *plans.Plan) error {
 		if plan.Status != plans.StatusDraft {
 			return fmt.Errorf("only a draft plan can be approved")
+		}
+		if plan.Preflight == nil || !plan.Preflight.Valid || plan.Preflight.ValidatedRevision != plan.Revision {
+			return errors.New(plans.ErrPreflightRequired)
 		}
 		for _, validation := range plan.Validations {
 			if validation.Level == "error" {
@@ -596,6 +713,11 @@ func (s *Server) runPlan(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	existing = s.runPlanPreflight(c.Request.Context(), existing)
+	if existing.Preflight == nil || !existing.Preflight.Valid || existing.Preflight.ValidatedRevision != existing.Revision {
+		c.JSON(http.StatusUnprocessableEntity, existing)
+		return
+	}
 	if existing.SubmissionID != "" && existing.Status != plans.StatusFailed {
 		c.JSON(http.StatusConflict, gin.H{
 			"error":       plans.ErrDoubleSubmitProtect,
@@ -618,7 +740,7 @@ func (s *Server) runPlan(c *gin.Context) {
 
 	result, runErr := s.flow360.RunDraft(c.Request.Context(), plan.SourceID, plan.Name, plan.Target, plan.Patch)
 	if runErr != nil {
-		failed, persistErr := s.plans.MarkFailed(plan.ID, runErr)
+		failed, persistErr := s.plans.MarkFailed(plan.ID, publicExecutionError(runErr))
 		if persistErr != nil {
 			log.Printf("could not persist failed plan state: %v", persistErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not persist execution state"})
@@ -636,6 +758,23 @@ func (s *Server) runPlan(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, submitted)
+}
+
+func publicExecutionError(err error) error {
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "fail to generate simulation config"),
+		strings.Contains(message, "validation"),
+		strings.Contains(message, "bad request"):
+		return errors.New("Flow360 validation rejected the simulation configuration. Complete the required schema inputs and validate again")
+	case strings.Contains(message, "unauthorized"), strings.Contains(message, "authentication"),
+		strings.Contains(message, "401"), strings.Contains(message, "403"):
+		return errors.New("Flow360 authentication failed. Check the configured environment and API key")
+	case strings.Contains(message, "timeout"), strings.Contains(message, "deadline"):
+		return errors.New("Flow360 submission timed out. Check the remote draft state before retrying")
+	default:
+		return errors.New("Flow360 did not accept this plan. Review the server log for diagnostic details")
+	}
 }
 
 func newSubmissionID() (string, error) {

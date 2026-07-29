@@ -23,6 +23,7 @@ const (
 	StatusReconciling = "reconciling"
 
 	ErrNotApproved         = "plan must be approved before execution"
+	ErrPreflightRequired   = "plan must pass Flow360 schema preflight"
 	ErrAlreadySubmitted    = "plan has already been submitted to Flow360"
 	ErrValidationErrors    = "plan has validation errors"
 	ErrDoubleSubmitProtect = "plan execution is already in progress or completed"
@@ -61,6 +62,24 @@ type Difference struct {
 	Kind   string `json:"kind"`
 }
 
+type PreflightIssue struct {
+	Level   string   `json:"level"`
+	Code    string   `json:"code"`
+	Path    string   `json:"path,omitempty"`
+	Message string   `json:"message"`
+	Stages  []string `json:"stages,omitempty"`
+}
+
+type Preflight struct {
+	SchemaVersion     int              `json:"schema_version"`
+	ValidatorVersion  string           `json:"validator_version,omitempty"`
+	Valid             bool             `json:"valid"`
+	ValidatedRevision int              `json:"validated_revision"`
+	Issues            []PreflightIssue `json:"issues"`
+	FormSchema        json.RawMessage  `json:"form_schema"`
+	ValidatedAt       time.Time        `json:"validated_at"`
+}
+
 type Plan struct {
 	ID             string          `json:"id"`
 	ProjectID      string          `json:"project_id"`
@@ -72,8 +91,11 @@ type Plan struct {
 	Name           string          `json:"name"`
 	Intent         string          `json:"intent"`
 	Patch          json.RawMessage `json:"patch"`
+	Baseline       json.RawMessage `json:"-"`
 	Differences    []Difference    `json:"differences"`
 	Validations    []Validation    `json:"validations"`
+	Revision       int             `json:"revision"`
+	Preflight      *Preflight      `json:"preflight,omitempty"`
 	CommandPreview []string        `json:"command_preview"`
 	Status         string          `json:"status"`
 	ApprovedAt     *time.Time      `json:"approved_at,omitempty"`
@@ -267,8 +289,10 @@ func Compile(input CreateInput) (Plan, error) {
 		Name:           input.Name,
 		Intent:         input.Intent,
 		Patch:          append(json.RawMessage(nil), input.Patch...),
+		Baseline:       append(json.RawMessage(nil), input.Baseline...),
 		Differences:    differences,
 		Validations:    validations,
+		Revision:       1,
 		CommandPreview: []string{"flow360", "draft", "run", input.SourceID, "--name", input.Name, "--patch", "<generated-plan-patch.json>", "--up-to", input.Target},
 		Status:         StatusDraft,
 		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
@@ -305,15 +329,24 @@ func (s *Store) read(id string) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	var plan Plan
-	if err := json.Unmarshal(data, &plan); err != nil {
+	var stored struct {
+		Plan
+		Baseline json.RawMessage `json:"baseline,omitempty"`
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
 		return Plan{}, err
 	}
-	return plan, nil
+	stored.Plan.Baseline = stored.Baseline
+	return stored.Plan, nil
 }
 
 func (s *Store) write(plan Plan) error {
-	data, err := json.MarshalIndent(plan, "", "  ")
+	data, err := json.MarshalIndent(struct {
+		Plan
+		Baseline json.RawMessage `json:"baseline,omitempty"`
+	}{
+		Plan: plan, Baseline: plan.Baseline,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -377,6 +410,9 @@ func (s *Store) CanRun(id string) (Plan, error) {
 	}
 	if plan.Status != StatusApproved && plan.Status != StatusFailed {
 		return Plan{}, errors.New(ErrNotApproved)
+	}
+	if plan.Preflight == nil || !plan.Preflight.Valid || plan.Preflight.ValidatedRevision != plan.Revision {
+		return Plan{}, errors.New(ErrPreflightRequired)
 	}
 	return plan, nil
 }
@@ -452,6 +488,9 @@ func (s *Store) SetRunning(id, submissionID string) (Plan, error) {
 		if plan.Status != StatusApproved && plan.Status != StatusFailed {
 			return errors.New(ErrNotApproved)
 		}
+		if plan.Preflight == nil || !plan.Preflight.Valid || plan.Preflight.ValidatedRevision != plan.Revision {
+			return errors.New(ErrPreflightRequired)
+		}
 		now := time.Now().UTC()
 		plan.Status = StatusRunning
 		plan.StartedAt = &now
@@ -461,6 +500,119 @@ func (s *Store) SetRunning(id, submissionID string) (Plan, error) {
 		plan.SubmissionID = submissionID
 		return nil
 	})
+}
+
+func (s *Store) SetPreflight(id string, result Preflight) (Plan, error) {
+	return s.Update(id, func(plan *Plan) error {
+		if result.ValidatedRevision != plan.Revision {
+			return errors.New("preflight result is stale")
+		}
+		if !json.Valid(result.FormSchema) {
+			return errors.New("preflight form schema is invalid")
+		}
+		result.ValidatedAt = time.Now().UTC()
+		plan.Preflight = &result
+		if plan.Status == StatusFailed && plan.ErrorCategory == ErrorValidation {
+			plan.Error = "Flow360 rejected the simulation configuration. Complete the required schema inputs and validate again."
+		}
+		return nil
+	})
+}
+
+func (s *Store) SetBaseline(id string, baseline json.RawMessage) (Plan, error) {
+	if len(baseline) == 0 || !json.Valid(baseline) {
+		return Plan{}, errors.New("Flow360 baseline SimulationParams is invalid")
+	}
+	return s.Update(id, func(plan *Plan) error {
+		if len(plan.Baseline) == 0 {
+			plan.Baseline = append(json.RawMessage(nil), baseline...)
+		}
+		if plan.Revision == 0 {
+			plan.Revision = 1
+		}
+		return nil
+	})
+}
+
+func (s *Store) ApplyInputs(id string, revision int, values json.RawMessage) (Plan, error) {
+	if len(values) == 0 || len(values) > 256<<10 {
+		return Plan{}, errors.New("dynamic form values must be between 1 byte and 256 KB")
+	}
+	var valueObject map[string]any
+	if err := json.Unmarshal(values, &valueObject); err != nil {
+		return Plan{}, errors.New("dynamic form values must be a JSON object")
+	}
+	for _, validation := range validatePatch(valueObject) {
+		if validation.Level == "error" {
+			return Plan{}, errors.New(validation.Message)
+		}
+	}
+	return s.Update(id, func(plan *Plan) error {
+		if plan.Revision == 0 {
+			plan.Revision = 1
+		}
+		if revision != plan.Revision {
+			return errors.New("plan revision is stale")
+		}
+		switch plan.Status {
+		case StatusDraft, StatusApproved, StatusFailed:
+		default:
+			return fmt.Errorf("a %s plan cannot be edited", plan.Status)
+		}
+		var patchObject map[string]any
+		if err := json.Unmarshal(plan.Patch, &patchObject); err != nil {
+			return errors.New("stored plan patch is invalid")
+		}
+		mergedPatch := mergePatch(patchObject, valueObject)
+		patch, err := json.Marshal(mergedPatch)
+		if err != nil {
+			return err
+		}
+		recompiled, err := Compile(CreateInput{
+			ProjectID: plan.ProjectID, ProjectName: plan.ProjectName,
+			SourceID: plan.SourceID, SourceType: plan.SourceType, SourceName: plan.SourceName,
+			Target: plan.Target, Name: plan.Name, Intent: plan.Intent,
+			Patch: patch, Baseline: plan.Baseline, IdempotencyKey: plan.IdempotencyKey,
+		})
+		if err != nil {
+			return err
+		}
+		plan.Patch = recompiled.Patch
+		plan.Differences = recompiled.Differences
+		plan.Validations = recompiled.Validations
+		plan.CommandPreview = recompiled.CommandPreview
+		plan.Revision++
+		plan.Preflight = nil
+		plan.Status = StatusDraft
+		plan.ApprovedAt = nil
+		plan.StartedAt = nil
+		plan.CompletedAt = nil
+		plan.Result = nil
+		plan.Error = ""
+		plan.ErrorCategory = ""
+		plan.SubmissionID = ""
+		plan.RemoteIDs = nil
+		return nil
+	})
+}
+
+func MergedSimulationParams(plan Plan) (json.RawMessage, error) {
+	var baseline any = map[string]any{}
+	if len(plan.Baseline) > 0 {
+		if err := json.Unmarshal(plan.Baseline, &baseline); err != nil {
+			return nil, errors.New("stored Flow360 baseline SimulationParams is invalid")
+		}
+		baseline = unwrapSimulationParams(baseline)
+	}
+	var patch any
+	if err := json.Unmarshal(plan.Patch, &patch); err != nil {
+		return nil, errors.New("stored plan patch is invalid")
+	}
+	result, err := json.Marshal(mergePatch(baseline, patch))
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *Store) MarkSubmitted(id string, result json.RawMessage) (Plan, error) {
