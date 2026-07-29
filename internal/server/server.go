@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -28,6 +29,7 @@ import (
 	importplans "github.com/sjzsdu/vibesim/internal/imports"
 	"github.com/sjzsdu/vibesim/internal/plans"
 	"github.com/sjzsdu/vibesim/internal/projectcache"
+	"github.com/sjzsdu/vibesim/internal/projectmirror"
 )
 
 //go:embed dist
@@ -40,7 +42,12 @@ type Server struct {
 	plans   *plans.Store
 	imports *importplans.Store
 	cache   *projectcache.Store
+	mirror  *projectmirror.Store
 	workDir string
+
+	projectSyncClient projectSyncClient
+	projectSyncMu     sync.Mutex
+	projectSyncJobs   map[string]struct{}
 }
 
 func New() *Server {
@@ -68,15 +75,25 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	mirrorStore, err := projectmirror.New(
+		filepath.Join(dataDir, "projects"),
+		cacheNamespace(flowClient.Environment, flowClient.Profile),
+	)
+	if err != nil {
+		panic(err)
+	}
 
 	app := &Server{
-		router:  router,
-		flow360: flowClient,
-		agent:   agent.NewService(),
-		plans:   planStore,
-		imports: importStore,
-		cache:   cacheStore,
-		workDir: dataDir,
+		router:            router,
+		flow360:           flowClient,
+		agent:             agent.NewService(),
+		plans:             planStore,
+		imports:           importStore,
+		cache:             cacheStore,
+		mirror:            mirrorStore,
+		workDir:           dataDir,
+		projectSyncClient: flowClient,
+		projectSyncJobs:   map[string]struct{}{},
 	}
 	app.routes()
 
@@ -164,6 +181,8 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id", s.flow360ProjectInfo)
 		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
+		api.GET("/flow360/projects/:project_id/sync", s.projectSyncStatus)
+		api.POST("/flow360/projects/:project_id/sync", s.startProjectSync)
 		api.GET("/flow360/resources/:resource_type/:resource_id", s.flow360ResourceDetail)
 		api.GET("/flow360/resources/:resource_type/:resource_id/logs", s.flow360ResourceLogs)
 		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)

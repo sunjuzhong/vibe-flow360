@@ -131,6 +131,32 @@ export type ProjectItemsResponse = {
   items: ProjectItem[]
 }
 
+export type ProjectSyncResource = {
+  id: string
+  type: string
+  status: 'pending' | 'syncing' | 'completed' | 'failed'
+  error?: string
+  synced_at?: string
+}
+
+export type ProjectSyncManifest = {
+  schema_version: number
+  project_id: string
+  namespace: string
+  local_path: string
+  artifact_policy: 'metadata-only'
+  status: 'syncing' | 'completed' | 'partial' | 'failed'
+  total_resources: number
+  synced_resources: number
+  failed_resources: number
+  current_resource?: string
+  failures: Record<string, string>
+  resources: Record<string, ProjectSyncResource>
+  started_at: string
+  updated_at: string
+  completed_at?: string
+}
+
 export type ResourceDetail = {
   id: string
   type: string
@@ -332,6 +358,10 @@ export const api = {
     flow360JSON<ProjectTreeResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/tree${cacheOnly ? '?cache=only' : ''}`),
   projectItems: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
+  startProjectSync: (projectId: string) =>
+    mutate<ProjectSyncManifest>(`/api/flow360/projects/${encodeURIComponent(projectId)}/sync`),
+  projectSyncStatus: (projectId: string) =>
+    json<ProjectSyncManifest>(`/api/flow360/projects/${encodeURIComponent(projectId)}/sync`),
   resourceDetail: (resourceType: string, resourceId: string, cacheOnly = false) =>
     flow360JSON<ResourceDetail>(
       `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${cacheOnly ? '?cache=only' : ''}`,

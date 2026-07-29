@@ -9,13 +9,14 @@ import {
   MessageSquareText,
   RefreshCw,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   api,
   type Flow360Status,
   type ProjectInfo,
   type ProjectItem,
+  type ProjectSyncManifest,
   type ResourceDetail,
   type ResourceNode,
 } from '../api/client'
@@ -51,9 +52,20 @@ function findNode(node: ResourceNode, id: string): ResourceNode | null {
   return null
 }
 
+export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
+  if (!manifest?.total_resources) return 4
+  const finished = manifest.synced_resources + manifest.failed_resources
+  return Math.min(100, Math.max(4, Math.round((finished / manifest.total_resources) * 100)))
+}
+
 export default function ProjectPage() {
-  const { projectId = '', resourceId = '' } = useParams()
+  const { projectId = '', '*': projectPath = '' } = useParams()
+  const resourceId = projectPath.startsWith('resources/') ? projectPath.slice('resources/'.length) : ''
   const navigate = useNavigate()
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
+  const resourceIdRef = useRef(resourceId)
+  resourceIdRef.current = resourceId
   const [flowStatus, setFlowStatus] = useState<Flow360Status | null>(null)
   const [project, setProject] = useState<ProjectInfo | null>(null)
   const [root, setRoot] = useState<ResourceNode | null>(null)
@@ -71,6 +83,10 @@ export default function ProjectPage() {
   const [cacheWarning, setCacheWarning] = useState('')
   const [detailDataSource, setDetailDataSource] = useState<'live' | 'cache'>('live')
   const [detailCachedAt, setDetailCachedAt] = useState('')
+  const [syncManifest, setSyncManifest] = useState<ProjectSyncManifest | null>(null)
+  const [syncing, setSyncing] = useState(true)
+  const [syncError, setSyncError] = useState('')
+  const [syncNonce, setSyncNonce] = useState(0)
 
   const loadProject = useCallback(async () => {
     setLoading(true)
@@ -92,9 +108,10 @@ export default function ProjectPage() {
       setProjectCachedAt(cachedAt)
       setLoading(false)
       cachedLoaded = true
-      if (!resourceId) {
-        navigate(`/projects/${projectId}/resources/${cachedTree.data.root.id}`, { replace: true })
+      if (!resourceIdRef.current) {
+        navigateRef.current(`/projects/${projectId}/resources/${cachedTree.data.root.id}`, { replace: true })
       }
+      return
     } catch {
       // A cache miss is expected on the first visit.
     }
@@ -113,8 +130,8 @@ export default function ProjectPage() {
       if (cachedResponse) {
         setCacheWarning(`Live refresh failed. Showing the Go snapshot saved ${new Date(cachedResponse.cachedAt || cachedAt).toLocaleString()}.`)
       }
-      if (!resourceId) {
-        navigate(`/projects/${projectId}/resources/${tree.data.root.id}`, { replace: true })
+      if (!resourceIdRef.current) {
+        navigateRef.current(`/projects/${projectId}/resources/${tree.data.root.id}`, { replace: true })
       }
     } catch (cause) {
       const message = String(cause).replace('Error: ', '')
@@ -126,15 +143,57 @@ export default function ProjectPage() {
     } finally {
       setLoading(false)
     }
-  }, [navigate, projectId, resourceId])
+  }, [projectId])
 
   useEffect(() => {
     api.flow360Status().then(setFlowStatus).catch(() => setFlowStatus({ available: false }))
   }, [])
 
   useEffect(() => {
-    void loadProject()
-  }, [loadProject])
+    let cancelled = false
+    let timer: number | undefined
+    const wait = () => new Promise<void>((resolve) => {
+      timer = window.setTimeout(resolve, 500)
+    })
+    const synchronize = async () => {
+      setSyncing(true)
+      setSyncError('')
+      setError('')
+      try {
+        let manifest = await api.startProjectSync(projectId)
+        if (cancelled) return
+        setSyncManifest(manifest)
+        while (!cancelled && manifest.status === 'syncing') {
+          await wait()
+          if (cancelled) return
+          manifest = await api.projectSyncStatus(projectId)
+          setSyncManifest(manifest)
+        }
+        if (cancelled) return
+        if (manifest.status === 'partial') {
+          setSyncError(
+            `Project metadata sync completed with ${Object.keys(manifest.failures).length} failures. Local successful snapshots remain available.`,
+          )
+        }
+        if (manifest.status === 'failed') {
+          setSyncError('Project synchronization failed. Trying the most recent local mirror.')
+        }
+      } catch (cause) {
+        if (cancelled) return
+        setSyncError(String(cause).replace('Error: ', ''))
+      } finally {
+        if (!cancelled) {
+          setSyncing(false)
+          await loadProject()
+        }
+      }
+    }
+    void synchronize()
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [loadProject, projectId, syncNonce])
 
   const selected = useMemo(() => {
     if (!root) return null
@@ -184,6 +243,7 @@ export default function ProjectPage() {
         // A cache miss is expected on the first visit.
       }
     }
+    if (cachedLoaded) return
     try {
       const response = await api.resourceDetail(selected.type, selected.id)
       setDetail(response.data)
@@ -238,8 +298,8 @@ export default function ProjectPage() {
             )}
           </div>
           <div className="project-header-actions">
-            <button onClick={() => void loadProject()} disabled={loading}>
-              <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
+            <button onClick={() => setSyncNonce((value) => value + 1)} disabled={loading || syncing}>
+              <RefreshCw size={15} className={syncing ? 'spin' : ''} /> Sync Project
             </button>
             {selected && (
               <button onClick={() => { setChatOpen(false); setPlanOpen(true) }}>
@@ -258,19 +318,68 @@ export default function ProjectPage() {
         </div>
       </header>
 
-      {loading && <div className="project-load-state"><RefreshCw size={22} className="spin" /> Loading Project resources…</div>}
-      {!loading && error && (
+      {syncing && (
+        <div className="project-sync-state">
+          <div className="project-sync-heading">
+            <RefreshCw size={22} className="spin" />
+            <div>
+              <strong>Synchronizing the complete Project mirror</strong>
+              <span>
+                {syncManifest?.current_resource
+                  ? `Reading ${syncManifest.current_resource}`
+                  : 'Reading Project metadata and resource inventory…'}
+              </span>
+            </div>
+            <em>{syncManifest?.artifact_policy ?? 'metadata-only'}</em>
+          </div>
+          <div className="project-sync-progress" role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={syncManifest?.total_resources || 1}
+            aria-valuenow={(syncManifest?.synced_resources ?? 0) + (syncManifest?.failed_resources ?? 0)}
+          >
+            <span style={{ width: `${projectSyncProgress(syncManifest)}%` }} />
+          </div>
+          <div className="project-sync-counts">
+            <span>{syncManifest?.total_resources ?? '—'} total</span>
+            <span>{syncManifest?.synced_resources ?? 0} synchronized</span>
+            <span>{syncManifest?.failed_resources ?? 0} failed</span>
+          </div>
+          <small>
+            Local mirror: {syncManifest?.local_path ?? `.vibesim/projects/environment-profile/${projectId}`}
+          </small>
+        </div>
+      )}
+      {!syncing && loading && <div className="project-load-state"><RefreshCw size={22} className="spin" /> Loading synchronized Project resources…</div>}
+      {!syncing && syncError && <div className="project-cache-warning"><AlertCircle size={14} />{syncError}</div>}
+      {!syncing && syncManifest && Object.keys(syncManifest.failures).length > 0 && (
+        <details className="project-sync-failures">
+          <summary>
+            <AlertCircle size={14} />
+            {Object.keys(syncManifest.failures).length} synchronization failures
+          </summary>
+          <ul>
+            {Object.entries(syncManifest.failures).map(([resource, message]) => (
+              <li key={resource}>
+                <strong>{resource}</strong>
+                <span>{message}</span>
+              </li>
+            ))}
+          </ul>
+          <button onClick={() => setSyncNonce((value) => value + 1)}>Retry complete synchronization</button>
+        </details>
+      )}
+      {!syncing && !loading && error && (
         <div className="project-load-state error">
           <AlertCircle size={22} />
           <strong>Could not load this Project</strong>
           <span>{error}</span>
-          <button onClick={() => void loadProject()}>Retry</button>
+          <button onClick={() => setSyncNonce((value) => value + 1)}>Retry synchronization</button>
           <Link to="/">Back to workspace</Link>
         </div>
       )}
       {cacheWarning && <div className="project-cache-warning"><AlertCircle size={14} />{cacheWarning}</div>}
 
-      {!loading && !error && project && root && selected && (
+      {!syncing && !loading && !error && project && root && selected && (
         <div className={`project-workbench ${sidebarOpen ? 'sidebar-open' : ''}`}>
           <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />
           <aside className="resource-sidebar">

@@ -139,6 +139,34 @@ flow360 --profile default --uat project list --format json
 The API key remains server-side. It is never returned by the status API or sent
 to the React application.
 
+## Local Project mirror
+
+Opening a Project starts a bounded full metadata synchronization before the
+resource workbench is shown. Set `VIBESIM_DATA_DIR` to an absolute path when
+VibeSim may be started from different working directories:
+
+```dotenv
+VIBESIM_DATA_DIR=/absolute/path/to/.vibesim
+```
+
+The inspectable mirror is organized by Flow360 environment/profile and Project
+ID:
+
+```text
+.vibesim/projects/production-default/<project-id>/
+  manifest.json
+  project.json
+  tree.json
+  items.json
+  resources/<Geometry|SurfaceMesh|VolumeMesh|Case>/<resource-id>/detail.json
+```
+
+Each resource detail contains `info`, `state`, `summary`, raw
+`simulation_params`, and—for Cases—the result artifact list. The default
+`metadata-only` policy deliberately does not download large CAD, mesh, surface,
+volume, or Case result binaries. Small result histories used by convergence
+analysis are downloaded separately under `.vibesim/cases/<case-id>/`.
+
 ## Architecture
 
 ```text
