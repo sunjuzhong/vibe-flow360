@@ -26,6 +26,7 @@ import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
 import SurfaceMeshWorkspace from '../components/SurfaceMeshWorkspace'
 import TopBar from '../components/TopBar'
 import VolumeMeshWorkspace from '../components/VolumeMeshWorkspace'
+import CaseWorkspace from '../components/CaseWorkspace'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -325,6 +326,16 @@ export default function ProjectPage() {
                   })
                   window.dispatchEvent(logsEvent)
                 }}
+              />
+            )}
+            {selected.type === 'Case' && (
+              <CaseWorkspace
+                detail={detail}
+                onPlanCase={() => {
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
+                onRefresh={() => void loadDetail(false)}
               />
             )}
 
