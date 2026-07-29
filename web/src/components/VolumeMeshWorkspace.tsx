@@ -11,8 +11,11 @@ import {
   Triangle,
   Volume2,
 } from 'lucide-react'
+import { useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
+import { Viewer3D, type ViewerSelection } from './viewer/Viewer3D'
+import { useResourcePreview } from '../hooks/useResourcePreview'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -96,13 +99,20 @@ export function computeReadiness(detail: ResourceDetail | null): ReadinessCheck[
 
 export default function VolumeMeshWorkspace({
   detail,
+  resourceId,
   onPlanCase,
   onShowLogs,
 }: {
   detail: ResourceDetail | null
+  resourceId?: string
   onPlanCase: () => void
   onShowLogs?: () => void
 }) {
+  const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const { manifest, state: viewerState } = useResourcePreview(
+    detail ? 'VolumeMesh' : null,
+    resourceId ?? detail?.id ?? null,
+  )
   const status = resourceStatus(detail)
   const statusLower = status.toLowerCase()
   const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(statusLower)
@@ -170,6 +180,15 @@ export default function VolumeMeshWorkspace({
             <strong>{metricText(value)}</strong>
           </div>
         ))}
+      </div>
+
+      <div className="viewer-section">
+        <Viewer3D
+          manifest={manifest}
+          state={viewerState}
+          selection={viewerSelection}
+          onSelectionChange={setViewerSelection}
+        />
       </div>
 
       <div className="mesh-readiness-row">

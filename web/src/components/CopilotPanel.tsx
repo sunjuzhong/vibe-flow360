@@ -1,7 +1,7 @@
-import { ArrowUp, MessageSquareText, Sparkles, X } from 'lucide-react'
+import { ArrowUp, ChevronRight, Loader2, MessageSquareText, Sparkles, X } from 'lucide-react'
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, type AgentState } from '../api/client'
+import { api, type AgentAction, type AgentState } from '../api/client'
 import { readSSE } from '../lib/sse'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
@@ -9,6 +9,8 @@ type Message = {
   role: 'user' | 'assistant'
   content: string
   error?: boolean
+  action?: AgentAction
+  actionExecuted?: boolean
 }
 
 export default function CopilotPanel({
@@ -31,6 +33,8 @@ export default function CopilotPanel({
   const endRef = useRef<HTMLDivElement>(null)
   const panelRef = useFocusTrap(open, onClose, 'textarea')
 
+  const [converting, setConverting] = useState(false)
+
   useEffect(() => {
     api.agentState().then(setAgent).catch(() => setAgent(null))
   }, [])
@@ -38,6 +42,54 @@ export default function CopilotPanel({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const extractAction = (text: string): AgentAction | null => {
+    const patterns = [
+      /```json\s*([\s\S]*?)```/g,
+      /```\s*([\s\S]*?)```/g,
+    ]
+    for (const pattern of patterns) {
+      const match = pattern.exec(text)
+      if (!match) continue
+      try {
+        const parsed = JSON.parse(match[1].trim())
+        if (parsed && parsed.kind && parsed.message) {
+          return parsed as AgentAction
+        }
+      } catch { /* not JSON */ }
+    }
+    return null
+  }
+
+  const convertToPlans = async (messageIndex: number) => {
+    const msg = messages[messageIndex]
+    if (!msg.action) return
+    setConverting(true)
+    try {
+      const result = await api.planFromAction(msg.action)
+      setMessages((current) => {
+        const next = [...current]
+        next[messageIndex] = {
+          ...msg,
+          content: msg.content + `\n\n✅ 已创建 ${result.created}/${result.total} 个计划${result.failed > 0 ? `（${result.failed} 个失败）` : ''}。`,
+          actionExecuted: true,
+        }
+        return next
+      })
+    } catch (err) {
+      setMessages((current) => {
+        const next = [...current]
+        next[messageIndex] = {
+          ...msg,
+          content: msg.content + `\n\n❌ 创建计划失败: ${String(err)}`,
+          actionExecuted: true,
+        }
+        return next
+      })
+    } finally {
+      setConverting(false)
+    }
+  }
 
   const submit = async () => {
     const text = input.trim()
@@ -58,9 +110,11 @@ export default function CopilotPanel({
       await readSSE(response, (event) => {
         if (event.type === 'delta') {
           accumulated += event.delta ?? ''
-          setMessages((current) => current.map((message, index) =>
-            index === current.length - 1 ? { role: 'assistant', content: accumulated } : message
-          ))
+          setMessages((current) => current.map((message, index) => {
+            if (index !== current.length - 1) return message
+            const action = extractAction(accumulated)
+            return { role: 'assistant', content: accumulated, action: action ?? undefined }
+          }))
         }
         if (event.type === 'error') throw new Error(event.error || 'AI service unavailable')
       })
@@ -127,6 +181,41 @@ export default function CopilotPanel({
                   ? <ReactMarkdown>{message.content}</ReactMarkdown>
                   : <div className="thinking"><span /><span /><span /></div>
                 : message.content}
+              {message.action && message.action.kind === 'create-plan' && !message.actionExecuted && (
+                <div className="action-plan-card">
+                  <div className="action-plan-header">
+                    <strong>📋 仿真计划</strong>
+                    <span className="action-plan-count">{message.action.proposals?.length ?? 0} 个提案</span>
+                  </div>
+                  {message.action.warnings && message.action.warnings.length > 0 && (
+                    <ul className="action-plan-warnings">
+                      {message.action.warnings.map((w, i) => <li key={i}>⚠️ {w}</li>)}
+                    </ul>
+                  )}
+                  <div className="action-plan-proposals">
+                    {message.action.proposals?.map((p) => (
+                      <div key={p.id} className="action-proposal">
+                        <span className="proposal-target">{p.target}</span>
+                        <span className="proposal-name">{p.name}</span>
+                        {p.fields.length > 0 && (
+                          <span className="proposal-fields">
+                            {p.fields.map((f, i) => (
+                              <span key={i} className={`field-chip provenance-${f.provenance}`}>{f.key}: {String(f.value)}</span>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    className="action-plan-convert"
+                    disabled={converting}
+                    onClick={() => convertToPlans(index)}
+                  >
+                    {converting ? <><Loader2 size={14} /> 转换中...</> : <><ChevronRight size={14} /> 转换为计划</>}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}

@@ -21,6 +21,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/vibesim/internal/agent"
+	"github.com/sjzsdu/vibesim/internal/comparison"
+	"github.com/sjzsdu/vibesim/internal/convergence"
 	"github.com/sjzsdu/vibesim/internal/flow360"
 	importplans "github.com/sjzsdu/vibesim/internal/imports"
 	"github.com/sjzsdu/vibesim/internal/plans"
@@ -37,6 +39,7 @@ type Server struct {
 	plans   *plans.Store
 	imports *importplans.Store
 	cache   *projectcache.Store
+	workDir string
 }
 
 func New() *Server {
@@ -72,6 +75,7 @@ func New() *Server {
 		plans:   planStore,
 		imports: importStore,
 		cache:   cacheStore,
+		workDir: dataDir,
 	}
 	app.routes()
 
@@ -119,6 +123,10 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/logs", s.flow360ResourceLogs)
 		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
+		api.GET("/flow360/resources/:resource_type/:resource_id/preview-mesh", s.flow360ResourceMeshPreview)
+		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
+		api.POST("/flow360/compare", s.compareCases)
+		api.POST("/flow360/sweep", s.generateSweepPlan)
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)
 		api.GET("/plans/:plan_id", s.getPlan)
@@ -134,6 +142,7 @@ func (s *Server) routes() {
 			c.JSON(http.StatusOK, s.agent.State())
 		})
 		api.POST("/agent/chat/stream", s.chatStream)
+		api.POST("/agent/plan-from-action", s.planFromAction)
 	}
 
 	dist, err := fs.Sub(webFS, "dist")
@@ -688,6 +697,235 @@ func (s *Server) flow360ResourcePreview(c *gin.Context) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", output)
 }
 
+func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
+	resourceType := c.Param("resource_type")
+	resourceID := c.Param("resource_id")
+
+	if err := flow360.ValidateResourcePath(resourceType, resourceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	preview, err := s.flow360.ResourcePreviewManifest(
+		c.Request.Context(),
+		resourceType,
+		resourceID,
+	)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":    err.Error(),
+			"format":   resourceType,
+			"groups":   []any{},
+			"warnings": []string{"3D preview data is not available for this resource"},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, preview)
+}
+
+func (s *Server) flow360CaseConvergence(c *gin.Context) {
+	resourceType := c.Param("resource_type")
+	resourceID := c.Param("resource_id")
+
+	if err := flow360.ValidateResourcePath(resourceType, resourceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if resourceType != "Case" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "convergence assessment is only available for Case resources"})
+		return
+	}
+
+	workDir := s.workDir
+	if workDir == "" {
+		workDir = os.TempDir()
+	}
+
+	discovery, err := convergence.DiscoverCaseResults(
+		c.Request.Context(),
+		resourceID,
+		s.flow360,
+		workDir,
+	)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  convergence.StatusInsufficientData,
+			"reason":  err.Error(),
+			"files":   []any{},
+			"overall": convergence.NewAssessment(convergence.StatusInsufficientData, "result discovery failed"),
+		})
+		return
+	}
+
+	overall := discovery.FullAssessment()
+	files := make([]any, 0, len(discovery.Files))
+	for _, f := range discovery.Files {
+		files = append(files, f)
+	}
+
+	status := convergence.StatusInsufficientData
+	reason := "no assessment available"
+	for _, a := range overall {
+		if a.Status == convergence.StatusNotConverged {
+			status = convergence.StatusNotConverged
+			reason = a.Reason
+			break
+		}
+		if a.Status == convergence.StatusConverged {
+			if status != convergence.StatusNotConverged {
+				status = convergence.StatusConverged
+				reason = a.Reason
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":      status,
+		"reason":      reason,
+		"files":       files,
+		"assessments": overall,
+	})
+}
+
+type compareRequest struct {
+	CaseIDs  []string `json:"case_ids"`
+	Baseline string   `json:"baseline,omitempty"`
+	KPIKeys  []string `json:"kpi_keys,omitempty"`
+}
+
+func (s *Server) compareCases(c *gin.Context) {
+	var req compareRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.CaseIDs) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least 2 case IDs are required for comparison"})
+		return
+	}
+
+	kpiKeys := req.KPIKeys
+	if len(kpiKeys) == 0 {
+		kpiKeys = []string{"Cl", "Cd", "Cm"}
+	}
+
+	var baseline map[string]interface{}
+	var others []map[string]interface{}
+
+	for i, id := range req.CaseIDs {
+		resource, err := s.fetchCaseResource(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   fmt.Sprintf("failed to fetch case %s: %s", id, err.Error()),
+				"case_id": id,
+			})
+			return
+		}
+
+		params := map[string]interface{}{
+			"id":   id,
+			"type": resource.Type,
+		}
+
+		if name := extractField(resource.Info, "name"); name != "" {
+			params["name"] = name
+		} else {
+			params["name"] = id
+		}
+
+		if status := extractField(resource.State, "status"); status != "" {
+			params["status"] = status
+		} else {
+			params["status"] = "unknown"
+		}
+
+		if resource.Summary != nil {
+			params["summary"] = rawToMap(resource.Summary)
+		}
+		if resource.SimulationParams != nil {
+			params["simulation_params"] = rawToMap(resource.SimulationParams)
+		}
+
+		if i == 0 {
+			baseline = params
+		} else {
+			others = append(others, params)
+		}
+	}
+
+	result := comparison.CompareCases(baseline, others, kpiKeys)
+
+	c.JSON(http.StatusOK, result)
+}
+
+type sweepRequest struct {
+	BaselineCaseID string                      `json:"baseline_case_id"`
+	Parameters     []comparison.SweepParameter `json:"parameters"`
+}
+
+func (s *Server) generateSweepPlan(c *gin.Context) {
+	var req sweepRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.BaselineCaseID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "baseline_case_id is required"})
+		return
+	}
+
+	plan := comparison.GenerateSweepPlan(req.BaselineCaseID, req.Parameters)
+
+	warnings := comparison.ValidateSweepPlan(plan)
+	if len(warnings) > 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"plan":     plan,
+			"warnings": warnings,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"plan":     plan,
+		"warnings": []string{},
+	})
+}
+
+func (s *Server) fetchCaseResource(ctx context.Context, caseID string) (flow360.ResourceDetail, error) {
+	if err := flow360.ValidateResourcePath("Case", caseID); err != nil {
+		return flow360.ResourceDetail{}, err
+	}
+	return s.flow360.ResourceDetail(ctx, "Case", caseID)
+}
+
+func rawToMap(raw json.RawMessage) map[string]interface{} {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+func extractField(raw json.RawMessage, field string) string {
+	m := rawToMap(raw)
+	if m == nil {
+		return ""
+	}
+	if val, ok := m[field]; ok {
+		if s, ok := val.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func (s *Server) flow360Status(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
 	defer cancel()
@@ -860,6 +1098,71 @@ func (s *Server) chatStream(c *gin.Context) {
 		writeEvent(c.Writer, flusher, gin.H{"type": "delta", "delta": scanner.Text()})
 	}
 	writeEvent(c.Writer, flusher, gin.H{"type": "done"})
+}
+
+type actionPlanRequest struct {
+	Action agent.Action `json:"action"`
+}
+
+func (s *Server) planFromAction(c *gin.Context) {
+	var req actionPlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if req.Action.Kind != agent.ActionCreatePlan {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unsupported action kind: %s", req.Action.Kind)})
+		return
+	}
+	if len(req.Action.Proposals) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no proposals to convert"})
+		return
+	}
+	results := make([]map[string]any, 0, len(req.Action.Proposals))
+	for _, p := range req.Action.Proposals {
+		planInput := plans.CreateInput{
+			ProjectID:   p.ProjectID,
+			ProjectName: p.ProjectName,
+			SourceID:    p.SourceID,
+			SourceType:  p.SourceType,
+			SourceName:  p.SourceName,
+			Target:      p.Target,
+			Name:        p.Name,
+			Intent:      p.Intent,
+			Patch:       p.Patch,
+		}
+		plan, err := s.plans.Create(planInput)
+		if err != nil {
+			results = append(results, map[string]any{
+				"id":    p.ID,
+				"error": err.Error(),
+			})
+			continue
+		}
+		results = append(results, map[string]any{
+			"id":     p.ID,
+			"plan":   plan,
+			"status": plan.Status,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":  req.Action.Message,
+		"warnings": req.Action.Warnings,
+		"results":  results,
+		"total":    len(results),
+		"created":  countSuccesses(results),
+		"failed":   len(results) - countSuccesses(results),
+	})
+}
+
+func countSuccesses(results []map[string]any) int {
+	n := 0
+	for _, r := range results {
+		if _, ok := r["plan"]; ok {
+			n++
+		}
+	}
+	return n
 }
 
 func writeEvent(w http.ResponseWriter, flusher http.Flusher, value any) {

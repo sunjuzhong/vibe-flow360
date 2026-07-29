@@ -298,6 +298,7 @@ export default function ProjectPage() {
             {selected.type === 'Geometry' && (
               <GeometryWorkspace
                 detail={detail}
+                resourceId={selected.id}
                 onPlanSurfaceMesh={() => {
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -307,6 +308,7 @@ export default function ProjectPage() {
             {selected.type === 'SurfaceMesh' && (
               <SurfaceMeshWorkspace
                 detail={detail}
+                resourceId={selected.id}
                 onPlanVolumeMesh={() => {
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -316,6 +318,7 @@ export default function ProjectPage() {
             {selected.type === 'VolumeMesh' && (
               <VolumeMeshWorkspace
                 detail={detail}
+                resourceId={selected.id}
                 onPlanCase={() => {
                   setChatOpen(false)
                   setPlanOpen(true)

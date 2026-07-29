@@ -8,8 +8,11 @@ import {
   ScanLine,
   Triangle,
 } from 'lucide-react'
+import { useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
+import { Viewer3D, type ViewerSelection } from './viewer/Viewer3D'
+import { useResourcePreview } from '../hooks/useResourcePreview'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -41,11 +44,18 @@ function metricText(value: unknown) {
 
 export default function SurfaceMeshWorkspace({
   detail,
+  resourceId,
   onPlanVolumeMesh,
 }: {
   detail: ResourceDetail | null
+  resourceId?: string
   onPlanVolumeMesh: () => void
 }) {
+  const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const { manifest, state: viewerState } = useResourcePreview(
+    detail ? 'SurfaceMesh' : null,
+    resourceId ?? detail?.id ?? null,
+  )
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
   const status = resourceStatus(detail)
   const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(status.toLowerCase())
@@ -95,6 +105,14 @@ export default function SurfaceMeshWorkspace({
             <strong>{metricText(value)}</strong>
           </div>
         ))}
+      </div>
+      <div className="viewer-section">
+        <Viewer3D
+          manifest={manifest}
+          state={viewerState}
+          selection={viewerSelection}
+          onSelectionChange={setViewerSelection}
+        />
       </div>
       <div className="mesh-readiness-row">
         <div className="geometry-checks">

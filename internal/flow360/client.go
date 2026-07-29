@@ -228,6 +228,44 @@ func (c *Client) downloadCaseResult(ctx context.Context, resourceID, resultPath 
 	return output, nil
 }
 
+func (c *Client) ListCaseResults(ctx context.Context, caseID string) ([]string, error) {
+	output, err := c.runWithTimeout(
+		ctx,
+		1*time.Minute,
+		"case", "results", "list", caseID,
+		"--format", "json",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list case results: %w", err)
+	}
+
+	var results []string
+
+	var raw []any
+	if err := json.Unmarshal(output, &raw); err != nil {
+		var asObjects []map[string]any
+		if err2 := json.Unmarshal(output, &asObjects); err2 != nil {
+			return nil, fmt.Errorf("parse results list: %w", err)
+		}
+		for _, item := range asObjects {
+			if path, ok := item["path"].(string); ok {
+				results = append(results, path)
+			}
+			if name, ok := item["name"].(string); ok {
+				results = append(results, name)
+			}
+		}
+		return results, nil
+	}
+
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			results = append(results, s)
+		}
+	}
+	return results, nil
+}
+
 func (c *Client) RunDraft(ctx context.Context, sourceID, name, target string, patch json.RawMessage) (json.RawMessage, error) {
 	temp, err := os.CreateTemp("", "vibesim-plan-*.json")
 	if err != nil {

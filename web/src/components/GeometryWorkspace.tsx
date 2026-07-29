@@ -1,6 +1,9 @@
 import { Box, CheckCircle2, CircleDashed, GitPullRequestDraft, Ruler, ScanLine, Shapes } from 'lucide-react'
+import { useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
+import { Viewer3D, type ViewerSelection } from './viewer/Viewer3D'
+import { useResourcePreview } from '../hooks/useResourcePreview'
 
 function findFirst(value: unknown, keys: Set<string>): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -31,11 +34,18 @@ function displayValue(value: unknown) {
 
 export default function GeometryWorkspace({
   detail,
+  resourceId,
   onPlanSurfaceMesh,
 }: {
   detail: ResourceDetail | null
+  resourceId?: string
   onPlanSurfaceMesh: () => void
 }) {
+  const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const { manifest, state: viewerState } = useResourcePreview(
+    detail ? 'Geometry' : null,
+    resourceId ?? detail?.id ?? null,
+  )
   const unit = findFirst(detail?.info, new Set(['length_unit', 'lengthunit', 'unit']))
     ?? findFirst(detail?.simulation_params, new Set(['length_unit', 'lengthunit']))
   const entityCount = findFirst(detail?.summary, new Set(['face_count', 'surface_count', 'entity_count', '_count']))
@@ -48,14 +58,13 @@ export default function GeometryWorkspace({
 
   return (
     <section className="geometry-workspace">
-      <div className="geometry-viewport">
-        <div className="geometry-viewport-grid" aria-hidden="true" />
-        <div className="geometry-model-mark" aria-hidden="true"><Box size={48} /></div>
-        <div className="geometry-viewport-copy">
-          <span><ScanLine size={14} /> Geometry inspection</span>
-          <strong>3D asset adapter is not connected yet</strong>
-          <small>Metadata and SimulationParams below are live. A renderable geometry artifact will replace this preview when the Flow360 asset endpoint is available.</small>
-        </div>
+      <div className="viewer-section">
+        <Viewer3D
+          manifest={manifest}
+          state={viewerState}
+          selection={viewerSelection}
+          onSelectionChange={setViewerSelection}
+        />
       </div>
       <div className="geometry-preflight">
         <div className="geometry-preflight-heading">

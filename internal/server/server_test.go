@@ -1,15 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/vibesim/internal/agent"
 	"github.com/sjzsdu/vibesim/internal/flow360"
+	"github.com/sjzsdu/vibesim/internal/plans"
 	"github.com/sjzsdu/vibesim/internal/projectcache"
 )
 
@@ -189,5 +193,213 @@ func TestProjectTreePartialErrorFallsBackToCache(t *testing.T) {
 	}
 	if root["id"] != "geo-0" {
 		t.Fatalf("got root id %v, want geo-0", root["id"])
+	}
+}
+
+func TestPlanFromActionCreatesPlans(t *testing.T) {
+	planStore, err := plans.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		plans:   planStore,
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	action := agent.Action{
+		Version: agent.ActionVersion,
+		Kind:    agent.ActionCreatePlan,
+		Message: "Create test plans",
+		Proposals: []agent.Proposal{
+			{
+				ID:         "p1",
+				ProjectID:  "prj-1",
+				SourceID:   "src-1",
+				SourceType: "VolumeMesh",
+				Target:     "case",
+				Name:       "Test Case",
+				Intent:     "Test",
+				Patch:      json.RawMessage(`{"alpha":5}`),
+			},
+		},
+	}
+	body, _ := json.Marshal(actionPlanRequest{Action: action})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/agent/plan-from-action", bytes.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.planFromAction(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200", recorder.Code)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["created"].(float64) != 1 {
+		t.Fatalf("expected 1 created, got %v", response["created"])
+	}
+}
+
+func TestPlanFromActionRejectsNonCreatePlanKind(t *testing.T) {
+	planStore, err := plans.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		plans:   planStore,
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	action := agent.Action{
+		Version: agent.ActionVersion,
+		Kind:    agent.ActionRequestMissingInput,
+		Message: "Need more info",
+	}
+	body, _ := json.Marshal(actionPlanRequest{Action: action})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/agent/plan-from-action", bytes.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.planFromAction(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestResourceMeshPreviewRejectsPathTraversal(t *testing.T) {
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/../etc/passwd/preview-mesh", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "../etc/passwd"},
+	}
+
+	app.flow360ResourceMeshPreview(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestResourceMeshPreviewRejectsUnsupportedType(t *testing.T) {
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/UnknownType/id/preview-mesh", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "UnknownType"},
+		{Key: "resource_id", Value: "id"},
+	}
+
+	app.flow360ResourceMeshPreview(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestCaseConvergenceRejectsNonCase(t *testing.T) {
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/id/convergence", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "id"},
+	}
+
+	app.flow360CaseConvergence(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestCaseConvergenceRejectsPathTraversal(t *testing.T) {
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/../../etc/passwd/convergence", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "Case"},
+		{Key: "resource_id", Value: "../../etc/passwd"},
+	}
+
+	app.flow360CaseConvergence(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestCompareCasesRequiresAtLeastTwoCases(t *testing.T) {
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	body := `{"case_ids": ["case-1"]}`
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/compare", strings.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.compareCases(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestCompareCasesRejectsInvalidJSON(t *testing.T) {
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/compare", strings.NewReader("not json"))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.compareCases(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
+	}
+}
+
+func TestGenerateSweepValidatesBaselineCaseID(t *testing.T) {
+	app := &Server{}
+
+	body := `{"parameters": []}`
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/sweep", strings.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.generateSweepPlan(context)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", recorder.Code)
 	}
 }

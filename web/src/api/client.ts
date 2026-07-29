@@ -15,6 +15,54 @@ export type AgentState = {
   execution: boolean
 }
 
+export type AgentProposalField = {
+  key: string
+  value: unknown
+  provenance: 'provided' | 'derived' | 'inferred' | 'defaulted'
+  description?: string
+}
+
+export type AgentProposal = {
+  id: string
+  project_id?: string
+  project_name?: string
+  source_id?: string
+  action: string
+  target: string
+  name: string
+  intent: string
+  patch: Record<string, unknown>
+  branch_preview: string
+  fields: AgentProposalField[]
+  validation_hints?: string[]
+}
+
+export type AgentAction = {
+  version: string
+  kind: 'create-plan' | 'request-missing-input'
+  message: string
+  proposals?: AgentProposal[]
+  questions?: Array<{ field: string; message: string; urgency: string; reason?: string }>
+  warnings?: string[]
+  assumptions?: string[]
+}
+
+export type ActionPlanResultItem = {
+  id: string
+  plan?: SimulationPlan
+  status?: string
+  error?: string
+}
+
+export type ActionPlanResult = {
+  message: string
+  warnings?: string[]
+  results: ActionPlanResultItem[]
+  total: number
+  created: number
+  failed: number
+}
+
 export type FolderNode = {
   id: string
   name: string
@@ -311,4 +359,6 @@ export const api = {
     return body
   },
   agentState: () => json<AgentState>('/api/agent/state'),
+  planFromAction: (action: AgentAction) =>
+    mutate<ActionPlanResult>('/api/agent/plan-from-action', { action }),
 }

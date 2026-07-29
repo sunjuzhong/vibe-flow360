@@ -1,0 +1,243 @@
+package agent
+
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestParseAcceptsCreatePlanAction(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "Plan a case variation at AoA 5 deg",
+  "proposals": [
+    {
+      "id": "p1",
+      "project_id": "prj-1",
+      "source_id": "vm-1",
+      "action": "VolumeMesh",
+      "target": "case",
+      "name": "AoA 5 deg",
+      "intent": "Lift comparison",
+      "patch": {"operating_condition":{"alpha":{"value":5}}},
+      "branch_preview": "aoa-5-deg",
+      "fields": [
+        {"key": "alpha", "value": 5, "provenance": "provided"}
+      ]
+    }
+  ]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Kind != ActionCreatePlan {
+		t.Fatalf("expected create-plan, got %q", action.Kind)
+	}
+	if len(action.Proposals) != 1 {
+		t.Fatalf("expected 1 proposal, got %d", len(action.Proposals))
+	}
+	if action.Proposals[0].Fields[0].Provenance != ProvenanceProvided {
+		t.Fatalf("expected provided provenance, got %q", action.Proposals[0].Fields[0].Provenance)
+	}
+	if action.Proposals[0].ProjectID != "prj-1" {
+		t.Fatalf("expected project id, got %q", action.Proposals[0].ProjectID)
+	}
+}
+
+func TestParseDefaultsVersion(t *testing.T) {
+	raw := `{
+  "kind": "request-missing-input",
+  "message": "Need operating conditions",
+  "questions": [
+    {"field": "velocity", "message": "What is the velocity?", "urgency": "required"}
+  ]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Version != ActionVersion {
+		t.Fatalf("expected default version v1, got %q", action.Version)
+	}
+}
+
+func TestParseRejectsUnknownKind(t *testing.T) {
+	_, err := Parse(`{"version":"v1","kind":"unknown","message":"foo"}`)
+	if !errors.Is(err, ErrUnknownAction) {
+		t.Fatalf("expected ErrUnknownAction, got %v", err)
+	}
+}
+
+func TestParseRejectsBadVersion(t *testing.T) {
+	_, err := Parse(`{"version":"v9","kind":"create-plan","message":"foo"}`)
+	if !errors.Is(err, ErrInvalidVersion) {
+		t.Fatalf("expected ErrInvalidVersion, got %v", err)
+	}
+}
+
+func TestParseRejectsMissingMessage(t *testing.T) {
+	_, err := Parse(`{"version":"v1","kind":"create-plan","message":"   "}`)
+	if !errors.Is(err, ErrMissingMessage) {
+		t.Fatalf("expected ErrMissingMessage, got %v", err)
+	}
+}
+
+func TestParseRejectsIncompatibleTarget(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "Plan a surface mesh from a case",
+  "proposals": [
+    {
+      "id": "p1",
+      "action": "Case",
+      "target": "surface-mesh",
+      "name": "invalid",
+      "intent": "Should fail",
+      "patch": {},
+      "fields": []
+    }
+  ]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrIncompatibleSource) {
+		t.Fatalf("expected ErrIncompatibleSource, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Case -> surface-mesh") {
+		t.Fatalf("expected detail in error, got %v", err)
+	}
+}
+
+func TestParseRejectsInvalidProvenance(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "Test",
+  "proposals": [
+    {
+      "id": "p1",
+      "action": "Geometry",
+      "target": "case",
+      "name": "bad",
+      "intent": "Test",
+      "patch": {},
+      "fields": [{"key": "a", "value": 1, "provenance": "magic"}]
+    }
+  ]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidProvenance) {
+		t.Fatalf("expected ErrInvalidProvenance, got %v", err)
+	}
+}
+
+func TestParseRejectsInvalidPatch(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "Bad patch",
+  "proposals": [
+    {
+      "id": "p1",
+      "action": "VolumeMesh",
+      "target": "case",
+      "name": "bad",
+      "intent": "Test",
+      "patch": [1,2,
+      "fields": [{"key": "a", "value": 1, "provenance": "provided"}]
+    }
+  ]
+}`
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected patch validation error")
+	}
+}
+
+func TestParseRejectsEmptyInput(t *testing.T) {
+	_, err := Parse("")
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("expected ErrInvalidJSON, got %v", err)
+	}
+}
+
+func TestParseRequestMissingInputQuestions(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "request-missing-input",
+  "message": "Need operating conditions",
+  "warnings": ["No velocity provided"],
+  "questions": [
+    {"field": "velocity", "message": "What is the freestream velocity?", "urgency": "required"}
+  ]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Kind != ActionRequestMissingInput {
+		t.Fatalf("expected request-missing-input, got %q", action.Kind)
+	}
+	if len(action.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d", len(action.Warnings))
+	}
+	if len(action.Questions) != 1 {
+		t.Fatalf("expected 1 question, got %d", len(action.Questions))
+	}
+}
+
+func TestParseAcceptsFieldWithoutProvenance(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "Plan",
+  "proposals": [
+    {
+      "id": "p1",
+      "action": "VolumeMesh",
+      "target": "case",
+      "name": "test",
+      "intent": "Test",
+      "patch": {},
+      "fields": [{"key": "a", "value": 1}]
+    }
+  ]
+}`
+	_, err := Parse(raw)
+	if err == nil {
+		t.Fatal("expected error when provenance missing")
+	}
+}
+
+func TestMarshalRoundTrip(t *testing.T) {
+	original := Action{
+		Version: ActionVersion,
+		Kind:    ActionCreatePlan,
+		Message: "Plan",
+		Proposals: []Proposal{
+			{
+				ID: "p1", SourceType: "Geometry", Target: "surface-mesh",
+				Name: "test", Intent: "Test",
+				Patch:  json.RawMessage(`{"foo":"bar"}`),
+				Fields: []Field{{Key: "foo", Value: "bar", Provenance: ProvenanceDerived}},
+			},
+		},
+	}
+	data, err := original.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := Parse(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(round.Message, "Plan") {
+		t.Fatalf("round trip lost message: %v", round)
+	}
+	if len(round.Proposals) != 1 {
+		t.Fatalf("round trip lost proposals: %v", round)
+	}
+}

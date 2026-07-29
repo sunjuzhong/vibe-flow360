@@ -12,9 +12,38 @@ import {
   Thermometer,
   Wind,
   FileOutput,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
 } from 'lucide-react'
 import { resourceStatus } from './ResourceDetailPanel'
 import type { ResourceDetail } from '../api/client'
+import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
+import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
+
+function formatConvergenceStatus(status: string): string {
+  switch (status) {
+    case 'converged': return 'Converged — Results are stable'
+    case 'not-converged': return 'Not Converged — Results show drift or instability'
+    case 'insufficient-data': return 'Insufficient Data — Unable to assess convergence'
+    default: return status
+  }
+}
+
+function formatAssessmentKey(key: string): string {
+  switch (key) {
+    case 'residuals': return 'Residual Convergence'
+    case 'forces': return 'Force Coefficients'
+    case 'overall': return 'Overall Assessment'
+    default: return key.charAt(0).toUpperCase() + key.slice(1)
+  }
+}
+
+function formatNumber(v: number): string {
+  if (Math.abs(v) >= 1) return v.toFixed(4)
+  if (Math.abs(v) >= 0.01) return v.toFixed(6)
+  return v.toExponential(3)
+}
 
 export type CaseStatusView =
   | 'queued'
@@ -167,6 +196,11 @@ export default function CaseWorkspace({
   const resultCount = detail?.results?.records?.length ?? 0
   const hasErrors = Boolean(detail?.errors && Object.keys(detail.errors).length)
 
+  const { result: convergence, loading: convergenceLoading, refetch: refetchConvergence } =
+    useConvergenceAssessment(detail?.id ?? null)
+
+  const convResult = convergence as ConvergenceResult | null
+
   return (
     <section className="case-workspace">
       <div className="case-workspace-heading">
@@ -195,6 +229,66 @@ export default function CaseWorkspace({
           )}
         </div>
       </div>
+
+      {convResult && (
+        <div className="case-convergence-section">
+          <div className="convergence-header">
+            <h3><BarChart3 size={15} /> Convergence Assessment</h3>
+            <button
+              className="toolbar-refresh"
+              onClick={refetchConvergence}
+              disabled={convergenceLoading}
+              aria-label="Refresh convergence"
+            >
+              <RotateCw size={13} /> Refresh
+            </button>
+          </div>
+          <div className={`convergence-banner convergence-${convResult.status}`}>
+            {convResult.status === 'converged' && <CheckCircle2 size={18} />}
+            {convResult.status === 'not-converged' && <AlertCircle size={18} />}
+            {convResult.status === 'insufficient-data' && <CircleDashed size={18} />}
+            <div>
+              <strong>{formatConvergenceStatus(convResult.status)}</strong>
+              <p>{convResult.reason}</p>
+            </div>
+          </div>
+          {Object.entries(convResult.assessments).map(([key, assessment]: [string, ConvergenceAssessment]) => (
+            <div key={key} className="convergence-metrics">
+              <h4>{formatAssessmentKey(key)}</h4>
+              <div className="convergence-metrics-grid">
+                {Object.entries(assessment.metrics).map(([name, metric]: [string, ConvergenceMetric]) => (
+                  <div key={name} className={`metric-card metric-${metric.stable ? 'stable' : 'unstable'}`}>
+                    <div className="metric-header">
+                      <span className="metric-name">{name}</span>
+                      {metric.trend === 'decreasing' && <TrendingDown size={14} className="trend-down" />}
+                      {metric.trend === 'increasing' && <TrendingUp size={14} className="trend-up" />}
+                      {metric.trend === 'stable' && <span className="trend-stable">•</span>}
+                    </div>
+                    <div className="metric-values">
+                      <div>Final: <strong>{formatNumber(metric.final)}</strong></div>
+                      <div>Range: {formatNumber(metric.min)} – {formatNumber(metric.max)}</div>
+                      <div>Mean: {formatNumber(metric.mean)}</div>
+                      <div className={metric.stable ? 'stable-text' : 'unstable-text'}>
+                        {metric.stable ? 'Stable' : 'Unstable'} {metric.oscillating && '(oscillating)'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {assessment.warnings && assessment.warnings.length > 0 && (
+                <div className="convergence-warnings">
+                  {assessment.warnings.map((w: string, i: number) => (
+                    <p key={i} className="warning-text">{w}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {convResult.files.length === 0 && (
+            <p className="convergence-empty">No result files found for convergence assessment.</p>
+          )}
+        </div>
+      )}
 
       <div className="case-overview-grid">
         <div className="case-metric-card">
