@@ -1,0 +1,214 @@
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  CircleDashed,
+  GitPullRequestDraft,
+  Layers,
+  Ruler,
+  ScanLine,
+  Share2,
+  Triangle,
+  Volume2,
+} from 'lucide-react'
+import type { ResourceDetail } from '../api/client'
+import { resourceStatus } from './ResourceDetailPanel'
+
+function findMetric(value: unknown, aliases: string[]): unknown {
+  if (!value || typeof value !== 'object') return undefined
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findMetric(item, aliases)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (aliases.includes(key.toLowerCase())) return child
+    const found = findMetric(child, aliases)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
+
+function metricText(value: unknown) {
+  if (value === undefined || value === null || value === '') return 'Not reported'
+  if (typeof value === 'number') return value.toLocaleString()
+  if (typeof value === 'string') return value
+  if (typeof value === 'object' && 'value' in (value as object)) {
+    const metric = value as { value?: unknown; units?: unknown }
+    return `${metric.value ?? '—'}${metric.units ? ` ${metric.units}` : ''}`
+  }
+  return JSON.stringify(value)
+}
+
+type ReadinessCheck = {
+  label: string
+  status: 'ready' | 'warning' | 'blocked' | 'missing'
+  hint: string
+}
+
+export function computeReadiness(detail: ResourceDetail | null): ReadinessCheck[] {
+  const status = resourceStatus(detail).toLowerCase()
+  const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
+  const cellCount = findMetric(source, ['cell_count', 'num_cells', 'cells', 'element_count', 'volume_cell_count'])
+  const minOrtho = findMetric(source, ['minimum_orthogonality', 'min_orthogonality', 'orthogonality'])
+  const maxSkew = findMetric(source, ['max_skewness', 'maximum_skewness', 'skewness'])
+  const hasCells = cellCount !== undefined && cellCount !== null && cellCount !== ''
+  const hasParams = Boolean(detail?.simulation_params && Object.keys(detail.simulation_params).length)
+  const noErrors = !detail?.errors || Object.keys(detail.errors).length === 0
+
+  return [
+    {
+      label: 'Volume mesh reached a terminal state',
+      status: ['completed', 'processed', 'success'].includes(status)
+        ? 'ready'
+        : status === 'failed' || status === 'error'
+        ? 'blocked'
+        : 'warning',
+      hint: `Current status: ${status || 'unknown'}`,
+    },
+    {
+      label: 'Cell count is reported',
+      status: hasCells ? 'ready' : 'missing',
+      hint: hasCells ? `Cell count: ${metricText(cellCount)}` : 'Not reported by Flow360 snapshot',
+    },
+    {
+      label: 'Mesh quality indicators are available',
+      status: minOrtho !== undefined || maxSkew !== undefined ? 'ready' : 'missing',
+      hint:
+        minOrtho === undefined && maxSkew === undefined
+          ? 'Quality fields were not reported'
+          : `min orthogonality ${metricText(minOrtho)} · max skewness ${metricText(maxSkew)}`,
+    },
+    {
+      label: 'Simulation parameters are available',
+      status: hasParams ? 'ready' : 'missing',
+      hint: hasParams ? 'SimulationParams patch can be derived from the baseline' : 'Baseline SimulationParams missing',
+    },
+    {
+      label: 'No partial Flow360 reads were reported',
+      status: noErrors ? 'ready' : 'warning',
+      hint: noErrors ? 'All Flow360 calls for this snapshot succeeded' : 'Some fields fell back to cache defaults',
+    },
+  ]
+}
+
+export default function VolumeMeshWorkspace({
+  detail,
+  onPlanCase,
+  onShowLogs,
+}: {
+  detail: ResourceDetail | null
+  onPlanCase: () => void
+  onShowLogs?: () => void
+}) {
+  const status = resourceStatus(detail)
+  const statusLower = status.toLowerCase()
+  const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(statusLower)
+  const failed = ['failed', 'error'].includes(statusLower)
+  const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
+
+  const metrics = [
+    {
+      label: 'Cell count',
+      value: findMetric(source, ['cell_count', 'num_cells', 'cells', 'element_count', 'volume_cell_count']),
+      icon: Layers,
+    },
+    {
+      label: 'Node count',
+      value: findMetric(source, ['node_count', 'num_nodes', 'nodes', 'vertex_count']),
+      icon: Share2,
+    },
+    {
+      label: 'Minimum orthogonality',
+      value: findMetric(source, ['minimum_orthogonality', 'min_orthogonality', 'orthogonality']),
+      icon: Triangle,
+    },
+    {
+      label: 'Maximum skewness',
+      value: findMetric(source, ['max_skewness', 'maximum_skewness', 'skewness']),
+      icon: ScanLine,
+    },
+    {
+      label: 'Minimum cell size',
+      value: findMetric(source, ['min_cell_size', 'minimum_cell_size', 'cell_size']),
+      icon: Ruler,
+    },
+    {
+      label: 'Computing domain',
+      value: findMetric(source, ['domain_extent', 'domain', 'bounding_box']),
+      icon: Volume2,
+    },
+  ]
+
+  const checks = computeReadiness(detail)
+  const readyCount = checks.filter((c) => c.status === 'ready').length
+
+  return (
+    <section className="volume-mesh-workspace">
+      <div className="mesh-workspace-heading">
+        <div>
+          <span>VOLUME MESH WORKSPACE</span>
+          <strong>Domain, quality, and Case readiness</strong>
+          <small>
+            {terminal
+              ? failed
+                ? 'The volume mesh failed. Review the error and logs before retrying.'
+                : 'The volume mesh is terminal. Review quality before planning a Case.'
+              : 'Processing status refreshes automatically every 10 seconds.'}
+          </small>
+        </div>
+        {failed ? <AlertCircle size={21} className="status-failed" /> : <Activity size={21} />}
+      </div>
+
+      <div className="mesh-quality-grid volume-mesh">
+        {metrics.map(({ label, value, icon: Icon }) => (
+          <div key={label} className="metric-card">
+            <Icon size={15} />
+            <span>{label}</span>
+            <strong>{metricText(value)}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="mesh-readiness-row">
+        <div className="geometry-checks volume-mesh-checks">
+          {checks.map((check) => (
+            <div className={`volume-check volume-check-${check.status}`} key={check.label}>
+              {check.status === 'ready' ? (
+                <CheckCircle2 size={14} />
+              ) : check.status === 'blocked' ? (
+                <AlertCircle size={14} />
+              ) : (
+                <CircleDashed size={14} />
+              )}
+              <div>
+                <span>{check.label}</span>
+                <small>{check.hint}</small>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="geometry-plan-action-stack">
+          <button
+            className="geometry-plan-action"
+            onClick={onPlanCase}
+            disabled={failed}
+            title={failed ? 'Cannot plan a Case from a failed volume mesh' : 'Plan a Case using this volume mesh'}
+          >
+            <GitPullRequestDraft size={15} />
+            Plan Case
+          </button>
+          {failed && onShowLogs && (
+            <button className="secondary-action" onClick={onShowLogs}>
+              <Activity size={14} />
+              View Logs
+            </button>
+          )}
+          <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>
+        </div>
+      </div>
+    </section>
+  )
+}

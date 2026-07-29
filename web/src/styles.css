@@ -1412,3 +1412,24 @@ button { color: inherit; }
   .mesh-quality-grid { grid-template-columns: 1fr 1fr; }
   .mesh-readiness-row { grid-template-columns: 1fr; }
 }
+
+.volume-mesh-workspace { margin-bottom: 14px; padding: 18px; border: 1px solid #dcded5; border-radius: 10px; background: #f9f9f5; }
+.mesh-quality-grid.volume-mesh { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.mesh-quality-grid .metric-card { display: block; }
+.volume-mesh-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.volume-check { display: flex; align-items: flex-start; gap: 7px; padding: 9px 10px; border-radius: 7px; color: #5e781c; background: #eef3de; border: 1px solid transparent; }
+.volume-check span,.volume-check small { display: block; }
+.volume-check span { font-size: 9px; font-weight: 600; color: #3e4540; }
+.volume-check small { margin-top: 2px; font-size: 7px; color: #7e8578; }
+.volume-check-ready { color: #5e781c; background: #eef3de; border-color: #c4d68b; }
+.volume-check-warning { color: #8c7340; background: #f6ead0; border-color: #e3cf95; }
+.volume-check-blocked { color: #a04d3d; background: #f6dfda; border-color: #e3b3a8; }
+.volume-check-missing { color: #666c62; background: #f0f1ec; border-color: #d6d9d0; }
+.geometry-plan-action-stack { display: flex; flex-direction: column; gap: 8px; }
+.geometry-plan-action:disabled { opacity: .5; cursor: not-allowed; }
+.secondary-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; border: 1px solid #ced1c7; border-radius: 7px; color: #4c564a; background: #fff; font-size: 9px; font-weight: 600; cursor: pointer; }
+.readiness-summary { color: #838981; font-size: 8px; text-align: center; }
+@media (max-width: 760px) {
+  .mesh-quality-grid.volume-mesh { grid-template-columns: 1fr 1fr; }
+  .volume-mesh-checks { grid-template-columns: 1fr; }
+}

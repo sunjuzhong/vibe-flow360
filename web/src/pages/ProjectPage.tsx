@@ -25,6 +25,7 @@ import ResourceDetailPanel, { resourceStatus } from '../components/ResourceDetai
 import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
 import SurfaceMeshWorkspace from '../components/SurfaceMeshWorkspace'
 import TopBar from '../components/TopBar'
+import VolumeMeshWorkspace from '../components/VolumeMeshWorkspace'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -308,6 +309,21 @@ export default function ProjectPage() {
                 onPlanVolumeMesh={() => {
                   setChatOpen(false)
                   setPlanOpen(true)
+                }}
+              />
+            )}
+            {selected.type === 'VolumeMesh' && (
+              <VolumeMeshWorkspace
+                detail={detail}
+                onPlanCase={() => {
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
+                onShowLogs={() => {
+                  const logsEvent = new CustomEvent('flow360:show-logs', {
+                    detail: { resourceType: selected.type, resourceId: selected.id },
+                  })
+                  window.dispatchEvent(logsEvent)
                 }}
               />
             )}
