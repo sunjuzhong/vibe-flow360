@@ -358,6 +358,68 @@ export type SweepParameter = {
   values: number[]
 }
 
+export type InterventionEvidence = {
+  type: string
+  content: Record<string, unknown>
+  source: string
+  timestamp: string
+}
+
+export type InterventionDiagnosis = {
+  root_cause: string
+  category: string
+  severity: string
+  contributing_factors?: string[]
+  recommended_actions?: string[]
+}
+
+export type InterventionValidation = {
+  valid: boolean
+  errors?: string[]
+  warnings?: string[]
+  preflight_id?: string
+}
+
+export type Intervention = {
+  id: string
+  project_id: string
+  project_name?: string
+  resource_id?: string
+  resource_type?: string
+  plan_id?: string
+  plan_revision?: number
+  type: string
+  state: string
+  reason: string
+  confidence: number
+  impact?: string
+  evidence?: InterventionEvidence[]
+  diagnosis?: InterventionDiagnosis
+  proposals?: AgentProposal[]
+  selected_proposal?: AgentProposal
+  user_feedback?: string
+  requires_confirmation?: string[]
+  current_patch?: Record<string, unknown>
+  compiled_patch?: Record<string, unknown>
+  validation?: InterventionValidation
+  created_at: string
+  updated_at: string
+  resolved_at?: string
+  closed_at?: string
+}
+
+export type CreateInterventionInput = {
+  project_id: string
+  project_name?: string
+  resource_id?: string
+  resource_type?: string
+  plan_id?: string
+  type: string
+  reason: string
+  evidence?: InterventionEvidence[]
+  current_patch?: Record<string, unknown>
+}
+
 export type SweepResult = {
   plan: {
     id: string
@@ -528,4 +590,27 @@ export const api = {
   agentState: () => json<AgentState>('/api/agent/state'),
   planFromAction: (action: AgentAction) =>
     mutate<ActionPlanResult>('/api/agent/plan-from-action', { action }),
+  interventions: (projectId?: string, state?: string) => {
+    const params = new URLSearchParams()
+    if (projectId) params.set('project_id', projectId)
+    if (state) params.set('state', state)
+    return json<{ interventions: Intervention[] }>(`/api/interventions${params.toString() ? `?${params.toString()}` : ''}`)
+  },
+  intervention: (id: string) => json<Intervention>(`/api/interventions/${encodeURIComponent(id)}`),
+  createIntervention: (input: CreateInterventionInput) =>
+    mutate<Intervention>('/api/interventions', input),
+  diagnoseIntervention: (id: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/diagnose`),
+  generateInterventionProposals: (id: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/proposals`),
+  selectInterventionProposal: (id: string, proposalId: string, feedback?: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/select`, { proposal_id: proposalId, feedback }),
+  compileInterventionPatch: (id: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/compile`),
+  validateIntervention: (id: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/validate`),
+  completeInterventionValidation: (id: string, valid: boolean, errors?: string[]) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/complete`, { valid, errors }),
+  closeIntervention: (id: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/close`),
 }

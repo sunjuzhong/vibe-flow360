@@ -22,6 +22,7 @@ import {
 } from '../api/client'
 import CopilotPanel from '../components/CopilotPanel'
 import GeometryWorkspace from '../components/GeometryWorkspace'
+import InterventionPanel from '../components/InterventionPanel'
 import PlanPanel from '../components/PlanPanel'
 import ResourceDetailPanel, { resourceStatus } from '../components/ResourceDetailPanel'
 import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
@@ -77,6 +78,7 @@ export default function ProjectPage() {
   const [detailError, setDetailError] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [interventionOpen, setInterventionOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -147,6 +149,16 @@ export default function ProjectPage() {
 
   useEffect(() => {
     api.flow360Status().then(setFlowStatus).catch(() => setFlowStatus({ available: false }))
+  }, [])
+
+  useEffect(() => {
+    const handleOpenIntervention = () => {
+      setInterventionOpen(true)
+    }
+    window.addEventListener('vibesim:open-intervention', handleOpenIntervention)
+    return () => {
+      window.removeEventListener('vibesim:open-intervention', handleOpenIntervention)
+    }
   }, [])
 
   useEffect(() => {
@@ -512,6 +524,14 @@ export default function ProjectPage() {
           onSubmitted={() => {
             void loadProject()
           }}
+        />
+      )}
+      {project && (
+        <InterventionPanel
+          open={interventionOpen}
+          onClose={() => setInterventionOpen(false)}
+          projectId={project.id}
+          resourceId={selected?.id}
         />
       )}
     </div>

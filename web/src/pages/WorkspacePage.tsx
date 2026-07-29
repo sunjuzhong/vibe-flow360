@@ -9,7 +9,7 @@ import {
   FileUp,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   api,
   type Flow360Status,
@@ -26,6 +26,7 @@ function projectCount(project: ProjectRecord, key: string) {
 }
 
 export default function WorkspacePage() {
+  const navigate = useNavigate()
   const [flowStatus, setFlowStatus] = useState<Flow360Status | null>(null)
   const [folderRoot, setFolderRoot] = useState<FolderNode | null>(null)
   const [foldersLoading, setFoldersLoading] = useState(true)
@@ -300,7 +301,15 @@ export default function WorkspacePage() {
           ? `The user is browsing Flow360 folder ${selectedFolder.name} (${selectedFolder.id}) with ${projects.length} loaded projects.`
           : 'The user is at the Flow360 workspace home and has not selected a folder.'}
       />
-      {selectedFolder && importOpen && <ImportPanel folder={selectedFolder} onClose={() => setImportOpen(false)} onCreated={() => { setImportOpen(false); void loadProjects(selectedFolder) }} />}
+      {selectedFolder && importOpen && <ImportPanel folder={selectedFolder} onClose={() => setImportOpen(false)} onCreated={(plan) => {
+  setImportOpen(false)
+  void loadProjects(selectedFolder)
+  const result = plan.result as Record<string, unknown> | undefined
+  const projectId = result?.project_id as string | undefined
+  if (projectId) {
+    navigate(`/projects/${encodeURIComponent(projectId)}`)
+  }
+}} />}
     </div>
   )
 }

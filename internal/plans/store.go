@@ -21,6 +21,7 @@ const (
 	StatusSubmitted   = "submitted"
 	StatusFailed      = "failed"
 	StatusReconciling = "reconciling"
+	StatusCompleted   = "completed"
 
 	ErrNotApproved         = "plan must be approved before execution"
 	ErrPreflightRequired   = "plan must pass Flow360 schema preflight"
@@ -657,6 +658,19 @@ func (s *Store) MarkFailed(id string, runErr error) (Plan, error) {
 		plan.Error = runErr.Error()
 		plan.ErrorCategory = category
 		plan.SubmissionID = ""
+		return nil
+	})
+}
+
+func (s *Store) MarkComplete(id string, results map[string]any) (Plan, error) {
+	resultJSON, _ := json.Marshal(results)
+	return s.Update(id, func(plan *Plan) error {
+		now := time.Now().UTC()
+		plan.Status = StatusCompleted
+		plan.CompletedAt = &now
+		plan.Result = resultJSON
+		plan.Error = ""
+		plan.ErrorCategory = ""
 		return nil
 	})
 }

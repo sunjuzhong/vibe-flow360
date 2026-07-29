@@ -11,6 +11,7 @@ import {
   Play,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   TriangleAlert,
   X,
 } from 'lucide-react'
@@ -446,6 +447,16 @@ export default function PlanPanel({
                       <strong>{selected.error_category ? errorCategoryLabels[selected.error_category] ?? selected.error_category : 'Execution failed'}</strong>
                       <small>{selected.error}</small>
                     </span>
+                    {selected.status === 'failed' && (
+                      <button
+                        className="agent-recovery-btn"
+                        onClick={() => window.dispatchEvent(new CustomEvent('vibesim:open-intervention', {
+                          detail: { planId: selected.id, error: selected.error, errorCategory: selected.error_category }
+                        }))}
+                      >
+                        <Sparkles size={13} /> Agent Recovery
+                      </button>
+                    )}
                   </div>
                 )}
                 {selected.status === 'reconciling' && (

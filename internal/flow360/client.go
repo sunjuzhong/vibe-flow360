@@ -381,6 +381,80 @@ func (c *Client) FindDraftByName(ctx context.Context, projectID, name string) (j
 	return nil, errors.New("matching Flow360 draft was not found")
 }
 
+// TerminalState represents the current state of a monitored resource
+type TerminalState struct {
+	State    string         `json:"state"`
+	Terminal bool           `json:"terminal"`
+	Details  map[string]any `json:"details,omitempty"`
+}
+
+// PollResourceTerminalState polls a resource until it reaches a terminal state.
+// Terminal states are: completed, failed, cancelled, expired.
+// Returns the final terminal state or an error if the context expires.
+func (c *Client) PollResourceTerminalState(ctx context.Context, resourceType, resourceID string, interval time.Duration) (TerminalState, error) {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+
+	states := map[string]bool{
+		"completed": true, "failed": true, "cancelled": true,
+		"expired": true, "success": true, "error": true,
+		"done": true, "timed_out": true,
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		detail, err := c.ResourceDetail(ctx, resourceType, resourceID)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return TerminalState{State: "unknown", Terminal: false}, ctx.Err()
+			case <-ticker.C:
+				continue
+			}
+		}
+
+		state := extractState(detail.State)
+		if state == "" {
+			state = extractState(detail.Summary)
+		}
+
+		if states[strings.ToLower(state)] {
+			return TerminalState{
+				State:    state,
+				Terminal: true,
+				Details:  map[string]any{"id": detail.ID, "type": detail.Type},
+			}, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return TerminalState{State: state, Terminal: false}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func extractState(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return ""
+	}
+	for _, key := range []string{"state", "status", "phase", "result"} {
+		if val, ok := data[key]; ok {
+			if s, ok := val.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
 func collectRecords(value any) []map[string]any {
 	switch typed := value.(type) {
 	case []any:
