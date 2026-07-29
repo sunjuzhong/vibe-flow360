@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -38,6 +39,86 @@ func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestListInterventionsReturnsEmptyJSONArray(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	temp := t.TempDir()
+	interventionStore, err := agent.NewInterventionStore(filepath.Join(temp, "interventions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	planStore, err := plans.NewStore(filepath.Join(temp, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		interventions:      interventionStore,
+		interventionEngine: agent.NewEngine(interventionStore, planStore, nil),
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/interventions?project_id=prj-empty", nil)
+
+	app.listInterventions(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200", recorder.Code)
+	}
+	if got := strings.TrimSpace(recorder.Body.String()); got != `{"interventions":[]}` {
+		t.Fatalf("got %s, want empty JSON array", got)
+	}
+}
+
+func TestRecoverPlanCreatesInterventionForPersistedPreflightFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	temp := t.TempDir()
+	planStore, err := plans.NewStore(filepath.Join(temp, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := planStore.Create(plans.CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "case", Name: "recover", Intent: "Recover missing inputs.",
+		Baseline: json.RawMessage(`{"simulation_params":{}}`), Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = planStore.SetPreflight(plan.ID, plans.Preflight{
+		Valid: false, ValidatedRevision: plan.Revision,
+		Issues:     []plans.PreflightIssue{{Level: "error", Code: "missing", Path: "models", Message: "Field required"}},
+		FormSchema: json.RawMessage(`{"type":"object","properties":{"models":{"type":"object"}}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	interventionStore, err := agent.NewInterventionStore(filepath.Join(temp, "interventions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		plans:              planStore,
+		interventions:      interventionStore,
+		interventionEngine: agent.NewEngine(interventionStore, planStore, nil),
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/plans/"+plan.ID+"/recover", nil)
+	context.Params = gin.Params{{Key: "plan_id", Value: plan.ID}}
+
+	app.recoverPlan(context)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("got status %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var created agent.Intervention
+	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.PlanID != plan.ID || created.PlanRevision != plan.Revision {
+		t.Fatalf("recovery is not bound to the failed plan revision: %#v", created)
 	}
 }
 
@@ -395,6 +476,106 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 }
 
+func TestValidateAndApplyInterventionPersistsPatchAndRealPreflight(t *testing.T) {
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	fakeResult := `#!/bin/sh
+if grep -q '"value":0.01' "$3"; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"missing","path":"meshing.defaults.length","message":"Field required","stages":["SurfaceMesh"]}],"form_schema":{"type":"object","required":["meshing"],"properties":{"meshing":{"type":"object","required":["defaults"],"properties":{"defaults":{"type":"object","required":["length"],"properties":{"length":{"type":"quantity","unit":"m","value_schema":{"type":"number","exclusiveMinimum":0},"required":true}}}}}}}}'
+fi
+`
+	if err := os.WriteFile(fakePython, []byte(fakeResult), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+
+	planStore, err := plans.NewStore(filepath.Join(temp, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := planStore.Create(plans.CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "surface-mesh", Name: "mesh", Intent: "Build a surface mesh.",
+		Baseline: json.RawMessage(`{"simulation_params":{"version":"test","meshing":{"defaults":{}}}}`),
+		Patch:    json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flowClient := &flow360.Client{Binary: "flow360"}
+	preflight, err := flowClient.PreflightSimulationParams(
+		context.Background(),
+		plan.SourceType,
+		plan.Target,
+		json.RawMessage(`{"simulation_params":{"version":"test","meshing":{"defaults":{}}}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issues := make([]plans.PreflightIssue, 0, len(preflight.Issues))
+	for _, issue := range preflight.Issues {
+		issues = append(issues, plans.PreflightIssue{
+			Level: issue.Level, Code: issue.Code, Path: issue.Path,
+			Message: issue.Message, Stages: issue.Stages,
+		})
+	}
+	plan, err = planStore.SetPreflight(plan.ID, plans.Preflight{
+		SchemaVersion: preflight.SchemaVersion, ValidatorVersion: preflight.ValidatorVersion,
+		Valid: preflight.Valid, ValidatedRevision: plan.Revision,
+		Issues: issues, FormSchema: preflight.FormSchema,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	interventionStore, err := agent.NewInterventionStore(filepath.Join(temp, "interventions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := agent.NewEngine(interventionStore, planStore, nil)
+	intervention, err := agent.NewIntervention(agent.InterventionInput{
+		ProjectID: "prj-1", ResourceID: "geo-1", ResourceType: "Geometry",
+		PlanID: plan.ID, PlanRevision: plan.Revision, Type: agent.TypePreflightError,
+		Reason: "Field required", CurrentPatch: plan.Patch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervention.State = agent.InterventionValidation
+	intervention.SelectedProposal = &agent.Proposal{ID: "schema", Name: "schema"}
+	intervention.CompiledPatch = json.RawMessage(
+		`{"meshing":{"defaults":{"length":{"value":0.01,"units":"m"}}}}`,
+	)
+	if _, err := interventionStore.Create(intervention); err != nil {
+		t.Fatal(err)
+	}
+
+	app := &Server{
+		plans: planStore, flow360: flowClient,
+		interventions: interventionStore, interventionEngine: engine,
+	}
+	resolved, err := app.validateAndApplyIntervention(intervention.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.State != agent.InterventionResolved || resolved.PlanRevision != 2 {
+		t.Fatalf("intervention did not resolve against the new revision: %#v", resolved)
+	}
+	updated, err := planStore.Get(plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Revision != 2 || !strings.Contains(string(updated.Patch), `"length"`) {
+		t.Fatalf("compiled intervention patch was not persisted: %#v", updated)
+	}
+	if updated.Preflight == nil || !updated.Preflight.Valid ||
+		updated.Preflight.ValidatedRevision != updated.Revision {
+		t.Fatalf("new plan revision did not pass real preflight: %#v", updated.Preflight)
+	}
+}
+
 func TestPublicExecutionErrorDoesNotExposeTraceback(t *testing.T) {
 	got := publicExecutionError(errors.New("Traceback /Users/private/source Fail to generate simulation config"))
 	if strings.Contains(got.Error(), "Traceback") || strings.Contains(got.Error(), "/Users/") {
@@ -402,6 +583,84 @@ func TestPublicExecutionErrorDoesNotExposeTraceback(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(got.Error()), "validation") {
 		t.Fatalf("validation action was lost: %v", got)
+	}
+}
+
+func TestPlanMonitorTargetUsesReturnedResourceType(t *testing.T) {
+	tests := []struct {
+		name     string
+		plan     plans.Plan
+		wantType string
+		wantID   string
+		wantOK   bool
+	}{
+		{
+			name: "geometry to case monitors case",
+			plan: plans.Plan{
+				SourceType: "Geometry", Target: "case",
+				RemoteIDs: &plans.RemoteIDs{CaseID: "case-1"},
+			},
+			wantType: "Case", wantID: "case-1", wantOK: true,
+		},
+		{
+			name: "surface mesh target",
+			plan: plans.Plan{
+				SourceType: "Geometry", Target: "surface-mesh",
+				RemoteIDs: &plans.RemoteIDs{MeshID: "sm-1"},
+			},
+			wantType: "SurfaceMesh", wantID: "sm-1", wantOK: true,
+		},
+		{
+			name: "volume mesh target",
+			plan: plans.Plan{
+				SourceType: "SurfaceMesh", Target: "volume-mesh",
+				RemoteIDs: &plans.RemoteIDs{MeshID: "vm-1"},
+			},
+			wantType: "VolumeMesh", wantID: "vm-1", wantOK: true,
+		},
+		{name: "missing IDs", plan: plans.Plan{}, wantOK: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resourceType, resourceID, ok := planMonitorTarget(test.plan)
+			if resourceType != test.wantType || resourceID != test.wantID || ok != test.wantOK {
+				t.Fatalf("got (%q, %q, %v), want (%q, %q, %v)",
+					resourceType, resourceID, ok, test.wantType, test.wantID, test.wantOK)
+			}
+		})
+	}
+}
+
+func TestNormalizeImportResultRequiresProjectAndRootResourceIDs(t *testing.T) {
+	raw := json.RawMessage(`{
+		"record":{"project_id":"prj-1"},
+		"resources":[{"id":"geo-1","type":"Geometry"}]
+	}`)
+	result, err := normalizeImportResult(raw, "geometry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]any
+	if err := json.Unmarshal(result, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	if normalized["project_id"] != "prj-1" ||
+		normalized["root_resource_id"] != "geo-1" ||
+		normalized["root_resource_type"] != "geometry" {
+		t.Fatalf("unexpected normalized import result: %#v", normalized)
+	}
+
+	if _, err := normalizeImportResult(
+		json.RawMessage(`{"project_id":"prj-1"}`),
+		"geometry",
+	); err == nil || !strings.Contains(err.Error(), "root resource") {
+		t.Fatalf("missing root resource ID was accepted: %v", err)
+	}
+	if _, err := normalizeImportResult(
+		json.RawMessage(`{"geometry_id":"geo-1"}`),
+		"geometry",
+	); err == nil || !strings.Contains(err.Error(), "Project ID") {
+		t.Fatalf("missing Project ID was accepted: %v", err)
 	}
 }
 

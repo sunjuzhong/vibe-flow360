@@ -638,9 +638,8 @@ func MergedSimulationParams(plan Plan) (json.RawMessage, error) {
 func (s *Store) MarkSubmitted(id string, result json.RawMessage) (Plan, error) {
 	remoteIDs := extractRemoteIDs(result)
 	return s.Update(id, func(plan *Plan) error {
-		now := time.Now().UTC()
 		plan.Status = StatusSubmitted
-		plan.CompletedAt = &now
+		plan.CompletedAt = nil
 		plan.Result = result
 		plan.RemoteIDs = remoteIDs
 		plan.Error = ""

@@ -79,6 +79,7 @@ export default function ProjectPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [interventionOpen, setInterventionOpen] = useState(false)
+  const [interventionPlanId, setInterventionPlanId] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -152,7 +153,9 @@ export default function ProjectPage() {
   }, [])
 
   useEffect(() => {
-    const handleOpenIntervention = () => {
+    const handleOpenIntervention = (event: Event) => {
+      const detail = (event as CustomEvent<{ planId?: string }>).detail
+      setInterventionPlanId(detail?.planId ?? '')
       setInterventionOpen(true)
     }
     window.addEventListener('vibesim:open-intervention', handleOpenIntervention)
@@ -532,6 +535,7 @@ export default function ProjectPage() {
           onClose={() => setInterventionOpen(false)}
           projectId={project.id}
           resourceId={selected?.id}
+          planId={interventionPlanId}
         />
       )}
     </div>

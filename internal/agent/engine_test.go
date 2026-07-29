@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,7 +163,10 @@ func TestEngineFullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, err = engine.RunEngineStep(intervention.ID)
+	if current.State != InterventionUserFeedback {
+		t.Fatalf("expected feedback state, got %s", current.State)
+	}
+	current, err = engine.SetFeedbackAndCompile(intervention.ID, "more conservative")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +224,7 @@ func TestEngineValidationFailureRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	current, err = engine.RunEngineStep(intervention.ID)
+	current, err = engine.SetFeedbackAndCompile(intervention.ID, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,11 +365,10 @@ func TestMergeFeedbackConservative(t *testing.T) {
 	if err := json.Unmarshal(result, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if parsed["_feedback_applied"] != true {
-		t.Error("expected feedback applied flag")
-	}
-	if parsed["_feedback_note"] != "make it more conservative" {
-		t.Errorf("expected feedback note, got %v", parsed["_feedback_note"])
+	for key := range parsed {
+		if strings.HasPrefix(key, "_feedback") {
+			t.Fatalf("feedback audit metadata leaked into SimulationParams: %s", key)
+		}
 	}
 	if cfl, ok := parsed["cfl_number"].(float64); !ok || cfl >= 5 {
 		t.Errorf("expected reduced CFL, got %v", parsed["cfl_number"])
@@ -408,8 +411,8 @@ func TestMergeFeedbackEmptyPatch(t *testing.T) {
 	if err := json.Unmarshal(result, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if parsed["_feedback_applied"] != true {
-		t.Error("expected feedback applied even on empty patch")
+	if _, ok := parsed["cfl_number"]; !ok {
+		t.Error("expected deterministic feedback adjustment on empty patch")
 	}
 }
 
@@ -768,11 +771,8 @@ func TestMergeFeedbackUnknownProvidesHint(t *testing.T) {
 	if err := json.Unmarshal(result, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if parsed["_feedback_processed"] != false {
-		t.Error("expected unprocessed flag for unknown feedback")
-	}
-	if _, ok := parsed["_feedback_hint"]; !ok {
-		t.Error("expected feedback hint for unknown feedback")
+	if parsed["cfl_number"] != float64(5) {
+		t.Error("unknown feedback must not corrupt the Flow360 patch")
 	}
 }
 
@@ -859,13 +859,24 @@ func TestEngineRetryFullCycleAfterValidationFail(t *testing.T) {
 	}
 }
 
-func TestBuildPreflightProposalsUsesEvidenceIDs(t *testing.T) {
+func TestBuildPreflightProposalsUsesSchemaRecommendation(t *testing.T) {
 	engine, _ := setupTestEngine(t)
 
 	issues := []plans.PreflightIssue{
-		{Code: "ERR_BOUNDARY", Level: "error", Path: "face-123", Message: "Missing boundary on face-123", Stages: []string{"setup"}},
+		{Code: "ERR_BOUNDARY", Level: "error", Path: "models", Message: "Missing boundary on face-123", Stages: []string{"setup"}},
 	}
 	plan := makeTestPlan("proj-1", "plan-1", "vm-1", false, issues)
+	plan.Preflight.FormSchema = json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"models":{
+				"type":"entity_assignment",
+				"default_model":"existing:0",
+				"default_entities":["face-123","face-456"],
+				"recommendation":{"reason":"Reuse the current Wall model."}
+			}
+		}
+	}`)
 
 	intervention, err := engine.CreateFromPreflightError(plan)
 	if err != nil {
@@ -882,17 +893,17 @@ func TestBuildPreflightProposalsUsesEvidenceIDs(t *testing.T) {
 	if err := json.Unmarshal(pfProposal.Patch, &patchMap); err != nil {
 		t.Fatal(err)
 	}
-	ea, ok := patchMap["entity_assignment"].(map[string]interface{})
+	ea, ok := patchMap["models"].(map[string]interface{})
 	if !ok {
-		t.Fatal("expected entity_assignment in patch")
+		t.Fatal("expected schema form path in patch")
 	}
 	entities, ok := ea["entities"].([]interface{})
 	if !ok || len(entities) == 0 {
-		t.Error("expected entities to be populated from evidence IDs")
+		t.Error("expected entities to be populated from the signed schema recommendation")
 	}
 }
 
-func TestBuildPreflightProposalsFallbackDefaults(t *testing.T) {
+func TestBuildPreflightProposalsDoesNotInventEntities(t *testing.T) {
 	plan := makeTestPlan("proj-1", "plan-1", "vm-1", false, nil)
 	plan.Preflight = nil
 
@@ -910,31 +921,17 @@ func TestBuildPreflightProposalsFallbackDefaults(t *testing.T) {
 	if err := json.Unmarshal(proposals[0].Patch, &patchMap); err != nil {
 		t.Fatal(err)
 	}
-	ea, ok := patchMap["entity_assignment"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected entity_assignment in patch")
-	}
-	entities, ok := ea["entities"].([]interface{})
-	if !ok || len(entities) == 0 {
-		t.Error("expected default entities when no evidence IDs available")
+	if len(patchMap) != 0 {
+		t.Fatalf("fallback must not invent boundary entities: %#v", patchMap)
 	}
 }
 
-func TestExtractEvidenceResourceIDs(t *testing.T) {
-	evidence := []Evidence{
-		{Type: "preflight_issue", Content: json.RawMessage(`{"path":"face-123","message":"error"}`)},
-		{Type: "preflight_issue", Content: json.RawMessage(`{"path":"face-456","message":"error2"}`)},
-		{Type: "other", Content: json.RawMessage(`{"no_path":"value"}`)},
-	}
-
-	ids := extractEvidenceResourceIDs(evidence)
-	if len(ids) != 2 {
-		t.Fatalf("expected 2 IDs, got %d", len(ids))
-	}
-	if ids[0] != "face-123" {
-		t.Errorf("expected face-123, got %s", ids[0])
-	}
-	if ids[1] != "face-456" {
-		t.Errorf("expected face-456, got %s", ids[1])
+func TestProposalFromPreflightFormRejectsIssuePathsAsEntities(t *testing.T) {
+	evidence := []Evidence{{
+		Type:    "preflight_issue",
+		Content: json.RawMessage(`{"path":"models.0.entities","message":"missing"}`),
+	}}
+	if _, ok := proposalFromPreflightForm(evidence); ok {
+		t.Fatal("schema issue paths are not Geometry entity IDs")
 	}
 }

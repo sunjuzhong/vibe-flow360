@@ -123,6 +123,10 @@ func (s *Server) reconcileInterruptedPlans() {
 		return
 	}
 	for _, plan := range list {
+		if plan.Status == plans.StatusSubmitted {
+			s.startPlanMonitor(plan)
+			continue
+		}
 		if plan.Status != plans.StatusReconciling {
 			continue
 		}
@@ -135,9 +139,12 @@ func (s *Server) reconcileInterruptedPlans() {
 			}
 			continue
 		}
-		if _, err := s.plans.MarkSubmitted(plan.ID, result); err != nil {
+		submitted, err := s.plans.MarkSubmitted(plan.ID, result)
+		if err != nil {
 			log.Printf("Could not persist reconciled plan %s: %v", plan.ID, err)
+			continue
 		}
+		s.startPlanMonitor(submitted)
 	}
 }
 
@@ -209,6 +216,7 @@ func (s *Server) routes() {
 		api.GET("/plans/:plan_id", s.getPlan)
 		api.POST("/plans/:plan_id/preflight", s.preflightPlan)
 		api.POST("/plans/:plan_id/inputs", s.applyPlanInputs)
+		api.POST("/plans/:plan_id/recover", s.recoverPlan)
 		api.POST("/plans/:plan_id/approve", s.approvePlan)
 		api.POST("/plans/:plan_id/run", s.runPlan)
 		api.POST("/imports", s.stageImport)
@@ -495,6 +503,9 @@ func (s *Server) runImport(c *gin.Context) {
 		plan.FolderID,
 		plan.Tags,
 	)
+	if runErr == nil {
+		result, runErr = normalizeImportResult(result, plan.SourceType)
+	}
 
 	updatedPlan, _ := s.imports.Update(plan.ID, func(plan *importplans.Plan) error {
 		if runErr != nil {
@@ -502,7 +513,7 @@ func (s *Server) runImport(c *gin.Context) {
 			plan.Error = "Flow360 did not accept the project import"
 		} else {
 			plan.Status = "submitted"
-			plan.Result = enrichResultWithProjectID(result)
+			plan.Result = result
 		}
 		return nil
 	})
@@ -516,33 +527,103 @@ func (s *Server) runImport(c *gin.Context) {
 	c.JSON(http.StatusOK, updatedPlan)
 }
 
-func enrichResultWithProjectID(raw json.RawMessage) json.RawMessage {
-	var data map[string]interface{}
+func normalizeImportResult(raw json.RawMessage, sourceType string) (json.RawMessage, error) {
+	var data any
 	if err := json.Unmarshal(raw, &data); err != nil {
-		return raw
+		return nil, errors.New("Flow360 import returned invalid JSON")
+	}
+	projectID := findStringField(data, map[string]bool{
+		"project_id": true, "projectid": true,
+	})
+	if projectID == "" {
+		projectID = findTypedResourceID(data, "project")
+	}
+	if projectID == "" {
+		return nil, errors.New("Flow360 import did not return a Project ID")
 	}
 
-	if existingID, ok := data["project_id"].(string); ok && existingID != "" {
-		return raw
+	normalizedType := strings.ReplaceAll(strings.ToLower(sourceType), "-", "")
+	rootKeys := map[string]bool{"root_resource_id": true, "resource_id": true}
+	switch normalizedType {
+	case "geometry":
+		rootKeys["geometry_id"] = true
+	case "surfacemesh":
+		rootKeys["surface_mesh_id"] = true
+		rootKeys["surfacemesh_id"] = true
+	case "volumemesh":
+		rootKeys["volume_mesh_id"] = true
+		rootKeys["volumemesh_id"] = true
+	}
+	rootID := findStringField(data, rootKeys)
+	if rootID == "" {
+		rootID = findTypedResourceID(data, normalizedType)
+	}
+	if rootID == "" {
+		return nil, errors.New("Flow360 import did not return the root resource ID")
 	}
 
-	if id, ok := data["id"].(string); ok && id != "" {
-		data["project_id"] = id
+	result := map[string]any{
+		"project_id":         projectID,
+		"root_resource_id":   rootID,
+		"root_resource_type": sourceType,
+		"flow360_result":     data,
 	}
+	return json.Marshal(result)
+}
 
-	if data["project_id"] == nil {
-		if ids, ok := data["project_ids"].([]interface{}); ok && len(ids) > 0 {
-			if id, ok := ids[0].(string); ok {
-				data["project_id"] = id
+func findStringField(value any, keys map[string]bool) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+			if keys[normalized] {
+				if result, ok := child.(string); ok && strings.TrimSpace(result) != "" {
+					return result
+				}
+			}
+		}
+		for _, child := range typed {
+			if result := findStringField(child, keys); result != "" {
+				return result
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if result := findStringField(child, keys); result != "" {
+				return result
 			}
 		}
 	}
+	return ""
+}
 
-	result, err := json.Marshal(data)
-	if err != nil {
-		return raw
+func findTypedResourceID(value any, expectedType string) string {
+	expectedType = strings.ReplaceAll(strings.ToLower(expectedType), "-", "")
+	switch typed := value.(type) {
+	case map[string]any:
+		resourceType, _ := typed["type"].(string)
+		if resourceType == "" {
+			resourceType, _ = typed["resource_type"].(string)
+		}
+		normalizedType := strings.ReplaceAll(strings.ToLower(resourceType), "-", "")
+		if normalizedType == expectedType {
+			if id, ok := typed["id"].(string); ok && id != "" {
+				return id
+			}
+		}
+		for _, child := range typed {
+			if result := findTypedResourceID(child, expectedType); result != "" {
+				return result
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if result := findTypedResourceID(child, expectedType); result != "" {
+				return result
+			}
+		}
 	}
-	return result
+	return ""
 }
 
 func (s *Server) abortImport(c *gin.Context) {
@@ -830,9 +911,7 @@ func (s *Server) runPlan(c *gin.Context) {
 		return
 	}
 
-	if submitted.RemoteIDs != nil && submitted.RemoteIDs.CaseID != "" {
-		go s.monitorSubmissionTerminalState(submitted.ID, submitted.SourceType, submitted.RemoteIDs.CaseID)
-	}
+	s.startPlanMonitor(submitted)
 
 	c.JSON(http.StatusOK, submitted)
 }
@@ -869,9 +948,10 @@ func (s *Server) autoCreateInterventionForPreflight(ctx context.Context, plan pl
 	if s.interventions == nil || s.interventionEngine == nil {
 		return
 	}
-	existing, _ := s.interventions.List(plan.ProjectID, plan.ID, "")
+	existing, _ := s.interventions.List(plan.ProjectID, "", "")
 	for _, inv := range existing {
-		if inv.State != agent.InterventionResolved && inv.State != agent.InterventionClosed {
+		if inv.PlanID == plan.ID && inv.PlanRevision == plan.Revision &&
+			inv.State != agent.InterventionResolved && inv.State != agent.InterventionClosed {
 			return
 		}
 	}
@@ -884,13 +964,49 @@ func (s *Server) autoCreateInterventionForPreflight(ctx context.Context, plan pl
 	go s.runInterventionAutoCycle(intervention.ID)
 }
 
+func (s *Server) recoverPlan(c *gin.Context) {
+	if s.interventions == nil || s.interventionEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Agent recovery is unavailable"})
+		return
+	}
+	plan, err := s.plans.Get(c.Param("plan_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	existing, err := s.interventions.List(plan.ProjectID, "", "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, intervention := range existing {
+		if intervention.PlanID == plan.ID && intervention.PlanRevision == plan.Revision &&
+			intervention.State != agent.InterventionResolved && intervention.State != agent.InterventionClosed {
+			c.JSON(http.StatusOK, intervention)
+			return
+		}
+	}
+	if plan.Preflight == nil || plan.Preflight.Valid {
+		c.JSON(http.StatusConflict, gin.H{"error": "This plan has no unresolved preflight error"})
+		return
+	}
+	intervention, err := s.interventionEngine.CreateFromPreflightError(plan)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	go s.runInterventionAutoCycle(intervention.ID)
+	c.JSON(http.StatusCreated, intervention)
+}
+
 func (s *Server) autoCreateInterventionForRunError(ctx context.Context, plan plans.Plan, runErr error) {
 	if s.interventions == nil || s.interventionEngine == nil {
 		return
 	}
-	existing, _ := s.interventions.List(plan.ProjectID, plan.ID, "")
+	existing, _ := s.interventions.List(plan.ProjectID, "", "")
 	for _, inv := range existing {
-		if inv.State != agent.InterventionResolved && inv.State != agent.InterventionClosed {
+		if inv.PlanID == plan.ID && inv.PlanRevision == plan.Revision &&
+			inv.State != agent.InterventionResolved && inv.State != agent.InterventionClosed {
 			return
 		}
 	}
@@ -939,34 +1055,21 @@ func (s *Server) runInterventionAutoCycle(interventionID string) {
 				return
 			}
 		case agent.InterventionValidation:
-			result := s.validateInterventionWithFlow360(intervention)
-			if result.Valid {
-				_, err = s.interventionEngine.CompleteValidation(interventionID, true, nil)
-				if err != nil {
-					log.Printf("Auto-cycle validation complete failed for intervention %s: %v", interventionID, err)
-				}
-				return
-			}
-			_, err = s.interventionEngine.CompleteValidation(interventionID, false, result.Errors)
+			intervention, err = s.validateAndApplyIntervention(interventionID)
 			if err != nil {
-				log.Printf("Auto-cycle validation fail failed for intervention %s: %v", interventionID, err)
+				log.Printf("Auto-cycle validation failed for intervention %s: %v", interventionID, err)
 				return
 			}
-
+			if intervention.State == agent.InterventionResolved {
+				return
+			}
 			retryCount++
 			if retryCount >= maxRetries {
 				log.Printf("Auto-cycle max retries reached for intervention %s", interventionID)
 				return
 			}
-
 			log.Printf("Auto-cycle validation failed for intervention %s (retry %d/%d), retrying from observation",
 				interventionID, retryCount, maxRetries)
-
-			_, err = s.interventionEngine.RetryFromFailed(interventionID)
-			if err != nil {
-				log.Printf("Auto-cycle retry failed for intervention %s: %v", interventionID, err)
-				return
-			}
 			continue
 		}
 
@@ -974,48 +1077,69 @@ func (s *Server) runInterventionAutoCycle(interventionID string) {
 	}
 }
 
-func (s *Server) validateInterventionWithFlow360(intervention agent.Intervention) agent.ValidationResult {
+func (s *Server) validateAndApplyIntervention(interventionID string) (agent.Intervention, error) {
+	intervention, err := s.interventionEngine.Get(interventionID)
+	if err != nil {
+		return agent.Intervention{}, err
+	}
+	if intervention.State != agent.InterventionValidation {
+		return agent.Intervention{}, errors.New("intervention is not ready for Flow360 validation")
+	}
 	if intervention.SelectedProposal == nil || len(intervention.CompiledPatch) == 0 {
-		return agent.ValidationResult{Valid: false, Errors: []string{"No compiled patch to validate"}}
+		return agent.Intervention{}, errors.New("no compiled patch to validate")
 	}
 	plan, err := s.plans.Get(intervention.PlanID)
 	if err != nil {
-		return agent.ValidationResult{Valid: false, Errors: []string{"Plan not found: " + err.Error()}}
+		return agent.Intervention{}, fmt.Errorf("plan not found: %w", err)
 	}
-	merged, err := plans.MergedSimulationParams(plan)
-	if err != nil {
-		return agent.ValidationResult{Valid: false, Errors: []string{err.Error()}}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	result, err := s.flow360.PreflightSimulationParams(ctx, plan.SourceType, plan.Target, merged)
-	if err != nil {
-		return agent.ValidationResult{Valid: false, Errors: []string{"Flow360 preflight error: " + err.Error()}}
-	}
-	var errors []string
-	for _, issue := range result.Issues {
-		if issue.Level == "error" {
-			errors = append(errors, issue.Message)
-		}
-	}
-	return agent.ValidationResult{
-		Valid:       result.Valid && len(errors) == 0,
-		Errors:      errors,
-		PreflightID: fmt.Sprintf("pf-%d", result.SchemaVersion),
-	}
-}
 
-func (s *Server) rollbackToProposal(interventionID string) {
-	intervention, err := s.interventionEngine.Get(interventionID)
-	if err != nil {
-		return
+	var updated plans.Plan
+	if plan.Preflight != nil && len(plan.Preflight.FormSchema) > 0 &&
+		plans.ValidateFormValues(plan.Preflight.FormSchema, intervention.CompiledPatch) == nil {
+		current, mergeErr := plans.MergedSimulationParams(plan)
+		if mergeErr != nil {
+			return agent.Intervention{}, mergeErr
+		}
+		expanded, expandErr := plans.ExpandFormValues(
+			plan.Preflight.FormSchema,
+			intervention.CompiledPatch,
+			current,
+		)
+		if expandErr != nil {
+			return agent.Intervention{}, expandErr
+		}
+		updated, err = s.plans.ApplySchemaInputs(plan.ID, plan.Revision, expanded)
+	} else {
+		updated, err = s.plans.ApplyInputs(plan.ID, plan.Revision, intervention.CompiledPatch)
 	}
-	if intervention.State == agent.InterventionFailed {
-		_, err = s.interventionEngine.RunEngineStep(interventionID)
-		if err != nil {
-			log.Printf("Could not rollback intervention %s to proposal: %v", interventionID, err)
+	if err != nil {
+		return agent.Intervention{}, fmt.Errorf("apply intervention patch: %w", err)
+	}
+	if _, err := s.interventionEngine.UpdatePlanContext(
+		intervention.ID,
+		updated.Revision,
+		updated.Patch,
+	); err != nil {
+		return agent.Intervention{}, err
+	}
+	updated = s.runPlanPreflight(context.Background(), updated)
+
+	var errors []string
+	if updated.Preflight == nil {
+		errors = append(errors, "Flow360 preflight result is unavailable")
+	} else {
+		for _, issue := range updated.Preflight.Issues {
+			if issue.Level == "error" {
+				errors = append(errors, issue.Message)
+			}
 		}
 	}
+	result := agent.ValidationResult{
+		Valid:       updated.Preflight != nil && updated.Preflight.Valid && len(errors) == 0,
+		Errors:      errors,
+		PreflightID: fmt.Sprintf("pf-plan-%s-r%d", updated.ID, updated.Revision),
+	}
+	return s.interventionEngine.CompletePlanValidation(intervention.ID, result)
 }
 
 func (s *Server) monitorSubmissionTerminalState(planID, resourceType, resourceID string) {
@@ -1055,6 +1179,36 @@ func (s *Server) monitorSubmissionTerminalState(planID, resourceType, resourceID
 	default:
 		log.Printf("Plan %s reached non-terminal state: %s", planID, terminal.State)
 	}
+}
+
+func (s *Server) startPlanMonitor(plan plans.Plan) {
+	resourceType, resourceID, ok := planMonitorTarget(plan)
+	if !ok {
+		log.Printf("Plan %s was submitted without a monitorable remote resource ID", plan.ID)
+		return
+	}
+	go s.monitorSubmissionTerminalState(plan.ID, resourceType, resourceID)
+}
+
+func planMonitorTarget(plan plans.Plan) (string, string, bool) {
+	if plan.RemoteIDs == nil {
+		return "", "", false
+	}
+	if plan.RemoteIDs.CaseID != "" {
+		return "Case", plan.RemoteIDs.CaseID, true
+	}
+	if plan.RemoteIDs.MeshID != "" {
+		switch strings.ToLower(plan.Target) {
+		case "surface-mesh":
+			return "SurfaceMesh", plan.RemoteIDs.MeshID, true
+		case "volume-mesh":
+			return "VolumeMesh", plan.RemoteIDs.MeshID, true
+		}
+	}
+	if plan.RemoteIDs.GeometryID != "" {
+		return "Geometry", plan.RemoteIDs.GeometryID, true
+	}
+	return "", "", false
 }
 
 func (s *Server) refreshProjectTree(projectID string) {

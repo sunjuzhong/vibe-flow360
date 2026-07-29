@@ -35,16 +35,34 @@ const typeLabels: Record<string, string> = {
   remote_error: 'Remote error',
 }
 
+export function chooseIntervention(
+  interventions: Intervention[] | null | undefined,
+  planId?: string,
+  currentId?: string,
+): Intervention | null {
+  if (!interventions?.length) return null
+  if (currentId) {
+    const current = interventions.find((item) => item.id === currentId)
+    if (current) return current
+  }
+  return interventions.find((item) => item.plan_id === planId)
+    ?? interventions.find((item) => item.state !== 'resolved' && item.state !== 'closed')
+    ?? interventions[0]
+    ?? null
+}
+
 export default function InterventionPanel({
   open,
   onClose,
   projectId,
   resourceId,
+  planId,
 }: {
   open: boolean
   onClose: () => void
   projectId: string
   resourceId?: string
+  planId?: string
 }) {
   const [interventions, setInterventions] = useState<Intervention[]>([])
   const [selected, setSelected] = useState<Intervention | null>(null)
@@ -57,17 +75,20 @@ export default function InterventionPanel({
   const loadInterventions = async () => {
     try {
       const response = await api.interventions(projectId)
-      setInterventions(response.interventions)
+      const items = response.interventions ?? []
+      setInterventions(items)
+      setSelected((current) => chooseIntervention(items, planId, current?.id))
     } catch {
       setError('Failed to load interventions')
     }
   }
 
   useEffect(() => {
-    if (open) {
-      void loadInterventions()
-    }
-  }, [open, projectId])
+    if (!open) return
+    void loadInterventions()
+    const timer = window.setInterval(() => void loadInterventions(), 2000)
+    return () => window.clearInterval(timer)
+  }, [open, projectId, planId])
 
   const handleDiagnose = async () => {
     if (!selected || loading) return
@@ -127,9 +148,10 @@ export default function InterventionPanel({
     setAction('compile')
     setError('')
     try {
-      const result = await api.compileInterventionPatch(selected.id)
+      const result = await api.compileInterventionPatch(selected.id, feedback)
       setSelected(result)
       updateIntervention(result)
+      setFeedback('')
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -147,23 +169,7 @@ export default function InterventionPanel({
       const result = await api.validateIntervention(selected.id)
       setSelected(result)
       updateIntervention(result)
-    } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
-    } finally {
-      setLoading(false)
-      setAction(null)
-    }
-  }
-
-  const handleCompleteValidation = async (valid: boolean) => {
-    if (!selected || loading) return
-    setLoading(true)
-    setAction('complete')
-    setError('')
-    try {
-      const result = await api.completeInterventionValidation(selected.id, valid)
-      setSelected(result)
-      updateIntervention(result)
+      window.dispatchEvent(new Event('vibesim:plans-refresh'))
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -369,7 +375,7 @@ export default function InterventionPanel({
                   </section>
                 )}
 
-                {selected.state === 'validation' && selected.validation && (
+                {selected.validation && (
                   <section className="intervention-section">
                     <h3>Validation Result</h3>
                     {selected.validation.valid ? (
@@ -442,25 +448,6 @@ export default function InterventionPanel({
                         ? <><Loader2 size={14} className="spin" /> Validating...</>
                         : <><RefreshCw size={14} /> Run Validation</>}
                     </button>
-                  )}
-
-                  {selected.state === 'validation' && !selected.validation && (
-                    <>
-                      <button
-                        className="success"
-                        disabled={loading}
-                        onClick={() => void handleCompleteValidation(true)}
-                      >
-                        Mark as Valid
-                      </button>
-                      <button
-                        className="danger"
-                        disabled={loading}
-                        onClick={() => void handleCompleteValidation(false)}
-                      >
-                        Mark as Invalid
-                      </button>
-                    </>
                   )}
 
                   {(selected.state === 'failed' || selected.state === 'resolved') && (

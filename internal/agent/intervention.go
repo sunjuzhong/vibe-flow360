@@ -12,22 +12,22 @@ import (
 
 const (
 	// Intervention states
-	InterventionObservation    = "observation"
-	InterventionDiagnosis      = "diagnosis"
-	InterventionProposal       = "proposal"
-	InterventionUserFeedback   = "user_feedback"
-	InterventionPatchCompile   = "patch_compile"
-	InterventionValidation     = "validation"
-	InterventionResolved       = "resolved"
-	InterventionFailed         = "failed"
-	InterventionClosed         = "closed"
+	InterventionObservation  = "observation"
+	InterventionDiagnosis    = "diagnosis"
+	InterventionProposal     = "proposal"
+	InterventionUserFeedback = "user_feedback"
+	InterventionPatchCompile = "patch_compile"
+	InterventionValidation   = "validation"
+	InterventionResolved     = "resolved"
+	InterventionFailed       = "failed"
+	InterventionClosed       = "closed"
 
 	// Intervention types
-	TypePreflightError    = "preflight_error"
-	TypeMeshFailure       = "mesh_failure"
-	TypeSolverFailure    = "solver_failure"
+	TypePreflightError     = "preflight_error"
+	TypeMeshFailure        = "mesh_failure"
+	TypeSolverFailure      = "solver_failure"
 	TypeConvergenceAnomaly = "convergence_anomaly"
-	TypeRemoteError       = "remote_error"
+	TypeRemoteError        = "remote_error"
 
 	// Error categories for interventions
 	ErrorMissingInputs    = "missing_inputs"
@@ -41,62 +41,62 @@ const (
 )
 
 var (
-	ErrInvalidInterventionState = errors.New("invalid intervention state transition")
-	ErrInterventionNotFound     = errors.New("intervention not found")
+	ErrInvalidInterventionState  = errors.New("invalid intervention state transition")
+	ErrInterventionNotFound      = errors.New("intervention not found")
 	ErrCannotResolveIntervention = errors.New("cannot resolve intervention: validation required")
 )
 
 // Intervention represents an agent-mediated recovery process
 type Intervention struct {
-	ID              string          `json:"id"`
-	ProjectID       string          `json:"project_id"`
-	ProjectName     string          `json:"project_name,omitempty"`
-	ResourceID      string          `json:"resource_id,omitempty"`
-	ResourceType    string          `json:"resource_type,omitempty"`
-	PlanID          string          `json:"plan_id,omitempty"`
-	PlanRevision    int             `json:"plan_revision,omitempty"`
-	Type            string          `json:"type"`
-	State           string          `json:"state"`
-	Reason          string          `json:"reason"`
-	Confidence      float64         `json:"confidence"`
-	Impact          string          `json:"impact,omitempty"`
-	Evidence        []Evidence      `json:"evidence,omitempty"`
-	Diagnosis       *Diagnosis      `json:"diagnosis,omitempty"`
-	Proposals       []Proposal      `json:"proposals,omitempty"`
-	SelectedProposal *Proposal     `json:"selected_proposal,omitempty"`
-	UserFeedback    string          `json:"user_feedback,omitempty"`
-	RequiresConfirm []string        `json:"requires_confirmation,omitempty"`
-	CurrentPatch    json.RawMessage `json:"current_patch,omitempty"`
-	CompiledPatch   json.RawMessage `json:"compiled_patch,omitempty"`
-	Validation      *ValidationResult `json:"validation,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
-	ResolvedAt      *time.Time      `json:"resolved_at,omitempty"`
-	ClosedAt        *time.Time      `json:"closed_at,omitempty"`
+	ID               string            `json:"id"`
+	ProjectID        string            `json:"project_id"`
+	ProjectName      string            `json:"project_name,omitempty"`
+	ResourceID       string            `json:"resource_id,omitempty"`
+	ResourceType     string            `json:"resource_type,omitempty"`
+	PlanID           string            `json:"plan_id,omitempty"`
+	PlanRevision     int               `json:"plan_revision,omitempty"`
+	Type             string            `json:"type"`
+	State            string            `json:"state"`
+	Reason           string            `json:"reason"`
+	Confidence       float64           `json:"confidence"`
+	Impact           string            `json:"impact,omitempty"`
+	Evidence         []Evidence        `json:"evidence,omitempty"`
+	Diagnosis        *Diagnosis        `json:"diagnosis,omitempty"`
+	Proposals        []Proposal        `json:"proposals,omitempty"`
+	SelectedProposal *Proposal         `json:"selected_proposal,omitempty"`
+	UserFeedback     string            `json:"user_feedback,omitempty"`
+	RequiresConfirm  []string          `json:"requires_confirmation,omitempty"`
+	CurrentPatch     json.RawMessage   `json:"current_patch,omitempty"`
+	CompiledPatch    json.RawMessage   `json:"compiled_patch,omitempty"`
+	Validation       *ValidationResult `json:"validation,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+	ResolvedAt       *time.Time        `json:"resolved_at,omitempty"`
+	ClosedAt         *time.Time        `json:"closed_at,omitempty"`
 }
 
 // Evidence represents supporting information for diagnosis
 type Evidence struct {
-	Type    string          `json:"type"`
-	Content json.RawMessage `json:"content"`
-	Source  string          `json:"source"`
-	Timestamp time.Time     `json:"timestamp"`
+	Type      string          `json:"type"`
+	Content   json.RawMessage `json:"content"`
+	Source    string          `json:"source"`
+	Timestamp time.Time       `json:"timestamp"`
 }
 
 // Diagnosis represents the agent's analysis of the issue
 type Diagnosis struct {
-	RootCause       string   `json:"root_cause"`
-	Category        string   `json:"category"`
-	Severity        string   `json:"severity"`
+	RootCause           string   `json:"root_cause"`
+	Category            string   `json:"category"`
+	Severity            string   `json:"severity"`
 	ContributingFactors []string `json:"contributing_factors,omitempty"`
 	RecommendedActions  []string `json:"recommended_actions,omitempty"`
 }
 
 // ValidationResult contains the outcome of local validation
 type ValidationResult struct {
-	Valid      bool     `json:"valid"`
-	Errors     []string `json:"errors,omitempty"`
-	Warnings   []string `json:"warnings,omitempty"`
+	Valid       bool     `json:"valid"`
+	Errors      []string `json:"errors,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
 	PreflightID string   `json:"preflight_id,omitempty"`
 }
 
@@ -107,6 +107,7 @@ type InterventionInput struct {
 	ResourceID   string
 	ResourceType string
 	PlanID       string
+	PlanRevision int
 	Type         string
 	Reason       string
 	Evidence     []Evidence
@@ -128,6 +129,7 @@ func NewIntervention(input InterventionInput) (Intervention, error) {
 		ResourceID:   input.ResourceID,
 		ResourceType: input.ResourceType,
 		PlanID:       input.PlanID,
+		PlanRevision: input.PlanRevision,
 		Type:         input.Type,
 		State:        InterventionObservation,
 		Reason:       input.Reason,

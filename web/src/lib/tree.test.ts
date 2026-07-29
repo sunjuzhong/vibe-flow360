@@ -77,6 +77,21 @@ describe('buildNodeIndex', () => {
     expect(index.get('case-042')?.type).toBe('Case')
     expect(index.get('geometry-000')?.type).toBe('Geometry')
   })
+
+  it('keeps a 500-Case fixture within the interactive indexing baseline', () => {
+    const started = performance.now()
+    const { root } = buildLargeProjectFixture({ caseCount: 500, groups: 20 })
+    const index = buildNodeIndex(root)
+    const { rows } = flattenTree(root, new Set([root.id]))
+    const durationMs = performance.now() - started
+
+    expect(index.get('case-499')?.type).toBe('Case')
+    expect(rows.length).toBeLessThan(30)
+    // This intentionally includes fixture construction, indexing and initial
+    // collapsed rendering. The generous threshold catches accidental O(n²)
+    // regressions without depending on a particular developer machine.
+    expect(durationMs).toBeLessThan(250)
+  })
 })
 
 describe('buildDescendantCount', () => {

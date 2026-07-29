@@ -21,6 +21,19 @@ html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
 button, textarea, input { font: inherit; }
 button { color: inherit; }
 
+.preflight-manual-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  border: 0;
+  color: #70756b;
+  background: transparent;
+  font-size: 9px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 226px minmax(0, 1fr);
@@ -2270,5 +2283,168 @@ button { color: inherit; }
   .intervention-panel {
     width: min(440px, 100vw);
     box-shadow: -18px 0 50px rgba(20,23,18,.16);
+  }
+}
+
+/* The recovery component is a modal workbench, not the legacy slide-out shell. */
+.intervention-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(25, 28, 22, .52);
+  backdrop-filter: blur(5px);
+}
+
+.intervention-overlay .intervention-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  display: flex;
+  width: min(980px, 96vw);
+  height: min(740px, 92vh);
+  border: 1px solid #d5d7ce;
+  border-radius: 14px;
+  background: #f9f9f5;
+  transform: none;
+  box-shadow: 0 30px 80px rgba(15, 18, 12, .28);
+  overflow: hidden;
+}
+
+.intervention-overlay .panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  padding: 0 16px;
+  border-bottom: 1px solid #dedfd8;
+}
+
+.intervention-overlay .panel-header-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  color: #d8ef8a;
+  background: #262b22;
+}
+
+.intervention-overlay .panel-header > div { flex: 1; }
+.intervention-overlay .panel-header strong,
+.intervention-overlay .panel-header span { display: block; }
+.intervention-overlay .panel-header strong { font-size: 12px; }
+.intervention-overlay .panel-header span { margin-top: 2px; color: #8b9086; font-size: 9px; }
+
+.intervention-overlay .panel-layout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.intervention-overlay .panel-history {
+  overflow-y: auto;
+  padding: 14px 10px;
+  border-right: 1px solid #dedfd8;
+  background: #f1f2ec;
+}
+
+.intervention-overlay .panel-history > p {
+  margin: 10px 7px 7px;
+  color: #92968d;
+  font: 8px 'DM Mono', monospace;
+}
+
+.intervention-overlay .panel-history > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.intervention-overlay .panel-history > button.active {
+  border-color: #bdce8a;
+  background: #fff;
+}
+
+.intervention-overlay .panel-history button strong,
+.intervention-overlay .panel-history button small { display: block; }
+.intervention-overlay .panel-history button strong { font-size: 10px; }
+.intervention-overlay .panel-history button small { margin-top: 4px; font-size: 8px; }
+.intervention-overlay .confidence-chip { color: #647d1d; font: 8px 'DM Mono', monospace; }
+
+.intervention-overlay .panel-main {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 22px;
+}
+
+.intervention-overlay .intervention-header {
+  height: auto;
+  padding: 0 0 15px;
+}
+
+.intervention-overlay .intervention-header h2 { margin: 0; font-size: 20px; }
+.intervention-overlay .intervention-header p { margin: 7px 0 0; color: #74796f; font-size: 10px; line-height: 1.55; }
+.intervention-overlay .intervention-state { margin-left: auto; padding: 5px 8px; border-radius: 999px; font-size: 8px; }
+.intervention-overlay .confidence-bar { display: flex; align-items: center; gap: 9px; margin: 0 0 16px; font-size: 9px; }
+.intervention-overlay .confidence-track { flex: 1; height: 5px; border-radius: 9px; background: #e2e5db; overflow: hidden; }
+.intervention-overlay .confidence-fill { height: 100%; background: #8ead35; }
+.intervention-overlay .proposal-card,
+.intervention-overlay .diagnosis-card {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid #dfe1d8;
+  border-radius: 9px;
+  background: #fff;
+}
+.intervention-overlay .proposal-header { display: flex; justify-content: space-between; gap: 10px; }
+.intervention-overlay .proposal-card p,
+.intervention-overlay .diagnosis-card p { font-size: 10px; line-height: 1.55; }
+.intervention-overlay .proposal-fields { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; }
+.intervention-overlay .field-chip { padding: 3px 6px; border-radius: 999px; background: #eef3de; font-size: 8px; }
+.intervention-overlay textarea { box-sizing: border-box; width: 100%; min-height: 90px; }
+
+.state-observation { color: #7b6225; background: #f2e8ca; }
+.state-diagnosis { color: #3a6b82; background: #e0ecf3; }
+.state-proposal { color: #5e781c; background: #eef3de; }
+.state-feedback { color: #5b3b82; background: #ebdfff; }
+.state-compile { color: #8c7340; background: #f6ead0; }
+.state-validation { color: #347080; background: #dcebed; }
+.state-resolved { color: #5e781c; background: #eef3de; }
+.state-failed { color: #a04d3d; background: #f6dfda; }
+
+@media (max-width: 680px) {
+  .intervention-overlay { padding: 0; }
+  .intervention-overlay .intervention-panel {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+  .intervention-overlay .panel-layout {
+    display: block;
+    overflow-y: auto;
+  }
+  .intervention-overlay .panel-history {
+    max-height: 165px;
+    border-right: 0;
+    border-bottom: 1px solid #dedfd8;
+  }
+  .intervention-overlay .panel-main {
+    overflow: visible;
+    padding: 16px 13px 36px;
   }
 }

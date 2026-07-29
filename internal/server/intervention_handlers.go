@@ -12,15 +12,15 @@ import (
 )
 
 type createInterventionRequest struct {
-	ProjectID    string          `json:"project_id"`
-	ProjectName  string          `json:"project_name,omitempty"`
-	ResourceID   string          `json:"resource_id,omitempty"`
-	ResourceType string          `json:"resource_type,omitempty"`
-	PlanID       string          `json:"plan_id,omitempty"`
-	Type         string          `json:"type"`
-	Reason       string          `json:"reason"`
+	ProjectID    string           `json:"project_id"`
+	ProjectName  string           `json:"project_name,omitempty"`
+	ResourceID   string           `json:"resource_id,omitempty"`
+	ResourceType string           `json:"resource_type,omitempty"`
+	PlanID       string           `json:"plan_id,omitempty"`
+	Type         string           `json:"type"`
+	Reason       string           `json:"reason"`
 	Evidence     []agent.Evidence `json:"evidence,omitempty"`
-	CurrentPatch json.RawMessage `json:"current_patch,omitempty"`
+	CurrentPatch json.RawMessage  `json:"current_patch,omitempty"`
 }
 
 type selectProposalRequest struct {
@@ -28,9 +28,8 @@ type selectProposalRequest struct {
 	Feedback   string `json:"feedback,omitempty"`
 }
 
-type completeValidationRequest struct {
-	Valid   bool     `json:"valid"`
-	Errors  []string `json:"errors,omitempty"`
+type compileInterventionRequest struct {
+	Feedback string `json:"feedback,omitempty"`
 }
 
 func (s *Server) listInterventions(c *gin.Context) {
@@ -42,6 +41,9 @@ func (s *Server) listInterventions(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if interventions == nil {
+		interventions = make([]agent.Intervention, 0)
 	}
 	c.JSON(http.StatusOK, gin.H{"interventions": interventions})
 }
@@ -135,7 +137,17 @@ func (s *Server) selectInterventionProposal(c *gin.Context) {
 }
 
 func (s *Server) compileInterventionPatch(c *gin.Context) {
-	intervention, err := s.interventionEngine.RunEngineStep(c.Param("intervention_id"))
+	var req compileInterventionRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid feedback request"})
+			return
+		}
+	}
+	intervention, err := s.interventionEngine.SetFeedbackAndCompile(
+		c.Param("intervention_id"),
+		req.Feedback,
+	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -149,23 +161,24 @@ func (s *Server) validateIntervention(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if intervention.State != agent.InterventionValidation {
+		c.JSON(http.StatusConflict, gin.H{"error": "intervention is not ready for validation"})
+		return
+	}
+	intervention, err = s.validateAndApplyIntervention(intervention.ID)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, intervention)
 }
 
 func (s *Server) completeInterventionValidation(c *gin.Context) {
-	var req completeValidationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-
-	intervention, err := s.interventionEngine.CompleteValidation(
-		c.Param("intervention_id"),
-		req.Valid,
-		req.Errors,
-	)
+	// Compatibility endpoint: validation outcomes are always derived from the
+	// real Flow360 preflight. A browser cannot mark its own proposal valid.
+	intervention, err := s.validateAndApplyIntervention(c.Param("intervention_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, intervention)

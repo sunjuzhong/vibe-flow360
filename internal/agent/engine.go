@@ -49,6 +49,14 @@ func (e *Engine) CreateFromPreflightError(plan plans.Plan) (Intervention, error)
 			Timestamp: time.Now().UTC(),
 		})
 	}
+	if len(plan.Preflight.FormSchema) > 0 {
+		evidence = append(evidence, Evidence{
+			Type:      "preflight_form_schema",
+			Content:   append(json.RawMessage(nil), plan.Preflight.FormSchema...),
+			Source:    "flow360_preflight",
+			Timestamp: time.Now().UTC(),
+		})
+	}
 
 	input := InterventionInput{
 		ProjectID:    plan.ProjectID,
@@ -56,6 +64,7 @@ func (e *Engine) CreateFromPreflightError(plan plans.Plan) (Intervention, error)
 		ResourceID:   plan.SourceID,
 		ResourceType: plan.SourceType,
 		PlanID:       plan.ID,
+		PlanRevision: plan.Revision,
 		Type:         TypePreflightError,
 		Reason:       extractPreflightReason(plan.Preflight.Issues),
 		Evidence:     evidence,
@@ -86,6 +95,7 @@ func (e *Engine) CreateFromRunError(plan plans.Plan, runErr error) (Intervention
 		ResourceID:   plan.SourceID,
 		ResourceType: plan.SourceType,
 		PlanID:       plan.ID,
+		PlanRevision: plan.Revision,
 		Type:         mapErrorCategoryToType(errCategory),
 		Reason:       runErr.Error(),
 		Evidence:     evidence,
@@ -175,7 +185,9 @@ func (e *Engine) validate(intervention Intervention) (Intervention, error) {
 	})
 }
 
-// SelectProposalAndAdvance selects a proposal and advances the state
+// SelectProposalAndAdvance selects a proposal and pauses for optional user
+// feedback. Compilation is a separate action so the UI can collect natural
+// language feedback after the user has reviewed a proposal.
 func (e *Engine) SelectProposalAndAdvance(interventionID string, proposalID string, feedback string) (Intervention, error) {
 	intervention, err := e.store.Get(interventionID)
 	if err != nil {
@@ -194,13 +206,26 @@ func (e *Engine) SelectProposalAndAdvance(interventionID string, proposalID stri
 		return Intervention{}, fmt.Errorf("proposal not found: %s", proposalID)
 	}
 
-	if _, err := e.store.Update(interventionID, func(i *Intervention) error {
+	return e.store.Update(interventionID, func(i *Intervention) error {
 		return i.SelectProposal(*selected, feedback)
-	}); err != nil {
+	})
+}
+
+// SetFeedbackAndCompile records the latest user feedback and compiles the
+// selected proposal. Feedback remains audit metadata and is never copied into
+// the Flow360 SimulationParams document as private pseudo-fields.
+func (e *Engine) SetFeedbackAndCompile(interventionID, feedback string) (Intervention, error) {
+	intervention, err := e.store.Update(interventionID, func(i *Intervention) error {
+		if i.State != InterventionUserFeedback {
+			return ErrInvalidInterventionState
+		}
+		i.UserFeedback = strings.TrimSpace(feedback)
+		return nil
+	})
+	if err != nil {
 		return Intervention{}, err
 	}
-
-	return e.RunEngineStep(interventionID)
+	return e.compilePatch(intervention)
 }
 
 // CompleteValidation completes the validation step
@@ -241,6 +266,55 @@ func (e *Engine) RetryFromFailed(interventionID string) (Intervention, error) {
 		i.Proposals = nil
 		i.CompiledPatch = nil
 		i.UserFeedback = ""
+		return nil
+	})
+}
+
+// UpdatePlanContext binds an intervention to the exact plan revision produced
+// by its compiled patch. This is persisted before preflight so duplicate
+// detection and restart recovery remain revision-safe.
+func (e *Engine) UpdatePlanContext(interventionID string, revision int, patch json.RawMessage) (Intervention, error) {
+	return e.store.Update(interventionID, func(i *Intervention) error {
+		i.PlanRevision = revision
+		i.CurrentPatch = append(json.RawMessage(nil), patch...)
+		return nil
+	})
+}
+
+// CompletePlanValidation records the real Flow360 preflight result. Invalid
+// results return to observation with the new issues as evidence, keeping one
+// auditable intervention loop instead of opening a duplicate.
+func (e *Engine) CompletePlanValidation(interventionID string, result ValidationResult) (Intervention, error) {
+	if result.Valid {
+		return e.store.Update(interventionID, func(i *Intervention) error {
+			return i.Resolve(result)
+		})
+	}
+	return e.store.Update(interventionID, func(i *Intervention) error {
+		if i.State != InterventionValidation {
+			return ErrInvalidInterventionState
+		}
+		now := time.Now().UTC()
+		for _, message := range result.Errors {
+			content, _ := json.Marshal(map[string]any{
+				"level":   "error",
+				"message": message,
+			})
+			i.Evidence = append(i.Evidence, Evidence{
+				Type:      "preflight_issue",
+				Content:   content,
+				Source:    "flow360_preflight_retry",
+				Timestamp: now,
+			})
+		}
+		i.State = InterventionObservation
+		i.Validation = &result
+		i.Diagnosis = nil
+		i.Proposals = nil
+		i.SelectedProposal = nil
+		i.CompiledPatch = nil
+		i.UserFeedback = ""
+		i.UpdatedAt = now
 		return nil
 	})
 }
@@ -424,22 +498,15 @@ func mergeFeedbackIntoPatch(patch json.RawMessage, feedback string) json.RawMess
 	}
 
 	feedbackLower := strings.ToLower(feedback)
-	adjustments := map[string]interface{}{
-		"_feedback_note":    feedback,
-		"_feedback_applied": true,
-	}
-
 	adjusted := false
 
 	if strings.Contains(feedbackLower, "more conservative") || strings.Contains(feedbackLower, "reduce") {
 		if cfl, ok := base["cfl_number"].(float64); ok {
 			base["cfl_number"] = cfl * 0.8
-			adjustments["cfl_number_adjusted"] = true
 			adjusted = true
 		}
 		if relax, ok := base["relaxation_factor"].(float64); ok {
 			base["relaxation_factor"] = relax * 0.9
-			adjustments["relaxation_adjusted"] = true
 			adjusted = true
 		}
 		if !adjusted {
@@ -452,7 +519,6 @@ func mergeFeedbackIntoPatch(patch json.RawMessage, feedback string) json.RawMess
 	if strings.Contains(feedbackLower, "more aggressive") || strings.Contains(feedbackLower, "increase") {
 		if cfl, ok := base["cfl_number"].(float64); ok {
 			base["cfl_number"] = cfl * 1.2
-			adjustments["cfl_number_adjusted"] = true
 			adjusted = true
 		} else {
 			base["cfl_number"] = 20.0
@@ -462,19 +528,16 @@ func mergeFeedbackIntoPatch(patch json.RawMessage, feedback string) json.RawMess
 
 	if strings.Contains(feedbackLower, "simplify") || strings.Contains(feedbackLower, "basic") {
 		base["turbulence_model"] = "spalart_allmaras"
-		adjustments["turbulence_simplified"] = true
 		adjusted = true
 	}
 
 	if strings.Contains(feedbackLower, "k-omega") || strings.Contains(feedbackLower, "komega") {
 		base["turbulence_model"] = "k_omega_sst"
-		adjustments["turbulence_model_set"] = "k_omega_sst"
 		adjusted = true
 	}
 
 	if strings.Contains(feedbackLower, "k-epsilon") || strings.Contains(feedbackLower, "kepsilon") {
 		base["turbulence_model"] = "k_epsilon"
-		adjustments["turbulence_model_set"] = "k_epsilon"
 		adjusted = true
 	}
 
@@ -495,14 +558,7 @@ func mergeFeedbackIntoPatch(patch json.RawMessage, feedback string) json.RawMess
 		adjusted = true
 	}
 
-	if !adjusted && len(patch) > 0 {
-		adjustments["_feedback_processed"] = false
-		adjustments["_feedback_hint"] = "Consider providing specific parameters to adjust (e.g., 'more conservative', 'simplify model', 'k-omega')"
-	}
-
-	for k, v := range adjustments {
-		base[k] = v
-	}
+	_ = adjusted
 
 	result, err := json.Marshal(base)
 	if err != nil {
@@ -534,62 +590,76 @@ func (e *Engine) buildProposals(intervention Intervention) []Proposal {
 }
 
 func buildPreflightProposals(intervention Intervention) []Proposal {
-	evidenceIDs := extractEvidenceResourceIDs(intervention.Evidence)
-	entityList := evidenceIDs
-	if len(entityList) == 0 {
-		entityList = []string{"inlet", "outlet", "walls", "symmetry"}
+	if proposal, ok := proposalFromPreflightForm(intervention.Evidence); ok {
+		return []Proposal{proposal}
 	}
 
-	proposals := []Proposal{
+	return []Proposal{
 		{
 			ID:            "pf-recommend-1",
 			Target:        "case",
-			Name:          "Apply AI-recommended boundary conditions",
-			Intent:        "Use AI-inferred boundary conditions to resolve preflight errors",
-			Patch:         json.RawMessage(fmt.Sprintf(`{"entity_assignment": {"model": "Wall", "entities": %s}}`, mustJSON(entityList))),
-			BranchPreview: "recommended-boundary-conditions",
+			Name:          "Review missing Flow360 inputs",
+			Intent:        "The active Flow360 schema did not provide safe defaults; request structured user input.",
+			Patch:         json.RawMessage(`{}`),
+			BranchPreview: "missing-input-review",
 			Fields: []Field{
-				{Key: "boundary_model", Value: "Wall", Provenance: ProvenanceInferred, Description: "Inferred from existing model intent"},
-				{Key: "entities", Value: fmt.Sprintf("%d faces", len(entityList)), Provenance: ProvenanceInferred, Description: "Selected based on geometry analysis"},
+				{Key: "schema_required", Value: true, Provenance: ProvenanceProvided, Description: "Flow360 requires additional structured input"},
 			},
-			ValidationHints: []string{"Review boundary condition assignments before running"},
-		},
-		{
-			ID:            "pf-recommend-2",
-			Target:        "case",
-			Name:          "Reset to default boundary setup",
-			Intent:        "Reset entity assignments to Flow360 defaults for clean configuration",
-			Patch:         json.RawMessage(`{"entity_assignment": {"model": "Freestream", "entities": []}}`),
-			BranchPreview: "default-boundary-setup",
-			Fields: []Field{
-				{Key: "boundary_model", Value: "Freestream", Provenance: ProvenanceDefaulted, Description: "Flow360 default"},
-			},
-			ValidationHints: []string{"This will clear current boundary assignments"},
+			ValidationHints: []string{"Confirm the missing values in the schema-driven recovery form"},
 		},
 	}
-	return proposals
 }
 
-func mustJSON(items []string) string {
-	data, err := json.Marshal(items)
-	if err != nil {
-		return "[]"
-	}
-	return string(data)
-}
-
-func extractEvidenceResourceIDs(evidence []Evidence) []string {
-	var ids []string
-	for _, e := range evidence {
-		var data map[string]interface{}
-		if err := json.Unmarshal(e.Content, &data); err != nil {
+func proposalFromPreflightForm(evidence []Evidence) (Proposal, bool) {
+	for _, item := range evidence {
+		if item.Type != "preflight_form_schema" {
 			continue
 		}
-		if path, ok := data["path"].(string); ok && path != "" {
-			ids = append(ids, path)
+		var root map[string]any
+		if json.Unmarshal(item.Content, &root) != nil {
+			continue
+		}
+		properties, _ := root["properties"].(map[string]any)
+		for path, value := range properties {
+			field, _ := value.(map[string]any)
+			if field["type"] != "entity_assignment" {
+				continue
+			}
+			model, _ := field["default_model"].(string)
+			rawEntities, _ := field["default_entities"].([]any)
+			entities := make([]string, 0, len(rawEntities))
+			for _, raw := range rawEntities {
+				if entity, ok := raw.(string); ok && entity != "" {
+					entities = append(entities, entity)
+				}
+			}
+			if model == "" || len(entities) == 0 {
+				continue
+			}
+			formValues, _ := json.Marshal(map[string]any{
+				path: map[string]any{"model": model, "entities": entities},
+			})
+			recommendation, _ := field["recommendation"].(map[string]any)
+			reason, _ := recommendation["reason"].(string)
+			if reason == "" {
+				reason = "Reuse the boundary intent and concrete surfaces recommended by the active Flow360 schema."
+			}
+			return Proposal{
+				ID:            "pf-schema-recommendation",
+				Target:        "case",
+				Name:          "Apply Flow360 boundary recommendation",
+				Intent:        reason,
+				Patch:         formValues,
+				BranchPreview: "schema-boundary-recovery",
+				Fields: []Field{
+					{Key: "boundary_model", Value: model, Provenance: ProvenanceDerived, Description: "Inherited from the current model and Flow360 schema"},
+					{Key: "entities", Value: entities, Provenance: ProvenanceProvided, Description: "Concrete Geometry surfaces reported by Flow360"},
+				},
+				ValidationHints: []string{"Review the inherited model and affected surfaces before applying"},
+			}, true
 		}
 	}
-	return ids
+	return Proposal{}, false
 }
 
 func buildMeshProposals(intervention Intervention) []Proposal {

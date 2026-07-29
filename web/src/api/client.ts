@@ -549,6 +549,7 @@ export const api = {
     json<{ plans: SimulationPlan[] }>(
       `/api/plans?project_id=${encodeURIComponent(projectId)}${sourceId ? `&source_id=${encodeURIComponent(sourceId)}` : ''}`,
     ),
+  plan: (planId: string) => json<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}`),
   createPlan: (input: {
     project_id: string
     project_name: string
@@ -564,6 +565,8 @@ export const api = {
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/preflight`),
   applyPlanInputs: (planId: string, revision: number, values: Record<string, unknown>) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/inputs`, { revision, values }),
+  recoverPlan: (planId: string) =>
+    mutate<Intervention>(`/api/plans/${encodeURIComponent(planId)}/recover`),
   approvePlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/approve`),
   runPlan: (planId: string) =>
@@ -605,8 +608,8 @@ export const api = {
     mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/proposals`),
   selectInterventionProposal: (id: string, proposalId: string, feedback?: string) =>
     mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/select`, { proposal_id: proposalId, feedback }),
-  compileInterventionPatch: (id: string) =>
-    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/compile`),
+  compileInterventionPatch: (id: string, feedback?: string) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/compile`, { feedback }),
   validateIntervention: (id: string) =>
     mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/validate`),
   completeInterventionValidation: (id: string, valid: boolean, errors?: string[]) =>

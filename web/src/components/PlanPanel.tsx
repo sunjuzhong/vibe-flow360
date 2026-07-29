@@ -114,6 +114,12 @@ export default function PlanPanel({
     void loadPlans()
   }, [loadPlans, open, options, resource.name])
 
+  useEffect(() => {
+    const refresh = () => void loadPlans()
+    window.addEventListener('vibesim:plans-refresh', refresh)
+    return () => window.removeEventListener('vibesim:plans-refresh', refresh)
+  }, [loadPlans])
+
   const hasValidationError = useMemo(
     () => (selected?.validations.some((item) => item.level === 'error') ?? false)
       || (selected?.preflight?.issues.some((item) => item.level === 'error') ?? true),
@@ -180,6 +186,22 @@ export default function PlanPanel({
         !plan.preflight?.valid
         && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
       ))
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setPreflightLoading(false)
+    }
+  }
+
+  const recoverWithAgent = async () => {
+    if (!selected || preflightLoading) return
+    setPreflightLoading(true)
+    setError('')
+    try {
+      await api.recoverPlan(selected.id)
+      window.dispatchEvent(new CustomEvent('vibesim:open-intervention', {
+        detail: { planId: selected.id },
+      }))
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -367,18 +389,30 @@ export default function PlanPanel({
                         </span>
                         <button
                           type="button"
-                          onClick={() => preflightReady ? void refreshPreflight() : setSchemaFormOpen(true)}
-                          disabled={
-                            preflightLoading
-                            || (!preflightReady && !Object.keys(selected.preflight.form_schema.properties ?? {}).length)
-                          }
+                          onClick={() => {
+                            if (preflightReady) {
+                              void refreshPreflight()
+                              return
+                            }
+                            void recoverWithAgent()
+                          }}
+                          disabled={preflightLoading}
                         >
                           {preflightLoading
                             ? <RefreshCw size={14} className="spin" />
-                            : preflightReady ? <RefreshCw size={14} /> : <GitPullRequestDraft size={14} />}
-                          {preflightReady ? 'Validate again' : 'Resolve missing inputs'}
+                            : preflightReady ? <RefreshCw size={14} /> : <Sparkles size={14} />}
+                          {preflightReady ? 'Validate again' : 'Let Agent resolve'}
                         </button>
                       </div>
+                      {!preflightReady && Object.keys(selected.preflight.form_schema.properties ?? {}).length > 0 && (
+                        <button
+                          type="button"
+                          className="preflight-manual-input"
+                          onClick={() => setSchemaFormOpen(true)}
+                        >
+                          <GitPullRequestDraft size={13} /> Enter structured inputs manually
+                        </button>
+                      )}
                       {selected.preflight.issues.length > 0 && (
                         <div className="preflight-issues">
                           {selected.preflight.issues.map((issue, index) => (
