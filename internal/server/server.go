@@ -23,14 +23,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sjzsdu/vibesim/internal/agent"
-	"github.com/sjzsdu/vibesim/internal/comparison"
-	"github.com/sjzsdu/vibesim/internal/convergence"
-	"github.com/sjzsdu/vibesim/internal/flow360"
-	importplans "github.com/sjzsdu/vibesim/internal/imports"
-	"github.com/sjzsdu/vibesim/internal/plans"
-	"github.com/sjzsdu/vibesim/internal/projectcache"
-	"github.com/sjzsdu/vibesim/internal/projectmirror"
+	"github.com/sjzsdu/vibe-flow360/internal/agent"
+	"github.com/sjzsdu/vibe-flow360/internal/comparison"
+	"github.com/sjzsdu/vibe-flow360/internal/convergence"
+	"github.com/sjzsdu/vibe-flow360/internal/flow360"
+	importplans "github.com/sjzsdu/vibe-flow360/internal/imports"
+	"github.com/sjzsdu/vibe-flow360/internal/plans"
+	"github.com/sjzsdu/vibe-flow360/internal/projectcache"
+	"github.com/sjzsdu/vibe-flow360/internal/projectmirror"
 )
 
 //go:embed dist
@@ -192,7 +192,7 @@ func (s *Server) routes() {
 	api := s.router.Group("/api")
 	{
 		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"ok": true, "service": "vibesim"})
+			c.JSON(http.StatusOK, gin.H{"ok": true, "service": "vibe-flow360"})
 		})
 		api.GET("/flow360/status", s.flow360Status)
 		api.GET("/flow360/projects", s.flow360Projects)

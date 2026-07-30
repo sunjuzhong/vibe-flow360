@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sjzsdu/vibesim/internal/plans"
+	"github.com/sjzsdu/vibe-flow360/internal/plans"
 )
 
 const ActionVersion = "v1"

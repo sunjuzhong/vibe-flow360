@@ -4,8 +4,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/sjzsdu/vibesim/internal/config"
-	"github.com/sjzsdu/vibesim/internal/server"
+	"github.com/sjzsdu/vibe-flow360/internal/config"
+	"github.com/sjzsdu/vibe-flow360/internal/server"
 )
 
 func main() {
@@ -17,7 +17,7 @@ func main() {
 	}
 
 	app := server.New()
-	log.Printf("VibeSim is available at http://localhost%s", *addr)
+	log.Printf("Vibe Flow360 is available at http://localhost%s", *addr)
 	if err := app.Run(*addr); err != nil {
 		log.Fatal(err)
 	}

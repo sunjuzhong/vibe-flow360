@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sjzsdu/vibesim/internal/agent"
+	"github.com/sjzsdu/vibe-flow360/internal/agent"
 )
 
 type createInterventionRequest struct {

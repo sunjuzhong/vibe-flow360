@@ -15,13 +15,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sjzsdu/vibesim/internal/agent"
-	"github.com/sjzsdu/vibesim/internal/comparison"
-	"github.com/sjzsdu/vibesim/internal/convergence"
-	"github.com/sjzsdu/vibesim/internal/flow360"
-	"github.com/sjzsdu/vibesim/internal/plans"
-	"github.com/sjzsdu/vibesim/internal/projectcache"
-	"github.com/sjzsdu/vibesim/internal/projectmirror"
+	"github.com/sjzsdu/vibe-flow360/internal/agent"
+	"github.com/sjzsdu/vibe-flow360/internal/comparison"
+	"github.com/sjzsdu/vibe-flow360/internal/convergence"
+	"github.com/sjzsdu/vibe-flow360/internal/flow360"
+	"github.com/sjzsdu/vibe-flow360/internal/plans"
+	"github.com/sjzsdu/vibe-flow360/internal/projectcache"
+	"github.com/sjzsdu/vibe-flow360/internal/projectmirror"
 )
 
 func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {

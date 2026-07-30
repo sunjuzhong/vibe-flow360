@@ -1,11 +1,11 @@
-# VibeSim product brief
+# Vibe Flow360 product brief
 
 ## Problem
 
 Running CFD requires users to translate an engineering question into geometry
 preparation, physical models, boundary conditions, mesh strategy, solver settings,
 outputs, and convergence criteria. Flow360 provides the execution primitives;
-VibeSim provides the reasoning interface and keeps that translation auditable.
+Vibe Flow360 provides the reasoning interface and keeps that translation auditable.
 
 The target user understands the object and the decision they want to make, but
 does not want to manually author every simulation parameter or repeatedly navigate
@@ -13,7 +13,7 @@ the same workflow.
 
 ## Product promise
 
-> Give VibeSim a geometry and an engineering question. It will produce a
+> Give Vibe Flow360 a geometry and an engineering question. It will produce a
 > reviewable Flow360 plan, run it after approval, and explain whether the results
 > are trustworthy and useful.
 
@@ -125,7 +125,7 @@ Manifest, monitoring, artifacts, report
 ```
 
 The CLI adapter should initially shell out to the installed `flow360` command.
-This keeps VibeSim aligned with supported operations:
+This keeps Vibe Flow360 aligned with supported operations:
 
 - `flow360 project create`
 - `flow360 draft create`
@@ -179,7 +179,7 @@ CLI can emit JSON.
 Given a known wing geometry, a reference chord, air at a specified condition,
 and the goal “estimate lift and drag at 0° and 5°”:
 
-1. VibeSim creates a complete, inspectable plan.
+1. Vibe Flow360 creates a complete, inspectable plan.
 2. It refuses to run until units and reference area are confirmed.
 3. After approval, it creates the Flow360 resources and records their IDs.
 4. It survives restart and resumes monitoring.
@@ -199,7 +199,7 @@ and the goal “estimate lift and drag at 0° and 5°”:
 
 ## Naming
 
-Working name: **VibeSim**.
+Product name: **Vibe Flow360**.
 
 Alternatives:
 
@@ -209,5 +209,6 @@ Alternatives:
 - FlowMate
 - SimCopilot
 
-“VibeSim” expresses the interaction model well, while a subtitle should retain
-technical credibility: **Conversational, auditable CFD with Flow360**.
+“Vibe Flow360” keeps the interaction model explicit while tying the product
+unambiguously to its Flow360 execution backend. The technical subtitle remains:
+**Conversational, auditable CFD with Flow360**.

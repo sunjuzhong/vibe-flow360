@@ -1,6 +1,6 @@
-# VibeSim
+# Vibe Flow360
 
-VibeSim is a conversational CFD copilot for [Flow360](https://www.flexcompute.com/flow360/).
+Vibe Flow360 is a conversational CFD copilot for [Flow360](https://www.flexcompute.com/flow360/).
 It turns an engineering goal into an inspectable simulation plan, asks only for
 missing information, and then drives the existing `flow360` CLI through geometry,
 meshing, case execution, and result review.
@@ -12,7 +12,7 @@ meshing, case execution, and result review.
 ```text
 You: Simulate this car at 30 m/s. I care about drag and front/rear lift balance.
 
-VibeSim:
+Vibe Flow360:
   I found car.step and inferred a steady, external-aerodynamics study.
   Before I build the run:
   1. Is the car length 4.62 m?
@@ -21,7 +21,7 @@ VibeSim:
 
 You: Yes. Use standard air at sea level and start with a medium mesh.
 
-VibeSim:
+Vibe Flow360:
   Plan ready:
   - incompressible, steady RANS
   - velocity: 30 m/s
@@ -131,7 +131,7 @@ VIBESIM_FLOW360_ENV=uat
 ```
 
 `VIBESIM_FLOW360_ENV` accepts an empty value for production, `dev`, `uat`, or a
-named environment. VibeSim converts these settings to global CLI options before
+named environment. Vibe Flow360 converts these settings to global CLI options before
 every subcommand, for example:
 
 ```text
@@ -141,11 +141,19 @@ flow360 --profile default --uat project list --format json
 The API key remains server-side. It is never returned by the status API or sent
 to the React application.
 
+### Compatibility identifiers
+
+The product and executable are named **Vibe Flow360** and `vibe-flow360`.
+Existing `.vibesim` data directories, `VIBESIM_*` environment variables,
+`X-VibeSim-*` response headers, and `vibesim:*` browser events remain supported
+as stable compatibility identifiers so an upgrade does not orphan cached
+Projects or existing deployments.
+
 ## Local Project mirror
 
 Opening a Project starts a bounded full metadata synchronization before the
 resource workbench is shown. Set `VIBESIM_DATA_DIR` to an absolute path when
-VibeSim may be started from different working directories:
+Vibe Flow360 may be started from different working directories:
 
 ```dotenv
 VIBESIM_DATA_DIR=/absolute/path/to/.vibesim
@@ -195,7 +203,7 @@ The production build is embedded into the Go binary:
 
 ```bash
 make build
-./vibesim
+./vibe-flow360
 ```
 
 ## Core loop

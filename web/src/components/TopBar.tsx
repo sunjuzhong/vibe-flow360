@@ -7,7 +7,7 @@ export default function TopBar({ status }: { status: Flow360Status | null }) {
     <header className="product-topbar">
       <Link className="brand brand-link" to="/" aria-label="Return to home">
         <span className="brand-mark"><Sparkles size={17} /></span>
-        <span>VibeSim</span>
+        <span>Vibe Flow360</span>
         <span className="brand-beta">BETA</span>
       </Link>
       <div className="product-topbar-title">Flow360 simulation workspace</div>
@@ -23,4 +23,3 @@ export default function TopBar({ status }: { status: Flow360Status | null }) {
     </header>
   )
 }
-

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sjzsdu/vibesim/internal/plans"
+	"github.com/sjzsdu/vibe-flow360/internal/plans"
 )
 
 // Engine orchestrates the intervention lifecycle

@@ -12,15 +12,15 @@ dev: web
 	go run ./cmd/server
 
 build: web
-	go build -buildvcs=false -o vibesim ./cmd/server
+	go build -buildvcs=false -o vibe-flow360 ./cmd/server
 
 install: build
 	install -d /Users/juzhongsun/.local/bin
-	install -m 755 vibesim /Users/juzhongsun/.local/bin/vibesim
+	install -m 755 vibe-flow360 /Users/juzhongsun/.local/bin/vibe-flow360
 
 test: web
 	go test ./...
 	cd web && npm run test
 
 clean:
-	rm -rf web/dist internal/server/dist vibesim
+	rm -rf web/dist internal/server/dist vibe-flow360 vibesim

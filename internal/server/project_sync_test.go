@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sjzsdu/vibesim/internal/flow360"
-	"github.com/sjzsdu/vibesim/internal/projectcache"
-	"github.com/sjzsdu/vibesim/internal/projectmirror"
+	"github.com/sjzsdu/vibe-flow360/internal/flow360"
+	"github.com/sjzsdu/vibe-flow360/internal/projectcache"
+	"github.com/sjzsdu/vibe-flow360/internal/projectmirror"
 )
 
 type fakeProjectSyncClient struct {

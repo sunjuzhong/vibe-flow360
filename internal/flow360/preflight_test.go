@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sjzsdu/vibesim/internal/plans"
+	"github.com/sjzsdu/vibe-flow360/internal/plans"
 )
 
 func TestPreflightLevels(t *testing.T) {

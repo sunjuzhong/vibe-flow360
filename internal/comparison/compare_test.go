@@ -3,7 +3,7 @@ package comparison
 import (
 	"testing"
 
-	"github.com/sjzsdu/vibesim/internal/convergence"
+	"github.com/sjzsdu/vibe-flow360/internal/convergence"
 )
 
 func TestCompareCasesDetectsDifferences(t *testing.T) {

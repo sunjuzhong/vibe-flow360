@@ -349,7 +349,7 @@ export default function ProjectPage() {
       <header className="project-shell-header">
         <Link className="project-shell-brand" to="/" aria-label="Return to workspace">
           <span><Sparkles size={16} /></span>
-          <strong>VibeSim</strong>
+          <strong>Vibe Flow360</strong>
         </Link>
         <div className="project-shell-context">
           <Link to="/" aria-label="Back to workspace"><ArrowLeft size={15} /></Link>

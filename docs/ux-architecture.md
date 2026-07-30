@@ -1,8 +1,8 @@
-# VibeSim Web information architecture
+# Vibe Flow360 Web information architecture
 
 ## Product center
 
-VibeSim is project-first.
+Vibe Flow360 is project-first.
 
 The home page finds or creates a project. The project page is where simulation
 work begins. AI is available everywhere, but its context becomes precise only
@@ -51,7 +51,7 @@ The home page has one job: get the user into a project.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
-│ VibeSim     Search projects             Flow360 · prod · connected   │
+│ Vibe Flow360     Search projects             Flow360 · prod · connected   │
 ├───────────────┬──────────────────────────────────────────────────────┤
 │ FOLDERS       │ Projects in “examples”              + New project   │
 │               │                                                      │
