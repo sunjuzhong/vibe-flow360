@@ -391,6 +391,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
             className={`viewer-wireframe-toggle ${wireframeOn ? 'active' : ''}`}
             onClick={handleWireframeToggle}
             aria-label="Toggle wireframe overlay"
+            aria-pressed={wireframeOn}
             title="Toggle wireframe"
           >
             Wire

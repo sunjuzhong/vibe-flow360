@@ -1638,6 +1638,85 @@ button { color: inherit; }
 .preflight-issues code { margin-top: 3px; font: 6px 'DM Mono'; }
 .preflight-issues small { margin-top: 3px; font-size: 7px; }
 .preflight-not-run { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* Plan is a review-and-edit surface, so its type scale must remain readable. */
+.plan-layout { grid-template-columns: 260px minmax(0,1fr); }
+.plan-header strong { font-size: 14px; }
+.plan-header > div > span { font-size: 11px; }
+.plan-history > p { font-size: 11px; }
+.plan-history strong { font-size: 12px; }
+.plan-history small { font-size: 11px; }
+.plan-history-empty { font-size: 12px; }
+.plan-step-heading > span { font-size: 11px; }
+.plan-step-heading strong { font-size: 16px; }
+.plan-step-heading small { font-size: 12px; }
+.plan-form > label > span,
+.plan-stage-workflow-heading > span { font-size: 12px; }
+.plan-form input,
+.plan-form select,
+.plan-form textarea { font-size: 13px; }
+.plan-form textarea.plan-code-input,
+.plan-stage-editor textarea.plan-code-input { font-size: 12px; }
+.plan-form > label > small,
+.plan-stage-workflow-heading > small { font-size: 11px; }
+.plan-source-context small,
+.plan-stage-card header small { font-size: 11px; }
+.plan-source-context strong { font-size: 13px; }
+.plan-source-context em,
+.plan-stage-card header em { font-size: 11px; }
+.plan-stage-number { font-size: 11px; }
+.plan-stage-card header strong { font-size: 14px; }
+.plan-stage-groups strong { font-size: 12px; }
+.plan-stage-groups small,
+.plan-stage-groups code { font-size: 11px; }
+.plan-stage-field-list em,
+.plan-parameter-state { font-size: 11px; }
+.plan-stage-editor > summary { font-size: 12px; }
+.plan-stage-editor > label > span { font-size: 12px; }
+.plan-stage-editor > label > small { font-size: 11px; }
+.plan-form-actions button,
+.approval-card button,
+.execution-card button { font-size: 12px; }
+.plan-error { font-size: 12px; }
+.plan-back { font-size: 11px; }
+.plan-review-title > div > p:last-child { font-size: 12px; }
+.plan-status { font-size: 11px; }
+.plan-route > span small,
+.plan-route > span em,
+.plan-route-step small,
+.plan-route-step em { font-size: 11px; }
+.plan-route > span strong,
+.plan-route-step strong { font-size: 13px; }
+.plan-review-section h3 { font-size: 13px; }
+.plan-review-section h3 > span { font-size: 11px; }
+.validation-list strong { font-size: 11px; }
+.validation-list small { font-size: 12px; }
+.diff-list code,
+.diff-list small,
+.diff-kind { font-size: 11px; }
+.plan-neutral { font-size: 12px; }
+.command-preview { font-size: 12px; }
+.plan-command-note { font-size: 11px; }
+.approval-card label,
+.execution-card label { font-size: 12px; }
+.execution-card strong { font-size: 13px; }
+.execution-card small { font-size: 11px; }
+.plan-progress,
+.plan-success { font-size: 12px; }
+.plan-success strong { font-size: 13px; }
+.plan-success small,
+.plan-timestamps { font-size: 11px; }
+.remote-id-chip,
+.remote-id-chip code { font-size: 11px; }
+.remote-id-chip strong { font-size: 12px; }
+.preflight-summary strong { font-size: 12px; }
+.preflight-summary small { font-size: 11px; }
+.preflight-summary button,
+.preflight-not-run button { font-size: 12px; }
+.preflight-issues strong,
+.preflight-issues code,
+.preflight-issues small { font-size: 11px; }
+
 .schema-form-backdrop { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(24,28,21,.56); backdrop-filter: blur(4px); }
 .schema-form-dialog { display: flex; width: min(760px,94vw); max-height: 90vh; flex-direction: column; overflow: hidden; border: 1px solid #d4d7cc; border-radius: 14px; background: #f8f8f4; box-shadow: 0 28px 80px rgba(15,18,12,.3); }
 .schema-form-dialog > header { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid #dadcd4; background: #fcfcf8; }

@@ -29,6 +29,7 @@ import {
   valueAtPath,
   type SimulationStage,
 } from '../lib/planStages'
+import { errorMessage } from '../lib/errors'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import SchemaFormDialog from './SchemaForm'
 
@@ -200,7 +201,7 @@ export default function PlanPanel({
         throw new Error('The combined patch must be a JSON object')
       }
     } catch (cause) {
-      setError(`Invalid SimulationParams patch: ${String(cause).replace('Error: ', '')}`)
+      setError(`Invalid SimulationParams patch: ${errorMessage(cause)}`)
       return
     }
     setLoading(true)
