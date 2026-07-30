@@ -67,6 +67,17 @@ export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
   return Math.min(100, Math.max(4, Math.round((finished / manifest.total_resources) * 100)))
 }
 
+export function geometryContextId(items: ProjectItem[], selectedId: string | null | undefined) {
+  let current = items.find((item) => item.id === selectedId)
+  const visited = new Set<string>()
+  while (current && !visited.has(current.id)) {
+    if (current.type === 'Geometry') return current.id
+    visited.add(current.id)
+    current = items.find((item) => item.id === current?.parent_id)
+  }
+  return items.find((item) => item.type === 'Geometry')?.id ?? null
+}
+
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const resourceId = projectPath.startsWith('resources/') ? projectPath.slice('resources/'.length) : ''
@@ -262,6 +273,11 @@ export default function ProjectPage() {
 
   const parentItem = useMemo(
     () => items.find((item) => item.id === selectedItem?.parent_id) ?? null,
+    [items, selectedItem],
+  )
+
+  const contextGeometryId = useMemo(
+    () => geometryContextId(items, selectedItem?.id),
     [items, selectedItem],
   )
 
@@ -506,6 +522,7 @@ export default function ProjectPage() {
               <SurfaceMeshWorkspace
                 detail={detail}
                 resourceId={selected.id}
+                geometryResourceId={contextGeometryId}
                 onPlanVolumeMesh={() => {
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -516,6 +533,7 @@ export default function ProjectPage() {
               <VolumeMeshWorkspace
                 detail={detail}
                 resourceId={selected.id}
+                geometryResourceId={contextGeometryId}
                 onPlanCase={() => {
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -529,6 +547,8 @@ export default function ProjectPage() {
             {selected.type === 'Case' && (
               <CaseWorkspace
                 detail={detail}
+                resourceId={selected.id}
+                geometryResourceId={contextGeometryId}
                 onPlanCase={() => {
                   setChatOpen(false)
                   setPlanOpen(true)

@@ -100,18 +100,22 @@ export function computeReadiness(detail: ResourceDetail | null): ReadinessCheck[
 export default function VolumeMeshWorkspace({
   detail,
   resourceId,
+  geometryResourceId,
   onPlanCase,
   onShowLogs,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  geometryResourceId?: string | null
   onPlanCase: () => void
   onShowLogs?: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
-  const { manifest, state: viewerState } = useResourcePreview(
+  const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'VolumeMesh' : null,
     resourceId ?? detail?.id ?? null,
+    detail && geometryResourceId ? 'Geometry' : null,
+    geometryResourceId ?? null,
   )
   const status = resourceStatus(detail)
   const statusLower = status.toLowerCase()
@@ -156,77 +160,95 @@ export default function VolumeMeshWorkspace({
   const readyCount = checks.filter((c) => c.status === 'ready').length
 
   return (
-    <section className="volume-mesh-workspace">
-      <div className="mesh-workspace-heading">
-        <div>
-          <span>VOLUME MESH WORKSPACE</span>
-          <strong>Domain, quality, and Case readiness</strong>
-          <small>
-            {terminal
-              ? failed
-                ? 'The volume mesh failed. Review the error and logs before retrying.'
-                : 'The volume mesh is terminal. Review quality before planning a Case.'
-              : 'Processing status refreshes automatically every 10 seconds.'}
-          </small>
-        </div>
-        {failed ? <AlertCircle size={21} className="status-failed" /> : <Activity size={21} />}
-      </div>
-
-      <div className="mesh-quality-grid volume-mesh">
-        {metrics.map(({ label, value, icon: Icon }) => (
-          <div key={label} className="metric-card">
-            <Icon size={15} />
-            <span>{label}</span>
-            <strong>{metricText(value)}</strong>
-          </div>
-        ))}
-      </div>
-
-      <div className="viewer-section">
+    <section className="volume-mesh-workspace cfd-stage-workspace">
+      <div className="viewer-section cfd-stage-viewer">
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
         />
-      </div>
-
-      <div className="mesh-readiness-row">
-        <div className="geometry-checks volume-mesh-checks">
-          {checks.map((check) => (
-            <div className={`volume-check volume-check-${check.status}`} key={check.label}>
-              {check.status === 'ready' ? (
-                <CheckCircle2 size={14} />
-              ) : check.status === 'blocked' ? (
-                <AlertCircle size={14} />
-              ) : (
-                <CircleDashed size={14} />
-              )}
-              <div>
-                <span>{check.label}</span>
-                <small>{check.hint}</small>
-              </div>
+        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`}>
+          <ScanLine size={13} />
+          <div>
+            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Volume mesh slices'}</strong>
+            <span>
+              {previewSource === 'fallback'
+                ? 'The VolumeMesh slice asset is unavailable; this is the parent Geometry, not volume cells.'
+                : 'Inspect crinkled slices, cell growth, boundary layers, and zone interfaces.'}
+            </span>
+          </div>
+        </div>
+        <aside className="cfd-decision-panel">
+          <div className="mesh-workspace-heading">
+            <div>
+              <span>VOLUME MESH REVIEW</span>
+              <strong>Will this domain support a stable solution?</strong>
+              <small>
+                {terminal
+                  ? failed
+                    ? 'The mesh failed. Diagnose before retrying.'
+                    : `Flow360 status: ${status}`
+                  : 'Processing status refreshes automatically.'}
+              </small>
             </div>
-          ))}
-        </div>
-        <div className="geometry-plan-action-stack">
-          <button
-            className="geometry-plan-action"
-            onClick={onPlanCase}
-            disabled={failed}
-            title={failed ? 'Cannot plan a Case from a failed volume mesh' : 'Plan a Case using this volume mesh'}
-          >
-            <GitPullRequestDraft size={15} />
-            Plan Case
-          </button>
-          {failed && onShowLogs && (
-            <button className="secondary-action" onClick={onShowLogs}>
-              <Activity size={14} />
-              View Logs
+            {failed ? <AlertCircle size={20} className="status-failed" /> : <Activity size={20} />}
+          </div>
+          <div className="mesh-quality-grid volume-mesh cfd-quality-strip">
+            {metrics.map(({ label, value, icon: Icon }) => (
+              <div key={label} className="metric-card">
+                <Icon size={14} />
+                <span>{label}</span>
+                <strong>{metricText(value)}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="geometry-checks volume-mesh-checks">
+            {checks.map((check) => (
+              <div className={`volume-check volume-check-${check.status}`} key={check.label}>
+                {check.status === 'ready' ? (
+                  <CheckCircle2 size={14} />
+                ) : check.status === 'blocked' ? (
+                  <AlertCircle size={14} />
+                ) : (
+                  <CircleDashed size={14} />
+                )}
+                <div>
+                  <span>{check.label}</span>
+                  <small>{check.hint}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="geometry-plan-action-stack">
+            <button
+              className="geometry-plan-action"
+              onClick={onPlanCase}
+              disabled={failed}
+              title={failed ? 'Cannot plan a Case from a failed volume mesh' : 'Plan a Case using this volume mesh'}
+            >
+              <GitPullRequestDraft size={15} />
+              Plan Case
             </button>
-          )}
-          <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>
-        </div>
+            {failed && onShowLogs && (
+              <button className="secondary-action" onClick={onShowLogs}>
+                <Activity size={14} />
+                View Logs
+              </button>
+            )}
+            <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>
+            {primaryError && previewSource === 'fallback' && (
+              <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
+            )}
+          </div>
+        </aside>
+      </div>
+      <div className="cfd-stage-guidance">
+        <strong>CFD review order</strong>
+        <span>1. Domain extent and zones</span>
+        <span>2. Near-wall prism layers</span>
+        <span>3. Worst aspect ratio / minimum edge slices</span>
+        <span>4. Wake and refinement continuity</span>
       </div>
     </section>
   )

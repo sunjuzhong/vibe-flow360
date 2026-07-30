@@ -45,16 +45,20 @@ function metricText(value: unknown) {
 export default function SurfaceMeshWorkspace({
   detail,
   resourceId,
+  geometryResourceId,
   onPlanVolumeMesh,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  geometryResourceId?: string | null
   onPlanVolumeMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
-  const { manifest, state: viewerState } = useResourcePreview(
+  const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
     resourceId ?? detail?.id ?? null,
+    detail && geometryResourceId ? 'Geometry' : null,
+    geometryResourceId ?? null,
   )
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
   const status = resourceStatus(detail)
@@ -88,45 +92,72 @@ export default function SurfaceMeshWorkspace({
   ]
 
   return (
-    <section className="surface-mesh-workspace">
-      <div className="mesh-workspace-heading">
-        <div>
-          <span>SURFACE MESH WORKSPACE</span>
-          <strong>Quality and volume-mesh readiness</strong>
-          <small>{terminal ? 'The resource is terminal. Review quality before planning the volume mesh.' : 'Processing status refreshes automatically every 10 seconds.'}</small>
-        </div>
-        <Activity size={21} />
-      </div>
-      <div className="mesh-quality-grid">
-        {metrics.map(({ label, value, icon: Icon }) => (
-          <div key={label}>
-            <Icon size={15} />
-            <span>{label}</span>
-            <strong>{metricText(value)}</strong>
-          </div>
-        ))}
-      </div>
-      <div className="viewer-section">
+    <section className="surface-mesh-workspace cfd-stage-workspace">
+      <div className="viewer-section cfd-stage-viewer">
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
         />
-      </div>
-      <div className="mesh-readiness-row">
-        <div className="geometry-checks">
-          {checks.map((check) => (
-            <div className={check.ready ? 'ready' : ''} key={check.label}>
-              {check.ready ? <CheckCircle2 size={14} /> : <CircleDashed size={14} />}
-              <span>{check.label}</span>
-            </div>
-          ))}
+        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`}>
+          <ScanLine size={13} />
+          <div>
+            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Surface mesh'}</strong>
+            <span>
+              {previewSource === 'fallback'
+                ? 'The SurfaceMesh render asset is unavailable; this is the parent Geometry, not the mesh.'
+                : 'Inspect surface topology, boundaries, and element quality.'}
+            </span>
+          </div>
         </div>
-        <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
-          <GitPullRequestDraft size={15} />
-          Plan Volume Mesh
-        </button>
+        <aside className="cfd-decision-panel">
+          <div className="mesh-workspace-heading">
+            <div>
+              <span>SURFACE MESH REVIEW</span>
+              <strong>Is the surface discretization trustworthy?</strong>
+              <small>{terminal ? `Flow360 status: ${status}` : 'Processing status refreshes automatically.'}</small>
+            </div>
+            <Activity size={20} />
+          </div>
+          <div className="mesh-quality-grid cfd-quality-strip">
+            {metrics.map(({ label, value, icon: Icon }) => (
+              <div key={label}>
+                <Icon size={14} />
+                <span>{label}</span>
+                <strong>{metricText(value)}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="geometry-checks">
+            {checks.map((check) => (
+              <div className={check.ready ? 'ready' : ''} key={check.label}>
+                {check.ready ? <CheckCircle2 size={14} /> : <CircleDashed size={14} />}
+                <span>{check.label}</span>
+              </div>
+            ))}
+            {previewSource === 'fallback' && (
+              <div>
+                <CircleDashed size={14} />
+                <span>Surface diagnostics asset is not available in the current CLI snapshot</span>
+              </div>
+            )}
+          </div>
+          <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
+            <GitPullRequestDraft size={15} />
+            Plan Volume Mesh
+          </button>
+          {primaryError && previewSource === 'fallback' && (
+            <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
+          )}
+        </aside>
+      </div>
+      <div className="cfd-stage-guidance">
+        <strong>CFD review order</strong>
+        <span>1. Feature capture</span>
+        <span>2. Boundary grouping</span>
+        <span>3. Area / aspect ratio / skewness</span>
+        <span>4. Local refinement and boundary-layer intent</span>
       </div>
     </section>
   )

@@ -15,11 +15,15 @@ import {
   TrendingUp,
   TrendingDown,
   BarChart3,
+  ScanLine,
 } from 'lucide-react'
+import { useState } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
 import type { ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
+import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
+import { useResourcePreview } from '../hooks/useResourcePreview'
 
 function formatConvergenceStatus(status: string): string {
   switch (status) {
@@ -184,13 +188,18 @@ function StatusBadge({ status }: { status: CaseStatusView }) {
 
 export default function CaseWorkspace({
   detail,
+  resourceId,
+  geometryResourceId,
   onPlanCase,
   onRefresh,
 }: {
   detail: ResourceDetail | null
+  resourceId?: string
+  geometryResourceId?: string | null
   onPlanCase: () => void
   onRefresh: () => void
 }) {
+  const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const viewModel = normalizeCase(detail)
   const terminal = isTerminal(viewModel.status)
   const resultCount = detail?.results?.records?.length ?? 0
@@ -200,34 +209,80 @@ export default function CaseWorkspace({
     useConvergenceAssessment(detail?.id ?? null)
 
   const convResult = convergence as ConvergenceResult | null
+  const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
+    detail ? 'Case' : null,
+    resourceId ?? detail?.id ?? null,
+    detail && geometryResourceId ? 'Geometry' : null,
+    geometryResourceId ?? null,
+  )
+  const velocity = findMetric(viewModel.operatingPoint, ['velocity_magnitude', 'velocity', 'mach'])
 
   return (
-    <section className="case-workspace">
-      <div className="case-workspace-heading">
-        <div>
-          <span>CASE OVERVIEW</span>
-          <strong>
-            {viewModel.status === 'completed' && 'Simulation completed'}
-            {viewModel.status === 'running' && 'Simulation in progress'}
-            {viewModel.status === 'preprocessing' && 'Preparing solver inputs'}
-            {viewModel.status === 'queued' && 'Waiting for execution slot'}
-            {viewModel.status === 'failed' && 'Simulation failed'}
-            {viewModel.status === 'unknown' && 'Simulation state is unknown'}
-          </strong>
-          <small>
-            {terminal
-              ? 'This Case reached a terminal state. Review results or plan a variation.'
-              : 'Non-terminal Case states auto-refresh every 10 seconds.'}
-          </small>
+    <section className="case-workspace cfd-stage-workspace">
+      <div className="viewer-section cfd-stage-viewer case-stage-viewer">
+        <LazyViewer3D
+          manifest={manifest}
+          state={viewerState}
+          selection={viewerSelection}
+          onSelectionChange={setViewerSelection}
+        />
+        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`}>
+          <ScanLine size={13} />
+          <div>
+            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Solution field'}</strong>
+            <span>
+              {previewSource === 'fallback'
+                ? 'Case field data is not exposed as a browser asset; this Geometry anchors the result evidence.'
+                : 'Inspect Cp, y+, velocity, slices, streamlines, and vortical structures.'}
+            </span>
+          </div>
         </div>
-        <div className="case-status-controls">
-          <StatusBadge status={viewModel.status} />
-          {!terminal && (
+        <aside className="cfd-decision-panel case-decision-panel">
+          <div className="case-workspace-heading">
+            <div>
+              <span>CASE DECISION</span>
+              <strong>
+                {viewModel.status === 'completed' && 'Can these results be trusted?'}
+                {viewModel.status === 'running' && 'Is the solution progressing safely?'}
+                {viewModel.status === 'preprocessing' && 'Preparing solver inputs'}
+                {viewModel.status === 'queued' && 'Waiting for execution slot'}
+                {viewModel.status === 'failed' && 'Why did this simulation fail?'}
+                {viewModel.status === 'unknown' && 'Simulation state is unknown'}
+              </strong>
+              <small>{terminal ? 'Judge convergence and physical outputs before using this Case.' : 'Monitor residuals, forces, CFL, and solution bounds.'}</small>
+            </div>
+            <StatusBadge status={viewModel.status} />
+          </div>
+          {convResult && (
+            <div className={`convergence-banner compact convergence-${convResult.status}`}>
+              {convResult.status === 'converged' ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
+              <div>
+                <strong>{formatConvergenceStatus(convResult.status)}</strong>
+                <p>{convResult.reason}</p>
+              </div>
+            </div>
+          )}
+          <div className="case-decision-facts">
+            <div><span>Operating point</span><strong>{metricText(velocity)}</strong></div>
+            <div><span>Result evidence</span><strong>{viewModel.resultCount} artifacts</strong></div>
+          </div>
+          <div className="case-decision-actions">
             <button className="toolbar-refresh" onClick={onRefresh} aria-label="Refresh case state">
               <Activity size={13} /> Refresh
             </button>
+            <button className="geometry-plan-action" onClick={onPlanCase} disabled={viewModel.status === 'failed'}>
+              <GitPullRequestDraft size={14} /> Plan variation
+            </button>
+          </div>
+          {primaryError && previewSource === 'fallback' && (
+            <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}
-        </div>
+        </aside>
+      </div>
+
+      <div className="case-analysis-heading">
+        <div><span>CASE EVIDENCE</span><strong>Convergence, forces, and physical setup</strong></div>
+        <small>Cross-check residual decay with force stability and physically reasonable solution bounds.</small>
       </div>
 
       {convResult && (

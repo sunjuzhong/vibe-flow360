@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ProjectSyncManifest } from '../api/client'
-import { projectSyncProgress } from './ProjectPage'
+import type { ProjectItem, ProjectSyncManifest } from '../api/client'
+import { geometryContextId, projectSyncProgress } from './ProjectPage'
 
 function manifest(values: Partial<ProjectSyncManifest>): ProjectSyncManifest {
   return {
@@ -32,5 +32,23 @@ describe('projectSyncProgress', () => {
   it('keeps an indeterminate synchronization visible', () => {
     expect(projectSyncProgress(null)).toBe(4)
     expect(projectSyncProgress(manifest({ total_resources: 0 }))).toBe(4)
+  })
+})
+
+describe('geometryContextId', () => {
+  const items: ProjectItem[] = [
+    { id: 'geo-1', name: 'Geometry', type: 'Geometry', parent_id: null },
+    { id: 'sm-1', name: 'Surface', type: 'SurfaceMesh', parent_id: 'geo-1' },
+    { id: 'vm-1', name: 'Volume', type: 'VolumeMesh', parent_id: 'sm-1' },
+    { id: 'case-1', name: 'Case', type: 'Case', parent_id: 'vm-1' },
+  ]
+
+  it('walks the selected CFD branch back to its Geometry', () => {
+    expect(geometryContextId(items, 'case-1')).toBe('geo-1')
+    expect(geometryContextId(items, 'vm-1')).toBe('geo-1')
+  })
+
+  it('falls back to the available Geometry when a parent is missing', () => {
+    expect(geometryContextId(items, 'unknown')).toBe('geo-1')
   })
 })
