@@ -1,6 +1,8 @@
 package projectmirror
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +13,7 @@ import (
 )
 
 const (
-	SchemaVersion                       = 2
+	SchemaVersion                       = 3
 	ArtifactPolicyMetadataVisualization = "metadata+geometry-visualization"
 	maxGeometryVisualizationFileSize    = 25 * 1024 * 1024
 
@@ -19,6 +21,10 @@ const (
 	StatusCompleted = "completed"
 	StatusPartial   = "partial"
 	StatusFailed    = "failed"
+
+	SyncStatusMetadata = "metadata"
+	SyncStatusPreview  = "preview"
+	SyncStatusFull     = "full"
 )
 
 type ResourceStatus struct {
@@ -31,11 +37,14 @@ type ResourceStatus struct {
 }
 
 type ArtifactStatus struct {
-	Path      string    `json:"path"`
-	LocalPath string    `json:"local_path"`
-	SizeBytes int64     `json:"size_bytes"`
-	Status    string    `json:"status"`
-	SyncedAt  time.Time `json:"synced_at"`
+	Path       string    `json:"path"`
+	LocalPath  string    `json:"local_path"`
+	SizeBytes  int64     `json:"size_bytes"`
+	Checksum   string    `json:"checksum,omitempty"`
+	LOD        int       `json:"lod,omitempty"`
+	Status     string    `json:"status"`
+	SyncStatus string    `json:"sync_status,omitempty"`
+	SyncedAt   time.Time `json:"synced_at"`
 }
 
 type Manifest struct {
@@ -152,22 +161,27 @@ func (s *Store) PutResource(projectID, resourceType, resourceID string, value js
 	return s.writeRawJSON(target, value)
 }
 
-func (s *Store) PutGeometryVisualization(
+func (s *Store) PutResourceVisualization(
 	projectID string,
+	resourceType string,
 	resourceID string,
 	manifest json.RawMessage,
 	bins map[string][]byte,
+	lod int,
 ) (map[string]ArtifactStatus, error) {
 	if err := validateID(projectID); err != nil {
 		return nil, err
+	}
+	if !validResourceType(resourceType) {
+		return nil, errors.New("unsupported resource type for visualization")
 	}
 	if err := validateID(resourceID); err != nil {
 		return nil, err
 	}
 	if !json.Valid(manifest) {
-		return nil, errors.New("Geometry visualization manifest must be valid JSON")
+		return nil, errors.New("resource visualization manifest must be valid JSON")
 	}
-	resourceDir := filepath.Join(s.projectDir(projectID), "resources", "Geometry", resourceID)
+	resourceDir := filepath.Join(s.projectDir(projectID), "resources", resourceType, resourceID)
 	if err := os.MkdirAll(resourceDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -182,26 +196,32 @@ func (s *Store) PutGeometryVisualization(
 	}
 	now := time.Now().UTC()
 	artifacts := map[string]ArtifactStatus{}
-	addArtifact := func(remotePath, localPath string, size int64) {
+	addArtifact := func(remotePath, localPath string, size int64, checksum string, syncStatus string) {
 		artifacts[remotePath] = ArtifactStatus{
-			Path:      remotePath,
-			LocalPath: localPath,
-			SizeBytes: size,
-			Status:    "completed",
-			SyncedAt:  now,
+			Path:       remotePath,
+			LocalPath:  localPath,
+			SizeBytes:  size,
+			Checksum:   checksum,
+			LOD:        lod,
+			Status:     "completed",
+			SyncStatus: syncStatus,
+			SyncedAt:   now,
 		}
 	}
 	manifestRelative := filepath.ToSlash(filepath.Join(
-		"resources", "Geometry", resourceID, "visualize", "manifest", "manifest.json",
+		"resources", resourceType, resourceID, "visualize", "manifest", "manifest.json",
 	))
 	manifestInfo, err := os.Stat(filepath.Join(manifestDir, "manifest.json"))
 	if err != nil {
 		return nil, err
 	}
+	manifestChecksum := sha256File(filepath.Join(manifestDir, "manifest.json"))
 	addArtifact(
 		"visualize/manifest/manifest.json",
 		manifestRelative,
 		manifestInfo.Size(),
+		manifestChecksum,
+		SyncStatusMetadata,
 	)
 	for relative, payload := range bins {
 		clean, err := validateVisualizationPath(relative, ".bin")
@@ -212,9 +232,10 @@ func (s *Store) PutGeometryVisualization(
 			return nil, err
 		}
 		localRelative := filepath.ToSlash(filepath.Join(
-			"resources", "Geometry", resourceID, "visualize", "manifest", filepath.FromSlash(clean),
+			"resources", resourceType, resourceID, "visualize", "manifest", filepath.FromSlash(clean),
 		))
-		addArtifact("visualize/manifest/"+clean, localRelative, int64(len(payload)))
+		checksum := sha256Sum(payload)
+		addArtifact("visualize/manifest/"+clean, localRelative, int64(len(payload)), checksum, SyncStatusPreview)
 	}
 
 	target := filepath.Join(resourceDir, "visualize")
@@ -233,8 +254,21 @@ func (s *Store) PutGeometryVisualization(
 	return artifacts, nil
 }
 
-func (s *Store) GeometryVisualizationManifest(resourceID string) (json.RawMessage, error) {
-	target, err := s.findGeometryVisualizationFile(resourceID, "manifest.json")
+// PutGeometryVisualization is retained for backward compatibility.
+func (s *Store) PutGeometryVisualization(
+	projectID string,
+	resourceID string,
+	manifest json.RawMessage,
+	bins map[string][]byte,
+) (map[string]ArtifactStatus, error) {
+	return s.PutResourceVisualization(projectID, "Geometry", resourceID, manifest, bins, 0)
+}
+
+func (s *Store) ResourceVisualizationManifest(resourceType, resourceID string) (json.RawMessage, error) {
+	if !validResourceType(resourceType) {
+		return nil, errors.New("unsupported resource type for visualization")
+	}
+	target, err := s.findResourceVisualizationFile(resourceType, resourceID, "manifest.json")
 	if err != nil {
 		return nil, err
 	}
@@ -243,17 +277,25 @@ func (s *Store) GeometryVisualizationManifest(resourceID string) (json.RawMessag
 		return nil, err
 	}
 	if !json.Valid(payload) {
-		return nil, errors.New("cached Geometry visualization manifest is invalid")
+		return nil, errors.New("cached resource visualization manifest is invalid")
 	}
 	return payload, nil
 }
 
-func (s *Store) GeometryVisualizationFile(resourceID, relative string) ([]byte, error) {
+// GeometryVisualizationManifest is retained for backward compatibility.
+func (s *Store) GeometryVisualizationManifest(resourceID string) (json.RawMessage, error) {
+	return s.ResourceVisualizationManifest("Geometry", resourceID)
+}
+
+func (s *Store) ResourceVisualizationFile(resourceType, resourceID, relative string) ([]byte, error) {
+	if !validResourceType(resourceType) {
+		return nil, errors.New("unsupported resource type for visualization")
+	}
 	clean, err := validateVisualizationPath(relative, "")
 	if err != nil {
 		return nil, err
 	}
-	target, err := s.findGeometryVisualizationFile(resourceID, clean)
+	target, err := s.findResourceVisualizationFile(resourceType, resourceID, clean)
 	if err != nil {
 		return nil, err
 	}
@@ -262,15 +304,20 @@ func (s *Store) GeometryVisualizationFile(resourceID, relative string) ([]byte, 
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New("Geometry visualization asset must be a regular file")
+		return nil, errors.New("resource visualization asset must be a regular file")
 	}
 	if info.Size() > maxGeometryVisualizationFileSize {
-		return nil, errors.New("Geometry visualization asset exceeds the size limit")
+		return nil, errors.New("resource visualization asset exceeds the size limit")
 	}
 	return os.ReadFile(target)
 }
 
-func (s *Store) findGeometryVisualizationFile(resourceID, relative string) (string, error) {
+// GeometryVisualizationFile is retained for backward compatibility.
+func (s *Store) GeometryVisualizationFile(resourceID, relative string) ([]byte, error) {
+	return s.ResourceVisualizationFile("Geometry", resourceID, relative)
+}
+
+func (s *Store) findResourceVisualizationFile(resourceType, resourceID, relative string) (string, error) {
 	if err := validateID(resourceID); err != nil {
 		return "", err
 	}
@@ -286,7 +333,7 @@ func (s *Store) findGeometryVisualizationFile(resourceID, relative string) (stri
 			s.root,
 			project.Name(),
 			"resources",
-			"Geometry",
+			resourceType,
 			resourceID,
 			"visualize",
 			"manifest",
@@ -297,6 +344,11 @@ func (s *Store) findGeometryVisualizationFile(resourceID, relative string) (stri
 		}
 	}
 	return "", os.ErrNotExist
+}
+
+// findGeometryVisualizationFile is retained for backward compatibility.
+func (s *Store) findGeometryVisualizationFile(resourceID, relative string) (string, error) {
+	return s.findResourceVisualizationFile("Geometry", resourceID, relative)
 }
 
 func (s *Store) ProjectDir(projectID string) (string, error) {
@@ -377,20 +429,20 @@ func (s *Store) writeBytes(target string, payload []byte) error {
 
 func validateVisualizationPath(value, extension string) (string, error) {
 	if strings.Contains(value, "\\") {
-		return "", errors.New("Geometry visualization path must use forward slashes")
+		return "", errors.New("visualization path must use forward slashes")
 	}
 	value = strings.TrimSpace(value)
 	clean := filepath.ToSlash(filepath.Clean(value))
 	if value == "" || clean != value || strings.HasPrefix(clean, "/") || strings.Contains(clean, "..") {
-		return "", errors.New("unsafe Geometry visualization path")
+		return "", errors.New("unsafe visualization path")
 	}
 	if extension != "" && !strings.HasSuffix(strings.ToLower(clean), extension) {
-		return "", fmt.Errorf("Geometry visualization path must use %s", extension)
+		return "", fmt.Errorf("visualization path must use %s", extension)
 	}
 	if extension == "" &&
 		clean != "manifest.json" &&
 		!strings.HasSuffix(strings.ToLower(clean), ".bin") {
-		return "", errors.New("unsupported Geometry visualization asset")
+		return "", errors.New("unsupported visualization asset")
 	}
 	return clean, nil
 }
@@ -401,6 +453,19 @@ func readJSON(path string, target any) error {
 		return err
 	}
 	return json.Unmarshal(payload, target)
+}
+
+func sha256File(path string) string {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return sha256Sum(payload)
+}
+
+func sha256Sum(payload []byte) string {
+	hash := sha256.Sum256(payload)
+	return hex.EncodeToString(hash[:])
 }
 
 func validateID(value string) error {

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { Flow360UVFLoader } from '../../lib/uvf-three'
+import { Flow360UVFLoader, applyFieldColoring, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import type { UVFAsset, UVFFieldInfo } from '../../lib/uvf-three'
 
 export type MeshGroupData = {
   id: string
@@ -55,9 +56,14 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
+  const uvfAssetRef = useRef<UVFAsset | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
+  const [selectedField, setSelectedField] = useState<string | null>(null)
+  const [colormap, setColormap] = useState<ColormapName>('viridis')
+  const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
+  const [colormaps] = useState<ColormapName[]>(listColormaps())
 
   const createScene = useCallback((container: HTMLDivElement) => {
     const scene = new THREE.Scene()
@@ -105,12 +111,15 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
 
     assetDisposeRef.current?.()
     assetDisposeRef.current = null
+    uvfAssetRef.current = null
     meshesRef.current.clear()
     if (assetRef.current) {
       scene.remove(assetRef.current)
       assetRef.current = null
     }
     setAssetStats(null)
+    setAvailableFields([])
+    setSelectedField(null)
 
     if (!manifest.asset_url) return
     let root: THREE.Object3D
@@ -125,7 +134,10 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       }
       root = asset.object
       assetDisposeRef.current = asset.dispose
+      uvfAssetRef.current = asset
       setAssetStats({ faces: asset.faces, edges: asset.edges })
+      setAvailableFields(asset.fields)
+      setSelectedField(null)
     } else {
       const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
       if (signal.aborted) {
@@ -134,6 +146,9 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       }
       root = gltf.scene
       assetDisposeRef.current = () => disposeObject(root)
+      uvfAssetRef.current = null
+      setAvailableFields([])
+      setSelectedField(null)
     }
     const fallbackGroup = manifest.groups[0]
     root.traverse((object) => {
@@ -312,6 +327,12 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     }
   }
 
+  useEffect(() => {
+    if (uvfAssetRef.current) {
+      applyFieldColoring(uvfAssetRef.current, selectedField, colormap)
+    }
+  }, [selectedField, colormap])
+
   const visibleState = state.status === 'ready' ? assetState : state
 
   return (
@@ -347,6 +368,51 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
         <div className="viewer-asset-stats">
           <span>{assetStats.faces} faces</span>
           <span>{assetStats.edges} edges</span>
+        </div>
+      )}
+      {availableFields.length > 0 && visibleState.status === 'ready' && (
+        <div className="viewer-field-panel">
+          <label className="viewer-field-label">
+            Field:
+            <select
+              value={selectedField ?? ''}
+              onChange={(e) => setSelectedField(e.target.value || null)}
+            >
+              <option value="">None</option>
+              {availableFields.map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.name} ({f.kind}, {f.min.toFixed(2)}–{f.max.toFixed(2)})
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedField && (
+            <label className="viewer-field-label">
+              Colormap:
+              <select
+                value={colormap}
+                onChange={(e) => setColormap(e.target.value as ColormapName)}
+              >
+                {colormaps.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {selectedField && (
+            <div className="viewer-colormap-bar">
+              <span className="viewer-colormap-min">
+                {availableFields.find((f) => f.name === selectedField)?.min.toFixed(2)}
+              </span>
+              <div
+                className="viewer-colormap-gradient"
+                style={{ background: buildGradientCSS(colormap) }}
+              />
+              <span className="viewer-colormap-max">
+                {availableFields.find((f) => f.name === selectedField)?.max.toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
       )}
       {manifest && (
@@ -390,4 +456,13 @@ function disposeObject(root: THREE.Object3D) {
     const materials = Array.isArray(object.material) ? object.material : [object.material]
     materials.forEach((material) => material.dispose())
   })
+}
+
+function buildGradientCSS(name: ColormapName): string {
+  const stops = [0, 0.25, 0.5, 0.75, 1]
+  const colors = stops.map((t) => {
+    const c = sampleColormap(t, name)
+    return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`
+  })
+  return `linear-gradient(to right, ${stops.map((s, i) => `${colors[i]} ${s * 100}%`).join(', ')})`
 }

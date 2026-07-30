@@ -22,7 +22,7 @@ type projectSyncClient interface {
 	ProjectTree(context.Context, string) (json.RawMessage, error)
 	ProjectItems(context.Context, string) (json.RawMessage, error)
 	ResourceDetail(context.Context, string, string) (flow360.ResourceDetail, error)
-	GeometryVisualization(context.Context, string) (flow360.GeometryVisualization, error)
+	ResourceVisualization(context.Context, string, string) (flow360.ResourceVisualization, error)
 }
 
 type projectSyncItem struct {
@@ -201,21 +201,22 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 					err = fmt.Errorf("partial Flow360 detail: %s", strings.Join(keys, ", "))
 				}
 				var raw json.RawMessage
-				var visualization flow360.GeometryVisualization
+				var artifacts map[string]projectmirror.ArtifactStatus
 				if err == nil {
 					raw, err = json.Marshal(detail)
 				}
-				if err == nil && item.Type == "Geometry" {
-					visualization, err = client.GeometryVisualization(ctx, item.ID)
-				}
-				var artifacts map[string]projectmirror.ArtifactStatus
-				if err == nil && item.Type == "Geometry" {
-					artifacts, err = s.mirror.PutGeometryVisualization(
-						projectID,
-						item.ID,
-						visualization.Manifest,
-						visualization.Bins,
-					)
+				if err == nil {
+					visualization, visErr := client.ResourceVisualization(ctx, item.Type, item.ID)
+					if visErr == nil {
+						artifacts, _ = s.mirror.PutResourceVisualization(
+							projectID,
+							item.Type,
+							item.ID,
+							visualization.Manifest,
+							visualization.Bins,
+							0,
+						)
+					}
 				}
 				if err == nil {
 					err = s.mirror.PutResource(projectID, item.Type, item.ID, raw)

@@ -10,12 +10,14 @@ export type UVFBuffer = {
   type: 'buffers'
   path: string
   sections: UVFBufferSection[]
+  bounds?: Record<string, [number, number]>
 }
 
 export type UVFLOD = {
   type: 'lod'
   default?: number
   levels: UVFBuffer[]
+  bounds?: Record<string, [number, number]>
 }
 
 export type UVFBufferLocation = {
@@ -55,11 +57,21 @@ export type UVFLoadProgress = {
   path: string
 }
 
+export type UVFFieldInfo = {
+  name: string
+  kind: 'scalar' | 'vector'
+  min: number
+  max: number
+}
+
 export type UVFAsset = {
   object: import('three').Group
   faces: number
   edges: number
   vertices: number
   triangles: number
+  fields: UVFFieldInfo[]
+  lodLevels: number
+  currentLOD: number
   dispose: () => void
 }

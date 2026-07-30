@@ -27,11 +27,11 @@ type fakeProjectSyncClient struct {
 	delay                time.Duration
 }
 
-func (f *fakeProjectSyncClient) GeometryVisualization(context.Context, string) (flow360.GeometryVisualization, error) {
+func (f *fakeProjectSyncClient) ResourceVisualization(_ context.Context, resourceType, resourceID string) (flow360.ResourceVisualization, error) {
 	if f.visualizationFailure != nil {
-		return flow360.GeometryVisualization{}, f.visualizationFailure
+		return flow360.ResourceVisualization{}, f.visualizationFailure
 	}
-	return flow360.GeometryVisualization{
+	return flow360.ResourceVisualization{
 		Manifest: json.RawMessage(`[
 			{"type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"body.bin"}}}
 		]`),
@@ -233,4 +233,87 @@ func TestStartProjectSyncJoinsConcurrentRequests(t *testing.T) {
 			t.Fatalf("%s synchronized %d times, want once", key, client.calls[key])
 		}
 	}
+}
+
+func TestSyncProjectWritesVisualizationForAllResourceTypes(t *testing.T) {
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {
+				ID:     "geo-1",
+				Type:   "Geometry",
+				Info:   json.RawMessage(`{"project_id":"prj-1"}`),
+				Errors: map[string]string{},
+			},
+			"SurfaceMesh/sm-1": {
+				ID:     "sm-1",
+				Type:   "SurfaceMesh",
+				Info:   json.RawMessage(`{"project_id":"prj-1"}`),
+				Errors: map[string]string{},
+			},
+			"Case/case-1": {
+				ID:     "case-1",
+				Type:   "Case",
+				Info:   json.RawMessage(`{"project_id":"prj-1"}`),
+				Errors: map[string]string{},
+			},
+		},
+		failures: map[string]error{},
+	}
+	// Override items to include SurfaceMesh
+	itemsClient := &fakeProjectSyncClientWithItems{
+		fakeProjectSyncClient: client,
+		items:                 json.RawMessage(`{"items":[{"id":"geo-1","type":"Geometry"},{"id":"sm-1","type":"SurfaceMesh"},{"id":"case-1","type":"Case"}]}`),
+	}
+	app := newProjectSyncTestServer(t, itemsClient)
+
+	manifest := app.syncProject(t.Context(), "prj-1", itemsClient)
+	if manifest.Status != projectmirror.StatusCompleted {
+		t.Fatalf("unexpected manifest %#v", manifest)
+	}
+	if manifest.TotalResources != 3 || manifest.SyncedResources != 3 {
+		t.Fatalf("unexpected progress %#v", manifest)
+	}
+	projectDir, err := app.mirror.ProjectDir("prj-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify visualization files exist for all resource types
+	for _, resource := range []struct {
+		resourceType string
+		resourceID   string
+	}{
+		{"Geometry", "geo-1"},
+		{"SurfaceMesh", "sm-1"},
+		{"Case", "case-1"},
+	} {
+		for _, relative := range []string{
+			filepath.Join("resources", resource.resourceType, resource.resourceID, "visualize", "manifest", "manifest.json"),
+			filepath.Join("resources", resource.resourceType, resource.resourceID, "visualize", "manifest", "body.bin"),
+		} {
+			if _, err := os.Stat(filepath.Join(projectDir, relative)); err != nil {
+				t.Fatalf("%s visualization %s is missing: %v", resource.resourceType, relative, err)
+			}
+		}
+		// Verify checksum is populated in artifacts
+		key := resource.resourceType + "/" + resource.resourceID
+		artifacts := manifest.Resources[key].Artifacts
+		if len(artifacts) == 0 {
+			t.Fatalf("%s has no artifacts", key)
+		}
+		for artifactKey, artifact := range artifacts {
+			if artifact.Checksum == "" {
+				t.Fatalf("%s artifact %q has no checksum", key, artifactKey)
+			}
+		}
+	}
+}
+
+// fakeProjectSyncClientWithItems wraps fakeProjectSyncClient with custom items response.
+type fakeProjectSyncClientWithItems struct {
+	*fakeProjectSyncClient
+	items json.RawMessage
+}
+
+func (f *fakeProjectSyncClientWithItems) ProjectItems(context.Context, string) (json.RawMessage, error) {
+	return f.items, nil
 }

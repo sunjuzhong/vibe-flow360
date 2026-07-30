@@ -1321,6 +1321,49 @@ button { color: inherit; }
   font-family: 'DM Mono';
   font-size: 7px;
 }
+.viewer-field-panel {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgb(255 255 255 / 88%);
+  border: 1px solid #e0e1da;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(39 46 31 / 8%);
+  font-size: 9px;
+  color: #545b4c;
+}
+.viewer-field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.viewer-field-label select {
+  font-size: 9px;
+  padding: 2px 4px;
+  border: 1px solid #d5d7ce;
+  border-radius: 4px;
+  background: #fff;
+  color: #3f443a;
+}
+.viewer-colormap-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'DM Mono';
+  font-size: 7px;
+}
+.viewer-colormap-gradient {
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid #d5d7ce;
+}
 .viewer-spinner {
   width: 24px;
   height: 24px;

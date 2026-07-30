@@ -1,10 +1,13 @@
 import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, safeUVFBufferPath } from './parser'
-import type { UVFAsset, UVFBufferSection, UVFEntry, UVFLoadProgress } from './types'
+import { sampleColormap, type ColormapName } from './colormap'
+import type { UVFAsset, UVFBuffer, UVFBufferSection, UVFEntry, UVFFieldInfo, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = 25 * 1024 * 1024
 const maxBufferFiles = 10
+
+const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
 
 type LoadOptions = {
   signal?: AbortSignal
@@ -50,6 +53,46 @@ export class Flow360UVFLoader {
   }
 }
 
+export function extractFieldCatalog(entries: UVFEntry[], lodLevel?: number): UVFFieldInfo[] {
+  const fieldMap = new Map<string, { min: number; max: number; kind: 'scalar' | 'vector' }>()
+  for (const entry of entries) {
+    if (entry.type !== 'SolidGeometry') continue
+    const buffers = entry.resources?.buffers
+    if (!buffers) continue
+    let bufferInfo: UVFBuffer
+    if (buffers.type === 'lod') {
+      const lod = buffers as UVFLOD
+      const level = lodLevel ?? lod.default ?? 0
+      bufferInfo = lod.levels?.[level]
+      if (!bufferInfo) continue
+    } else {
+      bufferInfo = buffers as UVFBuffer
+    }
+    const bounds = bufferInfo.bounds ?? {}
+    for (const section of bufferInfo.sections) {
+      if (STRUCTURAL_SECTIONS.has(section.name)) continue
+      if (section.dType !== 'float32') continue
+      const existing = fieldMap.get(section.name)
+      const sectionBounds = bounds[section.name]
+      const sMin = sectionBounds?.[0] ?? 0
+      const sMax = sectionBounds?.[1] ?? 0
+      if (existing) {
+        existing.min = Math.min(existing.min, sMin)
+        existing.max = Math.max(existing.max, sMax)
+      } else {
+        fieldMap.set(section.name, {
+          min: sMin,
+          max: sMax,
+          kind: section.dimension >= 3 ? 'vector' : 'scalar',
+        })
+      }
+    }
+  }
+  return Array.from(fieldMap.entries())
+    .map(([name, info]) => ({ name, ...info }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 export function buildUVFAsset(
   entries: UVFEntry[],
   buffers: Map<string, ArrayBuffer>,
@@ -63,6 +106,17 @@ export function buildUVFAsset(
   let vertices = 0
   let triangles = 0
 
+  const fields = extractFieldCatalog(entries, lodLevel)
+
+  let lodLevels = 1
+  for (const entry of entries) {
+    if (entry.type !== 'SolidGeometry') continue
+    const buffers = entry.resources?.buffers
+    if (buffers?.type === 'lod') {
+      lodLevels = Math.max(lodLevels, (buffers as UVFLOD).levels?.length ?? 1)
+    }
+  }
+
   for (const solid of entries.filter((entry) => entry.type === 'SolidGeometry')) {
     const bufferInfo = resolveUVFBuffer(solid, lodLevel)
     const raw = buffers.get(bufferInfo.path)
@@ -71,11 +125,13 @@ export function buildUVFAsset(
     const normalSection = findSection(bufferInfo.sections, 'normal')
     const indexSection = findSection(bufferInfo.sections, 'indices')
     const edgeSection = findSection(bufferInfo.sections, 'edgePosition')
+    const elementGroupSection = findSection(bufferInfo.sections, 'elementGroupId')
     if (!positionSection) throw new Error(`SolidGeometry ${solid.id} has no position section`)
     const positions = floatSection(raw, positionSection)
     const normals = normalSection ? floatSection(raw, normalSection) : null
     const indices = indexSection ? uintSection(raw, indexSection) : null
     const edgePositions = edgeSection ? floatSection(raw, edgeSection) : null
+    const elementGroupIds = elementGroupSection ? uintSection(raw, elementGroupSection) : null
     vertices += positions.length / 3
 
     for (const faceID of solid.attributions?.faces ?? []) {
@@ -93,6 +149,12 @@ export function buildUVFAsset(
         geometry.computeVertexNormals()
       }
       if (faceIndices) geometry.setIndex(new THREE.BufferAttribute(faceIndices, 1))
+      if (elementGroupIds) {
+        geometry.setAttribute(
+          'elementGroupId',
+          new THREE.BufferAttribute(elementGroupIds, 1),
+        )
+      }
       const faceTriangles = faceIndices
         ? Math.floor(faceIndices.length / 3)
         : ranges.reduce((count, range) => count + Math.floor((range.endIndex - range.startIndex) / 9), 0)
@@ -102,6 +164,7 @@ export function buildUVFAsset(
         transparent: true,
         opacity: face.properties?.alpha ?? 0.92,
         shininess: 35,
+        vertexColors: false,
       })
       const mesh = new THREE.Mesh(geometry, material)
       mesh.name = face.name || face.id
@@ -142,6 +205,9 @@ export function buildUVFAsset(
     edges,
     vertices,
     triangles,
+    fields,
+    lodLevels,
+    currentLOD: lodLevel ?? 0,
     dispose: () => {
       root.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
@@ -152,6 +218,72 @@ export function buildUVFAsset(
       })
     },
   }
+}
+
+export function applyFieldColoring(
+  asset: UVFAsset,
+  fieldName: string | null,
+  colormap: ColormapName = 'viridis',
+): void {
+  const field = fieldName ? asset.fields.find((f) => f.name === fieldName) : null
+  asset.object.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return
+    if (object.userData.uvfType !== 'Face') return
+    const geometry = object.geometry
+    const material = object.material as THREE.MeshPhongMaterial
+    const positionAttr = geometry.getAttribute('position')
+    if (!positionAttr) return
+    if (field) {
+      const fieldSection = findSectionByName(geometry, fieldName)
+      if (fieldSection) {
+        const vertexCount = positionAttr.count
+        const colors = new Float32Array(vertexCount * 3)
+        const range = field.max - field.min || 1
+        for (let i = 0; i < vertexCount; i++) {
+          const value = fieldSection[i] ?? 0
+          const t = (value - field.min) / range
+          const color = sampleColormap(t, colormap)
+          colors[i * 3] = color.r
+          colors[i * 3 + 1] = color.g
+          colors[i * 3 + 2] = color.b
+        }
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+        material.vertexColors = true
+        material.needsUpdate = true
+      }
+    } else {
+      if (geometry.getAttribute('color')) {
+        geometry.deleteAttribute('color')
+      }
+      material.vertexColors = false
+      material.needsUpdate = true
+    }
+  })
+}
+
+export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
+  asset.object.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return
+    if (object.userData.uvfType !== 'Face') return
+    const material = object.material as THREE.MeshPhongMaterial
+    material.wireframe = visible
+    material.needsUpdate = true
+  })
+}
+
+export function setGroupVisibility(asset: UVFAsset, groupId: string, visible: boolean): void {
+  asset.object.traverse((object) => {
+    if (object.userData.groupId !== groupId) return
+    object.visible = visible
+  })
+}
+
+function findSectionByName(geometry: THREE.BufferGeometry, fieldName: string): Float32Array | null {
+  const attr = geometry.getAttribute(fieldName)
+  if (attr && attr instanceof THREE.BufferAttribute) {
+    return attr.array as Float32Array
+  }
+  return null
 }
 
 function findSection(sections: UVFBufferSection[], name: string) {

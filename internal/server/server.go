@@ -1363,11 +1363,12 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if resourceType == "Geometry" && s.mirror != nil {
-		manifest, manifestErr := s.mirror.GeometryVisualizationManifest(resourceID)
+	if s.mirror != nil {
+		manifest, manifestErr := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
 		if manifestErr == nil {
 			assetURL := fmt.Sprintf(
-				"/api/flow360/resources/Geometry/%s/visualization/manifest.json",
+				"/api/flow360/resources/%s/%s/visualization/manifest.json",
+				resourceType,
 				resourceID,
 			)
 			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)
@@ -1404,12 +1405,12 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if resourceType != "Geometry" || s.mirror == nil {
+	if s.mirror == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "visualization asset is unavailable"})
 		return
 	}
 	relative := strings.TrimPrefix(c.Param("asset_path"), "/")
-	payload, err := s.mirror.GeometryVisualizationFile(resourceID, relative)
+	payload, err := s.mirror.ResourceVisualizationFile(resourceType, resourceID, relative)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "visualization asset is unavailable"})

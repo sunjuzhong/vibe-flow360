@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -210,5 +211,104 @@ func TestStoreRejectsTraversalAndInvalidJSON(t *testing.T) {
 	}
 	if err := store.PutResource("prj-1", "Case", "case-1", json.RawMessage(`invalid`)); err == nil {
 		t.Fatal("expected invalid JSON rejection")
+	}
+}
+
+func TestStorePutResourceVisualizationSupportsAllResourceTypes(t *testing.T) {
+	store, err := New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage(`[{"type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"mesh.bin"}}}]`)
+	bins := map[string][]byte{"mesh.bin": {10, 20, 30}}
+
+	for _, resourceType := range []string{"Geometry", "SurfaceMesh", "VolumeMesh", "Case"} {
+		resourceID := "res-" + strings.ToLower(resourceType)
+		artifacts, err := store.PutResourceVisualization("prj-1", resourceType, resourceID, manifest, bins, 0)
+		if err != nil {
+			t.Fatalf("PutResourceVisualization(%s) failed: %v", resourceType, err)
+		}
+		if len(artifacts) != 2 {
+			t.Fatalf("%s: got %d artifacts, want 2", resourceType, len(artifacts))
+		}
+		// Verify checksum is populated
+		for key, artifact := range artifacts {
+			if artifact.Checksum == "" {
+				t.Fatalf("%s: artifact %q has no checksum", resourceType, key)
+			}
+			if artifact.SyncStatus == "" {
+				t.Fatalf("%s: artifact %q has no sync_status", resourceType, key)
+			}
+		}
+	}
+
+	// Verify manifest can be read back for each type
+	for _, resourceType := range []string{"Geometry", "SurfaceMesh", "VolumeMesh", "Case"} {
+		resourceID := "res-" + strings.ToLower(resourceType)
+		got, err := store.ResourceVisualizationManifest(resourceType, resourceID)
+		if err != nil {
+			t.Fatalf("ResourceVisualizationManifest(%s) failed: %v", resourceType, err)
+		}
+		var gotValue, wantValue any
+		if err := json.Unmarshal(got, &gotValue); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(manifest, &wantValue); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(gotValue, wantValue) {
+			t.Fatalf("%s: manifest changed", resourceType)
+		}
+	}
+
+	// Verify bin can be read back for each type
+	for _, resourceType := range []string{"Geometry", "SurfaceMesh", "VolumeMesh", "Case"} {
+		resourceID := "res-" + strings.ToLower(resourceType)
+		got, err := store.ResourceVisualizationFile(resourceType, resourceID, "mesh.bin")
+		if err != nil {
+			t.Fatalf("ResourceVisualizationFile(%s) failed: %v", resourceType, err)
+		}
+		if !bytes.Equal(got, []byte{10, 20, 30}) {
+			t.Fatalf("%s: unexpected bin %v", resourceType, got)
+		}
+	}
+}
+
+func TestStoreResourceVisualizationRejectsUnsupportedType(t *testing.T) {
+	store, err := New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PutResourceVisualization("prj-1", "Unknown", "res-1", json.RawMessage(`[]`), nil, 0); err == nil {
+		t.Fatal("expected unsupported resource type rejection")
+	}
+	if _, err := store.ResourceVisualizationManifest("Unknown", "res-1"); err == nil {
+		t.Fatal("expected unsupported resource type rejection on read")
+	}
+	if _, err := store.ResourceVisualizationFile("Unknown", "res-1", "manifest.json"); err == nil {
+		t.Fatal("expected unsupported resource type rejection on file read")
+	}
+}
+
+func TestStoreResourceVisualizationChecksumIsDeterministic(t *testing.T) {
+	store, err := New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage(`[{"type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"body.bin"}}}]`)
+	bins := map[string][]byte{"body.bin": {1, 2, 3, 4}}
+	first, err := store.PutResourceVisualization("prj-1", "SurfaceMesh", "sm-1", manifest, bins, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write again with same content
+	second, err := store.PutResourceVisualization("prj-1", "SurfaceMesh", "sm-1", manifest, bins, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range first {
+		if first[key].Checksum != second[key].Checksum {
+			t.Fatalf("checksum mismatch for %q: %s vs %s", key, first[key].Checksum, second[key].Checksum)
+		}
 	}
 }
