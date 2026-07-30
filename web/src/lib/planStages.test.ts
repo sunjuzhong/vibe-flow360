@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest'
+import {
+  downstreamStages,
+  hasPath,
+  mergeStagePatches,
+  stageForPath,
+  unwrapSimulationParams,
+} from './planStages'
+
+describe('stage-aware simulation planning', () => {
+  it('derives exactly the downstream stages selected by Run up to', () => {
+    expect(downstreamStages('Geometry', 'surface-mesh')).toEqual(['SurfaceMesh'])
+    expect(downstreamStages('Geometry', 'case')).toEqual(['SurfaceMesh', 'VolumeMesh', 'Case'])
+    expect(downstreamStages('SurfaceMesh', 'case')).toEqual(['VolumeMesh', 'Case'])
+    expect(downstreamStages('VolumeMesh', 'case')).toEqual(['Case'])
+    expect(downstreamStages('Case', 'case')).toEqual(['Case'])
+  })
+
+  it('deep-merges overlapping meshing defaults without losing either stage', () => {
+    expect(mergeStagePatches(
+      ['SurfaceMesh', 'VolumeMesh'],
+      {
+        SurfaceMesh: { meshing: { defaults: { surface_max_edge_length: 0.1 } } },
+        VolumeMesh: { meshing: { defaults: { boundary_layer_growth_rate: 1.2 } } },
+      },
+      { meshing: { refinement_factor: 1.1 } },
+    )).toEqual({
+      meshing: {
+        defaults: {
+          surface_max_edge_length: 0.1,
+          boundary_layer_growth_rate: 1.2,
+        },
+        refinement_factor: 1.1,
+      },
+    })
+  })
+
+  it('reads wrapped Flow360 SimulationParams and assigns paths to stages', () => {
+    const params = unwrapSimulationParams({
+      simulation_params: { operating_condition: { alpha: 2 }, meshing: { defaults: {} } },
+    })
+    expect(hasPath(params, 'operating_condition.alpha')).toBe(true)
+    expect(stageForPath('meshing.defaults.surface_max_edge_length')).toBe('SurfaceMesh')
+    expect(stageForPath('meshing.defaults.boundary_layer_growth_rate')).toBe('VolumeMesh')
+    expect(stageForPath('models.0.type')).toBe('Case')
+  })
+})

@@ -615,6 +615,7 @@ export default function ProjectPage() {
           onClose={() => setPlanOpen(false)}
           project={project}
           resource={selected}
+          detail={detail}
           onSubmitted={() => {
             void loadProject()
           }}

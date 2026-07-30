@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   CircleDot,
   Clock3,
@@ -16,7 +17,18 @@ import {
   X,
 } from 'lucide-react'
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type ProjectInfo, type ResourceNode, type SimulationPlan } from '../api/client'
+import { api, type ProjectInfo, type ResourceDetail, type ResourceNode, type SimulationPlan } from '../api/client'
+import {
+  compactParameterValue,
+  downstreamStages,
+  hasPath,
+  mergeStagePatches,
+  stageDefinitions,
+  stageForPath,
+  unwrapSimulationParams,
+  valueAtPath,
+  type SimulationStage,
+} from '../lib/planStages'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import SchemaFormDialog from './SchemaForm'
 
@@ -60,17 +72,44 @@ const errorCategoryLabels: Record<string, string> = {
   double_submit: 'Double-submit blocked',
 }
 
+function parsePatch(label: string, value: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value)
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error(`${label} patch must be a JSON object`)
+  }
+  return parsed as Record<string, unknown>
+}
+
+function safePatch(value: string): Record<string, unknown> {
+  try {
+    return parsePatch('Stage', value)
+  } catch {
+    return {}
+  }
+}
+
+function parameterLabel(path: string) {
+  return path
+    .split('.')
+    .slice(-2)
+    .join(' · ')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 export default function PlanPanel({
   open,
   onClose,
   project,
   resource,
+  detail,
   onSubmitted,
 }: {
   open: boolean
   onClose: () => void
   project: ProjectInfo
   resource: ResourceNode
+  detail: ResourceDetail | null
   onSubmitted: () => void
 }) {
   const options = targetOptions[resource.type] ?? []
@@ -80,7 +119,12 @@ export default function PlanPanel({
   const [name, setName] = useState('')
   const [intent, setIntent] = useState('')
   const [target, setTarget] = useState<SimulationPlan['target']>(options[0]?.value ?? 'case')
-  const [patch, setPatch] = useState('{}')
+  const [stagePatches, setStagePatches] = useState<Record<SimulationStage, string>>({
+    SurfaceMesh: '{}',
+    VolumeMesh: '{}',
+    Case: '{}',
+  })
+  const [advancedPatch, setAdvancedPatch] = useState('{}')
   const [reviewed, setReviewed] = useState(false)
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -106,7 +150,8 @@ export default function PlanPanel({
     setName(`${resource.name} · ${options[0]?.label ?? 'Case'}`)
     setIntent('')
     setTarget(options[0]?.value ?? 'case')
-    setPatch('{}')
+    setStagePatches({ SurfaceMesh: '{}', VolumeMesh: '{}', Case: '{}' })
+    setAdvancedPatch('{}')
     setReviewed(false)
     setExecuteConfirmed(false)
     setSchemaFormOpen(false)
@@ -130,6 +175,14 @@ export default function PlanPanel({
     selected?.preflight?.valid
     && selected.preflight.validated_revision === selected.revision,
   )
+  const activeStages = useMemo(
+    () => downstreamStages(resource.type, target),
+    [resource.type, target],
+  )
+  const baselineParams = useMemo(
+    () => unwrapSimulationParams(detail?.simulation_params),
+    [detail?.simulation_params],
+  )
 
   const createPlan = async (event: FormEvent) => {
     event.preventDefault()
@@ -137,9 +190,14 @@ export default function PlanPanel({
     setError('')
     let parsedPatch: Record<string, unknown>
     try {
-      parsedPatch = JSON.parse(patch)
+      const parsedStages = Object.fromEntries(activeStages.map((stage) => [
+        stage,
+        parsePatch(`${stageDefinitions[stage].label} step`, stagePatches[stage]),
+      ])) as Partial<Record<SimulationStage, Record<string, unknown>>>
+      const parsedAdvanced = parsePatch('Advanced', advancedPatch)
+      parsedPatch = mergeStagePatches(activeStages, parsedStages, parsedAdvanced)
       if (!parsedPatch || Array.isArray(parsedPatch) || typeof parsedPatch !== 'object') {
-        throw new Error('Patch must be a JSON object')
+        throw new Error('The combined patch must be a JSON object')
       }
     } catch (cause) {
       setError(`Invalid SimulationParams patch: ${String(cause).replace('Error: ', '')}`)
@@ -335,11 +393,100 @@ export default function PlanPanel({
                   <span>Engineering intent</span>
                   <textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="What decision should this run support?" required />
                 </label>
-                <label>
-                  <span>SimulationParams JSON merge patch</span>
-                  <textarea className="plan-code-input" value={patch} onChange={(event) => setPatch(event.target.value)} spellCheck={false} />
-                  <small>Use {'{}'} to reuse the current parameters unchanged. Small changes such as angle of attack or velocity are safest here.</small>
-                </label>
+                <div className="plan-stage-workflow">
+                  <div className="plan-stage-workflow-heading">
+                    <span>Parameters by execution step</span>
+                    <small>Generated from Flow360 SimulationParams stage relevance. Existing values remain inherited until changed.</small>
+                  </div>
+                  <div className="plan-source-context">
+                    <span className="plan-stage-number">0</span>
+                    <div>
+                      <small>READ-ONLY SOURCE</small>
+                      <strong>{resource.type.replace('Mesh', ' Mesh')} · {resource.name}</strong>
+                      <em>{Object.keys(baselineParams).length ? 'SimulationParams baseline loaded' : 'Baseline will be loaded during compile'}</em>
+                    </div>
+                  </div>
+                  {activeStages.map((stage, index) => {
+                    const definition = stageDefinitions[stage]
+                    const stagePatch = safePatch(stagePatches[stage])
+                    return (
+                      <section className="plan-stage-card" key={stage}>
+                        <header>
+                          <span className="plan-stage-number">{index + 1}</span>
+                          <div>
+                            <small>RUN STEP {index + 1}</small>
+                            <strong>{definition.label}</strong>
+                            <em>{definition.purpose}</em>
+                          </div>
+                        </header>
+                        <div className="plan-stage-groups">
+                          {definition.groups.map((group) => {
+                            const modifiedPath = group.paths.find((path) => hasPath(stagePatch, path))
+                            const inheritedPath = group.paths.find((path) => hasPath(baselineParams, path))
+                            const status = modifiedPath ? 'modified' : inheritedPath ? 'inherited' : 'unset'
+                            const configuredCount = group.paths.filter((path) =>
+                              hasPath(stagePatch, path) || hasPath(baselineParams, path),
+                            ).length
+                            return (
+                              <div key={group.label}>
+                                <span>
+                                  <strong>{group.label}</strong>
+                                  <small>{group.description}</small>
+                                </span>
+                                <span className={`plan-parameter-state ${status}`}>
+                                  {status === 'modified' ? 'Changed' : status === 'inherited' ? 'Inherited' : 'Not set'}
+                                </span>
+                                <code>{configuredCount}/{group.paths.length} set</code>
+                                <div className="plan-stage-field-list">
+                                  {group.paths.map((path) => {
+                                    const modified = hasPath(stagePatch, path)
+                                    const inherited = hasPath(baselineParams, path)
+                                    const value = modified
+                                      ? valueAtPath(stagePatch, path)
+                                      : valueAtPath(baselineParams, path)
+                                    return (
+                                      <span key={path}>
+                                        <code title={path}>{parameterLabel(path)}</code>
+                                        <em className={modified ? 'modified' : inherited ? 'inherited' : 'unset'}>
+                                          {compactParameterValue(value)}
+                                        </em>
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <details className="plan-stage-editor">
+                          <summary><ChevronDown size={13} /> Change {definition.label} parameters</summary>
+                          <label>
+                            <span>{definition.label} merge patch</span>
+                            <textarea
+                              className="plan-code-input"
+                              value={stagePatches[stage]}
+                              onChange={(event) => setStagePatches((current) => ({
+                                ...current,
+                                [stage]: event.target.value,
+                              }))}
+                              placeholder={JSON.stringify(definition.example, null, 2)}
+                              spellCheck={false}
+                            />
+                            <small>Only parameters for this execution step belong here. Flow360 schema preflight remains authoritative.</small>
+                          </label>
+                        </details>
+                      </section>
+                    )
+                  })}
+                  <details className="plan-stage-editor plan-advanced-editor">
+                    <summary><Code2 size={13} /> Advanced SimulationParams patch</summary>
+                    <label>
+                      <span>Additional JSON merge patch</span>
+                      <textarea className="plan-code-input" value={advancedPatch} onChange={(event) => setAdvancedPatch(event.target.value)} spellCheck={false} />
+                      <small>Advanced values override step patches. Private Flow360 attributes remain blocked.</small>
+                    </label>
+                  </details>
+                </div>
                 {error && <div className="plan-error"><AlertCircle size={14} />{error}</div>}
                 <div className="plan-form-actions">
                   <button type="button" onClick={onClose} disabled={loading || !!submittingAction}>Cancel</button>
@@ -362,10 +509,24 @@ export default function PlanPanel({
                   <span className={`plan-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
                 </div>
 
-                <div className="plan-route">
-                  <span><small>Source</small><strong>{selected.source_type}</strong><em>{selected.source_name}</em></span>
-                  <ArrowRight size={16} />
-                  <span><small>Run up to</small><strong>{selected.target.replace('-', ' ')}</strong><em>new branch</em></span>
+                <div className="plan-route plan-stage-route">
+                  <span><small>Read-only source</small><strong>{selected.source_type}</strong><em>{selected.source_name}</em></span>
+                  {downstreamStages(selected.source_type, selected.target).map((stage) => {
+                    const issueCount = selected.preflight?.issues.filter((issue) =>
+                      issue.stages?.includes(stage) || (issue.path && stageForPath(issue.path) === stage),
+                    ).length ?? 0
+                    const changeCount = selected.differences.filter((difference) => stageForPath(difference.path) === stage).length
+                    return (
+                      <div className="plan-route-step" key={stage}>
+                        <ArrowRight size={16} />
+                        <span>
+                          <small>Run step</small>
+                          <strong>{stageDefinitions[stage].label}</strong>
+                          <em>{issueCount ? `${issueCount} required` : `${changeCount} change${changeCount === 1 ? '' : 's'}`}</em>
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 <section className="plan-review-section">
