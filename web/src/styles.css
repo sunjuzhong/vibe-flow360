@@ -2734,7 +2734,15 @@ button { color: inherit; }
 }
 
 .project-drawer-left { left: 0; width: min(400px, 96vw); overflow: hidden; border-right: 1px solid #d4d6ce; }
-.project-drawer-right { right: 0; width: min(570px, 96vw); overflow-x: hidden; overflow-y: auto; border-left: 1px solid #d4d6ce; }
+.project-drawer-right {
+  right: 0;
+  width: min(570px, 96vw);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-left: 1px solid #d4d6ce;
+}
 .project-drawer .workbench-panel-title {
   position: sticky;
   z-index: 2;
@@ -2767,11 +2775,13 @@ button { color: inherit; }
 .project-drawer-left .resource-type-filters { width: 100%; }
 .project-drawer-left .resource-view-mode { width: 100%; }
 .project-drawer-left .resource-view-mode button { flex: 1 1 0; }
+.project-drawer-right > .inspector-section,
+.project-drawer-right > .resource-detail-card { flex: 0 0 auto; }
 .project-drawer-right .resource-detail-card {
   width: 100%;
   max-width: none;
   min-height: 0;
-  margin: 0;
+  margin: 0 0 max(20px, env(safe-area-inset-bottom));
   border-width: 1px 0 0;
   border-radius: 0;
 }
