@@ -45,12 +45,75 @@ type ResourceDetail struct {
 
 func NewClient() *Client {
 	return &Client{
-		Binary:      "flow360",
+		Binary:      resolveFlow360Binary(),
 		Timeout:     20 * time.Second,
 		Profile:     firstNonEmpty(os.Getenv("VIBESIM_FLOW360_PROFILE"), "default"),
 		Environment: strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_ENV")),
 		APIKey:      firstNonEmpty(os.Getenv("VIBESIM_FLOW360_API_KEY"), os.Getenv("FLOW360_APIKEY")),
 	}
+}
+
+func resolveFlow360Binary() string {
+	if configured := strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_BINARY")); configured != "" {
+		return configured
+	}
+	if python := strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_PYTHON")); python != "" {
+		if candidate := executableFile(filepath.Join(filepath.Dir(python), "flow360")); candidate != "" {
+			return candidate
+		}
+	}
+
+	path, err := exec.LookPath("flow360")
+	if err == nil && !isPyenvShim(path) {
+		return path
+	}
+	if candidate := pyenvFlow360Binary(); candidate != "" {
+		return candidate
+	}
+	if err == nil {
+		return path
+	}
+	return "flow360"
+}
+
+func pyenvFlow360Binary() string {
+	root := strings.TrimSpace(os.Getenv("PYENV_ROOT"))
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		root = filepath.Join(home, ".pyenv")
+	}
+	if candidate := executableFile(filepath.Join(root, "versions", "flow360", "bin", "flow360")); candidate != "" {
+		return candidate
+	}
+	matches, _ := filepath.Glob(filepath.Join(root, "versions", "*", "envs", "flow360", "bin", "flow360"))
+	for _, candidate := range matches {
+		if executable := executableFile(candidate); executable != "" {
+			return executable
+		}
+	}
+	return ""
+}
+
+func executableFile(path string) string {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
+		return ""
+	}
+	return path
+}
+
+func isPyenvShim(path string) bool {
+	clean := filepath.Clean(path)
+	if root := strings.TrimSpace(os.Getenv("PYENV_ROOT")); root != "" {
+		if filepath.Dir(clean) == filepath.Join(filepath.Clean(root), "shims") {
+			return true
+		}
+	}
+	slashed := filepath.ToSlash(clean)
+	return strings.Contains(slashed, "/.pyenv/shims/") || strings.Contains(slashed, "/pyenv/shims/")
 }
 
 func (c *Client) Status(ctx context.Context) Status {

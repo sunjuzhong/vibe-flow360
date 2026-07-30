@@ -116,6 +116,8 @@ Use a key directly:
 FLOW360_APIKEY=your-key
 VIBESIM_FLOW360_PROFILE=default
 VIBESIM_FLOW360_ENV=uat
+# Optional: bypass shell/pyenv shims in background services.
+VIBESIM_FLOW360_BINARY=/absolute/path/to/flow360
 ```
 
 Or keep the key in Flow360's own local configuration:
@@ -137,6 +139,11 @@ every subcommand, for example:
 ```text
 flow360 --profile default --uat project list --format json
 ```
+
+`VIBESIM_FLOW360_BINARY` is optional. When it is unset and `flow360` resolves
+to a pyenv shim, Vibe Flow360 looks for the real executable in pyenv's named
+`flow360` virtual environment. This keeps background services independent of
+their working directory and the global pyenv version.
 
 The API key remains server-side. It is never returned by the status API or sent
 to the React application.

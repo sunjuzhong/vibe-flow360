@@ -18,6 +18,57 @@ func TestFirstMeaningfulLinePrefersInstalledVersion(t *testing.T) {
 	}
 }
 
+func TestResolveFlow360BinaryPrefersExplicitConfiguration(t *testing.T) {
+	t.Setenv("VIBESIM_FLOW360_BINARY", "/opt/flow360/bin/flow360")
+	t.Setenv("VIBESIM_FLOW360_PYTHON", "")
+	if got := resolveFlow360Binary(); got != "/opt/flow360/bin/flow360" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestResolveFlow360BinaryBypassesPyenvShim(t *testing.T) {
+	root := t.TempDir()
+	shimDir := filepath.Join(root, "shims")
+	realBinary := filepath.Join(root, "versions", "flow360", "bin", "flow360")
+	if err := os.MkdirAll(shimDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(realBinary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(shimDir, "flow360")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(realBinary, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir)
+	t.Setenv("PYENV_ROOT", root)
+	t.Setenv("VIBESIM_FLOW360_BINARY", "")
+	t.Setenv("VIBESIM_FLOW360_PYTHON", "")
+
+	if got := resolveFlow360Binary(); got != realBinary {
+		t.Fatalf("got %q, want %q", got, realBinary)
+	}
+}
+
+func TestResolveFlow360BinaryPreservesNormalPathExecutable(t *testing.T) {
+	binDir := t.TempDir()
+	binary := filepath.Join(binDir, "flow360")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("PYENV_ROOT", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("VIBESIM_FLOW360_BINARY", "")
+	t.Setenv("VIBESIM_FLOW360_PYTHON", "")
+
+	if got := resolveFlow360Binary(); got != binary {
+		t.Fatalf("got %q, want %q", got, binary)
+	}
+}
+
 func TestCommandArgsPutGlobalOptionsBeforeSubcommand(t *testing.T) {
 	client := &Client{Profile: "secondary", Environment: "uat"}
 	got := client.commandArgs("project", "list")
