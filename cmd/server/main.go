@@ -4,8 +4,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/sjzsdu/vibe-flow360/internal/config"
-	"github.com/sjzsdu/vibe-flow360/internal/server"
+	"github.com/sunjuzhong/vibe-flow360/internal/config"
+	"github.com/sunjuzhong/vibe-flow360/internal/server"
 )
 
 func main() {

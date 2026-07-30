@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sjzsdu/vibe-flow360/internal/convergence"
+	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 )
 
 type CaseCompareInput struct {

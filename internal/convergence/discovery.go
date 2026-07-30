@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sjzsdu/vibe-flow360/internal/flow360"
+	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 )
 
 type ResultFile struct {

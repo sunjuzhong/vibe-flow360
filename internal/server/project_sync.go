@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sjzsdu/vibe-flow360/internal/flow360"
-	"github.com/sjzsdu/vibe-flow360/internal/projectmirror"
+	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
+	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 )
 
 const projectSyncWorkerCount = 3

@@ -2,6 +2,7 @@
 vibesim
 web/node_modules/
 web/dist/
+internal/server/dist/
 .env
 .vibesim/
 

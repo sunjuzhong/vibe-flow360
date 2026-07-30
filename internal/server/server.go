@@ -23,14 +23,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sjzsdu/vibe-flow360/internal/agent"
-	"github.com/sjzsdu/vibe-flow360/internal/comparison"
-	"github.com/sjzsdu/vibe-flow360/internal/convergence"
-	"github.com/sjzsdu/vibe-flow360/internal/flow360"
-	importplans "github.com/sjzsdu/vibe-flow360/internal/imports"
-	"github.com/sjzsdu/vibe-flow360/internal/plans"
-	"github.com/sjzsdu/vibe-flow360/internal/projectcache"
-	"github.com/sjzsdu/vibe-flow360/internal/projectmirror"
+	"github.com/sunjuzhong/vibe-flow360/internal/agent"
+	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
+	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
+	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
+	importplans "github.com/sunjuzhong/vibe-flow360/internal/imports"
+	"github.com/sunjuzhong/vibe-flow360/internal/plans"
+	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
+	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 )
 
 //go:embed dist

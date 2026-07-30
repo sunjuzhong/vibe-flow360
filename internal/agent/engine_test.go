@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sjzsdu/vibe-flow360/internal/plans"
+	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
 
 func setupTestEngine(t *testing.T) (*Engine, string) {
