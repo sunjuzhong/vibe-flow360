@@ -24,7 +24,7 @@ import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
-import type { UVFFieldInfo } from '../../lib/uvf-three'
+import type { UVFFieldInfo } from '../lib/uvf-three'
 
 function formatConvergenceStatus(status: string): string {
   switch (status) {

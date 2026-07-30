@@ -18,7 +18,7 @@ import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
-import type { UVFFieldInfo } from '../../lib/uvf-three'
+import type { UVFFieldInfo } from '../lib/uvf-three'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined

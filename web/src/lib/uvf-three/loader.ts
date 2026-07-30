@@ -234,7 +234,7 @@ export function applyFieldColoring(
     const positionAttr = geometry.getAttribute('position')
     if (!positionAttr) return
     if (field) {
-      const fieldSection = findSectionByName(geometry, fieldName)
+      const fieldSection = findSectionByName(geometry, field.name)
       if (fieldSection) {
         const vertexCount = positionAttr.count
         const colors = new Float32Array(vertexCount * 3)
