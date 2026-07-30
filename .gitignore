@@ -2,7 +2,8 @@
 vibesim
 web/node_modules/
 web/dist/
-internal/server/dist/
+/internal/server/dist/
+/vibe-flow360
 .env
 .vibesim/
 
