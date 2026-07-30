@@ -13,15 +13,6 @@ import (
 	"time"
 )
 
-const systemPrompt = `You are Vibe Flow360, a careful CFD copilot for Flow360.
-Help the user translate an engineering question into an auditable CFD simulation plan.
-Ask concise questions only when missing information materially changes the physics.
-Always distinguish user-provided values from assumptions.
-Never claim that a simulation was submitted, run, converged, or completed unless tool evidence is present.
-You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
-Prefer concrete sections: Understanding, Missing inputs, Proposed setup, Outputs, Validation gates.
-Reply in the user's language.`
-
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -78,20 +69,16 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 	}
 
 	model := firstNonEmpty(request.Model, s.Model)
+	systemPrompt := AgentSystemPrompt()
+	chatPrompt, _ := BuildChatPrompt(request)
+
 	messages := []Message{{Role: "system", Content: systemPrompt}}
 	for _, item := range request.History {
 		if (item.Role == "user" || item.Role == "assistant") && strings.TrimSpace(item.Content) != "" {
 			messages = append(messages, item)
 		}
 	}
-	contextLine := ""
-	if request.Geometry != "" {
-		contextLine = "\nCurrent geometry selected in the workspace: " + request.Geometry
-	}
-	if strings.TrimSpace(request.Context) != "" {
-		contextLine += "\nCurrent application context: " + strings.TrimSpace(request.Context)
-	}
-	messages = append(messages, Message{Role: "user", Content: request.Message + contextLine})
+	messages = append(messages, Message{Role: "user", Content: chatPrompt})
 
 	payload := struct {
 		Model       string    `json:"model"`
@@ -137,6 +124,95 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 		return "", errors.New("AI provider returned an empty response")
 	}
 	return result.Choices[0].Message.Content, nil
+}
+
+func (s *Service) ChatWithValidation(ctx context.Context, request ChatRequest) (string, *Action, error) {
+	rawResponse, err := s.Chat(ctx, request)
+	if err != nil {
+		return rawResponse, nil, err
+	}
+	if strings.TrimSpace(rawResponse) == "" {
+		return rawResponse, nil, errors.New("empty AI response")
+	}
+
+	action, err := ValidateAndRepair(ctx, rawResponse, s, request)
+	if err != nil {
+		return rawResponse, nil, err
+	}
+	return rawResponse, &action, nil
+}
+
+func ValidateAndRepair(ctx context.Context, rawResponse string, s *Service, request ChatRequest) (Action, error) {
+	action, err := ExtractAndValidateAction(rawResponse)
+	if err == nil {
+		return action, nil
+	}
+
+	repairPrompt := fmt.Sprintf(`Your previous response could not be parsed as a valid AgentAction v1 JSON object.
+Please respond with ONLY a valid JSON object in a fenced code block. The schema is:
+- version: "v1"
+- kind: "create-plan" or "request-missing-input"
+- message: string (required)
+- proposals: array (for create-plan)
+- questions: array (for request-missing-input)
+- warnings: array of strings
+- assumptions: array of strings
+
+Your previous response was:
+%s`, truncate(rawResponse, 2000))
+
+	model := firstNonEmpty(request.Model, s.Model)
+	systemPrompt := AgentSystemPrompt()
+	repairMessages := []Message{{Role: "system", Content: systemPrompt}}
+	repairMessages = append(repairMessages, Message{Role: "user", Content: repairPrompt})
+
+	payload := struct {
+		Model       string    `json:"model"`
+		Messages    []Message `json:"messages"`
+		Temperature float64   `json:"temperature"`
+	}{
+		Model: model, Messages: repairMessages, Temperature: 0.1,
+	}
+	body, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return Action{}, fmt.Errorf("repair marshal: %w (original parse: %v)", marshalErr, err)
+	}
+
+	req, httpErr := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if httpErr != nil {
+		return Action{}, fmt.Errorf("repair request: %w (original parse: %v)", httpErr, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	response, doErr := s.Client.Do(req)
+	if doErr != nil {
+		return Action{}, fmt.Errorf("repair call failed: %w (original parse: %v)", doErr, err)
+	}
+	defer response.Body.Close()
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if readErr != nil {
+		return Action{}, fmt.Errorf("repair read: %w (original parse: %v)", readErr, err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return Action{}, fmt.Errorf("repair returned %d: original parse: %v", response.StatusCode, err)
+	}
+
+	var result struct {
+		Choices []struct {
+			Message Message `json:"message"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(data, &result) != nil || len(result.Choices) == 0 {
+		return Action{}, fmt.Errorf("repair decode failed: original parse: %v", err)
+	}
+
+	repaired := strings.TrimSpace(result.Choices[0].Message.Content)
+	action, repairErr := ExtractAndValidateAction(repaired)
+	if repairErr != nil {
+		return Action{}, fmt.Errorf("repair also failed: %v (original: %v)", repairErr, err)
+	}
+	return action, nil
 }
 
 func providerFallback(request ChatRequest, err error) string {

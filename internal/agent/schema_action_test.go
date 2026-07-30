@@ -212,6 +212,152 @@ func TestParseAcceptsFieldWithoutProvenance(t *testing.T) {
 	}
 }
 
+func TestParseRejectsAmbiguousAction(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "Ambiguous",
+  "proposals": [
+    {
+      "id": "p1",
+      "action": "Case",
+      "target": "case",
+      "name": "test",
+      "intent": "Test",
+      "patch": {},
+      "fields": [{"key": "a", "value": 1, "provenance": "provided"}]
+    }
+  ],
+  "questions": [
+    {"field": "vel", "message": "velocity?", "urgency": "required"}
+  ]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrAmbiguousAction) {
+		t.Fatalf("expected ErrAmbiguousAction, got %v", err)
+	}
+}
+
+func TestParseRejectsCreatePlanWithoutProposals(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "create-plan",
+  "message": "No proposals"
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrMissingProposals) {
+		t.Fatalf("expected ErrMissingProposals, got %v", err)
+	}
+}
+
+func TestParseRejectsRequestMissingInputWithoutQuestions(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "request-missing-input",
+  "message": "No questions"
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrMissingQuestions) {
+		t.Fatalf("expected ErrMissingQuestions, got %v", err)
+	}
+}
+
+func TestParseRejectsQuestionWithoutFieldOrMessage(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "request-missing-input",
+  "message": "Bad question",
+  "questions": [
+    {"field": "", "message": "", "urgency": "required"}
+  ]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidQuestion) {
+		t.Fatalf("expected ErrInvalidQuestion, got %v", err)
+	}
+}
+
+func TestParseRejectsInvalidUrgency(t *testing.T) {
+	raw := `{
+  "version": "v1",
+  "kind": "request-missing-input",
+  "message": "Bad urgency",
+  "questions": [
+    {"field": "vel", "message": "velocity?", "urgency": "critical"}
+  ]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidUrgency) {
+		t.Fatalf("expected ErrInvalidUrgency, got %v", err)
+	}
+}
+
+func TestParseAcceptsValidUrgencyLevels(t *testing.T) {
+	for _, urgency := range []string{"required", "recommended", "optional"} {
+		raw := `{
+  "version": "v1",
+  "kind": "request-missing-input",
+  "message": "Valid",
+  "questions": [
+    {"field": "vel", "message": "velocity?", "urgency": "` + urgency + `"}
+  ]
+}`
+		_, err := Parse(raw)
+		if err != nil {
+			t.Errorf("urgency %q should be valid: %v", urgency, err)
+		}
+	}
+}
+
+func TestValidateWithContextPassesWithNilValidator(t *testing.T) {
+	action := Action{
+		Version: ActionVersion,
+		Kind:    ActionCreatePlan,
+		Message: "Test",
+		Proposals: []Proposal{
+			{ID: "p1", SourceType: "Case", Target: "case", Name: "test", Intent: "Test",
+				Patch: json.RawMessage(`{}`),
+				Fields: []Field{{Key: "a", Value: 1, Provenance: ProvenanceProvided}}},
+		},
+	}
+	err := ValidateWithContext(action, nil)
+	if err != nil {
+		t.Fatalf("expected no error with nil validator, got %v", err)
+	}
+}
+
+func TestValidateWithContextCallsCustomValidator(t *testing.T) {
+	action := Action{
+		Version: ActionVersion,
+		Kind:    ActionCreatePlan,
+		Message: "Test",
+		Proposals: []Proposal{
+			{ID: "p1", SourceType: "Case", Target: "case", Name: "test", Intent: "Test",
+				Patch: json.RawMessage(`{}`),
+				Fields: []Field{{Key: "a", Value: 1, Provenance: ProvenanceProvided}}},
+		},
+	}
+	customErr := errors.New("custom validation failed")
+	err := ValidateWithContext(action, func(a Action) error {
+		return customErr
+	})
+	if !errors.Is(err, customErr) {
+		t.Fatalf("expected custom error, got %v", err)
+	}
+}
+
+func TestValidateWithContextFailsOnInvalidAction(t *testing.T) {
+	action := Action{
+		Version: ActionVersion,
+		Kind:    ActionCreatePlan,
+		Message: "Test",
+	}
+	err := ValidateWithContext(action, nil)
+	if !errors.Is(err, ErrMissingProposals) {
+		t.Fatalf("expected ErrMissingProposals, got %v", err)
+	}
+}
+
 func TestMarshalRoundTrip(t *testing.T) {
 	original := Action{
 		Version: ActionVersion,

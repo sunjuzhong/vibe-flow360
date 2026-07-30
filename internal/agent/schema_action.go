@@ -76,6 +76,12 @@ var (
 	ErrInvalidJSON        = errors.New("schema: action is not valid JSON")
 	ErrIncompatibleSource = errors.New("schema: source type is incompatible with target")
 	ErrInvalidPatch       = errors.New("schema: patch must be valid JSON")
+	ErrMissingProposals   = errors.New("schema: create-plan kind requires at least one proposal")
+	ErrMissingQuestions   = errors.New("schema: request-missing-input kind requires at least one question")
+	ErrAmbiguousAction    = errors.New("schema: proposals and questions are mutually exclusive")
+	ErrInvalidQuestion    = errors.New("schema: question missing required fields")
+	ErrInvalidUrgency     = errors.New("schema: invalid question urgency")
+	ErrDangerousPatch     = errors.New("schema: patch contains potentially dangerous operations")
 )
 
 var validKinds = map[ActionKind]struct{}{
@@ -88,6 +94,12 @@ var validTargets = map[string]map[string]struct{}{
 	"SurfaceMesh": {"volume-mesh": {}, "case": {}},
 	"VolumeMesh":  {"case": {}},
 	"Case":        {"case": {}},
+}
+
+var validUrgencies = map[string]struct{}{
+	"required":    {},
+	"recommended": {},
+	"optional":    {},
 }
 
 func Parse(raw string) (Action, error) {
@@ -119,12 +131,80 @@ func Parse(raw string) (Action, error) {
 	if strings.TrimSpace(action.Message) == "" {
 		return action, ErrMissingMessage
 	}
-	for _, proposal := range action.Proposals {
-		if err := validateProposal(proposal); err != nil {
-			return action, err
+
+	if len(action.Proposals) > 0 && len(action.Questions) > 0 {
+		return action, ErrAmbiguousAction
+	}
+
+	switch action.Kind {
+	case ActionCreatePlan:
+		if len(action.Proposals) == 0 {
+			return action, ErrMissingProposals
+		}
+		for _, proposal := range action.Proposals {
+			if err := validateProposal(proposal); err != nil {
+				return action, err
+			}
+		}
+	case ActionRequestMissingInput:
+		if len(action.Questions) == 0 {
+			return action, ErrMissingQuestions
+		}
+		for _, question := range action.Questions {
+			if err := validateQuestion(question); err != nil {
+				return action, err
+			}
 		}
 	}
+
 	return action, nil
+}
+
+func validateQuestion(q Question) error {
+	if strings.TrimSpace(q.Field) == "" || strings.TrimSpace(q.Message) == "" {
+		return ErrInvalidQuestion
+	}
+	if q.Urgency != "" {
+		if _, ok := validUrgencies[strings.ToLower(q.Urgency)]; !ok {
+			return fmt.Errorf("%w: %q", ErrInvalidUrgency, q.Urgency)
+		}
+	}
+	return nil
+}
+
+func ValidateWithContext(action Action, contextValidation func(Action) error) error {
+	baseErr := validateActionSelfConsistency(action)
+	if baseErr != nil {
+		return baseErr
+	}
+	if contextValidation != nil {
+		return contextValidation(action)
+	}
+	return nil
+}
+
+func validateActionSelfConsistency(action Action) error {
+	if action.Kind == ActionCreatePlan {
+		if len(action.Proposals) == 0 {
+			return ErrMissingProposals
+		}
+		for _, p := range action.Proposals {
+			if err := validateProposal(p); err != nil {
+				return err
+			}
+		}
+	}
+	if action.Kind == ActionRequestMissingInput {
+		if len(action.Questions) == 0 {
+			return ErrMissingQuestions
+		}
+		for _, q := range action.Questions {
+			if err := validateQuestion(q); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func validateProposal(p Proposal) error {

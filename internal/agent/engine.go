@@ -352,31 +352,17 @@ func (e *Engine) buildProposalsWithAI(intervention Intervention) []Proposal {
 	return e.buildProposals(intervention)
 }
 
-// buildProposalsFromAI calls the AI service to generate proposals
+// buildProposalsFromAI calls the AI service to generate proposals using the
+// enriched recovery prompt with SimulationParams, Flow360 schema, boundary
+// groups, and current patch context. The response is validated against the
+// AgentAction v1 contract and repaired once if necessary.
 func (e *Engine) buildProposalsFromAI(intervention Intervention) []Proposal {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	evidenceSummary := summarizeEvidence(intervention.Evidence)
-	prompt := fmt.Sprintf(`You are a Flow360 simulation recovery agent. Analyze this error and provide structured fix proposals.
-
-Error type: %s
-Reason: %s
-Evidence: %s
-Diagnosis: %s
-
-For each proposal, provide:
-- A descriptive name
-- The target resource type
-- Specific parameter changes as valid JSON
-- Confidence level (high/medium/low)
-
-Respond with a JSON array of proposals.`,
-		intervention.Type,
-		intervention.Reason,
-		evidenceSummary,
-		formatDiagnosisForPrompt(intervention.Diagnosis),
-	)
+	prompt, _ := BuildRecoveryPrompt(RecoveryPromptInput{
+		Intervention: intervention,
+	})
 
 	chatReq := ChatRequest{
 		Message: prompt,
@@ -384,14 +370,61 @@ Respond with a JSON array of proposals.`,
 			intervention.ProjectID, intervention.ResourceID, intervention.PlanID),
 	}
 
-	response, err := e.ai.Chat(ctx, chatReq)
+	response, action, err := e.ai.ChatWithValidation(ctx, chatReq)
 	if err != nil || strings.TrimSpace(response) == "" {
 		return nil
+	}
+
+	if action != nil && action.Kind == ActionCreatePlan {
+		return proposalsFromAction(*action, intervention)
 	}
 
 	proposals := parseAIProposals(response, intervention)
 	if len(proposals) == 0 {
 		return nil
+	}
+	return proposals
+}
+
+// proposalsFromAction converts AgentAction v1 proposals into engine proposals
+func proposalsFromAction(action Action, intervention Intervention) []Proposal {
+	var proposals []Proposal
+	for i, p := range action.Proposals {
+		patch := p.Patch
+		if len(patch) == 0 {
+			patch = json.RawMessage(`{}`)
+		}
+		target := p.Target
+		if target == "" {
+			target = "case"
+		}
+		name := p.Name
+		if name == "" {
+			name = fmt.Sprintf("ai-proposal-%d", i+1)
+		}
+		sourceType := p.SourceType
+		if sourceType == "" {
+			sourceType = "Case"
+		}
+		proposals = append(proposals, Proposal{
+			ID:            fmt.Sprintf("ai-proposal-%d", i+1),
+			ProjectID:     intervention.ProjectID,
+			ProjectName:   intervention.ProjectName,
+			SourceID:      intervention.ResourceID,
+			SourceType:    sourceType,
+			SourceName:    intervention.ResourceType,
+			Target:        target,
+			Name:          name,
+			Intent:        p.Intent,
+			Patch:         patch,
+			BranchPreview: fmt.Sprintf("ai-fix-%s-%d", intervention.Type, i+1),
+			Fields:        p.Fields,
+			ValidationHints: func() []string {
+				hints := []string{"Review and validate before applying"}
+				hints = append(hints, p.ValidationHints...)
+				return hints
+			}(),
+		})
 	}
 	return proposals
 }
