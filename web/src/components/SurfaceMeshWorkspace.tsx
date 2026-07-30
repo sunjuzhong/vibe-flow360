@@ -7,12 +7,15 @@ import {
   Ruler,
   ScanLine,
   Triangle,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { UVFFieldInfo } from '../../lib/uvf-three'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -54,6 +57,17 @@ export default function SurfaceMeshWorkspace({
   onPlanVolumeMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [hiddenBoundaries, setHiddenBoundaries] = useState<Set<string>>(new Set())
+  const [boundaryGroups, setBoundaryGroups] = useState<string[]>([])
+  const [showAllBoundaries, setShowAllBoundaries] = useState(true)
+
+  const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
+    const meshQualityFields = fields.filter((f) =>
+      /aspect|skew|ortho|quality|size|curvature/i.test(f.name),
+    )
+    setBoundaryGroups(meshQualityFields.map((f) => f.name))
+  }, [])
+
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -99,12 +113,45 @@ export default function SurfaceMeshWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          onFieldsDiscovered={handleFieldsDiscovered}
+          toolbar={
+            boundaryGroups.length > 0 ? (
+              <>
+                <button
+                  className={showAllBoundaries ? 'active' : ''}
+                  onClick={() => {
+                    setShowAllBoundaries(!showAllBoundaries)
+                    setHiddenBoundaries(new Set())
+                  }}
+                  aria-label="Toggle all boundaries"
+                >
+                  {showAllBoundaries ? <Eye size={10} /> : <EyeOff size={10} />}
+                  All boundaries
+                </button>
+                {boundaryGroups.slice(0, 4).map((name) => (
+                  <button
+                    key={name}
+                    className={hiddenBoundaries.has(name) ? '' : 'active'}
+                    onClick={() => {
+                      const next = new Set(hiddenBoundaries)
+                      if (next.has(name)) next.delete(name)
+                      else next.add(name)
+                      setHiddenBoundaries(next)
+                      setShowAllBoundaries(false)
+                    }}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </>
+            ) : undefined
+          }
         />
-        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`}>
+        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
           <ScanLine size={13} />
           <div>
-            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Surface mesh'}</strong>
-            <span>
+            <strong id="surface-source-heading">{previewSource === 'fallback' ? 'Geometry context' : 'Surface mesh'}</strong>
+            <span id="surface-source-detail">
               {previewSource === 'fallback'
                 ? 'The SurfaceMesh render asset is unavailable; this is the parent Geometry, not the mesh.'
                 : 'Inspect surface topology, boundaries, and element quality.'}

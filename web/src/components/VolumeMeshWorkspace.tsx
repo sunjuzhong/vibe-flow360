@@ -10,12 +10,15 @@ import {
   Share2,
   Triangle,
   Volume2,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { UVFFieldInfo } from '../../lib/uvf-three'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -111,6 +114,16 @@ export default function VolumeMeshWorkspace({
   onShowLogs?: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [volumeFields, setVolumeFields] = useState<string[]>([])
+  const [activeSlice, setActiveSlice] = useState<string | null>(null)
+
+  const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
+    const sliceFields = fields.filter((f) =>
+      /slice|cell|growth|layer|zone|interface|orthog|skew/i.test(f.name),
+    )
+    setVolumeFields(sliceFields.map((f) => f.name))
+  }, [])
+
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'VolumeMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -167,12 +180,35 @@ export default function VolumeMeshWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          onFieldsDiscovered={handleFieldsDiscovered}
+          toolbar={
+            volumeFields.length > 0 ? (
+              <>
+                <button
+                  className={!activeSlice ? 'active' : ''}
+                  onClick={() => setActiveSlice(null)}
+                  aria-label="Show full mesh"
+                >
+                  <Layers size={10} /> Full
+                </button>
+                {volumeFields.slice(0, 4).map((name) => (
+                  <button
+                    key={name}
+                    className={activeSlice === name ? 'active' : ''}
+                    onClick={() => setActiveSlice(activeSlice === name ? null : name)}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </>
+            ) : undefined
+          }
         />
-        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`}>
+        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
           <ScanLine size={13} />
           <div>
-            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Volume mesh slices'}</strong>
-            <span>
+            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Volume mesh'}</strong>
+            <span aria-label="volume mesh description">
               {previewSource === 'fallback'
                 ? 'The VolumeMesh slice asset is unavailable; this is the parent Geometry, not volume cells.'
                 : 'Inspect crinkled slices, cell growth, boundary layers, and zone interfaces.'}

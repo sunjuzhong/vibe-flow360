@@ -17,13 +17,14 @@ import {
   BarChart3,
   ScanLine,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
 import type { ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { UVFFieldInfo } from '../../lib/uvf-three'
 
 function formatConvergenceStatus(status: string): string {
   switch (status) {
@@ -200,6 +201,7 @@ export default function CaseWorkspace({
   onRefresh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [caseFields, setCaseFields] = useState<string[]>([])
   const viewModel = normalizeCase(detail)
   const terminal = isTerminal(viewModel.status)
   const resultCount = detail?.results?.records?.length ?? 0
@@ -217,6 +219,10 @@ export default function CaseWorkspace({
   )
   const velocity = findMetric(viewModel.operatingPoint, ['velocity_magnitude', 'velocity', 'mach'])
 
+  const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
+    setCaseFields(fields.map((f) => f.name))
+  }, [])
+
   return (
     <section className="case-workspace cfd-stage-workspace">
       <div className="viewer-section cfd-stage-viewer case-stage-viewer">
@@ -225,12 +231,20 @@ export default function CaseWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          onFieldsDiscovered={handleFieldsDiscovered}
+          toolbar={
+            caseFields.length > 0 ? (
+              <span className="viewer-toolbar-field-hint">
+                {caseFields.length} field{caseFields.length !== 1 ? 's' : ''} available — use the field panel to color the mesh
+              </span>
+            ) : undefined
+          }
         />
-        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`}>
+        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
           <ScanLine size={13} />
           <div>
             <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Solution field'}</strong>
-            <span>
+            <span aria-label="case field description">
               {previewSource === 'fallback'
                 ? 'Case field data is not exposed as a browser asset; this Geometry anchors the result evidence.'
                 : 'Inspect Cp, y+, velocity, slices, streamlines, and vortical structures.'}

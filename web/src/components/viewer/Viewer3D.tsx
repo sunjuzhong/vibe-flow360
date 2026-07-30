@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { Flow360UVFLoader, applyFieldColoring, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import { Flow360UVFLoader, applyFieldColoring, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldInfo } from '../../lib/uvf-three'
 
 export type MeshGroupData = {
@@ -45,9 +45,13 @@ type Props = {
   state: ViewerState
   onSelectionChange?: (selection: ViewerSelection) => void
   selection?: ViewerSelection
+  wireframe?: boolean
+  onWireframeChange?: (wireframe: boolean) => void
+  onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
+  toolbar?: React.ReactNode
 }
 
-export function Viewer3D({ manifest, state, onSelectionChange, selection }: Props) {
+export function Viewer3D({ manifest, state, onSelectionChange, selection, wireframe, onWireframeChange, onFieldsDiscovered, toolbar }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -64,6 +68,8 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
   const [colormap, setColormap] = useState<ColormapName>('viridis')
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
+
+  const [wireframeOn, setWireframeOn] = useState(false)
 
   const createScene = useCallback((container: HTMLDivElement) => {
     const scene = new THREE.Scene()
@@ -137,6 +143,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
       uvfAssetRef.current = asset
       setAssetStats({ faces: asset.faces, edges: asset.edges })
       setAvailableFields(asset.fields)
+      onFieldsDiscovered?.(asset.fields)
       setSelectedField(null)
     } else {
       const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
@@ -333,6 +340,18 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
     }
   }, [selectedField, colormap])
 
+  useEffect(() => {
+    if (uvfAssetRef.current) {
+      setWireframeOverlay(uvfAssetRef.current, wireframe ?? wireframeOn)
+    }
+  }, [wireframe, wireframeOn])
+
+  const handleWireframeToggle = () => {
+    const next = !wireframeOn
+    setWireframeOn(next)
+    onWireframeChange?.(next)
+  }
+
   const visibleState = state.status === 'ready' ? assetState : state
 
   return (
@@ -368,7 +387,18 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection }: Prop
         <div className="viewer-asset-stats">
           <span>{assetStats.faces} faces</span>
           <span>{assetStats.edges} edges</span>
+          <button
+            className={`viewer-wireframe-toggle ${wireframeOn ? 'active' : ''}`}
+            onClick={handleWireframeToggle}
+            aria-label="Toggle wireframe overlay"
+            title="Toggle wireframe"
+          >
+            Wire
+          </button>
         </div>
+      )}
+      {toolbar && visibleState.status === 'ready' && (
+        <div className="viewer-toolbar-slot">{toolbar}</div>
       )}
       {availableFields.length > 0 && visibleState.status === 'ready' && (
         <div className="viewer-field-panel">
