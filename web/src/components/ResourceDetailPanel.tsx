@@ -16,9 +16,9 @@ import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
-type Tab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
+export type ResourceDetailTab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
 
-type TabDef = { id: Tab; label: string; icon: React.ComponentType<{ size?: number }>; disabled?: boolean; badge?: string }
+type TabDef = { id: ResourceDetailTab; label: string; icon: React.ComponentType<{ size?: number }>; disabled?: boolean; badge?: string }
 
 type Props = {
   detail: ResourceDetail | null
@@ -29,6 +29,7 @@ type Props = {
   onRetry: () => void
   dataSource?: 'live' | 'cache'
   cachedAt?: string
+  initialTab?: ResourceDetailTab
 }
 
 const baseTabs: TabDef[] = [
@@ -98,8 +99,9 @@ export default function ResourceDetailPanel({
   onRetry,
   dataSource = 'live',
   cachedAt = '',
+  initialTab = 'overview',
 }: Props) {
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<ResourceDetailTab>(initialTab)
   const [logs, setLogs] = useState('')
   const [logsError, setLogsError] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
@@ -130,14 +132,14 @@ export default function ResourceDetailPanel({
   }, [resourceType])
 
   useEffect(() => {
-    setTab('overview')
+    setTab(initialTab)
     setLogs('')
     setLogsError('')
     setLogsElapsed('')
     setPreviewResult(null)
     setResultError('')
     setResultAction(null)
-  }, [resourceId])
+  }, [initialTab, resourceId])
 
   const loadLogs = useCallback((force = false) => {
     const cacheKey = `${resourceType}/${resourceId}/${logsTail}`

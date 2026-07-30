@@ -2,12 +2,17 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  ChevronRight,
+  Cloud,
   GitBranch,
   GitCompare,
   GitPullRequestDraft,
+  Info,
   MessageSquareText,
+  PanelLeftOpen,
+  PanelRightOpen,
   RefreshCw,
+  Sparkles,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -24,12 +29,15 @@ import CopilotPanel from '../components/CopilotPanel'
 import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
 import PlanPanel from '../components/PlanPanel'
-import ResourceDetailPanel, { resourceStatus } from '../components/ResourceDetailPanel'
+import ResourceDetailPanel, {
+  resourceStatus,
+  type ResourceDetailTab,
+} from '../components/ResourceDetailPanel'
 import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
 import SurfaceMeshWorkspace from '../components/SurfaceMeshWorkspace'
-import TopBar from '../components/TopBar'
 import VolumeMeshWorkspace from '../components/VolumeMeshWorkspace'
 import CaseWorkspace from '../components/CaseWorkspace'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -80,7 +88,8 @@ export default function ProjectPage() {
   const [planOpen, setPlanOpen] = useState(false)
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [activePanel, setActivePanel] = useState<'resources' | 'details' | null>(null)
+  const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
   const [cacheWarning, setCacheWarning] = useState('')
@@ -90,6 +99,33 @@ export default function ProjectPage() {
   const [syncing, setSyncing] = useState(true)
   const [syncError, setSyncError] = useState('')
   const [syncNonce, setSyncNonce] = useState(0)
+  const closePanel = useCallback(() => setActivePanel(null), [])
+  const panelRef = useFocusTrap<HTMLElement>(
+    activePanel !== null,
+    closePanel,
+    'button[aria-label^="Close"]',
+  )
+
+  useEffect(() => {
+    if (!activePanel) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const focusTimer = window.setTimeout(() => {
+      panelRef.current
+        ?.querySelector<HTMLElement>('button[aria-label^="Close"]')
+        ?.focus()
+    }, 0)
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closePanel()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.removeEventListener('keydown', handleEscape)
+      previouslyFocused?.focus()
+    }
+  }, [activePanel, closePanel, panelRef])
 
   const loadProject = useCallback(async () => {
     setLoading(true)
@@ -151,6 +187,10 @@ export default function ProjectPage() {
   useEffect(() => {
     api.flow360Status().then(setFlowStatus).catch(() => setFlowStatus({ available: false }))
   }, [])
+
+  useEffect(() => {
+    void loadProject()
+  }, [loadProject])
 
   useEffect(() => {
     const handleOpenIntervention = (event: Event) => {
@@ -227,6 +267,7 @@ export default function ProjectPage() {
 
   const selectResource = (resource: ResourceNode | ProjectItem) => {
     navigate(`/projects/${projectId}/resources/${resource.id}`)
+    setActivePanel(null)
   }
 
   const stages = useMemo(() => {
@@ -289,46 +330,64 @@ export default function ProjectPage() {
 
   return (
     <div className={`project-page ${chatOpen ? 'chat-visible' : ''}`}>
-      <TopBar status={flowStatus} />
-      <header className="project-header">
-        <div className="project-breadcrumb">
-          <button className="mobile-sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle resource tree">
-            <GitBranch size={15} />
-          </button>
-          <Link to="/"><ArrowLeft size={15} /> Workspace</Link>
-          <ChevronRight size={13} />
-          <span>{project?.name || 'Project'}</span>
-        </div>
-        <div className="project-header-main">
+      <header className="project-shell-header">
+        <Link className="project-shell-brand" to="/" aria-label="Return to workspace">
+          <span><Sparkles size={16} /></span>
+          <strong>VibeSim</strong>
+        </Link>
+        <div className="project-shell-context">
+          <Link to="/" aria-label="Back to workspace"><ArrowLeft size={15} /></Link>
           <div>
-            <p className="eyebrow">FLOW360 PROJECT</p>
-            <h1>{project?.name || (loading ? 'Loading project…' : 'Project unavailable')}</h1>
-            {project && (
-              <p className="project-source-line">
-                {project.solver_version} · {items.length} resources · {project.id}
-                <span className={`project-source-badge ${projectDataSource}`}>
-                  {projectDataSource === 'cache' ? `Cached · ${new Date(projectCachedAt).toLocaleString()}` : 'Live'}
-                </span>
-              </p>
-            )}
+            <span>{project?.name || (loading ? 'Loading Project…' : 'Project')}</span>
+            <strong>{selected?.name || projectId}</strong>
           </div>
-          <div className="project-header-actions">
-            <button onClick={() => setSyncNonce((value) => value + 1)} disabled={loading || syncing}>
-              <RefreshCw size={15} className={syncing ? 'spin' : ''} /> Sync Project
+          {detail && (
+            <em className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>
+              {resourceStatus(detail)}
+            </em>
+          )}
+        </div>
+        <div className="project-shell-actions">
+          <button
+            className={activePanel === 'resources' ? 'active' : ''}
+            onClick={() => setActivePanel((panel) => panel === 'resources' ? null : 'resources')}
+            aria-expanded={activePanel === 'resources'}
+          >
+            <PanelLeftOpen size={15} /><span>Resources</span>
+          </button>
+          <button
+            className={activePanel === 'details' ? 'active' : ''}
+            onClick={() => {
+              setDetailTab('overview')
+              setActivePanel((panel) => panel === 'details' ? null : 'details')
+            }}
+            aria-expanded={activePanel === 'details'}
+          >
+            <PanelRightOpen size={15} /><span>Details</span>
+          </button>
+          <button onClick={() => setSyncNonce((value) => value + 1)} disabled={loading || syncing} title="Synchronize Project">
+            <RefreshCw size={15} className={syncing ? 'spin' : ''} /><span>Sync</span>
+          </button>
+          {selected && (
+            <button className="primary" onClick={() => { setChatOpen(false); setPlanOpen(true) }}>
+              <GitPullRequestDraft size={15} /><span>Plan</span>
             </button>
-            {selected && (
-              <button onClick={() => { setChatOpen(false); setPlanOpen(true) }}>
-                <GitPullRequestDraft size={15} /> Plan next step
-              </button>
-            )}
-            {items.some((item) => item.type === 'Case') && (
-              <button onClick={() => navigate(`/projects/${projectId}/compare`)}>
-                <GitCompare size={15} /> Compare Cases
-              </button>
-            )}
-            <button className="ai-action" onClick={() => setChatOpen(true)}>
-              <MessageSquareText size={15} /> Ask AI
+          )}
+          {items.some((item) => item.type === 'Case') && (
+            <button onClick={() => navigate(`/projects/${projectId}/compare`)} title="Compare Cases">
+              <GitCompare size={15} /><span>Compare</span>
             </button>
+          )}
+          <button className="ai" onClick={() => setChatOpen(true)}>
+            <MessageSquareText size={15} /><span>Ask AI</span>
+          </button>
+          <div className={`project-connection ${flowStatus?.available ? 'online' : ''}`} title={
+            flowStatus?.available
+              ? `${flowStatus.environment || 'production'} · ${flowStatus.profile || 'default'}`
+              : 'Flow360 offline'
+          }>
+            <span />
+            <Cloud size={13} />
           </div>
         </div>
       </header>
@@ -338,7 +397,7 @@ export default function ProjectPage() {
           <div className="project-sync-heading">
             <RefreshCw size={22} className="spin" />
             <div>
-              <strong>Synchronizing the complete Project mirror</strong>
+              <strong>Synchronizing Project</strong>
               <span>
                 {syncManifest?.current_resource
                   ? `Reading ${syncManifest.current_resource}`
@@ -355,16 +414,12 @@ export default function ProjectPage() {
             <span style={{ width: `${projectSyncProgress(syncManifest)}%` }} />
           </div>
           <div className="project-sync-counts">
-            <span>{syncManifest?.total_resources ?? '—'} total</span>
-            <span>{syncManifest?.synced_resources ?? 0} synchronized</span>
+            <span>{syncManifest?.synced_resources ?? 0}/{syncManifest?.total_resources ?? '—'} resources</span>
             <span>{syncManifest?.failed_resources ?? 0} failed</span>
           </div>
-          <small>
-            Local mirror: {syncManifest?.local_path ?? `.vibesim/projects/environment-profile/${projectId}`}
-          </small>
         </div>
       )}
-      {!syncing && loading && <div className="project-load-state"><RefreshCw size={22} className="spin" /> Loading synchronized Project resources…</div>}
+      {loading && !project && <div className="project-load-state"><RefreshCw size={22} className="spin" /> Loading Project resources…</div>}
       {!syncing && syncError && <div className="project-cache-warning"><AlertCircle size={14} />{syncError}</div>}
       {!syncing && syncManifest && Object.keys(syncManifest.failures).length > 0 && (
         <details className="project-sync-failures">
@@ -394,36 +449,48 @@ export default function ProjectPage() {
       )}
       {cacheWarning && <div className="project-cache-warning"><AlertCircle size={14} />{cacheWarning}</div>}
 
-      {!syncing && !loading && !error && project && root && selected && (
-        <div className={`project-workbench ${sidebarOpen ? 'sidebar-open' : ''}`}>
-          <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />
-          <aside className="resource-sidebar">
-            <div className="workbench-panel-title"><GitBranch size={15} /><span>Resource tree</span></div>
-            <ResourceTree root={root} items={items} selected={selected.id} onSelect={(r) => { selectResource(r); setSidebarOpen(false) }} />
+      {!loading && !error && project && root && selected && (
+        <div className="project-workbench">
+          {activePanel && <button className="project-panel-scrim" onClick={closePanel} aria-label="Close panel" />}
+          {activePanel === 'resources' && (
+          <aside ref={panelRef} className="resource-sidebar project-drawer project-drawer-left" role="dialog" aria-modal="true" aria-label="Project resources" tabIndex={-1}>
+            <div className="workbench-panel-title">
+              <GitBranch size={15} /><span>Project resources</span>
+              <button onClick={closePanel} aria-label="Close resources"><X size={15} /></button>
+            </div>
+            <ResourceTree root={root} items={items} selected={selected.id} onSelect={selectResource} />
           </aside>
+          )}
 
-          <main className="resource-workspace">
-            <div className="resource-stage-strip adaptive">
+          <main className="resource-workspace project-canvas">
+            <div className="project-canvas-toolbar">
+              <div className="canvas-resource-title">
+                <span className={`resource-type-icon type-${selected.type.toLowerCase()}`}>
+                  <ResourceIcon type={selected.type} size={17} />
+                </span>
+                <div>
+                  <strong>{selected.name}</strong>
+                  <small>{selected.type} · {selected.id}</small>
+                </div>
+              </div>
+              <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages">
               {stages.map((stage, index) => (
                 <div className={`${index === selectedStage ? 'current' : ''} ${index < selectedStage ? 'before' : ''}`} key={stage}>
                   <span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span>
                   <small>{stage.replace('Mesh', ' Mesh')}</small>
                 </div>
               ))}
-            </div>
-
-            <section className={`resource-hero resource-${selected.type.toLowerCase()}`}>
-              <div className="resource-hero-icon"><ResourceIcon type={selected.type} size={28} /></div>
-              <p className="eyebrow">SELECTED {selected.type.toUpperCase()}</p>
-              <h2>{selected.name}</h2>
-              <p>{selected.id}</p>
-              {detail && <span className={`hero-status status-${resourceStatus(detail).toLowerCase()}`}>{resourceStatus(detail)}</span>}
-              <div className="resource-real-data">
-                <div><span>{selected.children.length}</span><small>Direct children</small></div>
-                <div><span>{descendants(selected)}</span><small>Descendants</small></div>
-                <div><span>{parentItem ? 1 : 0}</span><small>Parent resource</small></div>
               </div>
-            </section>
+              <button
+                className="canvas-info-button"
+                onClick={() => {
+                  setDetailTab('overview')
+                  setActivePanel('details')
+                }}
+              >
+                <Info size={15} /> Info
+              </button>
+            </div>
 
             {selected.type === 'Geometry' && (
               <GeometryWorkspace
@@ -454,10 +521,8 @@ export default function ProjectPage() {
                   setPlanOpen(true)
                 }}
                 onShowLogs={() => {
-                  const logsEvent = new CustomEvent('flow360:show-logs', {
-                    detail: { resourceType: selected.type, resourceId: selected.id },
-                  })
-                  window.dispatchEvent(logsEvent)
+                  setDetailTab('logs')
+                  setActivePanel('details')
                 }}
               />
             )}
@@ -472,20 +537,14 @@ export default function ProjectPage() {
               />
             )}
 
-            <ResourceDetailPanel
-              detail={detail}
-              loading={detailLoading}
-              error={detailError}
-              resourceType={selected.type}
-              resourceId={selected.id}
-              onRetry={() => void loadDetail(false)}
-              dataSource={detailDataSource}
-              cachedAt={detailCachedAt}
-            />
           </main>
 
-          <aside className="resource-inspector">
-            <div className="workbench-panel-title"><span>Inspector</span></div>
+          {activePanel === 'details' && (
+          <aside ref={panelRef} className="resource-inspector project-drawer project-drawer-right" role="dialog" aria-modal="true" aria-label="Resource details" tabIndex={-1}>
+            <div className="workbench-panel-title">
+              <Info size={15} /><span>Resource details</span>
+              <button onClick={closePanel} aria-label="Close details"><X size={15} /></button>
+            </div>
             <div className="inspector-section">
               <p className="eyebrow">RESOURCE</p>
               <dl>
@@ -505,7 +564,19 @@ export default function ProjectPage() {
                 <div><dt>Tags</dt><dd>{project.tags.length ? project.tags.join(', ') : 'None'}</dd></div>
               </dl>
             </div>
+            <ResourceDetailPanel
+              detail={detail}
+              loading={detailLoading}
+              error={detailError}
+              resourceType={selected.type}
+              resourceId={selected.id}
+              onRetry={() => void loadDetail(false)}
+              dataSource={detailDataSource}
+              cachedAt={detailCachedAt}
+              initialTab={detailTab}
+            />
           </aside>
+          )}
         </div>
       )}
 
