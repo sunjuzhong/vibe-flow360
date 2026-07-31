@@ -33,6 +33,7 @@ import { errorMessage } from '../lib/errors'
 import { executionTemplate, preflightPrimaryAction } from '../lib/planPresentation'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
+import ExecutionMonitor from './ExecutionMonitor'
 import SchemaFormDialog from './SchemaForm'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
@@ -63,6 +64,7 @@ function statusLabel(status: SimulationPlan['status']) {
     submitted: 'Submitted',
     failed: 'Failed',
     reconciling: 'Reconciling',
+    completed: 'Completed',
   }[status]
 }
 
@@ -346,6 +348,17 @@ export default function PlanPanel({
       setSubmittingAction(null)
     }
   }
+
+  const updateExecutionPlan = useCallback((plan: SimulationPlan) => {
+    setSelected((current) => {
+      if (!current || current.id !== plan.id) return current
+      if (current.updated_at === plan.updated_at && current.status === plan.status) return current
+      return plan
+    })
+    setPlans((current) => current.map((item) => (
+      item.id === plan.id && (item.updated_at !== plan.updated_at || item.status !== plan.status) ? plan : item
+    )))
+  }, [])
 
   if (!open) return null
 
@@ -692,19 +705,6 @@ export default function PlanPanel({
                     )}
                   </div>
                 )}
-                {selected.status === 'reconciling' && (
-                  <div className="plan-progress"><RefreshCw size={15} className="spin" /> Reconciling with Flow360 remote state after restart…</div>
-                )}
-                {selected.status === 'submitted' && selected.remote_ids && (
-                  <section className="plan-review-section">
-                    <h3><CheckCircle2 size={15} /> Flow360 remote IDs</h3>
-                    <div className="remote-ids">
-                      {Object.entries(selected.remote_ids).map(([key, value]) => value ? (
-                        <span key={key} className="remote-id-chip"><code>{key}</code><strong>{value}</strong></span>
-                      ) : null)}
-                    </div>
-                  </section>
-                )}
                 {error && <div className="plan-error"><AlertCircle size={14} />{error}</div>}
 
                 {selected.status === 'draft' && (
@@ -738,9 +738,8 @@ export default function PlanPanel({
                   </div>
                 )}
 
-                {selected.status === 'running' && <div className="plan-progress"><RefreshCw size={15} className="spin" /> Submitting the approved plan to Flow360…</div>}
-                {selected.status === 'submitted' && (
-                  <div className="plan-success"><CheckCircle2 size={17} /><span><strong>Flow360 accepted the plan</strong><small>The Project tree is refreshing for newly created resources.</small></span></div>
+                {['running', 'submitted', 'reconciling', 'completed', 'failed'].includes(selected.status) && (
+                  <ExecutionMonitor plan={selected} onPlanUpdate={updateExecutionPlan} />
                 )}
                 <div className="plan-timestamps"><Clock3 size={12} /> Last updated {new Date(selected.updated_at).toLocaleString()}</div>
                 {schemaFormOpen && selected.preflight && (

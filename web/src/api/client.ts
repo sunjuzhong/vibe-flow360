@@ -284,7 +284,7 @@ export type SimulationPlan = {
   differences: PlanDifference[]
   validations: PlanValidation[]
   command_preview: string[]
-  status: 'draft' | 'approved' | 'running' | 'submitted' | 'failed' | 'reconciling'
+  status: 'draft' | 'approved' | 'running' | 'submitted' | 'failed' | 'reconciling' | 'completed'
   approved_at?: string
   started_at?: string
   completed_at?: string
@@ -302,6 +302,22 @@ export type SimulationPlan = {
   }
   created_at: string
   updated_at: string
+}
+
+export type PlanExecutionSnapshot = {
+  plan: SimulationPlan
+  phase: string
+  progress: number
+  resource_type?: string
+  resource_id?: string
+  remote_state?: string
+  state?: Record<string, unknown>
+  terminal: boolean
+  logs?: string
+  logs_available: boolean
+  state_error?: string
+  logs_error?: string
+  refreshed_at: string
 }
 
 export type ImportPlan = {
@@ -517,6 +533,8 @@ export const api = {
     }
     return body
   },
+  planExecution: (planId: string, tail = 120) =>
+    json<PlanExecutionSnapshot>(`/api/plans/${encodeURIComponent(planId)}/execution?tail=${tail}`),
   downloadResult: async (resourceType: string, resourceId: string, resultPath: string) => {
     const response = await fetch(
       `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/download?path=${encodeURIComponent(resultPath)}`,

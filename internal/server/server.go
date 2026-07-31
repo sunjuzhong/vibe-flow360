@@ -214,6 +214,7 @@ func (s *Server) routes() {
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)
 		api.GET("/plans/:plan_id", s.getPlan)
+		api.GET("/plans/:plan_id/execution", s.planExecution)
 		api.POST("/plans/:plan_id/preflight", s.preflightPlan)
 		api.POST("/plans/:plan_id/inputs", s.applyPlanInputs)
 		api.POST("/plans/:plan_id/recover", s.recoverPlan)

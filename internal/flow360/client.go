@@ -232,6 +232,16 @@ func (c *Client) ResourceLogs(ctx context.Context, resourceType, resourceID stri
 	return c.run(ctx, "logs", resourceID, "--tail", fmt.Sprint(tail))
 }
 
+// ResourceState returns the lightweight lifecycle payload used by execution
+// monitoring. Unlike ResourceDetail, it performs only one Flow360 CLI call.
+func (c *Client) ResourceState(ctx context.Context, resourceType, resourceID string) (json.RawMessage, error) {
+	command, _, err := resourceCommand(resourceType)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCommand(ctx, command, "state", resourceID)
+}
+
 func (c *Client) ResourceResult(ctx context.Context, resourceType, resourceID, resultPath string) ([]byte, string, error) {
 	command, _, err := resourceCommand(resourceType)
 	if err != nil {
