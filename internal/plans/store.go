@@ -63,6 +63,13 @@ type Difference struct {
 	Kind   string `json:"kind"`
 }
 
+type Evidence struct {
+	Key         string `json:"key"`
+	Value       any    `json:"value"`
+	Provenance  string `json:"provenance"`
+	Description string `json:"description,omitempty"`
+}
+
 type PreflightIssue struct {
 	Level   string   `json:"level"`
 	Code    string   `json:"code"`
@@ -82,48 +89,52 @@ type Preflight struct {
 }
 
 type Plan struct {
-	ID             string          `json:"id"`
-	ProjectID      string          `json:"project_id"`
-	ProjectName    string          `json:"project_name,omitempty"`
-	SourceID       string          `json:"source_id"`
-	SourceType     string          `json:"source_type"`
-	SourceName     string          `json:"source_name,omitempty"`
-	Target         string          `json:"target"`
-	Name           string          `json:"name"`
-	Intent         string          `json:"intent"`
-	Patch          json.RawMessage `json:"patch"`
-	Baseline       json.RawMessage `json:"-"`
-	Differences    []Difference    `json:"differences"`
-	Validations    []Validation    `json:"validations"`
-	Revision       int             `json:"revision"`
-	Preflight      *Preflight      `json:"preflight,omitempty"`
-	CommandPreview []string        `json:"command_preview"`
-	Status         string          `json:"status"`
-	ApprovedAt     *time.Time      `json:"approved_at,omitempty"`
-	StartedAt      *time.Time      `json:"started_at,omitempty"`
-	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
-	Result         json.RawMessage `json:"result,omitempty"`
-	Error          string          `json:"error,omitempty"`
-	ErrorCategory  ErrorCategory   `json:"error_category,omitempty"`
-	IdempotencyKey string          `json:"idempotency_key,omitempty"`
-	SubmissionID   string          `json:"submission_id,omitempty"`
-	RemoteIDs      *RemoteIDs      `json:"remote_ids,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID              string          `json:"id"`
+	ProjectID       string          `json:"project_id"`
+	ProjectName     string          `json:"project_name,omitempty"`
+	SourceID        string          `json:"source_id"`
+	SourceType      string          `json:"source_type"`
+	SourceName      string          `json:"source_name,omitempty"`
+	Target          string          `json:"target"`
+	Name            string          `json:"name"`
+	Intent          string          `json:"intent"`
+	Patch           json.RawMessage `json:"patch"`
+	Baseline        json.RawMessage `json:"-"`
+	Differences     []Difference    `json:"differences"`
+	Validations     []Validation    `json:"validations"`
+	Evidence        []Evidence      `json:"evidence,omitempty"`
+	ValidationHints []string        `json:"validation_hints,omitempty"`
+	Revision        int             `json:"revision"`
+	Preflight       *Preflight      `json:"preflight,omitempty"`
+	CommandPreview  []string        `json:"command_preview"`
+	Status          string          `json:"status"`
+	ApprovedAt      *time.Time      `json:"approved_at,omitempty"`
+	StartedAt       *time.Time      `json:"started_at,omitempty"`
+	CompletedAt     *time.Time      `json:"completed_at,omitempty"`
+	Result          json.RawMessage `json:"result,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	ErrorCategory   ErrorCategory   `json:"error_category,omitempty"`
+	IdempotencyKey  string          `json:"idempotency_key,omitempty"`
+	SubmissionID    string          `json:"submission_id,omitempty"`
+	RemoteIDs       *RemoteIDs      `json:"remote_ids,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type CreateInput struct {
-	ProjectID      string
-	ProjectName    string
-	SourceID       string
-	SourceType     string
-	SourceName     string
-	Target         string
-	Name           string
-	Intent         string
-	Patch          json.RawMessage
-	Baseline       json.RawMessage
-	IdempotencyKey string
+	ProjectID       string
+	ProjectName     string
+	SourceID        string
+	SourceType      string
+	SourceName      string
+	Target          string
+	Name            string
+	Intent          string
+	Patch           json.RawMessage
+	Baseline        json.RawMessage
+	Evidence        []Evidence
+	ValidationHints []string
+	IdempotencyKey  string
 }
 
 type Store struct {
@@ -280,25 +291,27 @@ func Compile(input CreateInput) (Plan, error) {
 	}
 	now := time.Now().UTC()
 	return Plan{
-		ID:             id,
-		ProjectID:      input.ProjectID,
-		ProjectName:    strings.TrimSpace(input.ProjectName),
-		SourceID:       input.SourceID,
-		SourceType:     input.SourceType,
-		SourceName:     strings.TrimSpace(input.SourceName),
-		Target:         input.Target,
-		Name:           input.Name,
-		Intent:         input.Intent,
-		Patch:          append(json.RawMessage(nil), input.Patch...),
-		Baseline:       append(json.RawMessage(nil), input.Baseline...),
-		Differences:    differences,
-		Validations:    validations,
-		Revision:       1,
-		CommandPreview: []string{"flow360", "draft", "run", input.SourceID, "--name", input.Name, "--patch", "<temporary-patch.json>", "--up-to", input.Target},
-		Status:         StatusDraft,
-		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:              id,
+		ProjectID:       input.ProjectID,
+		ProjectName:     strings.TrimSpace(input.ProjectName),
+		SourceID:        input.SourceID,
+		SourceType:      input.SourceType,
+		SourceName:      strings.TrimSpace(input.SourceName),
+		Target:          input.Target,
+		Name:            input.Name,
+		Intent:          input.Intent,
+		Patch:           append(json.RawMessage(nil), input.Patch...),
+		Baseline:        append(json.RawMessage(nil), input.Baseline...),
+		Differences:     differences,
+		Validations:     validations,
+		Evidence:        append([]Evidence(nil), input.Evidence...),
+		ValidationHints: append([]string(nil), input.ValidationHints...),
+		Revision:        1,
+		CommandPreview:  []string{"flow360", "draft", "run", input.SourceID, "--name", input.Name, "--patch", "<temporary-patch.json>", "--up-to", input.Target},
+		Status:          StatusDraft,
+		IdempotencyKey:  strings.TrimSpace(input.IdempotencyKey),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}, nil
 }
 
@@ -592,7 +605,8 @@ func (s *Store) applyInputs(id string, revision int, values json.RawMessage, sch
 			ProjectID: plan.ProjectID, ProjectName: plan.ProjectName,
 			SourceID: plan.SourceID, SourceType: plan.SourceType, SourceName: plan.SourceName,
 			Target: plan.Target, Name: plan.Name, Intent: plan.Intent,
-			Patch: patch, Baseline: plan.Baseline, IdempotencyKey: plan.IdempotencyKey,
+			Patch: patch, Baseline: plan.Baseline, Evidence: plan.Evidence,
+			ValidationHints: plan.ValidationHints, IdempotencyKey: plan.IdempotencyKey,
 		})
 		if err != nil {
 			return err

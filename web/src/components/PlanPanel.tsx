@@ -56,6 +56,12 @@ function compactValue(value: unknown) {
   return text.length > 180 ? `${text.slice(0, 180)}…` : text
 }
 
+function evidenceSummary(value: unknown) {
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
+  if (value && typeof value === 'object') return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? '' : 's'}`
+  return compactValue(value)
+}
+
 function statusLabel(status: SimulationPlan['status']) {
   return {
     draft: 'Draft',
@@ -576,6 +582,33 @@ export default function PlanPanel({
                     )
                   })}
                 </div>
+
+                {selected.evidence && selected.evidence.length > 0 && (
+                  <section className="plan-review-section plan-evidence-section">
+                    <h3><Sparkles size={15} /> Engineering evidence <span>{selected.evidence.length}</span></h3>
+                    <div className="plan-evidence-list">
+                      {selected.evidence.map((field) => (
+                        <article key={field.key}>
+                          <div>
+                            <strong>{field.key.replaceAll('_', ' ')}</strong>
+                            <span className={`plan-provenance ${field.provenance}`}>{field.provenance}</span>
+                          </div>
+                          {field.description && <p>{field.description}</p>}
+                          <details>
+                            <summary>{evidenceSummary(field.value)}</summary>
+                            <pre>{JSON.stringify(field.value, null, 2)}</pre>
+                          </details>
+                        </article>
+                      ))}
+                    </div>
+                    {selected.validation_hints && selected.validation_hints.length > 0 && (
+                      <div className="plan-validation-hints">
+                        <strong>Validation contract</strong>
+                        {selected.validation_hints.map((hint) => <span key={hint}><Check size={11} /> {hint}</span>)}
+                      </div>
+                    )}
+                  </section>
+                )}
 
                 <section className="plan-review-section">
                   <h3>

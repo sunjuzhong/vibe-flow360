@@ -65,6 +65,21 @@ describe('buildGeometryReview', () => {
       count: 1,
     })
   })
+
+  it('preserves diagnostic entity ids for viewer focus', () => {
+    const review = buildGeometryReview({
+      id: 'geo-1',
+      type: 'Geometry',
+      info: { length_unit: 'm' },
+      summary: { free_edges: ['face-1', { id: 'face-2' }] },
+    }, manifest, 'processed')
+
+    expect(review.checks.find((check) => check.key === 'free-edges')).toMatchObject({
+      level: 'blocked',
+      count: 2,
+      entityIds: ['face-1', 'face-2'],
+    })
+  })
 })
 
 describe('formatGeometryNumber', () => {

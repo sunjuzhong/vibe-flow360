@@ -32,6 +32,28 @@ func TestCompileBuildsSemanticDiff(t *testing.T) {
 	}
 }
 
+func TestCompilePreservesEngineeringEvidence(t *testing.T) {
+	plan, err := Compile(CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "surface-mesh", Name: "semantic review", Intent: "Review CFD semantics.",
+		Patch: json.RawMessage(`{}`),
+		Evidence: []Evidence{{
+			Key: "surface_semantics", Value: []any{map[string]any{"surface": "wing", "role": "wall"}},
+			Provenance: "provided", Description: "Reviewed surface role.",
+		}},
+		ValidationHints: []string{"Map roles to the active Flow360 schema"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Evidence) != 1 || plan.Evidence[0].Key != "surface_semantics" {
+		t.Fatalf("expected evidence to be preserved, got %#v", plan.Evidence)
+	}
+	if len(plan.ValidationHints) != 1 {
+		t.Fatalf("expected validation hints, got %#v", plan.ValidationHints)
+	}
+}
+
 func TestCompileRejectsPrivateAttributes(t *testing.T) {
 	plan, err := Compile(CreateInput{
 		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",

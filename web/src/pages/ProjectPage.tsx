@@ -43,6 +43,10 @@ import {
   remediationAgentAction,
   type SurfaceRemediationRecommendation,
 } from '../lib/surfaceMeshAdvanced'
+import {
+  geometrySemanticAgentAction,
+  type GeometrySemanticDraft,
+} from '../lib/geometrySemantics'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -566,8 +570,23 @@ export default function ProjectPage() {
               <GeometryWorkspace
                 detail={detail}
                 resourceId={selected.id}
+                onCreateSemanticPlan={async (draft: GeometrySemanticDraft) => {
+                  if (!project) throw new Error('Project context is required to create a Geometry semantic review plan.')
+                  const result = await api.planFromAction(geometrySemanticAgentAction({
+                    project,
+                    geometryId: selected.id,
+                    geometryName: selected.name,
+                    draft,
+                  }))
+                  const plan = result.results.find((item) => item.plan)?.plan
+                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')
+                  setInitialPlanId(plan.id)
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
                 onPlanSurfaceMesh={() => {
                   setChatOpen(false)
+                  setInitialPlanId('')
                   setPlanOpen(true)
                 }}
               />

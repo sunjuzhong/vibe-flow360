@@ -285,6 +285,8 @@ export type SimulationPlan = {
   preflight?: PlanPreflight
   differences: PlanDifference[]
   validations: PlanValidation[]
+  evidence?: AgentProposalField[]
+  validation_hints?: string[]
   command_preview: string[]
   status: 'draft' | 'approved' | 'running' | 'submitted' | 'failed' | 'reconciling' | 'completed'
   approved_at?: string

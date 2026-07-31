@@ -257,15 +257,23 @@ func NewProposal(id, projectID, projectName, sourceID, sourceType, sourceName, t
 }
 
 func (p Proposal) ToPlan() plans.Plan {
+	evidence := make([]plans.Evidence, 0, len(p.Fields))
+	for _, field := range p.Fields {
+		evidence = append(evidence, plans.Evidence{
+			Key: field.Key, Value: field.Value, Provenance: string(field.Provenance), Description: field.Description,
+		})
+	}
 	return plans.Plan{
-		ID:         p.ID,
-		SourceID:   p.SourceID,
-		SourceType: p.SourceType,
-		SourceName: p.SourceName,
-		ProjectID:  p.ProjectID,
-		Target:     p.Target,
-		Name:       p.Name,
-		Intent:     p.Intent,
-		Patch:      p.Patch,
+		ID:              p.ID,
+		SourceID:        p.SourceID,
+		SourceType:      p.SourceType,
+		SourceName:      p.SourceName,
+		ProjectID:       p.ProjectID,
+		Target:          p.Target,
+		Name:            p.Name,
+		Intent:          p.Intent,
+		Patch:           p.Patch,
+		Evidence:        evidence,
+		ValidationHints: append([]string(nil), p.ValidationHints...),
 	}
 }

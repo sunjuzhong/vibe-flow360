@@ -1640,6 +1640,21 @@ button { color: inherit; }
 .plan-review-section { margin-top: 12px; padding: 14px; border: 1px solid #dcddd6; border-radius: 9px; background: #fdfdfa; }
 .plan-review-section h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 11px; color: #565c52; font-size: 9px; }
 .plan-review-section h3 > span { display: grid; min-width: 16px; height: 16px; place-items: center; padding: 0 3px; border-radius: 999px; background: #e1e3db; font-family: 'DM Mono'; font-size: 6px; }
+.plan-evidence-list { display: grid; gap: 7px; }
+.plan-evidence-list article { padding: 9px; border: 1px solid #e2e4dc; border-radius: 6px; background: #f8f9f4; }
+.plan-evidence-list article > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-evidence-list article > div > strong { color: #4d5548; font-size: 9px; text-transform: capitalize; }
+.plan-provenance { padding: 2px 5px; border-radius: 4px; color: #52651b; background: #e6edcf; font: 7px 'DM Mono'; text-transform: uppercase; }
+.plan-provenance.inferred { color: #85641d; background: #f3e8c7; }
+.plan-provenance.defaulted { color: #6d607b; background: #ece6f2; }
+.plan-evidence-list article > p { margin: 6px 0; color: #7d8379; font-size: 8px; line-height: 1.45; }
+.plan-evidence-list details { border-top: 1px solid #e2e4dc; }
+.plan-evidence-list summary { padding-top: 6px; color: #657424; font: 8px 'DM Mono'; cursor: pointer; }
+.plan-evidence-list pre { max-height: 220px; overflow: auto; margin: 7px 0 0; padding: 8px; border-radius: 5px; color: #3f463a; background: #eef0e9; font: 8px/1.5 'DM Mono'; white-space: pre-wrap; }
+.plan-validation-hints { display: grid; gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px solid #e1e3db; }
+.plan-validation-hints > strong { color: #5a6254; font-size: 8px; }
+.plan-validation-hints > span { display: flex; align-items: flex-start; gap: 5px; color: #737b6f; font-size: 8px; line-height: 1.4; }
+.plan-validation-hints > span svg { flex: 0 0 auto; color: #789521; }
 .validation-list { display: flex; flex-direction: column; gap: 6px; }
 .validation-list > div { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border-radius: 6px; }
 .validation-list > div > span { min-width: 0; }
@@ -4045,6 +4060,13 @@ button { color: inherit; }
   color: #9a9f95;
   font: 7px 'DM Mono';
 }
+.geometry-entity-tree > button small.assigned {
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #5e741d;
+  background: #edf3d9;
+  text-transform: capitalize;
+}
 
 .geometry-empty-list {
   padding: 22px 10px;
@@ -4164,12 +4186,188 @@ button { color: inherit; }
 }
 
 .geometry-selection-card,
+.geometry-inspection-card,
+.geometry-semantics-card,
 .geometry-health-card {
   margin-top: 8px;
   padding: 10px;
   border: 1px solid #e1e2dc;
   border-radius: 7px;
   background: #fff;
+}
+
+.geometry-clip-controls {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.geometry-clip-controls label,
+.geometry-semantic-field {
+  display: grid;
+  gap: 4px;
+  color: #858b80;
+  font-size: 7px;
+}
+
+.geometry-clip-controls select,
+.geometry-semantic-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 27px;
+  padding: 4px 6px;
+  border: 1px solid #d9dbd3;
+  border-radius: 5px;
+  color: #454c40;
+  background: #fff;
+  font-size: 8px;
+}
+
+.geometry-clip-controls input { width: 100%; margin: 4px 0 0; }
+
+.geometry-measurement-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 7px;
+  border-radius: 5px;
+  color: #737a6e;
+  background: #f3f4ef;
+  font-size: 7px;
+}
+
+.geometry-measurement-result strong {
+  overflow: hidden;
+  color: #4b5542;
+  font: 8px 'DM Mono';
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geometry-measurement-result button {
+  padding: 3px 5px;
+  border: 1px solid #d5d7ce;
+  border-radius: 4px;
+  color: #646b5f;
+  background: #fff;
+  font-size: 7px;
+  cursor: pointer;
+}
+
+.geometry-semantic-progress {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.geometry-semantic-progress span {
+  padding: 3px 5px;
+  border-radius: 4px;
+  color: #68721f;
+  background: #edf3d9;
+  font: 7px 'DM Mono';
+}
+
+.geometry-semantic-progress span:last-child {
+  color: #8a6920;
+  background: #f6ecd1;
+}
+
+.geometry-semantic-field { margin-top: 8px; }
+
+.geometry-semantic-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.geometry-semantic-actions button,
+.geometry-semantic-plan {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 7px;
+  border: 1px solid #d6d8d0;
+  border-radius: 5px;
+  color: #525a4c;
+  background: #fff;
+  font-size: 7px;
+  cursor: pointer;
+}
+
+.geometry-semantic-actions button:hover:not(:disabled) { background: #eef0e9; }
+.geometry-semantic-actions button:disabled,
+.geometry-semantic-plan:disabled { opacity: .45; cursor: not-allowed; }
+
+.geometry-semantic-diff {
+  margin-top: 8px;
+  padding: 7px;
+  border: 1px solid #e1e3db;
+  border-radius: 5px;
+  background: #f8f8f5;
+}
+
+.geometry-semantic-diff > strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #626a5b;
+  font-size: 7px;
+}
+
+.geometry-semantic-diff > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 3px 0;
+  border-top: 1px solid #e8e9e3;
+  font-size: 7px;
+}
+
+.geometry-semantic-diff > div span {
+  overflow: hidden;
+  color: #5a6253;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geometry-semantic-diff > div small { color: #6c8127; font: 6px 'DM Mono'; }
+.geometry-semantic-diff > div small.inferred { color: #917024; }
+.geometry-semantic-diff > small { color: #8d9388; font-size: 6px; }
+
+.geometry-semantic-message {
+  margin: 7px 0 0;
+  padding: 6px;
+  border-radius: 4px;
+  color: #82631c;
+  background: #fbf5e4;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.geometry-semantic-plan {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 8px;
+  border-color: #9db53f;
+  color: #2f3b10;
+  background: #bad954;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.geometry-semantic-safety {
+  display: block;
+  margin-top: 5px;
+  color: #969c92;
+  font-size: 6px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .geometry-section-title {
@@ -4230,6 +4428,19 @@ button { color: inherit; }
 .geometry-review-panel .geometry-checks strong,
 .geometry-review-panel .geometry-checks small { display: block; }
 .geometry-review-panel .geometry-checks span { min-width: 0; flex: 1; }
+.geometry-review-panel .geometry-checks > div > button {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border: 1px solid #d8dad2;
+  border-radius: 4px;
+  color: #657021;
+  background: #fff;
+  font-size: 6px;
+  cursor: pointer;
+}
 .geometry-review-panel .geometry-checks strong { font-size: 8px; }
 .geometry-review-panel .geometry-checks small {
   overflow: hidden;

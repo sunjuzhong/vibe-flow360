@@ -2024,16 +2024,27 @@ func (s *Server) planFromAction(c *gin.Context) {
 	}
 	results := make([]map[string]any, 0, len(req.Action.Proposals))
 	for _, p := range req.Action.Proposals {
+		evidence := make([]plans.Evidence, 0, len(p.Fields))
+		for _, field := range p.Fields {
+			evidence = append(evidence, plans.Evidence{
+				Key:         field.Key,
+				Value:       field.Value,
+				Provenance:  string(field.Provenance),
+				Description: field.Description,
+			})
+		}
 		planInput := plans.CreateInput{
-			ProjectID:   p.ProjectID,
-			ProjectName: p.ProjectName,
-			SourceID:    p.SourceID,
-			SourceType:  p.SourceType,
-			SourceName:  p.SourceName,
-			Target:      p.Target,
-			Name:        p.Name,
-			Intent:      p.Intent,
-			Patch:       p.Patch,
+			ProjectID:       p.ProjectID,
+			ProjectName:     p.ProjectName,
+			SourceID:        p.SourceID,
+			SourceType:      p.SourceType,
+			SourceName:      p.SourceName,
+			Target:          p.Target,
+			Name:            p.Name,
+			Intent:          p.Intent,
+			Patch:           p.Patch,
+			Evidence:        evidence,
+			ValidationHints: append([]string(nil), p.ValidationHints...),
 		}
 		plan, err := s.plans.Create(planInput)
 		if err != nil {

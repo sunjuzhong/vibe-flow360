@@ -9,6 +9,7 @@ export type GeometryCheck = {
   detail: string
   level: GeometryCheckLevel
   count?: number
+  entityIds?: string[]
 }
 
 export type GeometryReview = {
@@ -81,7 +82,18 @@ function diagnosticCheck(
     [detail?.summary, detail?.state, detail?.info],
     aliases,
   )
-  const count = numericValue(raw)
+  const entityIds = Array.isArray(raw)
+    ? raw.flatMap((item) => {
+        if (typeof item === 'string') return [item]
+        if (item && typeof item === 'object') {
+          const record = item as Record<string, unknown>
+          const id = record.id ?? record.entity_id ?? record.name
+          return typeof id === 'string' ? [id] : []
+        }
+        return []
+      })
+    : []
+  const count = entityIds.length > 0 ? entityIds.length : numericValue(raw)
   if (count === undefined) {
     return {
       key,
@@ -91,7 +103,7 @@ function diagnosticCheck(
     }
   }
   return count > allowedCount
-    ? { key, label, detail: `${count.toLocaleString()} detected`, level: severity, count }
+    ? { key, label, detail: `${count.toLocaleString()} detected`, level: severity, count, entityIds }
     : {
         key,
         label,
@@ -100,6 +112,7 @@ function diagnosticCheck(
           : 'None detected',
         level: 'ready',
         count,
+        entityIds,
       }
 }
 

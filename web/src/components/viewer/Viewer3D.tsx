@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
 import { UVFLoader, applyFieldColoring, createFieldHistogram, findFieldExtrema, probeFieldAtIntersection, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 import { fitPerspectiveCameraToObject } from '../../lib/viewerCamera'
@@ -80,6 +81,7 @@ type Props = {
   showEntityLegend?: boolean
   toolbar?: React.ReactNode
   cameraCommand?: ViewerCameraCommand | null
+  showNormals?: boolean
 }
 
 export function Viewer3D({
@@ -109,6 +111,7 @@ export function Viewer3D({
   showEntityLegend = true,
   toolbar,
   cameraCommand,
+  showNormals = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -120,6 +123,7 @@ export function Viewer3D({
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
   const measurementOverlayRef = useRef<THREE.Group | null>(null)
+  const normalsOverlayRef = useRef<THREE.Group | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
@@ -493,6 +497,32 @@ export function Viewer3D({
       if (measurementOverlayRef.current === overlay) measurementOverlayRef.current = null
     }
   }, [assetState.status, measurementPoints])
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    if (normalsOverlayRef.current) {
+      scene.remove(normalsOverlayRef.current)
+      disposeObject(normalsOverlayRef.current)
+      normalsOverlayRef.current = null
+    }
+    if (!showNormals || !assetRef.current) return
+    const overlay = new THREE.Group()
+    overlay.name = '__normals__'
+    for (const mesh of meshesRef.current.values()) {
+      if (!mesh.visible || mesh.userData.groupId === '__wireframe__') continue
+      const helper = new VertexNormalsHelper(mesh, 0.035, 0x3366cc)
+      helper.renderOrder = 18
+      overlay.add(helper)
+    }
+    scene.add(overlay)
+    normalsOverlayRef.current = overlay
+    return () => {
+      scene.remove(overlay)
+      disposeObject(overlay)
+      if (normalsOverlayRef.current === overlay) normalsOverlayRef.current = null
+    }
+  }, [assetState.status, entityVisibility, groupVisibility, showNormals])
 
   useEffect(() => {
     if (captureRequest <= 0) return

@@ -64,6 +64,22 @@ func TestParseDefaultsVersion(t *testing.T) {
 	}
 }
 
+func TestProposalToPlanPreservesEvidence(t *testing.T) {
+	proposal := Proposal{
+		ID: "proposal-1", ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "surface-mesh", Name: "review", Intent: "Review semantics.", Patch: json.RawMessage(`{}`),
+		Fields:          []Field{{Key: "surface_role", Value: "wall", Provenance: ProvenanceProvided, Description: "User assignment"}},
+		ValidationHints: []string{"Run preflight"},
+	}
+	plan := proposal.ToPlan()
+	if len(plan.Evidence) != 1 || plan.Evidence[0].Provenance != "provided" {
+		t.Fatalf("expected proposal evidence on plan, got %#v", plan.Evidence)
+	}
+	if len(plan.ValidationHints) != 1 || plan.ValidationHints[0] != "Run preflight" {
+		t.Fatalf("expected validation hints, got %#v", plan.ValidationHints)
+	}
+}
+
 func TestParseRejectsUnknownKind(t *testing.T) {
 	_, err := Parse(`{"version":"v1","kind":"unknown","message":"foo"}`)
 	if !errors.Is(err, ErrUnknownAction) {
@@ -316,7 +332,7 @@ func TestValidateWithContextPassesWithNilValidator(t *testing.T) {
 		Message: "Test",
 		Proposals: []Proposal{
 			{ID: "p1", SourceType: "Case", Target: "case", Name: "test", Intent: "Test",
-				Patch: json.RawMessage(`{}`),
+				Patch:  json.RawMessage(`{}`),
 				Fields: []Field{{Key: "a", Value: 1, Provenance: ProvenanceProvided}}},
 		},
 	}
@@ -333,7 +349,7 @@ func TestValidateWithContextCallsCustomValidator(t *testing.T) {
 		Message: "Test",
 		Proposals: []Proposal{
 			{ID: "p1", SourceType: "Case", Target: "case", Name: "test", Intent: "Test",
-				Patch: json.RawMessage(`{}`),
+				Patch:  json.RawMessage(`{}`),
 				Fields: []Field{{Key: "a", Value: 1, Provenance: ProvenanceProvided}}},
 		},
 	}

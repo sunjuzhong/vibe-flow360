@@ -348,6 +348,10 @@ func TestPlanFromActionCreatesPlans(t *testing.T) {
 				Name:       "Test Case",
 				Intent:     "Test",
 				Patch:      json.RawMessage(`{"alpha":5}`),
+				Fields: []agent.Field{{
+					Key: "alpha", Value: 5, Provenance: agent.ProvenanceProvided, Description: "User input",
+				}},
+				ValidationHints: []string{"Validate alpha"},
 			},
 		},
 	}
@@ -369,6 +373,11 @@ func TestPlanFromActionCreatesPlans(t *testing.T) {
 	}
 	if response["created"].(float64) != 1 {
 		t.Fatalf("expected 1 created, got %v", response["created"])
+	}
+	results := response["results"].([]any)
+	plan := results[0].(map[string]any)["plan"].(map[string]any)
+	if len(plan["evidence"].([]any)) != 1 || len(plan["validation_hints"].([]any)) != 1 {
+		t.Fatalf("expected proposal evidence and validation hints, got %#v", plan)
 	}
 }
 

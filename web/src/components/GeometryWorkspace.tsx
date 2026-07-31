@@ -1,28 +1,44 @@
 import {
   AlertTriangle,
   Box,
+  Camera,
   CheckCircle2,
   CircleHelp,
   Focus,
   GitPullRequestDraft,
   Info,
+  LocateFixed,
   Ruler,
+  ScanLine,
+  Scissors,
   Search,
   Shapes,
+  Sparkles,
+  Undo2,
   View,
   XCircle,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import {
   buildGeometryReview,
   formatGeometryNumber,
   type GeometryCheckLevel,
 } from '../lib/geometryReview'
+import {
+  geometryMeasurementDistance,
+  geometrySurfaceRoles,
+  suggestGeometrySemantics,
+  type GeometryBodyIntent,
+  type GeometrySemanticAssignment,
+  type GeometrySemanticDraft,
+  type GeometrySurfaceRole,
+} from '../lib/geometrySemantics'
 import { resourceStatus } from './ResourceDetailPanel'
 import {
   LazyViewer3D,
   type ViewerCameraCommand,
+  type ViewerClipPlane,
   type ViewerSelection,
 } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
@@ -40,18 +56,42 @@ function CheckIcon({ level }: { level: GeometryCheckLevel }) {
   return <CircleHelp size={14} />
 }
 
+function downloadDataUrl(dataUrl: string, fileName: string) {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 export default function GeometryWorkspace({
   detail,
   resourceId,
+  onCreateSemanticPlan,
   onPlanSurfaceMesh,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  onCreateSemanticPlan: (draft: GeometrySemanticDraft) => Promise<void>
   onPlanSurfaceMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entitySearch, setEntitySearch] = useState('')
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
+  const [clipEnabled, setClipEnabled] = useState(false)
+  const [clipAxis, setClipAxis] = useState<'x' | 'y' | 'z'>('x')
+  const [clipPosition, setClipPosition] = useState(0)
+  const [measurementEnabled, setMeasurementEnabled] = useState(false)
+  const [measurementPoints, setMeasurementPoints] = useState<Array<[number, number, number]>>([])
+  const [showNormals, setShowNormals] = useState(false)
+  const [captureRequest, setCaptureRequest] = useState(0)
+  const [bodyIntent, setBodyIntent] = useState<GeometryBodyIntent>('undecided')
+  const [selectedRole, setSelectedRole] = useState<GeometrySurfaceRole>('wall')
+  const [assignments, setAssignments] = useState<Record<string, GeometrySemanticAssignment>>({})
+  const [assignmentHistory, setAssignmentHistory] = useState<Array<Record<string, GeometrySemanticAssignment>>>([])
+  const [semanticMessage, setSemanticMessage] = useState('')
+  const [semanticBusy, setSemanticBusy] = useState(false)
   const { manifest, state: viewerState } = useResourcePreview(
     detail ? 'Geometry' : null,
     resourceId ?? detail?.id ?? null,
@@ -62,6 +102,14 @@ export default function GeometryWorkspace({
     [detail, manifest, status],
   )
   const selectedGroup = manifest?.groups.find((group) => group.id === viewerSelection.groupId) ?? null
+  const clipPlane = useMemo<ViewerClipPlane | null>(() => {
+    if (!clipEnabled) return null
+    const normal: [number, number, number] = clipAxis === 'x'
+      ? [1, 0, 0]
+      : clipAxis === 'y' ? [0, 1, 0] : [0, 0, 1]
+    return { normal, constant: -clipPosition }
+  }, [clipAxis, clipEnabled, clipPosition])
+  const measurementDistance = geometryMeasurementDistance(measurementPoints)
   const filteredGroups = useMemo(() => {
     const query = entitySearch.trim().toLowerCase()
     if (!query) return manifest?.groups ?? []
@@ -77,6 +125,85 @@ export default function GeometryWorkspace({
     setCameraCommand({ type, nonce: Date.now() })
   }
   const readiness = readinessCopy[review.readiness]
+  const assignmentList = Object.values(assignments).sort((a, b) => a.groupName.localeCompare(b.groupName))
+  const unassignedCount = Math.max(0, (manifest?.groups.length ?? 0) - assignmentList.length)
+
+  useEffect(() => {
+    setViewerSelection({ groupId: null })
+    setAssignments({})
+    setAssignmentHistory([])
+    setMeasurementPoints([])
+    setSemanticMessage('')
+  }, [resourceId])
+
+  const commitAssignments = (next: Record<string, GeometrySemanticAssignment>) => {
+    setAssignmentHistory((history) => [...history.slice(-9), assignments])
+    setAssignments(next)
+    setSemanticMessage('')
+  }
+
+  const assignGroups = (
+    groups: Array<{ id: string; name: string }>,
+    role: GeometrySurfaceRole,
+  ) => {
+    if (groups.length === 0) return
+    const next = { ...assignments }
+    for (const group of groups) {
+      next[group.id] = {
+        groupId: group.id,
+        groupName: group.name,
+        role,
+        provenance: 'provided',
+        reason: 'Assigned by the user in Geometry review.',
+      }
+    }
+    commitAssignments(next)
+  }
+
+  const undoAssignments = () => {
+    setAssignmentHistory((history) => {
+      const previous = history.at(-1)
+      if (!previous) return history
+      setAssignments(previous)
+      setSemanticMessage('Restored the previous semantic draft.')
+      return history.slice(0, -1)
+    })
+  }
+
+  const applySuggestions = () => {
+    const suggestions = suggestGeometrySemantics(manifest?.groups ?? [])
+    if (suggestions.length === 0) {
+      setSemanticMessage('No high-confidence name-based suggestions are available. Assign roles manually or rename CAD groups.')
+      return
+    }
+    const next = { ...assignments }
+    for (const assignment of suggestions) {
+      if (!next[assignment.groupId]) next[assignment.groupId] = assignment
+    }
+    commitAssignments(next)
+    setSemanticMessage(`${suggestions.length} name-based suggestion(s) added for review.`)
+  }
+
+  const createSemanticPlan = async () => {
+    setSemanticBusy(true)
+    setSemanticMessage('')
+    try {
+      await onCreateSemanticPlan({ bodyIntent, assignments: assignmentList })
+    } catch (cause) {
+      setSemanticMessage(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSemanticBusy(false)
+    }
+  }
+
+  const focusDiagnostic = (entityIds: string[]) => {
+    const target = manifest?.groups.find((group) =>
+      entityIds.includes(group.id) || entityIds.includes(group.name),
+    )
+    if (!target) return
+    setViewerSelection({ groupId: target.id })
+    requestCamera('fit-selection')
+  }
 
   return (
     <section className="geometry-workspace geometry-review-workspace">
@@ -113,7 +240,11 @@ export default function GeometryWorkspace({
             >
               <span className="viewer-color-swatch" style={{ background: group.color }} />
               <span>{group.name}</span>
-              {group.triangles !== undefined && <small>{group.triangles} tris</small>}
+              <small className={assignments[group.id] ? 'assigned' : ''}>
+                {assignments[group.id]
+                  ? assignments[group.id].role
+                  : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
+              </small>
             </button>
           ))}
           {filteredGroups.length === 0 && (
@@ -134,6 +265,17 @@ export default function GeometryWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          clipPlane={clipPlane}
+          measurementPoints={measurementPoints}
+          onPickPoint={measurementEnabled ? (point) => {
+            setMeasurementPoints((points) => points.length >= 2 ? [point] : [...points, point])
+          } : undefined}
+          captureRequest={captureRequest}
+          onCapture={(dataUrl) => downloadDataUrl(
+            dataUrl,
+            `${detail?.id ?? resourceId ?? 'geometry'}-review.png`,
+          )}
+          showNormals={showNormals}
           showEntityLegend={false}
           showFieldPanel={false}
           cameraCommand={cameraCommand}
@@ -152,6 +294,31 @@ export default function GeometryWorkspace({
               <button onClick={() => requestCamera('y')} title="View from positive Y">Y</button>
               <button onClick={() => requestCamera('z')} title="View from positive Z">Z</button>
               <button onClick={() => requestCamera('iso')} title="Isometric view">ISO</button>
+              <span />
+              <button
+                className={clipEnabled ? 'active' : ''}
+                aria-pressed={clipEnabled}
+                onClick={() => setClipEnabled((enabled) => !enabled)}
+                title="Toggle clipping plane"
+              ><Scissors size={13} /> Clip</button>
+              <button
+                className={measurementEnabled ? 'active' : ''}
+                aria-pressed={measurementEnabled}
+                onClick={() => {
+                  setMeasurementEnabled((enabled) => !enabled)
+                  setMeasurementPoints([])
+                }}
+                title="Measure between two picked points"
+              ><Ruler size={13} /> Measure</button>
+              <button
+                className={showNormals ? 'active' : ''}
+                aria-pressed={showNormals}
+                onClick={() => setShowNormals((visible) => !visible)}
+                title="Toggle vertex normals"
+              ><ScanLine size={13} /> Normals</button>
+              <button onClick={() => setCaptureRequest((value) => value + 1)} title="Export PNG">
+                <Camera size={13} /> PNG
+              </button>
             </div>
           )}
         />
@@ -190,6 +357,45 @@ export default function GeometryWorkspace({
           </strong></div>
         </div>
 
+        {(clipEnabled || measurementEnabled) && (
+          <section className="geometry-inspection-card">
+            <div className="geometry-section-title"><Ruler size={13} /> Inspection tools</div>
+            {clipEnabled && (
+              <div className="geometry-clip-controls">
+                <label>Clip axis
+                  <select value={clipAxis} onChange={(event) => setClipAxis(event.target.value as 'x' | 'y' | 'z')}>
+                    <option value="x">X plane</option>
+                    <option value="y">Y plane</option>
+                    <option value="z">Z plane</option>
+                  </select>
+                </label>
+                <label>Position
+                  <input
+                    aria-label="Geometry clipping plane position"
+                    type="range"
+                    min="-1"
+                    max="1"
+                    step="0.01"
+                    value={clipPosition}
+                    onChange={(event) => setClipPosition(Number(event.target.value))}
+                  />
+                </label>
+              </div>
+            )}
+            {measurementEnabled && (
+              <div className="geometry-measurement-result">
+                <span>{measurementPoints.length}/2 points</span>
+                <strong>
+                  {measurementDistance === null
+                    ? 'Pick two surface points'
+                    : `${formatGeometryNumber(measurementDistance)}${review.unit ? ` ${review.unit}` : ''}`}
+                </strong>
+                <button type="button" onClick={() => setMeasurementPoints([])}>Clear</button>
+              </div>
+            )}
+          </section>
+        )}
+
         <section className="geometry-selection-card">
           <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
           {selectedGroup ? (
@@ -198,11 +404,77 @@ export default function GeometryWorkspace({
               <div><dt>ID</dt><dd title={selectedGroup.id}>{selectedGroup.id}</dd></div>
               <div><dt>Triangles</dt><dd>{selectedGroup.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
               <div><dt>Vertices</dt><dd>{selectedGroup.vertices?.toLocaleString() ?? 'Not reported'}</dd></div>
-              <div><dt>CFD semantics</dt><dd>{review.groupsAreAutogenerated ? 'Unclassified' : 'Review assignment'}</dd></div>
+              <div><dt>CFD semantics</dt><dd>
+                {assignments[selectedGroup.id]
+                  ? `${assignments[selectedGroup.id].role} · ${assignments[selectedGroup.id].provenance}`
+                  : 'Unassigned'}
+              </dd></div>
             </dl>
           ) : (
             <p>Select a surface in the viewer or model tree to inspect it.</p>
           )}
+        </section>
+
+        <section className="geometry-semantics-card">
+          <div className="geometry-section-title"><Sparkles size={13} /> CFD semantic draft</div>
+          <div className="geometry-semantic-progress">
+            <span>{assignmentList.length} assigned</span>
+            <span>{unassignedCount} unassigned</span>
+          </div>
+          <label className="geometry-semantic-field">
+            Workflow intent
+            <select value={bodyIntent} onChange={(event) => setBodyIntent(event.target.value as GeometryBodyIntent)}>
+              <option value="undecided">Undecided</option>
+              <option value="external-aerodynamics">External aerodynamics</option>
+              <option value="internal-flow">Internal flow</option>
+              <option value="rotating-machinery">Rotating machinery</option>
+              <option value="conjugate-heat-transfer">Conjugate heat transfer</option>
+            </select>
+          </label>
+          <label className="geometry-semantic-field">
+            Surface role
+            <select value={selectedRole} onChange={(event) => setSelectedRole(event.target.value as GeometrySurfaceRole)}>
+              {geometrySurfaceRoles.map((role) => (
+                <option key={role.value} value={role.value}>{role.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className="geometry-semantic-actions">
+            <button
+              type="button"
+              disabled={!selectedGroup}
+              onClick={() => selectedGroup && assignGroups([selectedGroup], selectedRole)}
+            >Assign selected</button>
+            <button
+              type="button"
+              disabled={filteredGroups.length === 0}
+              onClick={() => assignGroups(filteredGroups, selectedRole)}
+            >Assign filtered ({filteredGroups.length})</button>
+            <button type="button" onClick={applySuggestions}><Sparkles size={11} /> Suggest</button>
+            <button type="button" disabled={assignmentHistory.length === 0} onClick={undoAssignments}><Undo2 size={11} /> Undo</button>
+          </div>
+          {assignmentList.length > 0 && (
+            <div className="geometry-semantic-diff">
+              <strong>Draft changes</strong>
+              {assignmentList.slice(0, 6).map((assignment) => (
+                <div key={assignment.groupId}>
+                  <span title={assignment.groupName}>{assignment.groupName}</span>
+                  <small className={assignment.provenance}>{assignment.role} · {assignment.provenance}</small>
+                </div>
+              ))}
+              {assignmentList.length > 6 && <small>+{assignmentList.length - 6} more assignments</small>}
+            </div>
+          )}
+          {semanticMessage && <p className="geometry-semantic-message">{semanticMessage}</p>}
+          <button
+            type="button"
+            className="geometry-semantic-plan"
+            disabled={semanticBusy || assignmentList.length === 0 || bodyIntent === 'undecided'}
+            onClick={() => void createSemanticPlan()}
+          >
+            <GitPullRequestDraft size={13} /> {semanticBusy ? 'Creating review plan…' : 'Create AI review plan'}
+          </button>
+          <small className="geometry-semantic-safety">Creates a local plan and preflight; no remote resource is changed.</small>
         </section>
 
         <section className="geometry-health-card">
@@ -212,6 +484,13 @@ export default function GeometryWorkspace({
               <div className={check.level} key={check.key} title={check.detail}>
                 <CheckIcon level={check.level} />
                 <span><strong>{check.label}</strong><small>{check.detail}</small></span>
+                {check.entityIds && check.entityIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => focusDiagnostic(check.entityIds ?? [])}
+                    title="Focus the first affected surface"
+                  ><LocateFixed size={11} /> Locate</button>
+                )}
               </div>
             ))}
           </div>
