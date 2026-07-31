@@ -3446,6 +3446,20 @@ button { color: inherit; }
   width: 100%;
   accent-color: #789521;
 }
+.surface-locate-worst {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border: 1px solid #cdd7bd;
+  border-radius: 4px;
+  color: #526640;
+  background: #f3f7e9;
+  font-size: 7px;
+  cursor: pointer;
+}
+.surface-locate-worst:hover { border-color: #8ba25b; background: #eaf1dc; }
 .surface-field-probe {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

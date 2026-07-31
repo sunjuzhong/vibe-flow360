@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { sampleColormap, type ColormapName } from './colormap'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = 25 * 1024 * 1024
@@ -467,6 +467,60 @@ export function probeFieldAtIntersection(
     entityId: String(mesh.userData.entityId ?? mesh.userData.groupId ?? mesh.uuid),
     position: [assetPoint.x, assetPoint.y, assetPoint.z],
   }
+}
+
+export function findFieldExtrema(asset: UVFAsset, fieldName: string): UVFFieldExtrema | null {
+  const field = asset.fields.find((candidate) => candidate.name === fieldName)
+  if (!field) return null
+  const samples = new Map<THREE.BufferAttribute, Map<number, THREE.Mesh>>()
+  asset.object.updateMatrixWorld(true)
+  asset.object.traverse((object) => {
+    if (!(object instanceof THREE.Mesh) || object.userData.uvfType !== 'Face') return
+    const attribute = object.geometry.getAttribute(fieldName)
+    const positions = object.geometry.getAttribute('position')
+    if (!(attribute instanceof THREE.BufferAttribute) || !positions) return
+    const vertices = samples.get(attribute) ?? new Map<number, THREE.Mesh>()
+    const index = object.geometry.getIndex()
+    if (index) {
+      for (let offset = 0; offset < index.count; offset++) {
+        const vertexIndex = index.getX(offset)
+        if (!vertices.has(vertexIndex)) vertices.set(vertexIndex, object)
+      }
+    } else {
+      for (let vertexIndex = 0; vertexIndex < attribute.count; vertexIndex++) {
+        if (!vertices.has(vertexIndex)) vertices.set(vertexIndex, object)
+      }
+    }
+    samples.set(attribute, vertices)
+  })
+
+  let min: UVFFieldProbe | null = null
+  let max: UVFFieldProbe | null = null
+  for (const [attribute, vertices] of samples) {
+    const dimension = Math.max(1, field.dimension ?? attribute.itemSize)
+    for (const [vertexIndex, mesh] of vertices) {
+      const components = Array.from(
+        { length: dimension },
+        (_, component) => attribute.getComponent(vertexIndex, component),
+      )
+      const value = field.kind === 'vector'
+        ? Math.sqrt(components.reduce((sum, component) => sum + component * component, 0))
+        : components[0]
+      if (!Number.isFinite(value)) continue
+      const positionAttribute = mesh.geometry.getAttribute('position') as THREE.BufferAttribute
+      const worldPoint = mesh.localToWorld(new THREE.Vector3().fromBufferAttribute(positionAttribute, vertexIndex))
+      const assetPoint = asset.object.worldToLocal(worldPoint)
+      const probe: UVFFieldProbe = {
+        fieldName,
+        value,
+        entityId: String(mesh.userData.entityId ?? mesh.userData.groupId ?? mesh.uuid),
+        position: [assetPoint.x, assetPoint.y, assetPoint.z],
+      }
+      if (!min || value < min.value) min = probe
+      if (!max || value > max.value) max = probe
+    }
+  }
+  return { field, min, max }
 }
 
 export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {

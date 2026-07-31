@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility } from '.'
+import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('decodes indexed faces and edge positions', () => {
@@ -289,6 +289,10 @@ describe('Flow360 UVF Three.js library', () => {
       position: [0.25, 0.25, 0],
     })
     expect(probe?.value).toBeCloseTo(0.375)
+    expect(findFieldExtrema(asset, 'pressure')).toMatchObject({
+      min: { value: 0, entityId: 'face-1', position: [0, 0, 0] },
+      max: { value: 1, entityId: 'face-1', position: [0, 1, 0] },
+    })
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
     asset.dispose()

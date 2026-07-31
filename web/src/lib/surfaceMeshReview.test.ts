@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSurfaceBoundaryInventory,
   classifySurfaceMeshQualityFields,
+  surfaceQualityRiskDirection,
   surfaceMeshParameterSummary,
 } from './surfaceMeshReview'
 
@@ -100,6 +101,7 @@ describe('SurfaceMesh review business adapter', () => {
     const fields = [
       { name: 'surface_area', kind: 'scalar', min: 0, max: 1 },
       { name: 'maximum-skewness', kind: 'scalar', min: 0, max: 0.9 },
+      { name: 'minimumAngle', kind: 'scalar', min: 2, max: 80 },
       { name: 'pressure', kind: 'scalar', min: -1, max: 1 },
       { name: 'velocity', kind: 'vector', min: 0, max: 10 },
     ] as const
@@ -107,6 +109,9 @@ describe('SurfaceMesh review business adapter', () => {
     expect(classifySurfaceMeshQualityFields([...fields]).map((field) => field.name)).toEqual([
       'surface_area',
       'maximum-skewness',
+      'minimumAngle',
     ])
+    expect(surfaceQualityRiskDirection('minimumAngle')).toBe('min')
+    expect(surfaceQualityRiskDirection('maximum_skewness')).toBe('max')
   })
 })

@@ -100,6 +100,12 @@ export type UVFFieldProbe = {
   position: [number, number, number]
 }
 
+export type UVFFieldExtrema = {
+  field: UVFFieldInfo
+  min: UVFFieldProbe | null
+  max: UVFFieldProbe | null
+}
+
 export type UVFEntityInfo = {
   id: string
   name: string

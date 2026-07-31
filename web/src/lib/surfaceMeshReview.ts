@@ -99,7 +99,12 @@ export function surfaceMeshParameterSummary(simulationParams: unknown): SurfaceP
 }
 
 export function classifySurfaceMeshQualityFields(fields: UVFFieldInfo[]): UVFFieldInfo[] {
-  return fields.filter((field) => qualityFieldPattern.test(field.name))
+  return fields.filter((field) => qualityFieldPattern.test(normalizeFieldName(field.name)))
+}
+
+export function surfaceQualityRiskDirection(fieldName: string): 'min' | 'max' {
+  const normalized = normalizeFieldName(fieldName)
+  return /\b(min(?:imum)?|orthogonality|quality)\b/i.test(normalized) ? 'min' : 'max'
 }
 
 function entityKeys(entity: Record<string, unknown>): string[] {
@@ -123,6 +128,12 @@ function humanize(value: string): string {
   return value
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function normalizeFieldName(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replaceAll('_', ' ')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

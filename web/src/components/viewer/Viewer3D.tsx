@@ -3,8 +3,8 @@ import * as THREE from 'three'
 import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { UVFLoader, applyFieldColoring, createFieldHistogram, probeFieldAtIntersection, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
-import type { UVFAsset, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, createFieldHistogram, findFieldExtrema, probeFieldAtIntersection, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 
 export type MeshGroupData = {
   id: string
@@ -56,7 +56,9 @@ type Props = {
   fieldNames?: string[]
   fieldRange?: [number, number] | null
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
+  onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
+  focusTarget?: [number, number, number] | null
   showFieldPanel?: boolean
   showEntityLegend?: boolean
   toolbar?: React.ReactNode
@@ -77,7 +79,9 @@ export function Viewer3D({
   fieldNames,
   fieldRange,
   onFieldHistogramChange,
+  onFieldExtremaChange,
   onFieldProbe,
+  focusTarget,
   showFieldPanel = true,
   showEntityLegend = true,
   toolbar,
@@ -103,6 +107,7 @@ export function Viewer3D({
   const [wireframeOn, setWireframeOn] = useState(false)
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
   const onFieldHistogramChangeRef = useRef(onFieldHistogramChange)
+  const onFieldExtremaChangeRef = useRef(onFieldExtremaChange)
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
     : controlledSelectedField
@@ -119,7 +124,8 @@ export function Viewer3D({
   useEffect(() => {
     onFieldsDiscoveredRef.current = onFieldsDiscovered
     onFieldHistogramChangeRef.current = onFieldHistogramChange
-  }, [onFieldHistogramChange, onFieldsDiscovered])
+    onFieldExtremaChangeRef.current = onFieldExtremaChange
+  }, [onFieldExtremaChange, onFieldHistogramChange, onFieldsDiscovered])
 
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
@@ -442,13 +448,36 @@ export function Viewer3D({
   useEffect(() => {
     if (uvfAssetRef.current) {
       applyFieldColoring(uvfAssetRef.current, selectedField, colormap, { range: fieldRange })
+    }
+  }, [assetState.status, selectedField, colormap, fieldRange])
+
+  useEffect(() => {
+    if (uvfAssetRef.current) {
       onFieldHistogramChangeRef.current?.(
         selectedField ? createFieldHistogram(uvfAssetRef.current, selectedField) : null,
       )
+      onFieldExtremaChangeRef.current?.(
+        selectedField ? findFieldExtrema(uvfAssetRef.current, selectedField) : null,
+      )
     } else {
       onFieldHistogramChangeRef.current?.(null)
+      onFieldExtremaChangeRef.current?.(null)
     }
-  }, [assetState.status, selectedField, colormap, fieldRange])
+  }, [assetState.status, selectedField])
+
+  useEffect(() => {
+    const asset = uvfAssetRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!asset || !camera || !controls || !focusTarget) return
+    asset.object.updateMatrixWorld(true)
+    const target = asset.object.localToWorld(new THREE.Vector3(...focusTarget))
+    const offset = camera.position.clone().sub(controls.target)
+    controls.target.copy(target)
+    camera.position.copy(target).add(offset)
+    camera.lookAt(target)
+    controls.update()
+  }, [focusTarget])
 
   useEffect(() => {
     if (uvfAssetRef.current) {
