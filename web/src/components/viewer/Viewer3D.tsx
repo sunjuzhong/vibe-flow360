@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
+import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { Flow360UVFLoader, applyFieldColoring, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldInfo } from '../../lib/uvf-three'
 
 export type MeshGroupData = {
@@ -68,8 +69,15 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
   const [colormap, setColormap] = useState<ColormapName>('viridis')
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
+  const [groupVisibility, setGroupVisibilityState] = useState<Record<string, boolean>>({})
 
   const [wireframeOn, setWireframeOn] = useState(false)
+
+  useEffect(() => {
+    setGroupVisibilityState(Object.fromEntries(
+      (manifest?.groups ?? []).map((group) => [group.id, group.visible]),
+    ))
+  }, [manifest])
 
   const createScene = useCallback((container: HTMLDivElement) => {
     const scene = new THREE.Scene()
@@ -130,7 +138,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
     if (!manifest.asset_url) return
     let root: THREE.Object3D
     if (manifest.format === 'flow360-uvf') {
-      const asset = await new Flow360UVFLoader().load(manifest.asset_url, {
+      const asset = await new UVFLoader().load(manifest.asset_url, {
         signal,
         onProgress: ({ progress }) => onProgress(progress),
       })
@@ -160,14 +168,16 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
     const fallbackGroup = manifest.groups[0]
     root.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return
-      const embeddedGroupID = String(object.userData.groupId ?? '')
+      const embeddedGroupID = String(object.userData.entityId ?? object.userData.groupId ?? '')
       const group = manifest.groups.find((candidate) => candidate.id === embeddedGroupID)
         ?? manifest.groups.find((candidate) =>
           object.name.toLowerCase().includes(candidate.name.toLowerCase()),
         )
         ?? fallbackGroup
       const groupId = group?.id ?? object.uuid
+      object.userData.entityId = embeddedGroupID || groupId
       object.userData.groupId = groupId
+      object.visible = group?.visible ?? true
       if (group) {
         const previous = Array.isArray(object.material) ? object.material : [object.material]
         previous.forEach((material) => material.dispose())
@@ -281,6 +291,21 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
       }
     }
   }, [selection, manifest])
+
+  const toggleGroupVisibility = (groupId: string) => {
+    const visible = !(groupVisibility[groupId] ?? true)
+    setGroupVisibilityState((current) => ({ ...current, [groupId]: visible }))
+    if (uvfAssetRef.current) {
+      setEntityVisibility(uvfAssetRef.current, groupId, visible)
+    } else {
+      assetRef.current?.traverse((object) => {
+        if (object.userData.groupId === groupId) object.visible = visible
+      })
+    }
+    if (!visible && selection?.groupId === groupId) {
+      onSelectionChange?.({ groupId: null })
+    }
+  }
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current
@@ -457,12 +482,24 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
           {manifest.groups.map((g) => (
             <div
               key={g.id}
-              className={`viewer-legend-item ${selection?.groupId === g.id ? 'selected' : ''} ${!g.visible ? 'hidden' : ''}`}
+              className={`viewer-legend-item ${selection?.groupId === g.id ? 'selected' : ''} ${groupVisibility[g.id] === false ? 'hidden' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 onSelectionChange?.({ groupId: g.id })
               }}
             >
+              <button
+                type="button"
+                className="viewer-group-visibility"
+                aria-label={`${groupVisibility[g.id] === false ? 'Show' : 'Hide'} ${g.name}`}
+                aria-pressed={groupVisibility[g.id] !== false}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  toggleGroupVisibility(g.id)
+                }}
+              >
+                {groupVisibility[g.id] === false ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
               <span className="viewer-color-swatch" style={{ background: g.color }} />
               <span className="viewer-group-name">{g.name}</span>
               {g.vertices !== undefined && <span className="viewer-group-stats">{g.vertices} verts</span>}

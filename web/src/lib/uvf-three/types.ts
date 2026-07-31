@@ -24,6 +24,15 @@ export type UVFBufferLocation = {
   bufNum: number
   startIndex: number
   endIndex: number
+  bounds?: UVFFieldBounds[]
+}
+
+export type UVFFieldBounds = {
+  name: string
+  minVal?: number | number[]
+  maxVal?: number | number[]
+  minMag?: number
+  maxMag?: number
 }
 
 export type UVFEntry = {
@@ -62,6 +71,7 @@ export type UVFFieldInfo = {
   kind: 'scalar' | 'vector'
   min: number
   max: number
+  dimension?: number
 }
 
 export type UVFAsset = {
@@ -73,5 +83,6 @@ export type UVFAsset = {
   fields: UVFFieldInfo[]
   lodLevels: number
   currentLOD: number
+  entityLODs: Record<string, { levels: number; current: number }>
   dispose: () => void
 }

@@ -1478,6 +1478,26 @@ button { color: inherit; }
 }
 .viewer-legend-item:hover { background: #eae7de; }
 .viewer-legend-item.selected { background: #e1eac7; }
+.viewer-legend-item.hidden {
+  opacity: 0.55;
+}
+.viewer-group-visibility {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #62675d;
+  background: transparent;
+  cursor: pointer;
+}
+.viewer-group-visibility:hover {
+  color: #20231e;
+  background: #dedbd1;
+}
 .viewer-color-swatch {
   width: 10px;
   height: 10px;

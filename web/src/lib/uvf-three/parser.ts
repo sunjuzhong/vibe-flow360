@@ -1,4 +1,4 @@
-import type { UVFBuffer, UVFEntry, UVFLOD } from './types'
+import type { UVFBuffer, UVFBufferLocation, UVFEntry, UVFLOD } from './types'
 
 const maxManifestEntries = 100_000
 
@@ -24,11 +24,32 @@ export function resolveUVFBuffer(entry: UVFEntry, lodLevel?: number): UVFBuffer 
     return buffers
   }
   const lod = buffers as UVFLOD
-  const level = lodLevel ?? lod.default ?? 0
+  const level = resolveUVFLODLevel(entry, lodLevel)
   const resolved = lod.levels?.[level]
   if (!resolved) throw new Error(`SolidGeometry ${entry.id} has no LOD ${level}`)
   validateUVFBuffer(resolved)
   return resolved
+}
+
+export function resolveUVFLODLevel(entry: UVFEntry, lodLevel?: number): number {
+  const buffers = entry.resources?.buffers
+  if (!buffers || buffers.type !== 'lod') return 0
+  const level = lodLevel ?? buffers.default ?? 0
+  if (!Number.isSafeInteger(level) || level < 0 || !buffers.levels?.[level]) {
+    throw new Error(`SolidGeometry ${entry.id} has no LOD ${level}`)
+  }
+  return level
+}
+
+export function resolveUVFBufferLocations(
+  entry: UVFEntry,
+  locations: UVFBufferLocation[],
+  lodLevel?: number,
+): UVFBufferLocation[] {
+  const resolved = locations ?? []
+  const buffers = entry.resources?.buffers
+  if (buffers?.type !== 'lod' || resolved.length !== buffers.levels.length) return resolved
+  return [resolved[resolveUVFLODLevel(entry, lodLevel)]]
 }
 
 export function safeUVFBufferPath(path: string) {

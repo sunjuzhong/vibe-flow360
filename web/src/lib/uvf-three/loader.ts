@@ -1,7 +1,7 @@
 import * as THREE from 'three'
-import { parseUVFManifest, resolveUVFBuffer, safeUVFBufferPath } from './parser'
+import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { sampleColormap, type ColormapName } from './colormap'
-import type { UVFAsset, UVFBuffer, UVFBufferSection, UVFEntry, UVFFieldInfo, UVFLoadProgress, UVFLOD } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntry, UVFFieldInfo, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = 25 * 1024 * 1024
@@ -15,7 +15,7 @@ type LoadOptions = {
   onProgress?: (progress: UVFLoadProgress) => void
 }
 
-export class Flow360UVFLoader {
+export class UVFLoader {
   async load(manifestURL: string, options: LoadOptions = {}): Promise<UVFAsset> {
     const resolvedManifestURL = new URL(manifestURL, window.location.href)
     const manifestResponse = await fetch(resolvedManifestURL, { signal: options.signal })
@@ -54,7 +54,8 @@ export class Flow360UVFLoader {
 }
 
 export function extractFieldCatalog(entries: UVFEntry[], lodLevel?: number): UVFFieldInfo[] {
-  const fieldMap = new Map<string, { min: number; max: number; kind: 'scalar' | 'vector' }>()
+  const manifestBounds = collectManifestBounds(entries)
+  const fieldMap = new Map<string, { min: number; max: number; kind: 'scalar' | 'vector'; dimension: number }>()
   for (const entry of entries) {
     if (entry.type !== 'SolidGeometry') continue
     const buffers = entry.resources?.buffers
@@ -68,12 +69,15 @@ export function extractFieldCatalog(entries: UVFEntry[], lodLevel?: number): UVF
     } else {
       bufferInfo = buffers as UVFBuffer
     }
-    const bounds = bufferInfo.bounds ?? {}
+    const bounds = {
+      ...(buffers.type === 'lod' ? (buffers as UVFLOD).bounds ?? {} : {}),
+      ...(bufferInfo.bounds ?? {}),
+    }
     for (const section of bufferInfo.sections) {
       if (STRUCTURAL_SECTIONS.has(section.name)) continue
       if (section.dType !== 'float32') continue
       const existing = fieldMap.get(section.name)
-      const sectionBounds = bounds[section.name]
+      const sectionBounds = bounds[section.name] ?? manifestBounds.get(section.name)
       const sMin = sectionBounds?.[0] ?? 0
       const sMax = sectionBounds?.[1] ?? 0
       if (existing) {
@@ -83,7 +87,8 @@ export function extractFieldCatalog(entries: UVFEntry[], lodLevel?: number): UVF
         fieldMap.set(section.name, {
           min: sMin,
           max: sMax,
-          kind: section.dimension >= 3 ? 'vector' : 'scalar',
+          kind: section.dimension > 1 ? 'vector' : 'scalar',
+          dimension: section.dimension,
         })
       }
     }
@@ -99,21 +104,34 @@ export function buildUVFAsset(
   lodLevel?: number,
 ): UVFAsset {
   const root = new THREE.Group()
-  root.name = 'Flow360 UVF Geometry'
+  root.name = 'UVF Scene'
   const byID = new Map(entries.map((entry) => [entry.id, entry]))
   let faces = 0
   let edges = 0
   let vertices = 0
   let triangles = 0
 
-  const fields = extractFieldCatalog(entries, lodLevel)
+  const catalog = new Map(extractFieldCatalog(entries, lodLevel).map((field) => [field.name, field]))
+  const computedFieldRanges = new Map<string, { min: number; max: number }>()
 
   let lodLevels = 1
+  let currentLOD = lodLevel ?? 0
+  let currentLODSet = lodLevel !== undefined
+  const entityLODs: Record<string, { levels: number; current: number }> = {}
   for (const entry of entries) {
     if (entry.type !== 'SolidGeometry') continue
     const buffers = entry.resources?.buffers
     if (buffers?.type === 'lod') {
-      lodLevels = Math.max(lodLevels, (buffers as UVFLOD).levels?.length ?? 1)
+      const levels = (buffers as UVFLOD).levels?.length ?? 1
+      const current = resolveUVFLODLevel(entry, lodLevel)
+      lodLevels = Math.max(lodLevels, levels)
+      entityLODs[entry.id] = { levels, current }
+      if (!currentLODSet) {
+        currentLOD = current
+        currentLODSet = true
+      }
+    } else {
+      entityLODs[entry.id] = { levels: 1, current: 0 }
     }
   }
 
@@ -133,14 +151,39 @@ export function buildUVFAsset(
     const edgePositions = edgeSection ? floatSection(raw, edgeSection) : null
     const elementGroupIds = elementGroupSection ? uintSection(raw, elementGroupSection) : null
     vertices += positions.length / 3
+    const vertexCount = positions.length / 3
+    const fieldAttributes = new Map<string, THREE.BufferAttribute>()
+    for (const section of bufferInfo.sections) {
+      if (STRUCTURAL_SECTIONS.has(section.name) || section.dType !== 'float32') continue
+      const dimension = Math.max(1, section.dimension)
+      const values = floatSection(raw, section)
+      if (values.length / dimension !== vertexCount) continue
+      fieldAttributes.set(section.name, new THREE.BufferAttribute(values, dimension))
+      const range = finiteFieldRange(values, dimension)
+      const previous = computedFieldRanges.get(section.name)
+      computedFieldRanges.set(section.name, previous
+        ? { min: Math.min(previous.min, range.min), max: Math.max(previous.max, range.max) }
+        : range)
+      if (!catalog.has(section.name)) {
+        catalog.set(section.name, {
+          name: section.name,
+          kind: dimension > 1 ? 'vector' : 'scalar',
+          dimension,
+          min: range.min,
+          max: range.max,
+        })
+      }
+    }
 
     for (const faceID of solid.attributions?.faces ?? []) {
       const face = byID.get(faceID)
       if (!face || face.type !== 'Face') continue
-      const ranges = face.properties?.bufferLocations?.indices ?? []
-      const faceIndices = indices
-        ? concatenateIndices(ranges.map((range) => indices.slice(range.startIndex, range.endIndex)))
-        : undefined
+      const ranges = resolveUVFBufferLocations(
+        solid,
+        face.properties?.bufferLocations?.indices ?? [],
+        lodLevel,
+      )
+      const faceIndices = indices ? resolveFaceIndices(indices, ranges, solid.id, face.id) : undefined
       const geometry = new THREE.BufferGeometry()
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       if (normals && normals.length === positions.length) {
@@ -149,6 +192,9 @@ export function buildUVFAsset(
         geometry.computeVertexNormals()
       }
       if (faceIndices) geometry.setIndex(new THREE.BufferAttribute(faceIndices, 1))
+      for (const [name, attribute] of fieldAttributes) {
+        geometry.setAttribute(name, attribute)
+      }
       if (elementGroupIds) {
         geometry.setAttribute(
           'elementGroupId',
@@ -168,6 +214,7 @@ export function buildUVFAsset(
       })
       const mesh = new THREE.Mesh(geometry, material)
       mesh.name = face.name || face.id
+      mesh.userData.entityId = face.id
       mesh.userData.groupId = face.id
       mesh.userData.uvfType = 'Face'
       root.add(mesh)
@@ -199,6 +246,12 @@ export function buildUVFAsset(
     }
   }
   if (!faces) throw new Error('UVF manifest produced no renderable faces')
+  const fields = Array.from(catalog.values())
+    .map((field) => {
+      const computed = computedFieldRanges.get(field.name)
+      return computed ? { ...field, ...computed } : field
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
   return {
     object: root,
     faces,
@@ -207,7 +260,8 @@ export function buildUVFAsset(
     triangles,
     fields,
     lodLevels,
-    currentLOD: lodLevel ?? 0,
+    currentLOD,
+    entityLODs,
     dispose: () => {
       root.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
@@ -237,10 +291,13 @@ export function applyFieldColoring(
       const fieldSection = findSectionByName(geometry, field.name)
       if (fieldSection) {
         const vertexCount = positionAttr.count
+        const dimension = Math.max(1, field.dimension ?? fieldSection.length / vertexCount)
         const colors = new Float32Array(vertexCount * 3)
         const range = field.max - field.min || 1
         for (let i = 0; i < vertexCount; i++) {
-          const value = fieldSection[i] ?? 0
+          const value = field.kind === 'vector'
+            ? vectorMagnitude(fieldSection, i * dimension, dimension)
+            : fieldSection[i * dimension] ?? 0
           const t = (value - field.min) / range
           const color = sampleColormap(t, colormap)
           colors[i * 3] = color.r
@@ -271,12 +328,17 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
   })
 }
 
-export function setGroupVisibility(asset: UVFAsset, groupId: string, visible: boolean): void {
+export function setEntityVisibility(asset: UVFAsset, entityId: string, visible: boolean): void {
   asset.object.traverse((object) => {
-    if (object.userData.groupId !== groupId) return
+    if ((object.userData.entityId ?? object.userData.groupId) !== entityId) return
     object.visible = visible
   })
 }
+
+// Compatibility aliases for existing consumers. New code should use the
+// format-oriented names above.
+export { UVFLoader as Flow360UVFLoader }
+export const setGroupVisibility = setEntityVisibility
 
 function findSectionByName(geometry: THREE.BufferGeometry, fieldName: string): Float32Array | null {
   const attr = geometry.getAttribute(fieldName)
@@ -310,6 +372,52 @@ function assertSectionBounds(buffer: ArrayBuffer, section: UVFBufferSection, ali
   }
 }
 
+function finiteFieldRange(values: Float32Array, dimension: number) {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  const count = values.length / dimension
+  for (let index = 0; index < count; index++) {
+    const value = dimension > 1
+      ? vectorMagnitude(values, index * dimension, dimension)
+      : values[index * dimension]
+    if (!Number.isFinite(value)) continue
+    min = Math.min(min, value)
+    max = Math.max(max, value)
+  }
+  return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : { min: 0, max: 0 }
+}
+
+function vectorMagnitude(values: Float32Array, offset: number, dimension: number) {
+  let sum = 0
+  for (let component = 0; component < dimension; component++) {
+    const value = values[offset + component] ?? 0
+    sum += value * value
+  }
+  return Math.sqrt(sum)
+}
+
+function collectManifestBounds(entries: UVFEntry[]) {
+  const result = new Map<string, [number, number]>()
+  for (const entry of entries) {
+    for (const location of entry.properties?.bufferLocations?.indices ?? []) {
+      for (const bound of location.bounds ?? []) {
+        const min = typeof bound.minMag === 'number'
+          ? bound.minMag
+          : typeof bound.minVal === 'number' ? bound.minVal : undefined
+        const max = typeof bound.maxMag === 'number'
+          ? bound.maxMag
+          : typeof bound.maxVal === 'number' ? bound.maxVal : undefined
+        if (min === undefined || max === undefined) continue
+        const previous = result.get(bound.name)
+        result.set(bound.name, previous
+          ? [Math.min(previous[0], min), Math.max(previous[1], max)]
+          : [min, max])
+      }
+    }
+  }
+  return result
+}
+
 function concatenateIndices(parts: Uint32Array[]) {
   const length = parts.reduce((total, part) => total + part.length, 0)
   if (!length) return undefined
@@ -320,6 +428,27 @@ function concatenateIndices(parts: Uint32Array[]) {
     offset += part.length
   }
   return result
+}
+
+function resolveFaceIndices(
+  indices: Uint32Array,
+  ranges: UVFBufferLocation[],
+  solidId: string,
+  entityId: string,
+) {
+  const parts = (ranges ?? []).map((range) => {
+    if (
+      !Number.isSafeInteger(range.startIndex)
+      || !Number.isSafeInteger(range.endIndex)
+      || range.startIndex < 0
+      || range.endIndex < range.startIndex
+      || range.endIndex > indices.length
+    ) {
+      throw new Error(`Entity ${entityId} has an invalid index range in ${solidId}`)
+    }
+    return indices.slice(range.startIndex, range.endIndex)
+  })
+  return concatenateIndices(parts)
 }
 
 function faceColor(value: number | undefined, index: number) {

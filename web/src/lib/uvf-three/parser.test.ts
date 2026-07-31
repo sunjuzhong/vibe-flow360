@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildUVFAsset, extractFieldCatalog, applyFieldColoring, parseUVFManifest, safeUVFBufferPath } from '.'
+import { buildUVFAsset, extractFieldCatalog, applyFieldColoring, parseUVFManifest, safeUVFBufferPath, setEntityVisibility } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('decodes indexed faces and edge positions', () => {
@@ -132,6 +132,48 @@ describe('Flow360 UVF Three.js library', () => {
     expect(fieldsLod1).toHaveLength(0)
   })
 
+  it('aggregates scalar and vector bounds declared on entity locations', () => {
+    const entries = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [
+              { name: 'position', dType: 'float32', dimension: 3, offset: 0, length: 36 },
+              { name: 'scalarField', dType: 'float32', dimension: 1, offset: 36, length: 12 },
+              { name: 'vectorField', dType: 'float32', dimension: 3, offset: 48, length: 36 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'entity-1',
+        type: 'Face',
+        properties: {
+          bufferLocations: {
+            indices: [{
+              bufNum: 0,
+              startIndex: 0,
+              endIndex: 3,
+              bounds: [
+                { name: 'scalarField', minVal: -2, maxVal: 7 },
+                { name: 'vectorField', minMag: 1, maxMag: 9, minVal: [-1, 0, 0], maxVal: [9, 0, 0] },
+              ],
+            }],
+          },
+        },
+      },
+    ])
+
+    expect(extractFieldCatalog(entries)).toEqual([
+      { name: 'scalarField', kind: 'scalar', dimension: 1, min: -2, max: 7 },
+      { name: 'vectorField', kind: 'vector', dimension: 3, min: 1, max: 9 },
+    ])
+  })
+
   it('reports LOD levels in asset', () => {
     const manifest = parseUVFManifest([
       {
@@ -175,6 +217,7 @@ describe('Flow360 UVF Three.js library', () => {
     const asset = buildUVFAsset(manifest, new Map([['body-lod0.bin', data0]]), 0)
     expect(asset.lodLevels).toBe(2)
     expect(asset.currentLOD).toBe(0)
+    expect(asset.entityLODs).toEqual({ 'body-1': { levels: 2, current: 0 } })
     asset.dispose()
   })
 
@@ -209,10 +252,105 @@ describe('Flow360 UVF Three.js library', () => {
     new Float32Array(data, 48, 3).set([0, 0.5, 1.0])
     const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
     expect(asset.fields).toHaveLength(1)
+    expect(asset.fields[0]).toMatchObject({ name: 'pressure', min: 0, max: 1, dimension: 1 })
+    const face = asset.object.children[0]
+    expect(face).toHaveProperty('geometry')
+    expect((face as import('three').Mesh).geometry.getAttribute('pressure').count).toBe(3)
     // Apply field coloring
     applyFieldColoring(asset, 'pressure', 'grayscale')
+    expect((face as import('three').Mesh).geometry.getAttribute('color').count).toBe(3)
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
+    asset.dispose()
+  })
+
+  it('uses the selected LOD face range and reports its effective level', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['face-1'] },
+        resources: {
+          buffers: {
+            type: 'lod',
+            default: 1,
+            levels: [
+              {
+                type: 'buffers',
+                path: 'body-full.bin',
+                sections: [
+                  { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 24 },
+                  { name: 'position', dType: 'float32', dimension: 3, offset: 24, length: 48 },
+                ],
+              },
+              {
+                type: 'buffers',
+                path: 'body-preview.bin',
+                sections: [
+                  { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12 },
+                  { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36 },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: 'face-1',
+        type: 'Face',
+        properties: {
+          bufferLocations: {
+            indices: [
+              { bufNum: 0, startIndex: 0, endIndex: 6 },
+              { bufNum: 0, startIndex: 0, endIndex: 3 },
+            ],
+          },
+        },
+      },
+    ])
+    const data = new ArrayBuffer(48)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+
+    const asset = buildUVFAsset(manifest, new Map([['body-preview.bin', data]]))
+    expect(asset.currentLOD).toBe(1)
+    expect(asset.entityLODs['body-1']).toEqual({ levels: 2, current: 1 })
+    expect(asset.triangles).toBe(1)
+    asset.dispose()
+  })
+
+  it('toggles entity visibility without domain-specific knowledge', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['entity-1'] },
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [
+              { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12 },
+              { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'entity-1',
+        type: 'Face',
+        properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 3 }] } },
+      },
+    ])
+    const data = new ArrayBuffer(48)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
+
+    setEntityVisibility(asset, 'entity-1', false)
+    expect(asset.object.children[0].visible).toBe(false)
+    setEntityVisibility(asset, 'entity-1', true)
+    expect(asset.object.children[0].visible).toBe(true)
     asset.dispose()
   })
 })
