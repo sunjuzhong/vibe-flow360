@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
 import type { Viewer3D as Viewer3DComponent } from './Viewer3D'
 
-import type { UVFFieldInfo } from '../../lib/uvf-three'
+import type { UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 
 const Viewer = lazy(() => import('./Viewer3D').then((module) => ({ default: module.Viewer3D })))
 
@@ -17,9 +17,15 @@ export type {
 export type ViewerToolbarProps = {
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
+  entityVisibility?: Record<string, boolean>
+  onEntityVisibilityChange?: (visibility: Record<string, boolean>) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
   selectedField?: string | null
   onSelectedFieldChange?: (field: string | null) => void
+  fieldNames?: string[]
+  fieldRange?: [number, number] | null
+  onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
+  onFieldProbe?: (probe: UVFFieldProbe | null) => void
   showFieldPanel?: boolean
   showEntityLegend?: boolean
   toolbar?: React.ReactNode

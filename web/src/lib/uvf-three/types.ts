@@ -76,6 +76,30 @@ export type UVFFieldInfo = {
   dimension?: number
 }
 
+export type UVFFieldHistogramBin = {
+  min: number
+  max: number
+  count: number
+}
+
+export type UVFFieldHistogram = {
+  field: UVFFieldInfo
+  sampleCount: number
+  bins: UVFFieldHistogramBin[]
+}
+
+export type UVFFieldColorOptions = {
+  range?: [number, number] | null
+  outsideColor?: [number, number, number]
+}
+
+export type UVFFieldProbe = {
+  fieldName: string
+  value: number
+  entityId: string
+  position: [number, number, number]
+}
+
 export type UVFEntityInfo = {
   id: string
   name: string

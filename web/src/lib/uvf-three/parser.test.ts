@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildUVFAsset, extractFieldCatalog, applyFieldColoring, parseUVFManifest, safeUVFBufferPath, setEntityVisibility } from '.'
+import * as THREE from 'three'
+import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('decodes indexed faces and edge positions', () => {
@@ -260,7 +261,34 @@ describe('Flow360 UVF Three.js library', () => {
     expect((face as import('three').Mesh).geometry.getAttribute('pressure').count).toBe(3)
     // Apply field coloring
     applyFieldColoring(asset, 'pressure', 'grayscale')
-    expect((face as import('three').Mesh).geometry.getAttribute('color').count).toBe(3)
+    const colorAttribute = (face as import('three').Mesh).geometry.getAttribute('color')
+    expect(colorAttribute.count).toBe(3)
+    expect(Array.from(collectFieldValues(asset, 'pressure'))).toEqual([0, 0.5, 1])
+    expect(createFieldHistogram(asset, 'pressure', 2)).toMatchObject({
+      sampleCount: 3,
+      bins: [{ min: 0, max: 0.5, count: 1 }, { min: 0.5, max: 1, count: 2 }],
+    })
+    applyFieldColoring(asset, 'pressure', 'grayscale', {
+      range: [0.4, 0.6],
+      outsideColor: [0.25, 0.25, 0.25],
+    })
+    const rangedColors = (face as import('three').Mesh).geometry.getAttribute('color')
+    expect(rangedColors.getX(0)).toBeCloseTo(0.25)
+    expect(rangedColors.getX(1)).toBeCloseTo(0.5)
+    expect(rangedColors.getX(2)).toBeCloseTo(0.25)
+    const probe = probeFieldAtIntersection(
+      asset,
+      face as THREE.Mesh,
+      'pressure',
+      0,
+      new THREE.Vector3(0.25, 0.25, 0),
+    )
+    expect(probe).toMatchObject({
+      fieldName: 'pressure',
+      entityId: 'face-1',
+      position: [0.25, 0.25, 0],
+    })
+    expect(probe?.value).toBeCloseTo(0.375)
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
     asset.dispose()

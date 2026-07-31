@@ -3320,24 +3320,48 @@ button { color: inherit; }
   grid-template-columns: 1fr 1fr;
   gap: 4px;
 }
-.surface-boundary-list button,
+.surface-boundary-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 25px;
+  overflow: hidden;
+  border: 1px solid #dfe2d9;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .72);
+}
+.surface-boundary-row:hover,
+.surface-boundary-row.selected { border-color: #8ba25b; background: #f3f7e8; }
+.surface-boundary-row.unassigned { border-left: 3px solid #c89b46; }
+.surface-boundary-row.conflict { border-left: 3px solid #b86755; }
+.surface-boundary-select,
 .surface-quality-field {
   min-width: 0;
   padding: 6px 7px;
   overflow: hidden;
-  border: 1px solid #dfe2d9;
-  border-radius: 6px;
+  border: 0;
   color: #4c5548;
-  background: rgba(255, 255, 255, .72);
+  background: transparent;
   text-align: left;
   cursor: pointer;
 }
-.surface-boundary-list button:hover,
-.surface-boundary-list button.selected { border-color: #8ba25b; background: #f3f7e8; }
-.surface-boundary-list button.unassigned { border-left: 3px solid #c89b46; }
-.surface-boundary-list button.conflict { border-left: 3px solid #b86755; }
-.surface-boundary-list span,
-.surface-boundary-list small,
+.surface-quality-field { cursor: default; }
+.surface-quality-field {
+  border: 1px solid #dfe2d9;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .72);
+}
+.surface-boundary-isolate {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid #e1e4dc;
+  color: #737c6e;
+  background: transparent;
+  cursor: pointer;
+}
+.surface-boundary-isolate:hover { color: #536c35; background: rgba(120, 149, 33, .1); }
+.surface-boundary-select span,
+.surface-boundary-select small,
 .surface-quality-field span,
 .surface-quality-field small {
   display: block;
@@ -3345,9 +3369,9 @@ button { color: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.surface-boundary-list span,
+.surface-boundary-select span,
 .surface-quality-field span { font-size: 8px; font-weight: 650; }
-.surface-boundary-list small,
+.surface-boundary-select small,
 .surface-quality-field small { margin-top: 2px; color: #848b7f; font: 7px 'DM Mono'; }
 .surface-review-section > p,
 .surface-parameter-summary > p {
@@ -3358,6 +3382,91 @@ button { color: inherit; }
 }
 .surface-review-section .surface-selected-detail { color: #5e7253; }
 .surface-review-section .surface-review-warning { color: #965c4f; }
+.surface-show-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border: 1px solid #d9ddd3;
+  border-radius: 4px;
+  color: #66715f;
+  background: #fff;
+  font-size: 7px;
+  cursor: pointer;
+}
+.surface-field-distribution {
+  margin-top: 6px;
+  padding: 7px;
+  border: 1px solid #e0e3da;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .62);
+}
+.surface-histogram {
+  display: flex;
+  height: 48px;
+  align-items: flex-end;
+  gap: 1px;
+}
+.surface-histogram i {
+  min-width: 1px;
+  flex: 1;
+  border-radius: 1px 1px 0 0;
+  background: #c7cbc1;
+}
+.surface-histogram i.in-range { background: #789521; }
+.surface-range-values {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+  color: #626b5e;
+  font: 7px 'DM Mono';
+}
+.surface-range-values button {
+  padding: 2px 5px;
+  border: 1px solid #d9ddd3;
+  border-radius: 4px;
+  color: #687262;
+  background: #fff;
+  font-size: 7px;
+  cursor: pointer;
+}
+.surface-field-distribution label {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  color: #7c8378;
+  font-size: 7px;
+}
+.surface-field-distribution input[type='range'] {
+  width: 100%;
+  accent-color: #789521;
+}
+.surface-field-probe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #e1e4dc;
+}
+.surface-field-probe strong {
+  overflow: hidden;
+  color: #596451;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.surface-field-probe span { color: #405533; font: 8px 'DM Mono'; }
+.surface-field-probe small {
+  grid-column: 1 / -1;
+  color: #858c81;
+  font: 7px 'DM Mono';
+}
 .surface-parameter-summary {
   margin-top: 9px;
   border-top: 1px solid #dfe2d9;

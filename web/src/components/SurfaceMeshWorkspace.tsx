@@ -3,20 +3,22 @@ import {
   Box,
   CheckCircle2,
   CircleDashed,
+  Focus,
   GitPullRequestDraft,
   Grid3X3,
   Layers3,
   Palette,
+  RotateCcw,
   Ruler,
   ScanLine,
   Triangle,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
-import type { UVFFieldInfo } from '../lib/uvf-three'
+import type { UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../lib/uvf-three'
 import {
   buildSurfaceBoundaryInventory,
   classifySurfaceMeshQualityFields,
@@ -65,9 +67,13 @@ export default function SurfaceMeshWorkspace({
   onPlanVolumeMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [boundaryVisibility, setBoundaryVisibility] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useState<SurfaceViewMode>('boundaries')
   const [qualityFields, setQualityFields] = useState<UVFFieldInfo[]>([])
   const [selectedQualityField, setSelectedQualityField] = useState<string | null>(null)
+  const [qualityRange, setQualityRange] = useState<[number, number] | null>(null)
+  const [fieldHistogram, setFieldHistogram] = useState<UVFFieldHistogram | null>(null)
+  const [fieldProbe, setFieldProbe] = useState<UVFFieldProbe | null>(null)
 
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
@@ -85,6 +91,14 @@ export default function SurfaceMeshWorkspace({
   )
   const selectedBoundary = boundaryInventory.find((row) => row.id === viewerSelection.groupId)
   const selectedFieldInfo = qualityFields.find((field) => field.name === selectedQualityField)
+  const qualityFieldNames = useMemo(
+    () => qualityFields.map((field) => field.name),
+    [qualityFields],
+  )
+  const histogramPeak = useMemo(
+    () => Math.max(...(fieldHistogram?.bins.map((bin) => bin.count) ?? [1]), 1),
+    [fieldHistogram],
+  )
   const assignedBoundaryCount = boundaryInventory.filter((row) => row.status === 'assigned').length
   const boundaryConflictCount = boundaryInventory.filter((row) => row.status === 'conflict').length
   const handleFieldsDiscovered = (fields: UVFFieldInfo[]) => {
@@ -94,6 +108,26 @@ export default function SurfaceMeshWorkspace({
       current && nextQualityFields.some((field) => field.name === current)
         ? current
         : nextQualityFields[0]?.name ?? null
+    ))
+  }
+  useEffect(() => {
+    setQualityRange(selectedFieldInfo ? [selectedFieldInfo.min, selectedFieldInfo.max] : null)
+    setFieldProbe(null)
+  }, [selectedFieldInfo])
+  useEffect(() => {
+    setBoundaryVisibility(Object.fromEntries(
+      (manifest?.groups ?? []).map((group) => [group.id, group.visible]),
+    ))
+  }, [manifest?.groups])
+  const isolateBoundary = (groupId: string) => {
+    setBoundaryVisibility(Object.fromEntries(
+      boundaryInventory.map((row) => [row.id, row.id === groupId]),
+    ))
+    setViewerSelection({ groupId })
+  }
+  const showAllBoundaries = () => {
+    setBoundaryVisibility(Object.fromEntries(
+      boundaryInventory.map((row) => [row.id, true]),
     ))
   }
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
@@ -135,9 +169,15 @@ export default function SurfaceMeshWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          entityVisibility={boundaryVisibility}
+          onEntityVisibilityChange={setBoundaryVisibility}
           selectedField={viewMode === 'quality' ? selectedQualityField : null}
           onSelectedFieldChange={setSelectedQualityField}
           onFieldsDiscovered={handleFieldsDiscovered}
+          fieldNames={qualityFieldNames}
+          fieldRange={viewMode === 'quality' ? qualityRange : null}
+          onFieldHistogramChange={setFieldHistogram}
+          onFieldProbe={viewMode === 'quality' ? setFieldProbe : undefined}
           showFieldPanel={viewMode === 'quality'}
           showEntityLegend={viewMode === 'boundaries'}
           toolbar={(
@@ -227,33 +267,115 @@ export default function SurfaceMeshWorkspace({
             </div>
             {viewMode === 'quality' ? (
               selectedFieldInfo ? (
-                <button
-                  type="button"
-                  className="surface-quality-field active"
-                  onClick={() => setViewMode('quality')}
-                >
-                  <span>{selectedFieldInfo.name}</span>
-                  <small>{selectedFieldInfo.kind} · {selectedFieldInfo.min.toPrecision(4)} – {selectedFieldInfo.max.toPrecision(4)}</small>
-                </button>
+                <>
+                  <div className="surface-quality-field active">
+                    <span>{selectedFieldInfo.name}</span>
+                    <small>{selectedFieldInfo.kind} · {selectedFieldInfo.min.toPrecision(4)} – {selectedFieldInfo.max.toPrecision(4)}</small>
+                  </div>
+                  {fieldHistogram?.field.name === selectedQualityField && qualityRange && (
+                    <div className="surface-field-distribution">
+                      <div
+                        className="surface-histogram"
+                        aria-label={`${selectedFieldInfo.name} distribution, ${fieldHistogram.sampleCount} samples`}
+                      >
+                        {fieldHistogram.bins.map((bin, index) => {
+                          const inRange = bin.max >= qualityRange[0] && bin.min <= qualityRange[1]
+                          return (
+                            <i
+                              key={`${bin.min}-${index}`}
+                              className={inRange ? 'in-range' : ''}
+                              style={{ height: `${Math.max(3, bin.count / histogramPeak * 100)}%` }}
+                              title={`${bin.min.toPrecision(4)} – ${bin.max.toPrecision(4)}: ${bin.count}`}
+                            />
+                          )
+                        })}
+                      </div>
+                      <div className="surface-range-values">
+                        <span>{qualityRange[0].toPrecision(4)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQualityRange([selectedFieldInfo.min, selectedFieldInfo.max])}
+                        >
+                          Reset range
+                        </button>
+                        <span>{qualityRange[1].toPrecision(4)}</span>
+                      </div>
+                      <label>
+                        Minimum highlighted value
+                        <input
+                          type="range"
+                          min={selectedFieldInfo.min}
+                          max={selectedFieldInfo.max}
+                          step={(selectedFieldInfo.max - selectedFieldInfo.min) / 200 || 1}
+                          value={qualityRange[0]}
+                          onChange={(event) => {
+                            const value = Number(event.target.value)
+                            setQualityRange((current) => current
+                              ? [Math.min(value, current[1]), current[1]]
+                              : [value, selectedFieldInfo.max])
+                          }}
+                        />
+                      </label>
+                      <label>
+                        Maximum highlighted value
+                        <input
+                          type="range"
+                          min={selectedFieldInfo.min}
+                          max={selectedFieldInfo.max}
+                          step={(selectedFieldInfo.max - selectedFieldInfo.min) / 200 || 1}
+                          value={qualityRange[1]}
+                          onChange={(event) => {
+                            const value = Number(event.target.value)
+                            setQualityRange((current) => current
+                              ? [current[0], Math.max(value, current[0])]
+                              : [selectedFieldInfo.min, value])
+                          }}
+                        />
+                      </label>
+                      {fieldProbe?.fieldName === selectedQualityField && (
+                        <div className="surface-field-probe">
+                          <strong>Probe · {boundaryInventory.find((row) => row.id === fieldProbe.entityId)?.name ?? fieldProbe.entityId}</strong>
+                          <span>{fieldProbe.value.toPrecision(6)}</span>
+                          <small>
+                            ({fieldProbe.position.map((value) => value.toPrecision(4)).join(', ')})
+                          </small>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : (
                 <p>No area, aspect-ratio, skewness, or other surface-quality field is present in this manifest.</p>
               )
             ) : viewMode === 'boundaries' ? (
               <div className="surface-boundary-list">
                 {boundaryInventory.length > 0 ? boundaryInventory.slice(0, 8).map((row) => (
-                  <button
-                    type="button"
+                  <div
                     key={row.id}
-                    className={`${row.status} ${viewerSelection.groupId === row.id ? 'selected' : ''}`}
-                    onClick={() => setViewerSelection({ groupId: row.id })}
+                    className={`surface-boundary-row ${row.status} ${viewerSelection.groupId === row.id ? 'selected' : ''}`}
                   >
-                    <span>{row.name}</span>
-                    <small>
-                      {row.assignments.length > 0
-                        ? row.assignments.map((assignment) => assignment.modelName).join(', ')
-                        : 'Unassigned'}
-                    </small>
-                  </button>
+                    <button
+                      type="button"
+                      className="surface-boundary-select"
+                      onClick={() => setViewerSelection({ groupId: row.id })}
+                    >
+                      <span>{row.name}</span>
+                      <small>
+                        {row.assignments.length > 0
+                          ? row.assignments.map((assignment) => assignment.modelName).join(', ')
+                          : 'Unassigned'}
+                      </small>
+                    </button>
+                    <button
+                      type="button"
+                      className="surface-boundary-isolate"
+                      aria-label={`Isolate ${row.name}`}
+                      title={`Isolate ${row.name}`}
+                      onClick={() => isolateBoundary(row.id)}
+                    >
+                      <Focus size={11} />
+                    </button>
+                  </div>
                 )) : <p>No Face entities are present in the current render asset.</p>}
               </div>
             ) : (
@@ -269,6 +391,11 @@ export default function SurfaceMeshWorkspace({
             )}
             {viewMode === 'boundaries' && boundaryConflictCount > 0 && (
               <p className="surface-review-warning">{boundaryConflictCount} face group(s) have multiple model assignments.</p>
+            )}
+            {viewMode === 'boundaries' && boundaryInventory.length > 0 && (
+              <button type="button" className="surface-show-all" onClick={showAllBoundaries}>
+                <RotateCcw size={10} /> Show all faces
+              </button>
             )}
           </div>
           <details className="surface-parameter-summary">

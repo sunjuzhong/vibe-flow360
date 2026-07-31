@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { sampleColormap, type ColormapName } from './colormap'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldInfo, UVFLoadProgress, UVFLOD } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = 25 * 1024 * 1024
@@ -301,6 +301,7 @@ export function applyFieldColoring(
   asset: UVFAsset,
   fieldName: string | null,
   colormap: ColormapName = 'viridis',
+  options: UVFFieldColorOptions = {},
 ): void {
   const field = fieldName ? asset.fields.find((f) => f.name === fieldName) : null
   asset.object.traverse((object) => {
@@ -317,15 +318,23 @@ export function applyFieldColoring(
         const dimension = Math.max(1, field.dimension ?? fieldSection.length / vertexCount)
         const colors = new Float32Array(vertexCount * 3)
         const range = field.max - field.min || 1
+        const selectedRange = normalizeRange(options.range)
         for (let i = 0; i < vertexCount; i++) {
           const value = field.kind === 'vector'
             ? vectorMagnitude(fieldSection, i * dimension, dimension)
             : fieldSection[i * dimension] ?? 0
-          const t = (value - field.min) / range
-          const color = sampleColormap(t, colormap)
-          colors[i * 3] = color.r
-          colors[i * 3 + 1] = color.g
-          colors[i * 3 + 2] = color.b
+          if (selectedRange && (value < selectedRange[0] || value > selectedRange[1])) {
+            const outside = options.outsideColor ?? [0.68, 0.7, 0.66]
+            colors[i * 3] = outside[0]
+            colors[i * 3 + 1] = outside[1]
+            colors[i * 3 + 2] = outside[2]
+          } else {
+            const t = (value - field.min) / range
+            const color = sampleColormap(t, colormap)
+            colors[i * 3] = color.r
+            colors[i * 3 + 1] = color.g
+            colors[i * 3 + 2] = color.b
+          }
         }
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
         material.vertexColors = true
@@ -339,6 +348,125 @@ export function applyFieldColoring(
       material.needsUpdate = true
     }
   })
+}
+
+export function collectFieldValues(asset: UVFAsset, fieldName: string): Float32Array {
+  const field = asset.fields.find((candidate) => candidate.name === fieldName)
+  if (!field) return new Float32Array()
+  const usedIndices = new Map<THREE.BufferAttribute, Set<number> | null>()
+
+  asset.object.traverse((object) => {
+    if (!(object instanceof THREE.Mesh) || object.userData.uvfType !== 'Face') return
+    const attribute = object.geometry.getAttribute(fieldName)
+    if (!(attribute instanceof THREE.BufferAttribute)) return
+    const index = object.geometry.getIndex()
+    if (!index) {
+      usedIndices.set(attribute, null)
+      return
+    }
+    if (usedIndices.get(attribute) === null) return
+    const indices = usedIndices.get(attribute) ?? new Set<number>()
+    for (let offset = 0; offset < index.count; offset++) {
+      indices.add(index.getX(offset))
+    }
+    usedIndices.set(attribute, indices)
+  })
+
+  const values: number[] = []
+  for (const [attribute, indices] of usedIndices) {
+    const dimension = Math.max(1, field.dimension ?? attribute.itemSize)
+    const append = (index: number) => {
+      const source = attribute.array as ArrayLike<number>
+      const value = field.kind === 'vector'
+        ? vectorMagnitudeLike(source, index * dimension, dimension)
+        : source[index * dimension] ?? Number.NaN
+      if (Number.isFinite(value)) values.push(value)
+    }
+    if (indices === null) {
+      for (let index = 0; index < attribute.count; index++) append(index)
+    } else {
+      for (const index of indices) append(index)
+    }
+  }
+  return Float32Array.from(values)
+}
+
+export function createFieldHistogram(
+  asset: UVFAsset,
+  fieldName: string,
+  binCount = 24,
+): UVFFieldHistogram | null {
+  const field = asset.fields.find((candidate) => candidate.name === fieldName)
+  if (!field) return null
+  const values = collectFieldValues(asset, fieldName)
+  const count = Math.max(1, Math.floor(binCount))
+  const width = field.max - field.min
+  const bins = Array.from({ length: count }, (_, index) => ({
+    min: width === 0 ? field.min : field.min + width * index / count,
+    max: width === 0 ? field.max : field.min + width * (index + 1) / count,
+    count: 0,
+  }))
+  for (const value of values) {
+    const index = width === 0
+      ? 0
+      : Math.min(count - 1, Math.max(0, Math.floor((value - field.min) / width * count)))
+    bins[index].count++
+  }
+  return { field, sampleCount: values.length, bins }
+}
+
+export function probeFieldAtIntersection(
+  asset: UVFAsset,
+  mesh: THREE.Mesh,
+  fieldName: string,
+  faceIndex: number | null | undefined,
+  worldPoint: THREE.Vector3,
+): UVFFieldProbe | null {
+  const field = asset.fields.find((candidate) => candidate.name === fieldName)
+  const attribute = mesh.geometry.getAttribute(fieldName)
+  const positions = mesh.geometry.getAttribute('position')
+  if (!field || !(attribute instanceof THREE.BufferAttribute) || !positions || faceIndex == null) {
+    return null
+  }
+  const index = mesh.geometry.getIndex()
+  const offset = faceIndex * 3
+  const vertexIndices = index
+    ? [index.getX(offset), index.getX(offset + 1), index.getX(offset + 2)]
+    : [offset, offset + 1, offset + 2]
+  if (vertexIndices.some((vertexIndex) => vertexIndex < 0 || vertexIndex >= positions.count)) return null
+
+  const vertices = vertexIndices.map((vertexIndex) => new THREE.Vector3().fromBufferAttribute(
+    positions as THREE.BufferAttribute,
+    vertexIndex,
+  ))
+  const localPoint = mesh.worldToLocal(worldPoint.clone())
+  const barycentric = THREE.Triangle.getBarycoord(
+    localPoint,
+    vertices[0],
+    vertices[1],
+    vertices[2],
+    new THREE.Vector3(),
+  )
+  if (!barycentric) return null
+  const weights = [barycentric.x, barycentric.y, barycentric.z]
+  const dimension = Math.max(1, field.dimension ?? attribute.itemSize)
+  const components = Array.from({ length: dimension }, (_, component) => (
+    vertexIndices.reduce(
+      (sum, vertexIndex, corner) => sum + attribute.getComponent(vertexIndex, component) * weights[corner],
+      0,
+    )
+  ))
+  const value = field.kind === 'vector'
+    ? Math.sqrt(components.reduce((sum, component) => sum + component * component, 0))
+    : components[0]
+  if (!Number.isFinite(value)) return null
+  const assetPoint = asset.object.worldToLocal(worldPoint.clone())
+  return {
+    fieldName,
+    value,
+    entityId: String(mesh.userData.entityId ?? mesh.userData.groupId ?? mesh.uuid),
+    position: [assetPoint.x, assetPoint.y, assetPoint.z],
+  }
 }
 
 export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
@@ -411,12 +539,21 @@ function finiteFieldRange(values: Float32Array, dimension: number) {
 }
 
 function vectorMagnitude(values: Float32Array, offset: number, dimension: number) {
+  return vectorMagnitudeLike(values, offset, dimension)
+}
+
+function vectorMagnitudeLike(values: ArrayLike<number>, offset: number, dimension: number) {
   let sum = 0
   for (let component = 0; component < dimension; component++) {
     const value = values[offset + component] ?? 0
     sum += value * value
   }
   return Math.sqrt(sum)
+}
+
+function normalizeRange(range: [number, number] | null | undefined): [number, number] | null {
+  if (!range || !Number.isFinite(range[0]) || !Number.isFinite(range[1])) return null
+  return range[0] <= range[1] ? range : [range[1], range[0]]
 }
 
 function collectManifestBounds(entries: UVFEntry[]) {

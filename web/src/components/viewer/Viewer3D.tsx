@@ -3,8 +3,8 @@ import * as THREE from 'three'
 import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { UVFLoader, applyFieldColoring, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
-import type { UVFAsset, UVFFieldInfo } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, createFieldHistogram, probeFieldAtIntersection, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import type { UVFAsset, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 
 export type MeshGroupData = {
   id: string
@@ -46,11 +46,17 @@ type Props = {
   state: ViewerState
   onSelectionChange?: (selection: ViewerSelection) => void
   selection?: ViewerSelection
+  entityVisibility?: Record<string, boolean>
+  onEntityVisibilityChange?: (visibility: Record<string, boolean>) => void
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
   selectedField?: string | null
   onSelectedFieldChange?: (field: string | null) => void
+  fieldNames?: string[]
+  fieldRange?: [number, number] | null
+  onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
+  onFieldProbe?: (probe: UVFFieldProbe | null) => void
   showFieldPanel?: boolean
   showEntityLegend?: boolean
   toolbar?: React.ReactNode
@@ -61,11 +67,17 @@ export function Viewer3D({
   state,
   onSelectionChange,
   selection,
+  entityVisibility,
+  onEntityVisibilityChange,
   wireframe,
   onWireframeChange,
   onFieldsDiscovered,
   selectedField: controlledSelectedField,
   onSelectedFieldChange,
+  fieldNames,
+  fieldRange,
+  onFieldHistogramChange,
+  onFieldProbe,
   showFieldPanel = true,
   showEntityLegend = true,
   toolbar,
@@ -89,9 +101,25 @@ export function Viewer3D({
   const [groupVisibility, setGroupVisibilityState] = useState<Record<string, boolean>>({})
 
   const [wireframeOn, setWireframeOn] = useState(false)
+  const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
+  const onFieldHistogramChangeRef = useRef(onFieldHistogramChange)
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
     : controlledSelectedField
+  const displayedFields = fieldNames
+    ? availableFields.filter((field) => fieldNames.includes(field.name))
+    : availableFields
+  const effectiveGroupVisibility = Object.fromEntries(
+    (manifest?.groups ?? []).map((group) => [
+      group.id,
+      entityVisibility?.[group.id] ?? groupVisibility[group.id] ?? group.visible,
+    ]),
+  )
+
+  useEffect(() => {
+    onFieldsDiscoveredRef.current = onFieldsDiscovered
+    onFieldHistogramChangeRef.current = onFieldHistogramChange
+  }, [onFieldHistogramChange, onFieldsDiscovered])
 
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
@@ -176,7 +204,7 @@ export function Viewer3D({
       uvfAssetRef.current = asset
       setAssetStats({ faces: asset.faces, edges: asset.edges })
       setAvailableFields(asset.fields)
-      onFieldsDiscovered?.(asset.fields)
+      onFieldsDiscoveredRef.current?.(asset.fields)
       setInternalSelectedField(null)
     } else {
       const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
@@ -188,7 +216,7 @@ export function Viewer3D({
       assetDisposeRef.current = () => disposeObject(root)
       uvfAssetRef.current = null
       setAvailableFields([])
-      onFieldsDiscovered?.([])
+      onFieldsDiscoveredRef.current?.([])
       setInternalSelectedField(null)
     }
     const fallbackGroup = manifest.groups[0]
@@ -310,17 +338,32 @@ export function Viewer3D({
         mat.emissive = new THREE.Color(0xffff00)
         mat.emissiveIntensity = 0.2
       } else if (groupId !== '__wireframe__') {
-        const group = manifest?.groups.find((g) => g.id === groupId)
-        mat.opacity = group?.visible ? 0.85 : 0.15
+        mat.opacity = effectiveGroupVisibility[groupId] !== false ? 0.85 : 0.15
         mat.emissive = new THREE.Color(0x000000)
         mat.emissiveIntensity = 0
       }
     }
-  }, [selection, manifest])
+  }, [selection, manifest, entityVisibility, groupVisibility])
+
+  useEffect(() => {
+    if (!manifest) return
+    for (const group of manifest.groups) {
+      const visible = effectiveGroupVisibility[group.id] !== false
+      if (uvfAssetRef.current) {
+        setEntityVisibility(uvfAssetRef.current, group.id, visible)
+      } else {
+        assetRef.current?.traverse((object) => {
+          if (object.userData.groupId === group.id) object.visible = visible
+        })
+      }
+    }
+  }, [assetState.status, entityVisibility, groupVisibility, manifest])
 
   const toggleGroupVisibility = (groupId: string) => {
-    const visible = !(groupVisibility[groupId] ?? true)
-    setGroupVisibilityState((current) => ({ ...current, [groupId]: visible }))
+    const visible = !(effectiveGroupVisibility[groupId] ?? true)
+    const next = { ...effectiveGroupVisibility, [groupId]: visible }
+    setGroupVisibilityState(next)
+    onEntityVisibilityChange?.(next)
     if (uvfAssetRef.current) {
       setEntityVisibility(uvfAssetRef.current, groupId, visible)
     } else {
@@ -347,16 +390,27 @@ export function Viewer3D({
 
     const raycaster = new THREE.Raycaster()
     raycaster.setFromCamera(mouse, camera)
-    const meshes = Array.from(meshesRef.current.values())
+    const meshes = Array.from(meshesRef.current.values()).filter((mesh) => mesh.visible)
     const intersects = raycaster.intersectObjects(meshes)
     if (intersects.length > 0) {
-      const groupId = intersects[0].object.userData.groupId
+      const intersection = intersects[0]
+      const groupId = intersection.object.userData.groupId
       if (groupId !== '__wireframe__') {
         onSelectionChange?.({ groupId })
         setHoveredGroup(groupId)
+        if (selectedField && uvfAssetRef.current && intersection.object instanceof THREE.Mesh) {
+          onFieldProbe?.(probeFieldAtIntersection(
+            uvfAssetRef.current,
+            intersection.object,
+            selectedField,
+            intersection.faceIndex,
+            intersection.point,
+          ))
+        }
       }
     } else {
       onSelectionChange?.({ groupId: null })
+      onFieldProbe?.(null)
       setHoveredGroup(null)
     }
   }
@@ -375,7 +429,7 @@ export function Viewer3D({
 
     const raycaster = new THREE.Raycaster()
     raycaster.setFromCamera(mouse, camera)
-    const meshes = Array.from(meshesRef.current.values())
+    const meshes = Array.from(meshesRef.current.values()).filter((mesh) => mesh.visible)
     const intersects = raycaster.intersectObjects(meshes)
     if (intersects.length > 0) {
       const groupId = intersects[0].object.userData.groupId
@@ -387,9 +441,14 @@ export function Viewer3D({
 
   useEffect(() => {
     if (uvfAssetRef.current) {
-      applyFieldColoring(uvfAssetRef.current, selectedField, colormap)
+      applyFieldColoring(uvfAssetRef.current, selectedField, colormap, { range: fieldRange })
+      onFieldHistogramChangeRef.current?.(
+        selectedField ? createFieldHistogram(uvfAssetRef.current, selectedField) : null,
+      )
+    } else {
+      onFieldHistogramChangeRef.current?.(null)
     }
-  }, [selectedField, colormap])
+  }, [assetState.status, selectedField, colormap, fieldRange])
 
   useEffect(() => {
     if (uvfAssetRef.current) {
@@ -452,7 +511,7 @@ export function Viewer3D({
       {toolbar && visibleState.status === 'ready' && (
         <div className="viewer-toolbar-slot">{toolbar}</div>
       )}
-      {showFieldPanel && availableFields.length > 0 && visibleState.status === 'ready' && (
+      {showFieldPanel && displayedFields.length > 0 && visibleState.status === 'ready' && (
         <div className="viewer-field-panel">
           <label className="viewer-field-label">
             Field:
@@ -461,7 +520,7 @@ export function Viewer3D({
               onChange={(e) => selectField(e.target.value || null)}
             >
               <option value="">None</option>
-              {availableFields.map((f) => (
+              {displayedFields.map((f) => (
                 <option key={f.name} value={f.name}>
                   {f.name} ({f.kind}, {f.min.toFixed(2)}–{f.max.toFixed(2)})
                 </option>
@@ -484,14 +543,14 @@ export function Viewer3D({
           {selectedField && (
             <div className="viewer-colormap-bar">
               <span className="viewer-colormap-min">
-                {availableFields.find((f) => f.name === selectedField)?.min.toFixed(2)}
+                {displayedFields.find((f) => f.name === selectedField)?.min.toFixed(2)}
               </span>
               <div
                 className="viewer-colormap-gradient"
                 style={{ background: buildGradientCSS(colormap) }}
               />
               <span className="viewer-colormap-max">
-                {availableFields.find((f) => f.name === selectedField)?.max.toFixed(2)}
+                {displayedFields.find((f) => f.name === selectedField)?.max.toFixed(2)}
               </span>
             </div>
           )}
@@ -508,7 +567,7 @@ export function Viewer3D({
           {manifest.groups.map((g) => (
             <div
               key={g.id}
-              className={`viewer-legend-item ${selection?.groupId === g.id ? 'selected' : ''} ${groupVisibility[g.id] === false ? 'hidden' : ''}`}
+                className={`viewer-legend-item ${selection?.groupId === g.id ? 'selected' : ''} ${effectiveGroupVisibility[g.id] === false ? 'hidden' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 onSelectionChange?.({ groupId: g.id })
@@ -517,14 +576,14 @@ export function Viewer3D({
               <button
                 type="button"
                 className="viewer-group-visibility"
-                aria-label={`${groupVisibility[g.id] === false ? 'Show' : 'Hide'} ${g.name}`}
-                aria-pressed={groupVisibility[g.id] !== false}
+                aria-label={`${effectiveGroupVisibility[g.id] === false ? 'Show' : 'Hide'} ${g.name}`}
+                aria-pressed={effectiveGroupVisibility[g.id] !== false}
                 onClick={(event) => {
                   event.stopPropagation()
                   toggleGroupVisibility(g.id)
                 }}
               >
-                {groupVisibility[g.id] === false ? <EyeOff size={12} /> : <Eye size={12} />}
+                {effectiveGroupVisibility[g.id] === false ? <EyeOff size={12} /> : <Eye size={12} />}
               </button>
               <span className="viewer-color-swatch" style={{ background: g.color }} />
               <span className="viewer-group-name">{g.name}</span>
