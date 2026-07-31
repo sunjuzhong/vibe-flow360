@@ -37,6 +37,11 @@ export type ViewerSelection = {
   groupId: string | null
 }
 
+export type ViewerClipPlane = {
+  normal: [number, number, number]
+  constant: number
+}
+
 export type ViewerState =
   | { status: 'idle' }
   | { status: 'loading'; progress: number }
@@ -61,6 +66,11 @@ type Props = {
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
   focusTarget?: [number, number, number] | null
+  clipPlane?: ViewerClipPlane | null
+  measurementPoints?: Array<[number, number, number]>
+  onPickPoint?: (point: [number, number, number]) => void
+  captureRequest?: number
+  onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
   showEntityLegend?: boolean
   toolbar?: React.ReactNode
@@ -84,6 +94,11 @@ export function Viewer3D({
   onFieldExtremaChange,
   onFieldProbe,
   focusTarget,
+  clipPlane,
+  measurementPoints = [],
+  onPickPoint,
+  captureRequest = 0,
+  onCapture,
   showFieldPanel = true,
   showEntityLegend = true,
   toolbar,
@@ -97,6 +112,7 @@ export function Viewer3D({
   const assetRef = useRef<THREE.Object3D | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
+  const measurementOverlayRef = useRef<THREE.Group | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
@@ -110,6 +126,7 @@ export function Viewer3D({
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
   const onFieldHistogramChangeRef = useRef(onFieldHistogramChange)
   const onFieldExtremaChangeRef = useRef(onFieldExtremaChange)
+  const onCaptureRef = useRef(onCapture)
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
     : controlledSelectedField
@@ -127,7 +144,8 @@ export function Viewer3D({
     onFieldsDiscoveredRef.current = onFieldsDiscovered
     onFieldHistogramChangeRef.current = onFieldHistogramChange
     onFieldExtremaChangeRef.current = onFieldExtremaChange
-  }, [onFieldExtremaChange, onFieldHistogramChange, onFieldsDiscovered])
+    onCaptureRef.current = onCapture
+  }, [onCapture, onFieldExtremaChange, onFieldHistogramChange, onFieldsDiscovered])
 
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
@@ -150,7 +168,8 @@ export function Viewer3D({
     camera.position.set(3, 2.5, 4)
     camera.lookAt(0, 0, 0)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
+    renderer.localClippingEnabled = true
     renderer.setSize(width, height, false)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     container.appendChild(renderer.domElement)
@@ -366,6 +385,72 @@ export function Viewer3D({
     }
   }, [assetState.status, entityVisibility, groupVisibility, manifest])
 
+  useEffect(() => {
+    const clipping = clipPlane
+      ? [new THREE.Plane(new THREE.Vector3(...clipPlane.normal).normalize(), clipPlane.constant)]
+      : []
+    assetRef.current?.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.forEach((material) => {
+        material.clippingPlanes = clipping
+        material.clipShadows = clipping.length > 0
+        material.needsUpdate = true
+      })
+    })
+  }, [assetState.status, clipPlane])
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    const asset = assetRef.current
+    if (!scene) return
+    if (measurementOverlayRef.current) {
+      scene.remove(measurementOverlayRef.current)
+      disposeObject(measurementOverlayRef.current)
+      measurementOverlayRef.current = null
+    }
+    if (!asset || measurementPoints.length === 0) return
+    asset.updateMatrixWorld(true)
+    const overlay = new THREE.Group()
+    overlay.name = '__measurement__'
+    const points = measurementPoints.map((point) => asset.localToWorld(new THREE.Vector3(...point)))
+    points.forEach((point) => {
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0xe06b3c, depthTest: false }),
+      )
+      marker.position.copy(point)
+      marker.renderOrder = 20
+      overlay.add(marker)
+    })
+    if (points.length === 2) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points)
+      const line = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({ color: 0xe06b3c, depthTest: false }),
+      )
+      line.renderOrder = 19
+      overlay.add(line)
+    }
+    scene.add(overlay)
+    measurementOverlayRef.current = overlay
+    return () => {
+      scene.remove(overlay)
+      disposeObject(overlay)
+      if (measurementOverlayRef.current === overlay) measurementOverlayRef.current = null
+    }
+  }, [assetState.status, measurementPoints])
+
+  useEffect(() => {
+    if (captureRequest <= 0) return
+    const renderer = rendererRef.current
+    const scene = sceneRef.current
+    const camera = cameraRef.current
+    if (!renderer || !scene || !camera) return
+    renderer.render(scene, camera)
+    onCaptureRef.current?.(renderer.domElement.toDataURL('image/png'))
+  }, [captureRequest])
+
   const toggleGroupVisibility = (groupId: string) => {
     const visible = !(effectiveGroupVisibility[groupId] ?? true)
     const next = { ...effectiveGroupVisibility, [groupId]: visible }
@@ -413,6 +498,10 @@ export function Viewer3D({
             intersection.faceIndex,
             intersection.point,
           ))
+        }
+        if (onPickPoint && assetRef.current) {
+          const point = assetRef.current.worldToLocal(intersection.point.clone())
+          onPickPoint([point.x, point.y, point.z])
         }
       }
     } else {

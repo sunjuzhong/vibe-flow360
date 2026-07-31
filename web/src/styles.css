@@ -3294,11 +3294,19 @@ button { color: inherit; }
   display: flex;
   gap: 4px;
 }
+.surface-combined-toolbar { display: flex; gap: 4px; }
 .surface-view-modes button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
+.surface-advanced-toolbar {
+  display: flex;
+  gap: 4px;
+  padding-left: 4px;
+  border-left: 1px solid #d9dcd3;
+}
+.surface-advanced-toolbar button { display: inline-flex; align-items: center; gap: 4px; }
 .surface-review-section {
   margin-top: 11px;
   padding-top: 10px;
@@ -3522,6 +3530,76 @@ button { color: inherit; }
   white-space: nowrap;
 }
 .surface-parameter-summary dd { margin: 0; color: #485143; font: 7px 'DM Mono'; }
+.surface-advanced-review {
+  margin-top: 9px;
+  border-top: 1px solid #dfe2d9;
+}
+.surface-advanced-review summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 9px;
+  cursor: pointer;
+}
+.surface-advanced-review summary span { display: inline-flex; align-items: center; gap: 4px; color: #4c5548; font-size: 8px; font-weight: 650; }
+.surface-advanced-review summary small { color: #878e83; font-size: 7px; }
+.surface-advanced-content { display: grid; gap: 8px; margin-top: 8px; }
+.surface-advanced-content > p { margin: 0; color: #7d8479; font-size: 7px; }
+.surface-compare-select { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 6px; color: #727a6e; font-size: 7px; }
+.surface-compare-select select,
+.surface-advanced-controls select {
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid #d9ddd3;
+  border-radius: 4px;
+  color: #4d5748;
+  background: #fff;
+  font-size: 7px;
+}
+.surface-comparison-result {
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #dfe2d9;
+  border-radius: 6px;
+  background: rgba(255,255,255,.65);
+}
+.surface-comparison-result > strong { color: #485443; font-size: 8px; }
+.surface-comparison-result > span,
+.surface-comparison-result > p { margin: 0; color: #838a7f; font-size: 7px; }
+.surface-parameter-diff { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding-top: 3px; border-top: 1px solid #e6e8e1; }
+.surface-parameter-diff span { overflow: hidden; color: #687163; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.surface-parameter-diff small { color: #485443; font: 7px 'DM Mono'; }
+.surface-quality-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 3px; }
+.surface-quality-comparison > div { min-width: 0; }
+.surface-quality-comparison span,
+.surface-quality-comparison small { display: block; overflow: hidden; color: #737c6e; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.surface-quality-comparison > div > div { display: flex; height: 34px; align-items: flex-end; gap: 1px; margin: 3px 0; }
+.surface-quality-comparison i { min-width: 1px; flex: 1; border-radius: 1px 1px 0 0; background: #789521; }
+.surface-quality-comparison > div:nth-child(2) i { background: #43849a; }
+.surface-advanced-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 7px;
+  padding: 7px;
+  border: 1px solid #e0e3da;
+  border-radius: 6px;
+}
+.surface-advanced-controls > label { display: flex; align-items: center; gap: 4px; color: #65705f; font-size: 7px; }
+.surface-advanced-controls > label,
+.surface-measurement-result { grid-column: 1 / -1; }
+.surface-advanced-controls input[type='range'] { width: 100%; accent-color: #789521; }
+.surface-measurement-result { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; }
+.surface-measurement-result span { color: #838a7f; font-size: 7px; }
+.surface-measurement-result strong { color: #4a5b40; font: 8px 'DM Mono'; }
+.surface-measurement-result button { display: grid; padding: 3px; place-items: center; border: 1px solid #daddd4; border-radius: 4px; color: #747c70; background: #fff; }
+.surface-remediation { padding: 7px; border: 1px solid #d7dfc6; border-radius: 6px; background: #f4f7ec; }
+.surface-remediation > strong { display: flex; align-items: center; gap: 4px; color: #526640; font-size: 8px; }
+.surface-remediation > p { margin: 4px 0 6px; color: #747d6e; font-size: 7px; line-height: 1.45; }
+.surface-remediation > button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #9daf73; border-radius: 4px; color: #40542f; background: #e8f0d8; font-size: 7px; cursor: pointer; }
+.surface-remediation > button:disabled { opacity: .5; cursor: not-allowed; }
 
 .cfd-stage-guidance {
   display: flex;

@@ -39,6 +39,10 @@ import SurfaceMeshWorkspace from '../components/SurfaceMeshWorkspace'
 import VolumeMeshWorkspace from '../components/VolumeMeshWorkspace'
 import CaseWorkspace from '../components/CaseWorkspace'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import {
+  remediationAgentAction,
+  type SurfaceRemediationRecommendation,
+} from '../lib/surfaceMeshAdvanced'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -115,6 +119,7 @@ export default function ProjectPage() {
   const [detailError, setDetailError] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [initialPlanId, setInitialPlanId] = useState('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
   const [activePanel, setActivePanel] = useState<'resources' | 'details' | null>(null)
@@ -298,6 +303,13 @@ export default function ProjectPage() {
     () => geometryContextId(items, selectedItem?.id),
     [items, selectedItem],
   )
+  const surfaceMeshVersions = useMemo(
+    () => items.filter((item) => (
+      item.type === 'SurfaceMesh'
+      && (!contextGeometryId || item.parent_id === contextGeometryId)
+    )),
+    [contextGeometryId, items],
+  )
 
   const selectResource = (resource: ResourceNode | ProjectItem) => {
     navigate(`/projects/${projectId}/resources/${resource.id}`)
@@ -411,7 +423,7 @@ export default function ProjectPage() {
               label="Plan"
               icon={<GitPullRequestDraft size={15} />}
               className="primary"
-              onClick={() => { setChatOpen(false); setPlanOpen(true) }}
+              onClick={() => { setChatOpen(false); setInitialPlanId(''); setPlanOpen(true) }}
             />
           )}
           {items.some((item) => item.type === 'Case') && (
@@ -565,8 +577,27 @@ export default function ProjectPage() {
                 detail={detail}
                 resourceId={selected.id}
                 geometryResourceId={contextGeometryId}
+                versions={surfaceMeshVersions}
+                onCreateRemediationPlan={async (recommendation: SurfaceRemediationRecommendation) => {
+                  if (!project || !contextGeometryId) {
+                    throw new Error('The parent Geometry is required to create a SurfaceMesh remediation plan.')
+                  }
+                  const geometry = items.find((item) => item.id === contextGeometryId)
+                  const result = await api.planFromAction(remediationAgentAction({
+                    recommendation,
+                    project,
+                    geometryId: contextGeometryId,
+                    geometryName: geometry?.name ?? 'Geometry',
+                  }))
+                  const plan = result.results.find((item) => item.plan)?.plan
+                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')
+                  setInitialPlanId(plan.id)
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
                 onPlanVolumeMesh={() => {
                   setChatOpen(false)
+                  setInitialPlanId('')
                   setPlanOpen(true)
                 }}
               />
@@ -664,10 +695,14 @@ export default function ProjectPage() {
       {project && selected && (
         <PlanPanel
           open={planOpen}
-          onClose={() => setPlanOpen(false)}
+          onClose={() => {
+            setPlanOpen(false)
+            setInitialPlanId('')
+          }}
           project={project}
           resource={selected}
           detail={detail}
+          initialPlanId={initialPlanId}
           onSubmitted={() => {
             void loadProject()
           }}

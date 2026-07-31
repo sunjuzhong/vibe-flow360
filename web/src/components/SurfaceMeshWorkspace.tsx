@@ -8,15 +8,24 @@ import {
   ScanLine,
   Triangle,
 } from 'lucide-react'
-import type { ResourceDetail } from '../api/client'
+import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
+import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
 import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspector'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
 import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
+import {
+  SurfaceAdvancedReview,
+  SurfaceAdvancedToolbar,
+} from './surface-mesh/SurfaceAdvancedReview'
+import {
+  buildSurfaceRemediationRecommendation,
+  type SurfaceRemediationRecommendation,
+} from '../lib/surfaceMeshAdvanced'
 
 const noSurfaceGroups: [] = []
 
@@ -52,11 +61,15 @@ export default function SurfaceMeshWorkspace({
   detail,
   resourceId,
   geometryResourceId,
+  versions,
+  onCreateRemediationPlan,
   onPlanVolumeMesh,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
   geometryResourceId?: string | null
+  versions: ProjectItem[]
+  onCreateRemediationPlan: (recommendation: SurfaceRemediationRecommendation) => Promise<void>
   onPlanVolumeMesh: () => void
 }) {
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
@@ -69,6 +82,12 @@ export default function SurfaceMeshWorkspace({
     manifest?.groups ?? noSurfaceGroups,
     detail?.simulation_params,
   )
+  const advanced = useSurfaceMeshAdvancedReview({
+    versions,
+    currentId: resourceId ?? detail?.id ?? '',
+    currentDetail: detail,
+    selectedField: review.selectedField,
+  })
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
   const status = resourceStatus(detail)
   const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(status.toLowerCase())
@@ -119,9 +138,28 @@ export default function SurfaceMeshWorkspace({
           onFieldExtremaChange={review.setExtrema}
           onFieldProbe={review.mode === 'quality' ? review.setProbe : undefined}
           focusTarget={review.focusTarget}
+          clipPlane={advanced.clipPlane}
+          measurementPoints={advanced.measurementPoints}
+          onPickPoint={advanced.measurementEnabled ? advanced.pickPoint : undefined}
+          captureRequest={advanced.captureRequest}
+          onCapture={(dataUrl) => downloadDataUrl(
+            dataUrl,
+            `${detail?.id ?? 'surface-mesh'}-review.png`,
+          )}
           showFieldPanel={review.mode === 'quality'}
           showEntityLegend={review.mode === 'boundaries'}
-          toolbar={<SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />}
+          toolbar={(
+            <div className="surface-combined-toolbar">
+              <SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />
+              <SurfaceAdvancedToolbar
+                clipping={advanced.clipEnabled}
+                measuring={advanced.measurementEnabled}
+                onToggleClipping={() => advanced.setClipEnabled(!advanced.clipEnabled)}
+                onToggleMeasuring={() => advanced.setMeasurementEnabled(!advanced.measurementEnabled)}
+                onCapture={advanced.requestCapture}
+              />
+            </div>
+          )}
         />
         <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
           <ScanLine size={13} />
@@ -208,6 +246,42 @@ export default function SurfaceMeshWorkspace({
             )}
           </div>
           <SurfaceParameterSummary parameters={review.surfaceParameters} />
+          <SurfaceAdvancedReview
+            versions={advanced.comparisonVersions}
+            compareId={advanced.compareId}
+            comparisonName={advanced.comparison?.resource.name}
+            loading={advanced.comparisonLoading}
+            error={advanced.comparisonError}
+            parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
+            baselineHistogram={review.histogram}
+            comparisonHistogram={advanced.comparison?.histogram ?? null}
+            qualityError={advanced.comparison?.qualityError}
+            clipEnabled={advanced.clipEnabled}
+            clipAxis={advanced.clipAxis}
+            clipPosition={advanced.clipPosition}
+            measurementEnabled={advanced.measurementEnabled}
+            measurementPointCount={advanced.measurementPoints.length}
+            measurementDistance={advanced.distance}
+            field={review.selectedFieldInfo}
+            probe={review.probe}
+            remediationBusy={advanced.remediationBusy}
+            remediationError={advanced.remediationError}
+            onCompareId={advanced.setCompareId}
+            onClipEnabled={advanced.setClipEnabled}
+            onClipAxis={advanced.setClipAxis}
+            onClipPosition={advanced.setClipPosition}
+            onMeasurementEnabled={advanced.setMeasurementEnabled}
+            onClearMeasurement={advanced.clearMeasurement}
+            onCreateRemediation={() => {
+              if (!review.selectedFieldInfo || !review.probe) return
+              const recommendation = buildSurfaceRemediationRecommendation({
+                field: review.selectedFieldInfo,
+                probe: review.probe,
+                simulationParams: detail?.simulation_params,
+              })
+              void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
+            }}
+          />
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
             Plan Volume Mesh
@@ -226,4 +300,11 @@ export default function SurfaceMeshWorkspace({
       </div>
     </section>
   )
+}
+
+function downloadDataUrl(dataUrl: string, fileName: string) {
+  const anchor = document.createElement('a')
+  anchor.href = dataUrl
+  anchor.download = fileName.replace(/[^a-z0-9._-]+/gi, '-')
+  anchor.click()
 }

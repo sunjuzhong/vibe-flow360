@@ -108,6 +108,7 @@ export default function PlanPanel({
   project,
   resource,
   detail,
+  initialPlanId,
   onSubmitted,
 }: {
   open: boolean
@@ -115,6 +116,7 @@ export default function PlanPanel({
   project: ProjectInfo
   resource: ResourceNode
   detail: ResourceDetail | null
+  initialPlanId?: string
   onSubmitted: () => void
 }) {
   const options = targetOptions[resource.type] ?? []
@@ -144,8 +146,10 @@ export default function PlanPanel({
     try {
       const response = await api.plans(project.id, resource.id)
       setPlans(response.plans)
+      return response.plans
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
+      return []
     }
   }, [project.id, resource.id])
 
@@ -163,8 +167,24 @@ export default function PlanPanel({
     setSchemaFormOpen(false)
     setRunConfirmationOpen(false)
     setError('')
-    void loadPlans()
-  }, [loadPlans, open, options, resource.name])
+    void (async () => {
+      const loaded = await loadPlans()
+      if (!initialPlanId) return
+      try {
+        const initial = loaded.find((plan) => plan.id === initialPlanId)
+          ?? await api.plan(initialPlanId)
+        setSelected(initial)
+        setPlans((current) => [initial, ...current.filter((plan) => plan.id !== initial.id)])
+        setShowForm(false)
+        setSchemaFormOpen(Boolean(
+          !initial.preflight?.valid
+          && Object.keys(initial.preflight?.form_schema.properties ?? {}).length,
+        ))
+      } catch (cause) {
+        setError(String(cause).replace('Error: ', ''))
+      }
+    })()
+  }, [initialPlanId, loadPlans, open, options, resource.name])
 
   useEffect(() => {
     const refresh = () => void loadPlans()

@@ -9,6 +9,7 @@ const Viewer = lazy(() => import('./Viewer3D').then((module) => ({ default: modu
 export type {
   BoundingBoxData,
   MeshGroupData,
+  ViewerClipPlane,
   ViewerManifest,
   ViewerSelection,
   ViewerState,
@@ -28,6 +29,11 @@ export type ViewerToolbarProps = {
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
   focusTarget?: [number, number, number] | null
+  clipPlane?: import('./Viewer3D').ViewerClipPlane | null
+  measurementPoints?: Array<[number, number, number]>
+  onPickPoint?: (point: [number, number, number]) => void
+  captureRequest?: number
+  onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
   showEntityLegend?: boolean
   toolbar?: React.ReactNode

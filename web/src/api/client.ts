@@ -28,6 +28,8 @@ export type AgentProposal = {
   project_id?: string
   project_name?: string
   source_id?: string
+  source_type?: string
+  source_name?: string
   action: string
   target: string
   name: string
