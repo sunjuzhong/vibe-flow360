@@ -16,6 +16,7 @@ export type {
   UVFBufferLocation,
   UVFBufferSection,
   UVFEntry,
+  UVFEntityInfo,
   UVFFieldBounds,
   UVFFieldInfo,
   UVFLoadProgress,

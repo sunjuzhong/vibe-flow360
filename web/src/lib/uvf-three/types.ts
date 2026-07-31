@@ -48,6 +48,8 @@ export type UVFEntry = {
   properties?: {
     alpha?: number
     color?: number
+    transform?: number[]
+    type?: number
     boundsMin?: [number, number, number]
     boundsMax?: [number, number, number]
     bufferLocations?: {
@@ -74,6 +76,14 @@ export type UVFFieldInfo = {
   dimension?: number
 }
 
+export type UVFEntityInfo = {
+  id: string
+  name: string
+  type: string
+  parentId: string | null
+  children: string[]
+}
+
 export type UVFAsset = {
   object: import('three').Group
   faces: number
@@ -84,5 +94,7 @@ export type UVFAsset = {
   lodLevels: number
   currentLOD: number
   entityLODs: Record<string, { levels: number; current: number }>
+  entities: UVFEntityInfo[]
+  getEntityObject: (entityId: string) => import('three').Object3D | undefined
   dispose: () => void
 }

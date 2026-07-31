@@ -51,7 +51,9 @@ describe('Flow360 UVF Three.js library', () => {
     expect(asset.edges).toBe(1)
     expect(asset.vertices).toBe(3)
     expect(asset.triangles).toBe(1)
-    expect(asset.object.children).toHaveLength(2)
+    expect(asset.object.children).toHaveLength(1)
+    expect(asset.getEntityObject('face-1')?.parent).toBe(asset.getEntityObject('body-1'))
+    expect(asset.getEntityObject('edge-1')?.parent).toBe(asset.getEntityObject('body-1'))
     asset.dispose()
   })
 
@@ -253,7 +255,7 @@ describe('Flow360 UVF Three.js library', () => {
     const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
     expect(asset.fields).toHaveLength(1)
     expect(asset.fields[0]).toMatchObject({ name: 'pressure', min: 0, max: 1, dimension: 1 })
-    const face = asset.object.children[0]
+    const face = asset.getEntityObject('face-1')!
     expect(face).toHaveProperty('geometry')
     expect((face as import('three').Mesh).geometry.getAttribute('pressure').count).toBe(3)
     // Apply field coloring
@@ -261,6 +263,225 @@ describe('Flow360 UVF Three.js library', () => {
     expect((face as import('three').Mesh).geometry.getAttribute('color').count).toBe(3)
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
+    asset.dispose()
+  })
+
+  it('builds entity hierarchy and applies group transforms', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'root-group',
+        name: 'Assembly',
+        type: 'GeometryGroup',
+        attributions: { members: ['body-1'] },
+        properties: {
+          transform: [
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            2, 3, 4, 1,
+          ],
+        },
+      },
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['face-1'] },
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [
+              { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12 },
+              { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'face-1',
+        type: 'Face',
+        properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 3 }] } },
+      },
+    ])
+    const data = new ArrayBuffer(48)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+
+    const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
+    const group = asset.getEntityObject('root-group')!
+    const solid = asset.getEntityObject('body-1')!
+    const face = asset.getEntityObject('face-1')!
+    asset.object.updateMatrixWorld(true)
+
+    expect(asset.object.children).toEqual([group])
+    expect(solid.parent).toBe(group)
+    expect(face.parent).toBe(solid)
+    expect(group.position.toArray()).toEqual([2, 3, 4])
+    expect(asset.entities).toEqual([
+      { id: 'root-group', name: 'Assembly', type: 'GeometryGroup', parentId: null, children: ['body-1'] },
+      { id: 'body-1', name: 'body-1', type: 'SolidGeometry', parentId: 'root-group', children: ['face-1'] },
+      { id: 'face-1', name: 'face-1', type: 'Face', parentId: 'body-1', children: [] },
+    ])
+
+    setEntityVisibility(asset, 'root-group', false)
+    expect(group.visible).toBe(false)
+    asset.dispose()
+  })
+
+  it('rejects missing, cyclic, and multiply-parented group members', () => {
+    expect(() => buildUVFAsset(parseUVFManifest([
+      { id: 'group-1', type: 'GeometryGroup', attributions: { members: ['missing'] } },
+    ]), new Map())).toThrow(/missing member/)
+
+    expect(() => buildUVFAsset(parseUVFManifest([
+      { id: 'group-1', type: 'GeometryGroup', attributions: { members: ['group-2'] } },
+      { id: 'group-2', type: 'GeometryGroup', attributions: { members: ['group-1'] } },
+    ]), new Map())).toThrow(/cycle/)
+
+    expect(() => buildUVFAsset(parseUVFManifest([
+      { id: 'group-1', type: 'GeometryGroup', attributions: { members: ['body-1'] } },
+      { id: 'group-2', type: 'GeometryGroup', attributions: { members: ['body-1'] } },
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [{ name: 'position', dType: 'float32', dimension: 3, offset: 0, length: 12 }],
+          },
+        },
+      },
+    ]), new Map())).toThrow(/multiple parents/)
+  })
+
+  it('rejects duplicate IDs, invalid transforms, missing faces, and invalid edge ranges', () => {
+    expect(() => buildUVFAsset(parseUVFManifest([
+      { id: 'duplicate', type: 'GeometryGroup' },
+      { id: 'duplicate', type: 'GeometryGroup' },
+    ]), new Map())).toThrow(/duplicate entity/)
+
+    expect(() => buildUVFAsset(parseUVFManifest([
+      { id: 'group-1', type: 'GeometryGroup', properties: { transform: [1, 0, 0] } },
+    ]), new Map())).toThrow(/invalid transform/)
+
+    const missingFaceManifest = parseUVFManifest([{
+      id: 'body-1',
+      type: 'SolidGeometry',
+      attributions: { faces: ['missing-face'] },
+      resources: {
+        buffers: {
+          type: 'buffers',
+          path: 'body.bin',
+          sections: [{ name: 'position', dType: 'float32', dimension: 3, offset: 0, length: 12 }],
+        },
+      },
+    }])
+    expect(() => buildUVFAsset(
+      missingFaceManifest,
+      new Map([['body.bin', new ArrayBuffer(12)]]),
+    )).toThrow(/missing Face/)
+
+    const invalidEdgeManifest = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['face-1'], edges: ['edge-1'] },
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [
+              { name: 'position', dType: 'float32', dimension: 3, offset: 0, length: 36 },
+              { name: 'edgePosition', dType: 'float32', dimension: 3, offset: 36, length: 24 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'face-1',
+        type: 'Face',
+        properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 9 }] } },
+      },
+      {
+        id: 'edge-1',
+        type: 'Edge',
+        properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 9 }] } },
+      },
+    ])
+    expect(() => buildUVFAsset(
+      invalidEdgeManifest,
+      new Map([['body.bin', new ArrayBuffer(60)]]),
+    )).toThrow(/invalid value range/)
+  })
+
+  it('uses the selected LOD edge range', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['face-1'], edges: ['edge-1'] },
+        resources: {
+          buffers: {
+            type: 'lod',
+            default: 1,
+            levels: [
+              {
+                type: 'buffers',
+                path: 'body-full.bin',
+                sections: [
+                  { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 24 },
+                  { name: 'position', dType: 'float32', dimension: 3, offset: 24, length: 48 },
+                  { name: 'edgePosition', dType: 'float32', dimension: 3, offset: 72, length: 36 },
+                ],
+              },
+              {
+                type: 'buffers',
+                path: 'body-preview.bin',
+                sections: [
+                  { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12 },
+                  { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36 },
+                  { name: 'edgePosition', dType: 'float32', dimension: 3, offset: 48, length: 24 },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: 'face-1',
+        type: 'Face',
+        properties: {
+          bufferLocations: {
+            indices: [
+              { bufNum: 0, startIndex: 0, endIndex: 6 },
+              { bufNum: 0, startIndex: 0, endIndex: 3 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'edge-1',
+        type: 'Edge',
+        properties: {
+          bufferLocations: {
+            indices: [
+              { bufNum: 0, startIndex: 0, endIndex: 9 },
+              { bufNum: 0, startIndex: 0, endIndex: 6 },
+            ],
+          },
+        },
+      },
+    ])
+    const data = new ArrayBuffer(72)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    new Float32Array(data, 48, 6).set([0, 0, 0, 1, 0, 0])
+
+    const asset = buildUVFAsset(manifest, new Map([['body-preview.bin', data]]))
+    const edge = asset.getEntityObject('edge-1')!
+    expect(edge.children).toHaveLength(1)
+    expect((edge.children[0] as import('three').Line).geometry.getAttribute('position').count).toBe(2)
     asset.dispose()
   })
 
@@ -348,9 +569,9 @@ describe('Flow360 UVF Three.js library', () => {
     const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
 
     setEntityVisibility(asset, 'entity-1', false)
-    expect(asset.object.children[0].visible).toBe(false)
+    expect(asset.getEntityObject('entity-1')?.visible).toBe(false)
     setEntityVisibility(asset, 'entity-1', true)
-    expect(asset.object.children[0].visible).toBe(true)
+    expect(asset.getEntityObject('entity-1')?.visible).toBe(true)
     asset.dispose()
   })
 })

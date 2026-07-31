@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { sampleColormap, type ColormapName } from './colormap'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntry, UVFFieldInfo, UVFLoadProgress, UVFLOD } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldInfo, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = 25 * 1024 * 1024
@@ -105,7 +105,8 @@ export function buildUVFAsset(
 ): UVFAsset {
   const root = new THREE.Group()
   root.name = 'UVF Scene'
-  const byID = new Map(entries.map((entry) => [entry.id, entry]))
+  const byID = indexEntries(entries)
+  const { objectByID, parentByID } = buildContainerHierarchy(entries, root)
   let faces = 0
   let edges = 0
   let vertices = 0
@@ -136,6 +137,10 @@ export function buildUVFAsset(
   }
 
   for (const solid of entries.filter((entry) => entry.type === 'SolidGeometry')) {
+    const solidObject = objectByID.get(solid.id)
+    if (!(solidObject instanceof THREE.Group)) {
+      throw new Error(`SolidGeometry ${solid.id} has no scene container`)
+    }
     const bufferInfo = resolveUVFBuffer(solid, lodLevel)
     const raw = buffers.get(bufferInfo.path)
     if (!raw) throw new Error(`UVF buffer ${bufferInfo.path} was not loaded`)
@@ -177,7 +182,9 @@ export function buildUVFAsset(
 
     for (const faceID of solid.attributions?.faces ?? []) {
       const face = byID.get(faceID)
-      if (!face || face.type !== 'Face') continue
+      if (!face || face.type !== 'Face') {
+        throw new Error(`SolidGeometry ${solid.id} references missing Face ${faceID}`)
+      }
       const ranges = resolveUVFBufferLocations(
         solid,
         face.properties?.bufferLocations?.indices ?? [],
@@ -217,7 +224,9 @@ export function buildUVFAsset(
       mesh.userData.entityId = face.id
       mesh.userData.groupId = face.id
       mesh.userData.uvfType = 'Face'
-      root.add(mesh)
+      applyEntityTransform(mesh, face)
+      registerEntityObject(objectByID, parentByID, face, mesh, solid.id)
+      solidObject.add(mesh)
       faces++
       triangles += faceTriangles
     }
@@ -225,9 +234,18 @@ export function buildUVFAsset(
     if (edgePositions) {
       for (const edgeID of solid.attributions?.edges ?? []) {
         const edge = byID.get(edgeID)
-        if (!edge || edge.type !== 'Edge') continue
-        for (const range of edge.properties?.bufferLocations?.indices ?? []) {
-          if (range.endIndex <= range.startIndex) continue
+        if (!edge || edge.type !== 'Edge') {
+          throw new Error(`SolidGeometry ${solid.id} references missing Edge ${edgeID}`)
+        }
+        const edgeObject = createEntityGroup(edge)
+        const ranges = resolveUVFBufferLocations(
+          solid,
+          edge.properties?.bufferLocations?.indices ?? [],
+          lodLevel,
+        )
+        for (const range of ranges) {
+          validateValueRange(range, edgePositions.length, solid.id, edge.id)
+          if (range.endIndex === range.startIndex) continue
           const lineGeometry = new THREE.BufferGeometry()
           lineGeometry.setAttribute(
             'position',
@@ -239,8 +257,10 @@ export function buildUVFAsset(
           )
           line.name = edge.name || edge.id
           line.userData.uvfType = 'Edge'
-          root.add(line)
+          edgeObject.add(line)
         }
+        registerEntityObject(objectByID, parentByID, edge, edgeObject, solid.id)
+        solidObject.add(edgeObject)
         edges++
       }
     }
@@ -252,6 +272,7 @@ export function buildUVFAsset(
       return computed ? { ...field, ...computed } : field
     })
     .sort((a, b) => a.name.localeCompare(b.name))
+  const entities = buildEntityCatalog(entries, objectByID, parentByID)
   return {
     object: root,
     faces,
@@ -262,6 +283,8 @@ export function buildUVFAsset(
     lodLevels,
     currentLOD,
     entityLODs,
+    entities,
+    getEntityObject: (entityId) => objectByID.get(entityId),
     dispose: () => {
       root.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
@@ -449,6 +472,140 @@ function resolveFaceIndices(
     return indices.slice(range.startIndex, range.endIndex)
   })
   return concatenateIndices(parts)
+}
+
+function indexEntries(entries: UVFEntry[]) {
+  const result = new Map<string, UVFEntry>()
+  for (const entry of entries) {
+    if (result.has(entry.id)) throw new Error(`UVF manifest contains duplicate entity ${entry.id}`)
+    result.set(entry.id, entry)
+  }
+  return result
+}
+
+function buildContainerHierarchy(entries: UVFEntry[], root: THREE.Group) {
+  const containers = entries.filter((entry) =>
+    entry.type === 'GeometryGroup' || entry.type === 'SolidGeometry',
+  )
+  const objectByID = new Map<string, THREE.Object3D>()
+  const parentByID = new Map<string, string>()
+
+  for (const entry of containers) {
+    objectByID.set(entry.id, createEntityGroup(entry))
+  }
+  for (const group of entries.filter((entry) => entry.type === 'GeometryGroup')) {
+    for (const memberId of group.attributions?.members ?? []) {
+      if (!objectByID.has(memberId)) {
+        throw new Error(`GeometryGroup ${group.id} references missing member ${memberId}`)
+      }
+      assignParent(parentByID, memberId, group.id)
+    }
+  }
+  assertAcyclicHierarchy(parentByID)
+  for (const entry of containers) {
+    const object = objectByID.get(entry.id)!
+    const parentId = parentByID.get(entry.id)
+    if (parentId) {
+      objectByID.get(parentId)!.add(object)
+    } else {
+      root.add(object)
+    }
+  }
+  return { objectByID, parentByID }
+}
+
+function createEntityGroup(entry: UVFEntry) {
+  const group = new THREE.Group()
+  group.name = entry.name || entry.id
+  group.userData.entityId = entry.id
+  group.userData.uvfType = entry.type
+  applyEntityTransform(group, entry)
+  return group
+}
+
+function applyEntityTransform(object: THREE.Object3D, entry: UVFEntry) {
+  const transform = entry.properties?.transform
+  if (transform === undefined) return
+  if (
+    transform.length !== 16
+    || transform.some((value) => typeof value !== 'number' || !Number.isFinite(value))
+  ) {
+    throw new Error(`Entity ${entry.id} has an invalid transform`)
+  }
+  object.matrix.fromArray(transform)
+  object.matrix.decompose(object.position, object.quaternion, object.scale)
+}
+
+function registerEntityObject(
+  objectByID: Map<string, THREE.Object3D>,
+  parentByID: Map<string, string>,
+  entry: UVFEntry,
+  object: THREE.Object3D,
+  parentId: string,
+) {
+  if (objectByID.has(entry.id)) throw new Error(`UVF entity ${entry.id} has multiple scene objects`)
+  assignParent(parentByID, entry.id, parentId)
+  objectByID.set(entry.id, object)
+}
+
+function assignParent(parentByID: Map<string, string>, childId: string, parentId: string) {
+  const existing = parentByID.get(childId)
+  if (existing && existing !== parentId) {
+    throw new Error(`UVF entity ${childId} has multiple parents: ${existing} and ${parentId}`)
+  }
+  parentByID.set(childId, parentId)
+}
+
+function assertAcyclicHierarchy(parentByID: Map<string, string>) {
+  for (const entityId of parentByID.keys()) {
+    const visited = new Set<string>()
+    let current: string | undefined = entityId
+    while (current) {
+      if (visited.has(current)) throw new Error(`UVF entity hierarchy contains a cycle at ${current}`)
+      visited.add(current)
+      current = parentByID.get(current)
+    }
+  }
+}
+
+function buildEntityCatalog(
+  entries: UVFEntry[],
+  objectByID: Map<string, THREE.Object3D>,
+  parentByID: Map<string, string>,
+): UVFEntityInfo[] {
+  const childrenByID = new Map<string, string[]>()
+  for (const [childId, parentId] of parentByID) {
+    const children = childrenByID.get(parentId) ?? []
+    children.push(childId)
+    childrenByID.set(parentId, children)
+  }
+  return entries
+    .filter((entry) => objectByID.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name || entry.id,
+      type: entry.type,
+      parentId: parentByID.get(entry.id) ?? null,
+      children: childrenByID.get(entry.id) ?? [],
+    }))
+}
+
+function validateValueRange(
+  range: UVFBufferLocation,
+  valueCount: number,
+  solidId: string,
+  entityId: string,
+) {
+  if (
+    !Number.isSafeInteger(range.startIndex)
+    || !Number.isSafeInteger(range.endIndex)
+    || range.startIndex < 0
+    || range.endIndex < range.startIndex
+    || range.endIndex > valueCount
+    || (range.endIndex - range.startIndex) % 3 !== 0
+  ) {
+    throw new Error(`Entity ${entityId} has an invalid value range in ${solidId}`)
+  }
 }
 
 function faceColor(value: number | undefined, index: number) {
