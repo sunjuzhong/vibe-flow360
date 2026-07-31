@@ -17,6 +17,7 @@ type createInterventionRequest struct {
 	ResourceID   string           `json:"resource_id,omitempty"`
 	ResourceType string           `json:"resource_type,omitempty"`
 	PlanID       string           `json:"plan_id,omitempty"`
+	Target       string           `json:"target,omitempty"`
 	Type         string           `json:"type"`
 	Reason       string           `json:"reason"`
 	Evidence     []agent.Evidence `json:"evidence,omitempty"`
@@ -79,6 +80,7 @@ func (s *Server) createIntervention(c *gin.Context) {
 		ResourceID:   req.ResourceID,
 		ResourceType: req.ResourceType,
 		PlanID:       req.PlanID,
+		Target:       req.Target,
 		Type:         req.Type,
 		Reason:       req.Reason,
 		Evidence:     req.Evidence,

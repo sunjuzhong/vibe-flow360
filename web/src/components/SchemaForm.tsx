@@ -41,12 +41,12 @@ export default function SchemaFormDialog({
       <form className="schema-form-dialog" onSubmit={submit} aria-label="Complete Flow360 inputs">
         <header>
           <div>
-            <p className="eyebrow">{hasRecommendation ? 'VIBE SIMULATE RECOVERY' : 'FLOW360 SCHEMA PREFLIGHT'}</p>
-            <h2>{hasRecommendation ? 'The Agent found a recovery path' : 'Complete required simulation inputs'}</h2>
+            <p className="eyebrow">{hasRecommendation ? 'VIBE SIMULATE RECOVERY' : 'AGENT-GUIDED PREFLIGHT'}</p>
+            <h2>{hasRecommendation ? 'The Agent found a recovery path' : 'The Agent needs your input'}</h2>
             <span>
               {hasRecommendation
                 ? 'Review the evidence and apply the recommendation. No CFD parameter entry is required.'
-                : 'The form is generated from the installed Flow360 schema.'}
+                : 'Flow360 has no safe default for these engineering decisions. Complete only the requested fields; the Agent will validate them before approval.'}
             </span>
           </div>
           <button type="button" className="icon-button" onClick={onCancel} aria-label="Close required inputs">
@@ -73,7 +73,7 @@ export default function SchemaFormDialog({
               ? 'Validating with Flow360…'
               : hasRecommendation
                 ? 'Apply AI recommendation & validate'
-                : 'Apply inputs & validate again'}
+                : 'Apply inputs & let Agent validate'}
           </button>
         </footer>
       </form>

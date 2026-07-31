@@ -294,7 +294,7 @@ func Compile(input CreateInput) (Plan, error) {
 		Differences:    differences,
 		Validations:    validations,
 		Revision:       1,
-		CommandPreview: []string{"flow360", "draft", "run", input.SourceID, "--name", input.Name, "--patch", "<generated-plan-patch.json>", "--up-to", input.Target},
+		CommandPreview: []string{"flow360", "draft", "run", input.SourceID, "--name", input.Name, "--patch", "<temporary-patch.json>", "--up-to", input.Target},
 		Status:         StatusDraft,
 		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
 		CreatedAt:      now,

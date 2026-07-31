@@ -55,6 +55,7 @@ type Intervention struct {
 	ResourceType     string            `json:"resource_type,omitempty"`
 	PlanID           string            `json:"plan_id,omitempty"`
 	PlanRevision     int               `json:"plan_revision,omitempty"`
+	Target           string            `json:"target,omitempty"`
 	Type             string            `json:"type"`
 	State            string            `json:"state"`
 	Reason           string            `json:"reason"`
@@ -108,6 +109,7 @@ type InterventionInput struct {
 	ResourceType string
 	PlanID       string
 	PlanRevision int
+	Target       string
 	Type         string
 	Reason       string
 	Evidence     []Evidence
@@ -130,6 +132,7 @@ func NewIntervention(input InterventionInput) (Intervention, error) {
 		ResourceType: input.ResourceType,
 		PlanID:       input.PlanID,
 		PlanRevision: input.PlanRevision,
+		Target:       input.Target,
 		Type:         input.Type,
 		State:        InterventionObservation,
 		Reason:       input.Reason,

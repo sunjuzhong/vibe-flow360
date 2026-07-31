@@ -21,17 +21,26 @@ html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
 button, textarea, input { font: inherit; }
 button { color: inherit; }
 
-.preflight-manual-input {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.preflight-agent-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   margin-top: 8px;
-  border: 0;
-  color: #70756b;
-  background: transparent;
-  font-size: 9px;
-  text-decoration: underline;
-  cursor: pointer;
+  padding: 10px;
+  border: 1px solid #dbe3c4;
+  border-radius: 7px;
+  color: #5f6f36;
+  background: #f4f7ea;
+}
+.preflight-agent-guidance > svg { flex: 0 0 16px; margin-top: 2px; color: #789522; }
+.preflight-agent-guidance strong,
+.preflight-agent-guidance small { display: block; }
+.preflight-agent-guidance strong { font-size: 12px; }
+.preflight-agent-guidance small {
+  margin-top: 3px;
+  color: #747b69;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .app-shell {

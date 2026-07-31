@@ -91,6 +91,9 @@ func TestEngineCreateFromPreflightError(t *testing.T) {
 	if intervention.ProjectID != "proj-1" {
 		t.Errorf("expected project proj-1, got %s", intervention.ProjectID)
 	}
+	if intervention.Target != plan.Target {
+		t.Errorf("expected target %s, got %s", plan.Target, intervention.Target)
+	}
 }
 
 func TestEngineCreateFromPreflightErrorValidPlan(t *testing.T) {
@@ -466,6 +469,8 @@ func TestEngineGenerateProposalsWithoutAI(t *testing.T) {
 		{Code: "ERR_INVALID_CFL", Level: "error", Path: "operating_condition.cfl_number", Message: "CFL number too high", Stages: []string{"setup"}},
 	}
 	plan := makeTestPlan("proj-1", "plan-1", "vm-1", false, issues)
+	plan.SourceType = "Geometry"
+	plan.Target = "surface-mesh"
 
 	intervention, err := engine.CreateFromPreflightError(plan)
 	if err != nil {
@@ -494,6 +499,11 @@ func TestEngineGenerateProposalsWithoutAI(t *testing.T) {
 	}
 	if !hasValidPatch {
 		t.Error("expected at least one proposal with a valid patch")
+	}
+	for _, proposal := range current.Proposals {
+		if proposal.Target != "surface-mesh" {
+			t.Errorf("fallback proposal changed target to %q, expected surface-mesh", proposal.Target)
+		}
 	}
 }
 

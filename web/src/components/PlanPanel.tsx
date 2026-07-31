@@ -30,6 +30,7 @@ import {
   type SimulationStage,
 } from '../lib/planStages'
 import { errorMessage } from '../lib/errors'
+import { executionTemplate, preflightPrimaryAction } from '../lib/planPresentation'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import SchemaFormDialog from './SchemaForm'
 
@@ -176,6 +177,11 @@ export default function PlanPanel({
     selected?.preflight?.valid
     && selected.preflight.validated_revision === selected.revision,
   )
+  const hasStructuredInputs = Boolean(
+    selected?.preflight
+    && Object.keys(selected.preflight.form_schema.properties ?? {}).length > 0,
+  )
+  const primaryPreflightAction = preflightPrimaryAction(preflightReady, hasStructuredInputs)
   const activeStages = useMemo(
     () => downstreamStages(resource.type, target),
     [resource.type, target],
@@ -542,18 +548,25 @@ export default function PlanPanel({
                           <strong>
                             {preflightReady
                               ? 'SimulationParams are ready for this target'
-                              : 'Additional simulation inputs are required'}
+                              : hasStructuredInputs
+                                ? 'The Agent needs an engineering input from you'
+                                : 'The Agent found a preflight problem'}
                           </strong>
                           <small>
-                            Flow360 schema {selected.preflight.validator_version || 'installed'}
-                            {' · '}plan revision {selected.revision}
+                            {hasStructuredInputs && !preflightReady
+                              ? `${preflightErrors.length} required value${preflightErrors.length === 1 ? '' : 's'} · no safe default will be guessed`
+                              : `Flow360 schema ${selected.preflight.validator_version || 'installed'} · plan revision ${selected.revision}`}
                           </small>
                         </span>
                         <button
                           type="button"
                           onClick={() => {
-                            if (preflightReady) {
+                            if (primaryPreflightAction === 'validate') {
                               void refreshPreflight()
+                              return
+                            }
+                            if (primaryPreflightAction === 'structured-inputs') {
+                              setSchemaFormOpen(true)
                               return
                             }
                             void recoverWithAgent()
@@ -562,18 +575,30 @@ export default function PlanPanel({
                         >
                           {preflightLoading
                             ? <RefreshCw size={14} className="spin" />
-                            : preflightReady ? <RefreshCw size={14} /> : <Sparkles size={14} />}
-                          {preflightReady ? 'Validate again' : 'Let Agent resolve'}
+                            : preflightReady
+                              ? <RefreshCw size={14} />
+                              : hasStructuredInputs
+                                ? <GitPullRequestDraft size={14} />
+                                : <Sparkles size={14} />}
+                          {preflightReady
+                            ? 'Validate again'
+                            : hasStructuredInputs
+                              ? 'Review required inputs'
+                              : 'Open Agent diagnosis'}
                         </button>
                       </div>
-                      {!preflightReady && Object.keys(selected.preflight.form_schema.properties ?? {}).length > 0 && (
-                        <button
-                          type="button"
-                          className="preflight-manual-input"
-                          onClick={() => setSchemaFormOpen(true)}
-                        >
-                          <GitPullRequestDraft size={13} /> Enter structured inputs manually
-                        </button>
+                      {!preflightReady && hasStructuredInputs && (
+                        <div className="preflight-agent-guidance">
+                          <Sparkles size={16} />
+                          <span>
+                            <strong>Why the Agent is asking</strong>
+                            <small>
+                              Flow360 requires a value that changes mesh fidelity and cost.
+                              Provide only the requested input; the Agent will apply it, rerun schema validation,
+                              and return an updated parameter diff before approval.
+                            </small>
+                          </span>
+                        </div>
                       )}
                       {selected.preflight.issues.length > 0 && (
                         <div className="preflight-issues">
@@ -631,9 +656,13 @@ export default function PlanPanel({
                 </section>
 
                 <section className="plan-review-section">
-                  <h3><Code2 size={15} /> Command preview</h3>
-                  <pre className="command-preview">{selected.command_preview.map((part) => part.includes(' ') ? `"${part}"` : part).join(' ')}</pre>
-                  <p className="plan-command-note">The generated temporary patch path and credentials are intentionally not shown.</p>
+                  <h3><Code2 size={15} /> Execution template <span>Not copy-ready</span></h3>
+                  <pre className="command-preview">{executionTemplate(selected.command_preview)}</pre>
+                  <p className="plan-command-note">
+                    This is an audit template, not a command to paste into a shell.
+                    On submission Vibe Flow360 writes the reviewed patch to a private temporary file,
+                    invokes this Flow360 CLI operation, then deletes the file. Nothing runs from this preview.
+                  </p>
                 </section>
 
                 {selected.error && (

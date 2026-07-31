@@ -65,6 +65,7 @@ func (e *Engine) CreateFromPreflightError(plan plans.Plan) (Intervention, error)
 		ResourceType: plan.SourceType,
 		PlanID:       plan.ID,
 		PlanRevision: plan.Revision,
+		Target:       plan.Target,
 		Type:         TypePreflightError,
 		Reason:       extractPreflightReason(plan.Preflight.Issues),
 		Evidence:     evidence,
@@ -96,6 +97,7 @@ func (e *Engine) CreateFromRunError(plan plans.Plan, runErr error) (Intervention
 		ResourceType: plan.SourceType,
 		PlanID:       plan.ID,
 		PlanRevision: plan.Revision,
+		Target:       plan.Target,
 		Type:         mapErrorCategoryToType(errCategory),
 		Reason:       runErr.Error(),
 		Evidence:     evidence,
@@ -396,6 +398,9 @@ func proposalsFromAction(action Action, intervention Intervention) []Proposal {
 		}
 		target := p.Target
 		if target == "" {
+			target = intervention.Target
+		}
+		if target == "" {
 			target = "case"
 		}
 		name := p.Name
@@ -476,6 +481,9 @@ func parseAIProposals(response string, intervention Intervention) []Proposal {
 	var proposals []Proposal
 	for i, ap := range aiProposals {
 		target := ap.Target
+		if target == "" {
+			target = intervention.Target
+		}
 		if target == "" {
 			target = "case"
 		}
@@ -630,7 +638,7 @@ func buildPreflightProposals(intervention Intervention) []Proposal {
 	return []Proposal{
 		{
 			ID:            "pf-recommend-1",
-			Target:        "case",
+			Target:        intervention.Target,
 			Name:          "Review missing Flow360 inputs",
 			Intent:        "The active Flow360 schema did not provide safe defaults; request structured user input.",
 			Patch:         json.RawMessage(`{}`),

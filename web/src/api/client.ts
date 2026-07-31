@@ -388,6 +388,7 @@ export type Intervention = {
   resource_type?: string
   plan_id?: string
   plan_revision?: number
+  target?: SimulationPlan['target']
   type: string
   state: string
   reason: string
@@ -414,6 +415,7 @@ export type CreateInterventionInput = {
   resource_id?: string
   resource_type?: string
   plan_id?: string
+  target?: SimulationPlan['target']
   type: string
   reason: string
   evidence?: InterventionEvidence[]
