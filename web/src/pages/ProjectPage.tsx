@@ -41,6 +41,23 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
+const flow360DomainMap: Record<string, string> = {
+  dev: 'flow360.dev-simulation.cloud',
+  uat: 'flow360.uat-simulation.cloud',
+  prod: 'flow360.simulation.cloud',
+  production: 'flow360.simulation.cloud',
+}
+
+function getFlow360Domain(environment?: string): string {
+  const key = (environment || 'prod').toLowerCase().trim()
+  return flow360DomainMap[key] ?? flow360DomainMap.prod
+}
+
+function buildWorkbenchUrl(environment: string | undefined, projectId: string, resourceId: string, resourceType: string): string {
+  const domain = getFlow360Domain(environment)
+  return `https://${domain}/workbench/${projectId}?id=${resourceId}&type=${resourceType}`
+}
+
 const resourceSuggestions: Record<string, string[]> = {
   Geometry: ['检查这个 Geometry 的建模前提', '规划 Surface Mesh', '有哪些输入还需要确认？'],
   SurfaceMesh: ['评估当前表面网格设置', '规划 Volume Mesh', '解释网格参数摘要'],
@@ -486,7 +503,18 @@ export default function ProjectPage() {
                 </span>
                 <div>
                   <strong>{selected.name}</strong>
-                  <small>{selected.type} · {selected.id}</small>
+                  <small>
+                    {selected.type} ·{' '}
+                    <a
+                      className="id-link"
+                      href={buildWorkbenchUrl(flowStatus?.environment, projectId, selected.id, selected.type)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open in Flow360 workbench"
+                    >
+                      {selected.id}
+                    </a>
+                  </small>
                 </div>
               </div>
               <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages">
@@ -570,7 +598,17 @@ export default function ProjectPage() {
               <dl>
                 <div><dt>Name</dt><dd>{selected.name}</dd></div>
                 <div><dt>Type</dt><dd><span className="type-badge">{selected.type}</span></dd></div>
-                <div><dt>ID</dt><dd className="mono-value">{selected.id}</dd></div>
+                <div><dt>ID</dt><dd className="mono-value">
+                  <a
+                    className="id-link"
+                    href={buildWorkbenchUrl(flowStatus?.environment, projectId, selected.id, selected.type)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open in Flow360 workbench"
+                  >
+                    {selected.id}
+                  </a>
+                </dd></div>
                 <div><dt>Parent</dt><dd>{parentItem?.type || 'None'}</dd></div>
                 <div><dt>Children</dt><dd>{selected.children.length}</dd></div>
                 <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>{resourceStatus(detail)}</span></dd></div>
