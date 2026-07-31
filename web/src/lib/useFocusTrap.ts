@@ -50,6 +50,7 @@ export function useFocusTrap<T extends HTMLElement>(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
+        event.stopPropagation()
         onClose()
         return
       }

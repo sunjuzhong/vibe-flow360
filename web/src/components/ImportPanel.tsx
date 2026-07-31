@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle2, FileUp, RefreshCw, X, ExternalLink, Trash2 }
 import { FormEvent, useEffect, useState } from 'react'
 import { api, type FolderNode, type ImportPlan, type ImportFileInfo } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 
 const ALLOWED_EXTENSIONS: Record<string, string[]> = {
   geometry: ['.step', '.stp', '.igs', '.iges', '.brep', '.cax', '.catpart', '.catproduct'],
@@ -47,6 +48,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
   const [submittingAction, setSubmittingAction] = useState<'stage' | 'execute' | 'abort' | null>(null)
   const [error, setError] = useState('')
   const [existingDrafts, setExistingDrafts] = useState<ImportPlan[]>([])
+  const [executeConfirmationOpen, setExecuteConfirmationOpen] = useState(false)
   const panelRef = useFocusTrap(true, onClose, 'input,select,button,textarea')
 
   const acceptedExtensions = ALLOWED_EXTENSIONS[sourceType]?.join(',') ?? ''
@@ -65,6 +67,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
   const resumeDraft = async (draft: ImportPlan) => {
     setPlan(draft)
     setConfirmed(draft.unit_confirmed || draft.source_type !== 'geometry')
+    setExecuteConfirmationOpen(false)
     setError('')
   }
 
@@ -87,10 +90,15 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
     try { setPlan(await api.stageImport(form)) } catch (cause) { setError(String(cause).replace('Error: ', '')) } finally { setBusy(false); setSubmittingAction(null) }
   }
 
-  const execute = async () => {
+  const requestExecute = () => {
     if (!plan || !confirmed || busy || submittingAction) return
     if (plan.source_type === 'geometry' && !plan.unit_confirmed) { setError('Geometry imports require unit confirmation before execution.'); return }
-    if (!window.confirm(`Create Flow360 project "${plan.name}"? Upload and processing may be billable.`)) return
+    setExecuteConfirmationOpen(true)
+  }
+
+  const execute = async () => {
+    if (!plan || busy || submittingAction) return
+    setExecuteConfirmationOpen(false)
     setBusy(true); setSubmittingAction('execute'); setError('')
     try {
       const approved = plan.status === 'draft' ? await api.approveImport(plan.id) : plan
@@ -110,6 +118,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
       setPlan(null)
       setFiles(null)
       setConfirmed(false)
+      setExecuteConfirmationOpen(false)
       setExistingDrafts((prev) => prev.filter((d) => d.id !== plan.id))
     } catch (cause) { setError(String(cause).replace('Error: ', '')) } finally { setBusy(false); setSubmittingAction(null) }
   }
@@ -258,7 +267,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
               </button>
               <button
                 className="import-execute"
-                onClick={() => void execute()}
+                onClick={requestExecute}
                 disabled={!confirmed || busy || !!submittingAction || (plan.source_type === 'geometry' && !plan.unit_confirmed)}
               >
                 {busy && submittingAction === 'execute'
@@ -288,6 +297,24 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
             <span>Processing import...</span>
           </div>
         )}
+        <Flow360ConfirmationDialog
+          open={executeConfirmationOpen}
+          eyebrow="Flow360 · Project creation"
+          title="Create this Flow360 project?"
+          description="This is the final handoff from local staging to Flow360. The reviewed files and import settings below will be submitted."
+          targetLabel="Reviewed project import"
+          targetName={plan.name}
+          details={[
+            { label: 'Source', value: SOURCE_LABELS[plan.source_type]?.split(' (')[0] ?? plan.source_type },
+            { label: 'Destination', value: folder.name },
+            { label: 'Upload', value: `${(plan.size_bytes / 1024 / 1024).toFixed(2)} MB` },
+          ]}
+          risk="Uploading and processing these files may create billable Flow360 resources. Closing this dialog keeps the staged files local."
+          confirmLabel="Create in Flow360"
+          busy={busy && submittingAction === 'execute'}
+          onCancel={() => setExecuteConfirmationOpen(false)}
+          onConfirm={() => void execute()}
+        />
       </div>}
     </section>
   </div>

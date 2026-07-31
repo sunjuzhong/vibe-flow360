@@ -32,6 +32,7 @@ import {
 import { errorMessage } from '../lib/errors'
 import { executionTemplate, preflightPrimaryAction } from '../lib/planPresentation'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 import SchemaFormDialog from './SchemaForm'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
@@ -132,6 +133,7 @@ export default function PlanPanel({
   const [loading, setLoading] = useState(false)
   const [submittingAction, setSubmittingAction] = useState<'approve' | 'run' | 'compile' | null>(null)
   const [schemaFormOpen, setSchemaFormOpen] = useState(false)
+  const [runConfirmationOpen, setRunConfirmationOpen] = useState(false)
   const [preflightLoading, setPreflightLoading] = useState(false)
   const [error, setError] = useState('')
   const panelRef = useFocusTrap(open, onClose, 'input,textarea,select,button.primary,button.execute,button:not(.icon-button)')
@@ -157,6 +159,7 @@ export default function PlanPanel({
     setReviewed(false)
     setExecuteConfirmed(false)
     setSchemaFormOpen(false)
+    setRunConfirmationOpen(false)
     setError('')
     void loadPlans()
   }, [loadPlans, open, options, resource.name])
@@ -312,14 +315,19 @@ export default function PlanPanel({
     }
   }
 
-  const run = async () => {
+  const requestRun = () => {
     if (!selected || !executeConfirmed || loading || submittingAction) return
     if (selected.status !== 'approved' && selected.status !== 'failed') return
     if (selected.submission_id && selected.status !== 'failed') {
       setError('This plan has already been submitted to Flow360 and is protected from double-submit.')
       return
     }
-    if (!window.confirm(`Submit “${selected.name}” to Flow360? This may create billable cloud resources.`)) return
+    setRunConfirmationOpen(true)
+  }
+
+  const run = async () => {
+    if (!selected || loading || submittingAction) return
+    setRunConfirmationOpen(false)
     setLoading(true)
     setSubmittingAction('run')
     setError('')
@@ -721,7 +729,7 @@ export default function PlanPanel({
                     <button
                       className="execute"
                       disabled={!executeConfirmed || loading || !!submittingAction}
-                      onClick={() => void run()}
+                      onClick={requestRun}
                     >
                       {loading && submittingAction === 'run'
                         ? <RefreshCw size={14} className="spin" />
@@ -744,6 +752,26 @@ export default function PlanPanel({
                     onSubmit={(values) => void applySchemaInputs(values)}
                   />
                 )}
+                <Flow360ConfirmationDialog
+                  open={runConfirmationOpen}
+                  eyebrow="Flow360 · Remote execution"
+                  title="Submit the approved plan?"
+                  description="This is the final handoff from local review to Flow360. Vibe Flow360 will submit only the validated plan shown behind this dialog."
+                  targetLabel="Approved simulation plan"
+                  targetName={selected.name}
+                  details={[
+                    { label: 'Source', value: `${resource.type} · ${resource.name}` },
+                    {
+                      label: 'Run up to',
+                      value: targetOptions[resource.type]?.find((option) => option.value === selected.target)?.label ?? selected.target,
+                    },
+                  ]}
+                  risk="Flow360 may create new mesh or case resources and usage charges may apply. Closing this dialog makes no remote changes."
+                  confirmLabel="Submit approved plan"
+                  busy={loading && submittingAction === 'run'}
+                  onCancel={() => setRunConfirmationOpen(false)}
+                  onConfirm={() => void run()}
+                />
               </div>
             ) : null}
           </main>
