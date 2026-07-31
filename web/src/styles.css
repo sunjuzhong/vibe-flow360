@@ -1305,6 +1305,11 @@ button { color: inherit; }
   background: #f4f4f0;
   cursor: grab;
 }
+.viewer-3d canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
 .viewer-3d:active { cursor: grabbing; }
 .viewer-overlay {
   position: absolute;

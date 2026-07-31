@@ -5,6 +5,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { UVFLoader, applyFieldColoring, createFieldHistogram, findFieldExtrema, probeFieldAtIntersection, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
+import { fitPerspectiveCameraToObject } from '../../lib/viewerCamera'
+import { useViewerViewport } from '../../hooks/useViewerViewport'
 
 export type MeshGroupData = {
   id: string
@@ -149,7 +151,7 @@ export function Viewer3D({
     camera.lookAt(0, 0, 0)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(width, height)
+    renderer.setSize(width, height, false)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     container.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -261,13 +263,9 @@ export function Viewer3D({
     assetRef.current = root
 
     const camera = cameraRef.current
-    if (camera) {
-      const dist = 3.5
-      const height = 2.2
-      camera.position.set(dist, height, dist)
-      camera.lookAt(0, 0, 0)
-      controlsRef.current?.target.set(0, 0, 0)
-      controlsRef.current?.update()
+    const controls = controlsRef.current
+    if (camera && controls) {
+      fitPerspectiveCameraToObject(camera, controls, root)
     }
   }, [])
 
@@ -285,21 +283,8 @@ export function Viewer3D({
     }
     animate()
 
-    const handleResize = () => {
-      if (!container) return
-      const w = container.clientWidth
-      const h = container.clientHeight
-      renderer.setSize(w, h)
-      if (cameraRef.current) {
-        cameraRef.current.aspect = w / h
-        cameraRef.current.updateProjectionMatrix()
-      }
-    }
-    window.addEventListener('resize', handleResize)
-
     return () => {
       cancelAnimationFrame(rafId)
-      window.removeEventListener('resize', handleResize)
       renderer.dispose()
       controlsRef.current?.dispose()
       assetDisposeRef.current?.()
@@ -309,6 +294,22 @@ export function Viewer3D({
       }
     }
   }, [createScene])
+
+  const fitAssetToViewport = useCallback(() => {
+    const asset = assetRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (asset && camera && controls) {
+      fitPerspectiveCameraToObject(camera, controls, asset)
+    }
+  }, [])
+
+  useViewerViewport({
+    containerRef,
+    rendererRef,
+    cameraRef,
+    onResize: fitAssetToViewport,
+  })
 
   useEffect(() => {
     if (manifest && state.status === 'ready') {
