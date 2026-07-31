@@ -29,40 +29,87 @@ type ChatRequest struct {
 
 type State struct {
 	Mode      string `json:"mode"`
+	Provider  string `json:"provider"`
 	Model     string `json:"model"`
 	Ready     bool   `json:"ready"`
 	Execution bool   `json:"execution"`
 }
 
 type Service struct {
-	APIKey  string
-	BaseURL string
-	Model   string
-	Client  *http.Client
+	Provider     string
+	APIKey       string
+	BaseURL      string
+	Model        string
+	Client       *http.Client
+	CodexBinary  string
+	CodexModel   string
+	CodexProfile string
+	CodexTimeout time.Duration
+	WorkDir      string
 }
 
 func NewService() *Service {
+	provider := strings.ToLower(firstNonEmpty(os.Getenv("VIBESIM_AGENT_PROVIDER"), "builtin"))
 	key := firstNonEmpty(os.Getenv("VIBESIM_AI_API_KEY"), os.Getenv("OPENAI_API_KEY"))
 	baseURL := strings.TrimRight(firstNonEmpty(os.Getenv("VIBESIM_AI_BASE_URL"), "https://api.openai.com/v1"), "/")
 	model := firstNonEmpty(os.Getenv("VIBESIM_AI_MODEL"), "gpt-4.1-mini")
+	workDir, _ := os.Getwd()
 	return &Service{
-		APIKey:  key,
-		BaseURL: baseURL,
-		Model:   model,
-		Client:  &http.Client{Timeout: 90 * time.Second},
+		Provider:     provider,
+		APIKey:       key,
+		BaseURL:      baseURL,
+		Model:        model,
+		Client:       &http.Client{Timeout: 90 * time.Second},
+		CodexBinary:  firstNonEmpty(os.Getenv("VIBESIM_CODEX_BINARY"), "codex"),
+		CodexModel:   strings.TrimSpace(os.Getenv("VIBESIM_CODEX_MODEL")),
+		CodexProfile: strings.TrimSpace(os.Getenv("VIBESIM_CODEX_PROFILE")),
+		CodexTimeout: codexTimeoutFromEnv(),
+		WorkDir:      workDir,
+	}
+}
+
+func (s *Service) effectiveProvider() string {
+	return firstNonEmpty(strings.ToLower(strings.TrimSpace(s.Provider)), "builtin")
+}
+
+func (s *Service) SupportsGeneration() bool {
+	switch s.effectiveProvider() {
+	case "codex":
+		return s.codexReady()
+	case "builtin":
+		return strings.TrimSpace(s.APIKey) != ""
+	default:
+		return false
 	}
 }
 
 func (s *Service) State() State {
-	if strings.TrimSpace(s.APIKey) == "" {
-		return State{Mode: "local-planner", Model: "CFD planning preset", Ready: true, Execution: false}
+	provider := s.effectiveProvider()
+	if provider == "codex" {
+		model := firstNonEmpty(s.CodexModel, "Codex CLI default")
+		return State{Mode: "codex", Provider: "codex", Model: model, Ready: s.codexReady(), Execution: false}
 	}
-	return State{Mode: "ai", Model: s.Model, Ready: true, Execution: false}
+	if provider != "builtin" {
+		return State{Mode: "configuration-error", Provider: provider, Model: "Unknown provider", Ready: false, Execution: false}
+	}
+	if strings.TrimSpace(s.APIKey) == "" {
+		return State{Mode: "local-planner", Provider: "builtin", Model: "CFD planning preset", Ready: true, Execution: false}
+	}
+	return State{Mode: "ai", Provider: "builtin", Model: s.Model, Ready: true, Execution: false}
 }
 
 func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error) {
 	if strings.TrimSpace(request.Message) == "" {
 		return "", errors.New("message is required")
+	}
+	provider := s.effectiveProvider()
+	if provider == "codex" {
+		systemPrompt := AgentSystemPrompt()
+		chatPrompt, _ := BuildChatPrompt(request)
+		return s.chatWithCodex(ctx, systemPrompt, chatPrompt, request.Model)
+	}
+	if provider != "builtin" {
+		return "", fmt.Errorf("unsupported agent provider %q; use builtin or codex", provider)
 	}
 	if strings.TrimSpace(s.APIKey) == "" {
 		return localPlan(request), nil
@@ -160,6 +207,18 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
 
 Your previous response was:
 %s`, truncate(rawResponse, 2000))
+
+	if s.effectiveProvider() == "codex" {
+		repaired, repairErr := s.chatWithCodex(ctx, AgentSystemPrompt(), repairPrompt, request.Model)
+		if repairErr != nil {
+			return Action{}, fmt.Errorf("Codex repair failed: %w (original parse: %v)", repairErr, err)
+		}
+		action, repairErr := ExtractAndValidateAction(repaired)
+		if repairErr != nil {
+			return Action{}, fmt.Errorf("Codex repair also failed: %v (original: %v)", repairErr, err)
+		}
+		return action, nil
+	}
 
 	model := firstNonEmpty(request.Model, s.Model)
 	systemPrompt := AgentSystemPrompt()

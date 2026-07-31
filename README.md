@@ -87,12 +87,13 @@ npm run dev
 The Vite server prints the browser URL and proxies `/api` to
 `http://localhost:9292`.
 
-## AI configuration
+## Agent configuration
 
-Without configuration, chat uses the deterministic local CFD planner. To connect
-an OpenAI-compatible model, set:
+The default `builtin` provider preserves the current behavior. Without an API
+key, it uses the deterministic local CFD planner:
 
 ```bash
+export VIBESIM_AGENT_PROVIDER="builtin"
 export VIBESIM_AI_API_KEY="..."
 export VIBESIM_AI_BASE_URL="https://api.openai.com/v1"
 export VIBESIM_AI_MODEL="gpt-4.1-mini"
@@ -100,6 +101,21 @@ export VIBESIM_AI_MODEL="gpt-4.1-mini"
 
 If the provider is unavailable or out of quota, chat falls back to the local
 planner instead of breaking the workflow.
+
+To use the locally installed Codex CLI as the external agent:
+
+```bash
+export VIBESIM_AGENT_PROVIDER="codex"
+export VIBESIM_CODEX_BINARY="codex"        # or an absolute path
+export VIBESIM_CODEX_MODEL=""              # empty uses the Codex CLI default
+export VIBESIM_CODEX_PROFILE=""            # optional Codex config profile
+export VIBESIM_CODEX_TIMEOUT_SECONDS="120"
+```
+
+External Codex runs with `codex exec --ephemeral --sandbox read-only`. Vibe
+Flow360 passes CFD context in the prompt, captures only the final response, and
+does not forward Flow360 credentials. The external agent cannot approve or
+submit a Flow360 run; the existing reviewed Plan workflow remains authoritative.
 
 ## Flow360 configuration
 

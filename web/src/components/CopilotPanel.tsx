@@ -153,7 +153,18 @@ export default function CopilotPanel({
     >
       <div className="copilot-header">
         <span className="ai-avatar"><Sparkles size={17} /></span>
-        <div><strong>Simulation Copilot</strong><span>{agent?.mode === 'ai' ? agent.model : 'Local planning mode'}</span></div>
+        <div>
+          <strong>Simulation Copilot</strong>
+          <span>
+            {agent?.mode === 'codex'
+              ? `External Codex · ${agent.model}`
+              : agent?.mode === 'ai'
+                ? `Built-in · ${agent.model}`
+                : agent?.mode === 'configuration-error'
+                  ? 'Agent configuration error'
+                  : 'Built-in local planning mode'}
+          </span>
+        </div>
         <button className="icon-button" onClick={onClose} aria-label="Close AI assistant"><X size={18} /></button>
       </div>
       <div className="copilot-context"><MessageSquareText size={14} /><span>{contextLabel}</span></div>

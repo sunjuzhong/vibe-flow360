@@ -345,7 +345,7 @@ func (e *Engine) Close(id string) (Intervention, error) {
 
 // buildProposalsWithAI generates fix proposals using the AI service when available
 func (e *Engine) buildProposalsWithAI(intervention Intervention) []Proposal {
-	if e.ai != nil && strings.TrimSpace(e.ai.APIKey) != "" {
+	if e.ai != nil && e.ai.SupportsGeneration() {
 		proposals := e.buildProposalsFromAI(intervention)
 		if len(proposals) > 0 {
 			return proposals

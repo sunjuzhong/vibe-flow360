@@ -9,7 +9,8 @@ export type Flow360Status = {
 }
 
 export type AgentState = {
-  mode: 'ai' | 'local-planner'
+  mode: 'ai' | 'codex' | 'local-planner' | 'configuration-error'
+  provider: 'builtin' | 'codex' | string
   model: string
   ready: boolean
   execution: boolean
