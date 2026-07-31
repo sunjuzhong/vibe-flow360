@@ -3282,6 +3282,118 @@ button { color: inherit; }
 .cfd-decision-panel .volume-check span { font-size: 8px; }
 .cfd-decision-panel .volume-check small { font-size: 7px; }
 .cfd-source-detail { display: block; margin-top: 7px; color: #8a7445; font: 7px 'DM Mono'; text-align: center; }
+.surface-mode-plain .cfd-decision-panel,
+.surface-mode-quality .cfd-decision-panel { right: 18px; }
+
+.surface-view-modes {
+  display: flex;
+  gap: 4px;
+}
+.surface-view-modes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.surface-review-section {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid #dfe2d9;
+}
+.surface-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.surface-review-heading span {
+  color: #6b7468;
+  font: 7px 'DM Mono';
+  letter-spacing: .06em;
+}
+.surface-review-heading strong {
+  color: #475141;
+  font: 8px 'DM Mono';
+}
+.surface-boundary-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.surface-boundary-list button,
+.surface-quality-field {
+  min-width: 0;
+  padding: 6px 7px;
+  overflow: hidden;
+  border: 1px solid #dfe2d9;
+  border-radius: 6px;
+  color: #4c5548;
+  background: rgba(255, 255, 255, .72);
+  text-align: left;
+  cursor: pointer;
+}
+.surface-boundary-list button:hover,
+.surface-boundary-list button.selected { border-color: #8ba25b; background: #f3f7e8; }
+.surface-boundary-list button.unassigned { border-left: 3px solid #c89b46; }
+.surface-boundary-list button.conflict { border-left: 3px solid #b86755; }
+.surface-boundary-list span,
+.surface-boundary-list small,
+.surface-quality-field span,
+.surface-quality-field small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.surface-boundary-list span,
+.surface-quality-field span { font-size: 8px; font-weight: 650; }
+.surface-boundary-list small,
+.surface-quality-field small { margin-top: 2px; color: #848b7f; font: 7px 'DM Mono'; }
+.surface-review-section > p,
+.surface-parameter-summary > p {
+  margin: 6px 0 0;
+  color: #7b8277;
+  font-size: 8px;
+  line-height: 1.4;
+}
+.surface-review-section .surface-selected-detail { color: #5e7253; }
+.surface-review-section .surface-review-warning { color: #965c4f; }
+.surface-parameter-summary {
+  margin-top: 9px;
+  border-top: 1px solid #dfe2d9;
+}
+.surface-parameter-summary summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 9px;
+  color: #4c5548;
+  font-size: 8px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.surface-parameter-summary summary span {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #e8ebdf;
+  font: 7px 'DM Mono';
+}
+.surface-parameter-summary dl { margin: 7px 0 0; }
+.surface-parameter-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid #e8eae3;
+}
+.surface-parameter-summary dt {
+  overflow: hidden;
+  color: #777e73;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.surface-parameter-summary dd { margin: 0; color: #485143; font: 7px 'DM Mono'; }
 
 .cfd-stage-guidance {
   display: flex;

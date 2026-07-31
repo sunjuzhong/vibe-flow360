@@ -49,10 +49,27 @@ type Props = {
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
+  selectedField?: string | null
+  onSelectedFieldChange?: (field: string | null) => void
+  showFieldPanel?: boolean
+  showEntityLegend?: boolean
   toolbar?: React.ReactNode
 }
 
-export function Viewer3D({ manifest, state, onSelectionChange, selection, wireframe, onWireframeChange, onFieldsDiscovered, toolbar }: Props) {
+export function Viewer3D({
+  manifest,
+  state,
+  onSelectionChange,
+  selection,
+  wireframe,
+  onWireframeChange,
+  onFieldsDiscovered,
+  selectedField: controlledSelectedField,
+  onSelectedFieldChange,
+  showFieldPanel = true,
+  showEntityLegend = true,
+  toolbar,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -65,13 +82,21 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
-  const [selectedField, setSelectedField] = useState<string | null>(null)
+  const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
   const [colormap, setColormap] = useState<ColormapName>('viridis')
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
   const [groupVisibility, setGroupVisibilityState] = useState<Record<string, boolean>>({})
 
   const [wireframeOn, setWireframeOn] = useState(false)
+  const selectedField = controlledSelectedField === undefined
+    ? internalSelectedField
+    : controlledSelectedField
+
+  const selectField = (field: string | null) => {
+    if (controlledSelectedField === undefined) setInternalSelectedField(field)
+    onSelectedFieldChange?.(field)
+  }
 
   useEffect(() => {
     setGroupVisibilityState(Object.fromEntries(
@@ -133,7 +158,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
     }
     setAssetStats(null)
     setAvailableFields([])
-    setSelectedField(null)
+    setInternalSelectedField(null)
 
     if (!manifest.asset_url) return
     let root: THREE.Object3D
@@ -152,7 +177,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
       setAssetStats({ faces: asset.faces, edges: asset.edges })
       setAvailableFields(asset.fields)
       onFieldsDiscovered?.(asset.fields)
-      setSelectedField(null)
+      setInternalSelectedField(null)
     } else {
       const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
       if (signal.aborted) {
@@ -163,7 +188,8 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
       assetDisposeRef.current = () => disposeObject(root)
       uvfAssetRef.current = null
       setAvailableFields([])
-      setSelectedField(null)
+      onFieldsDiscovered?.([])
+      setInternalSelectedField(null)
     }
     const fallbackGroup = manifest.groups[0]
     root.traverse((object) => {
@@ -426,13 +452,13 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
       {toolbar && visibleState.status === 'ready' && (
         <div className="viewer-toolbar-slot">{toolbar}</div>
       )}
-      {availableFields.length > 0 && visibleState.status === 'ready' && (
+      {showFieldPanel && availableFields.length > 0 && visibleState.status === 'ready' && (
         <div className="viewer-field-panel">
           <label className="viewer-field-label">
             Field:
             <select
               value={selectedField ?? ''}
-              onChange={(e) => setSelectedField(e.target.value || null)}
+              onChange={(e) => selectField(e.target.value || null)}
             >
               <option value="">None</option>
               {availableFields.map((f) => (
@@ -471,7 +497,7 @@ export function Viewer3D({ manifest, state, onSelectionChange, selection, wirefr
           )}
         </div>
       )}
-      {manifest && (
+      {showEntityLegend && manifest && (
         <div className="viewer-legend">
           <div className="viewer-legend-header">
             <span>Groups / Zones / Regions</span>

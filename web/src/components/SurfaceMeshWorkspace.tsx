@@ -1,18 +1,29 @@
 import {
   Activity,
+  Box,
   CheckCircle2,
   CircleDashed,
   GitPullRequestDraft,
   Grid3X3,
+  Layers3,
+  Palette,
   Ruler,
   ScanLine,
   Triangle,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { UVFFieldInfo } from '../lib/uvf-three'
+import {
+  buildSurfaceBoundaryInventory,
+  classifySurfaceMeshQualityFields,
+  surfaceMeshParameterSummary,
+} from '../lib/surfaceMeshReview'
+
+type SurfaceViewMode = 'plain' | 'boundaries' | 'quality'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -54,6 +65,9 @@ export default function SurfaceMeshWorkspace({
   onPlanVolumeMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [viewMode, setViewMode] = useState<SurfaceViewMode>('boundaries')
+  const [qualityFields, setQualityFields] = useState<UVFFieldInfo[]>([])
+  const [selectedQualityField, setSelectedQualityField] = useState<string | null>(null)
 
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
@@ -61,6 +75,27 @@ export default function SurfaceMeshWorkspace({
     detail && geometryResourceId ? 'Geometry' : null,
     geometryResourceId ?? null,
   )
+  const boundaryInventory = useMemo(
+    () => buildSurfaceBoundaryInventory(manifest?.groups ?? [], detail?.simulation_params),
+    [detail?.simulation_params, manifest?.groups],
+  )
+  const surfaceParameters = useMemo(
+    () => surfaceMeshParameterSummary(detail?.simulation_params),
+    [detail?.simulation_params],
+  )
+  const selectedBoundary = boundaryInventory.find((row) => row.id === viewerSelection.groupId)
+  const selectedFieldInfo = qualityFields.find((field) => field.name === selectedQualityField)
+  const assignedBoundaryCount = boundaryInventory.filter((row) => row.status === 'assigned').length
+  const boundaryConflictCount = boundaryInventory.filter((row) => row.status === 'conflict').length
+  const handleFieldsDiscovered = (fields: UVFFieldInfo[]) => {
+    const nextQualityFields = classifySurfaceMeshQualityFields(fields)
+    setQualityFields(nextQualityFields)
+    setSelectedQualityField((current) => (
+      current && nextQualityFields.some((field) => field.name === current)
+        ? current
+        : nextQualityFields[0]?.name ?? null
+    ))
+  }
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
   const status = resourceStatus(detail)
   const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(status.toLowerCase())
@@ -94,12 +129,45 @@ export default function SurfaceMeshWorkspace({
 
   return (
     <section className="surface-mesh-workspace cfd-stage-workspace">
-      <div className="viewer-section cfd-stage-viewer">
+      <div className={`viewer-section cfd-stage-viewer surface-mode-${viewMode}`}>
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          selectedField={viewMode === 'quality' ? selectedQualityField : null}
+          onSelectedFieldChange={setSelectedQualityField}
+          onFieldsDiscovered={handleFieldsDiscovered}
+          showFieldPanel={viewMode === 'quality'}
+          showEntityLegend={viewMode === 'boundaries'}
+          toolbar={(
+            <div className="surface-view-modes" role="group" aria-label="Surface mesh display mode">
+              <button
+                type="button"
+                className={viewMode === 'plain' ? 'active' : ''}
+                aria-pressed={viewMode === 'plain'}
+                onClick={() => setViewMode('plain')}
+              >
+                <Box size={11} /> Plain
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'boundaries' ? 'active' : ''}
+                aria-pressed={viewMode === 'boundaries'}
+                onClick={() => setViewMode('boundaries')}
+              >
+                <Layers3 size={11} /> Boundaries
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'quality' ? 'active' : ''}
+                aria-pressed={viewMode === 'quality'}
+                onClick={() => setViewMode('quality')}
+              >
+                <Palette size={11} /> Mesh Quality
+              </button>
+            </div>
+          )}
         />
         <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
           <ScanLine size={13} />
@@ -144,6 +212,78 @@ export default function SurfaceMeshWorkspace({
               </div>
             )}
           </div>
+          <div className="surface-review-section">
+            <div className="surface-review-heading">
+              <span>
+                {viewMode === 'quality'
+                  ? 'QUALITY FIELDS'
+                  : viewMode === 'boundaries' ? 'BOUNDARY ASSIGNMENTS' : 'DISPLAY SUMMARY'}
+              </span>
+              {viewMode === 'quality'
+                ? <strong>{qualityFields.length} available</strong>
+                : viewMode === 'boundaries'
+                  ? <strong>{assignedBoundaryCount}/{boundaryInventory.length} assigned</strong>
+                  : <strong>{manifest?.elements?.toLocaleString() ?? '—'} elements</strong>}
+            </div>
+            {viewMode === 'quality' ? (
+              selectedFieldInfo ? (
+                <button
+                  type="button"
+                  className="surface-quality-field active"
+                  onClick={() => setViewMode('quality')}
+                >
+                  <span>{selectedFieldInfo.name}</span>
+                  <small>{selectedFieldInfo.kind} · {selectedFieldInfo.min.toPrecision(4)} – {selectedFieldInfo.max.toPrecision(4)}</small>
+                </button>
+              ) : (
+                <p>No area, aspect-ratio, skewness, or other surface-quality field is present in this manifest.</p>
+              )
+            ) : viewMode === 'boundaries' ? (
+              <div className="surface-boundary-list">
+                {boundaryInventory.length > 0 ? boundaryInventory.slice(0, 8).map((row) => (
+                  <button
+                    type="button"
+                    key={row.id}
+                    className={`${row.status} ${viewerSelection.groupId === row.id ? 'selected' : ''}`}
+                    onClick={() => setViewerSelection({ groupId: row.id })}
+                  >
+                    <span>{row.name}</span>
+                    <small>
+                      {row.assignments.length > 0
+                        ? row.assignments.map((assignment) => assignment.modelName).join(', ')
+                        : 'Unassigned'}
+                    </small>
+                  </button>
+                )) : <p>No Face entities are present in the current render asset.</p>}
+              </div>
+            ) : (
+              <p>
+                Plain mode shows the unclassified surface discretization without boundary colors or diagnostic fields.
+                Use it to inspect silhouette, feature capture, and local element density.
+              </p>
+            )}
+            {viewMode === 'boundaries' && selectedBoundary && (
+              <p className="surface-selected-detail">
+                Selected: {selectedBoundary.name} · {selectedBoundary.triangles?.toLocaleString() ?? '—'} triangles
+              </p>
+            )}
+            {viewMode === 'boundaries' && boundaryConflictCount > 0 && (
+              <p className="surface-review-warning">{boundaryConflictCount} face group(s) have multiple model assignments.</p>
+            )}
+          </div>
+          <details className="surface-parameter-summary">
+            <summary>Surface meshing parameters <span>{surfaceParameters.length}</span></summary>
+            {surfaceParameters.length > 0 ? (
+              <dl>
+                {surfaceParameters.map((parameter) => (
+                  <div key={parameter.path}>
+                    <dt title={parameter.path}>{parameter.label}</dt>
+                    <dd>{parameter.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : <p>No SurfaceMesh-specific parameters were found.</p>}
+          </details>
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
             Plan Volume Mesh

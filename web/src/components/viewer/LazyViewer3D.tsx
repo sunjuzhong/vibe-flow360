@@ -18,6 +18,10 @@ export type ViewerToolbarProps = {
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
+  selectedField?: string | null
+  onSelectedFieldChange?: (field: string | null) => void
+  showFieldPanel?: boolean
+  showEntityLegend?: boolean
   toolbar?: React.ReactNode
 }
 
