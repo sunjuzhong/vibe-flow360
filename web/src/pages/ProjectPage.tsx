@@ -19,6 +19,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   api,
   type Flow360Status,
+  type GeometryComparison,
+  type GeometryDiagnosticReport,
   type ProjectInfo,
   type ProjectItem,
   type ProjectSyncManifest,
@@ -47,6 +49,10 @@ import {
   geometrySemanticAgentAction,
   type GeometrySemanticDraft,
 } from '../lib/geometrySemantics'
+import {
+  geometryDiagnosticAgentAction,
+  type GeometryReviewTemplateId,
+} from '../lib/geometryAdvanced'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -570,6 +576,9 @@ export default function ProjectPage() {
               <GeometryWorkspace
                 detail={detail}
                 resourceId={selected.id}
+                geometryVersions={items
+                  .filter((item) => item.type === 'Geometry')
+                  .map((item) => ({ id: item.id, name: item.name }))}
                 onCreateSemanticPlan={async (draft: GeometrySemanticDraft) => {
                   if (!project) throw new Error('Project context is required to create a Geometry semantic review plan.')
                   const result = await api.planFromAction(geometrySemanticAgentAction({
@@ -577,6 +586,26 @@ export default function ProjectPage() {
                     geometryId: selected.id,
                     geometryName: selected.name,
                     draft,
+                  }))
+                  const plan = result.results.find((item) => item.plan)?.plan
+                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')
+                  setInitialPlanId(plan.id)
+                  setChatOpen(false)
+                  setPlanOpen(true)
+                }}
+                onCreateAdvancedPlan={async (
+                  report: GeometryDiagnosticReport,
+                  comparison: GeometryComparison | null,
+                  templateId: GeometryReviewTemplateId,
+                ) => {
+                  if (!project) throw new Error('Project context is required to create an advanced Geometry review plan.')
+                  const result = await api.planFromAction(geometryDiagnosticAgentAction({
+                    project,
+                    geometryId: selected.id,
+                    geometryName: selected.name,
+                    report,
+                    comparison,
+                    templateId,
                   }))
                   const plan = result.results.find((item) => item.plan)?.plan
                   if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')

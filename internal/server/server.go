@@ -27,6 +27,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
+	"github.com/sunjuzhong/vibe-flow360/internal/geometrydiag"
 	importplans "github.com/sunjuzhong/vibe-flow360/internal/imports"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
@@ -207,6 +208,8 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview-mesh", s.flow360ResourceMeshPreview)
+		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics", s.flow360GeometryDiagnostics)
+		api.GET("/flow360/resources/Geometry/:resource_id/compare/:compare_id", s.flow360GeometryComparison)
 		api.GET("/flow360/resources/:resource_type/:resource_id/visualization/*asset_path", s.flow360ResourceVisualizationAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
 		api.POST("/flow360/compare", s.compareCases)
@@ -1397,6 +1400,78 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func (s *Server) flow360GeometryDiagnostics(c *gin.Context) {
+	resourceID := c.Param("resource_id")
+	if err := flow360.ValidateResourcePath("Geometry", resourceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if s.mirror == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "server-backed Geometry diagnostics require a synchronized visualization manifest"})
+		return
+	}
+	manifest, err := s.mirror.GeometryVisualizationManifest(resourceID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "synchronize this Geometry before running diagnostics"})
+		return
+	}
+	ratio := 0.1
+	if raw := strings.TrimSpace(c.Query("small_surface_ratio")); raw != "" {
+		parsed, parseErr := strconv.ParseFloat(raw, 64)
+		if parseErr != nil || parsed <= 0 || parsed > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "small_surface_ratio must be greater than 0 and at most 1"})
+			return
+		}
+		ratio = parsed
+	}
+	report, err := geometrydiag.Analyze(resourceID, manifest, geometrydiag.Settings{SmallSurfaceRatio: ratio})
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("ETag", fmt.Sprintf("\"geometry-diagnostics-%s\"", report.Fingerprint))
+	c.Header("Cache-Control", "private, max-age=60")
+	c.JSON(http.StatusOK, report)
+}
+
+func (s *Server) flow360GeometryComparison(c *gin.Context) {
+	resourceID := c.Param("resource_id")
+	compareID := c.Param("compare_id")
+	if err := flow360.ValidateResourcePath("Geometry", resourceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := flow360.ValidateResourcePath("Geometry", compareID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if resourceID == compareID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "select a different Geometry version to compare"})
+		return
+	}
+	if s.mirror == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Geometry comparison requires synchronized visualization manifests"})
+		return
+	}
+	baseline, err := s.mirror.GeometryVisualizationManifest(resourceID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "baseline Geometry visualization is not synchronized"})
+		return
+	}
+	candidate, err := s.mirror.GeometryVisualizationManifest(compareID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "comparison Geometry visualization is not synchronized"})
+		return
+	}
+	comparison, err := geometrydiag.Compare(resourceID, baseline, compareID, candidate)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=60")
+	c.JSON(http.StatusOK, comparison)
 }
 
 func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {

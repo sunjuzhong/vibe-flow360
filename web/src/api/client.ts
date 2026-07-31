@@ -187,6 +187,68 @@ export type ResourceDetail = {
   errors?: Record<string, string>
 }
 
+export type GeometryDiagnosticCapability = {
+  key: string
+  status: 'available' | 'proxy' | 'unavailable'
+  detail: string
+}
+
+export type GeometryDiagnosticEvidence = {
+  key: string
+  label: string
+  value: unknown
+  unit?: string
+  provenance: 'provided' | 'computed' | 'inferred'
+  method: string
+}
+
+export type GeometryDiagnosticFinding = {
+  id: string
+  kind: 'small-feature' | 'gap' | 'curvature' | 'proximity' | string
+  severity: 'warning' | 'error' | 'unknown' | 'info'
+  title: string
+  detail: string
+  entity_ids?: string[]
+  evidence_keys?: string[]
+  recommendation?: string
+}
+
+export type GeometryGroupingProposal = {
+  id: string
+  label: string
+  basis: string
+  entity_ids: string[]
+  provenance: 'inferred'
+}
+
+export type GeometryDiagnosticReport = {
+  schema_version: number
+  geometry_id: string
+  fingerprint: string
+  settings: { small_surface_ratio: number }
+  capabilities: GeometryDiagnosticCapability[]
+  evidence: GeometryDiagnosticEvidence[]
+  findings: GeometryDiagnosticFinding[]
+  grouping_proposals: GeometryGroupingProposal[]
+}
+
+export type GeometryComparison = {
+  schema_version: number
+  baseline_id: string
+  candidate_id: string
+  metrics: Array<{
+    key: string
+    label: string
+    baseline: number
+    candidate: number
+    delta: number
+    unit?: string
+  }>
+  added_surfaces: string[]
+  removed_surfaces: string[]
+  provenance: string
+}
+
 export type Flow360DataResponse<T> = {
   data: T
   source: 'live' | 'cache'
@@ -522,6 +584,14 @@ export const api = {
   resourceDetail: (resourceType: string, resourceId: string, cacheOnly = false) =>
     flow360JSON<ResourceDetail>(
       `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${cacheOnly ? '?cache=only' : ''}`,
+    ),
+  geometryDiagnostics: (resourceId: string, smallSurfaceRatio = 0.1) =>
+    json<GeometryDiagnosticReport>(
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics?small_surface_ratio=${encodeURIComponent(smallSurfaceRatio)}`,
+    ),
+  compareGeometries: (resourceId: string, compareId: string) =>
+    json<GeometryComparison>(
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/compare/${encodeURIComponent(compareId)}`,
     ),
   resourceLogs: async (resourceType: string, resourceId: string, tail = 200) => {
     const response = await fetch(

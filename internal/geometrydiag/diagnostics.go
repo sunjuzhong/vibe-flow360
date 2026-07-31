@@ -1,0 +1,390 @@
+package geometrydiag
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"math"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
+)
+
+const SchemaVersion = 1
+
+type Settings struct {
+	SmallSurfaceRatio float64 `json:"small_surface_ratio"`
+}
+
+type Capability struct {
+	Key    string `json:"key"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+type Evidence struct {
+	Key        string `json:"key"`
+	Label      string `json:"label"`
+	Value      any    `json:"value"`
+	Unit       string `json:"unit,omitempty"`
+	Provenance string `json:"provenance"`
+	Method     string `json:"method"`
+}
+
+type Finding struct {
+	ID             string   `json:"id"`
+	Kind           string   `json:"kind"`
+	Severity       string   `json:"severity"`
+	Title          string   `json:"title"`
+	Detail         string   `json:"detail"`
+	EntityIDs      []string `json:"entity_ids,omitempty"`
+	EvidenceKeys   []string `json:"evidence_keys,omitempty"`
+	Recommendation string   `json:"recommendation,omitempty"`
+}
+
+type GroupingProposal struct {
+	ID         string   `json:"id"`
+	Label      string   `json:"label"`
+	Basis      string   `json:"basis"`
+	EntityIDs  []string `json:"entity_ids"`
+	Provenance string   `json:"provenance"`
+}
+
+type Report struct {
+	SchemaVersion int                `json:"schema_version"`
+	GeometryID    string             `json:"geometry_id"`
+	Fingerprint   string             `json:"fingerprint"`
+	Settings      Settings           `json:"settings"`
+	Capabilities  []Capability       `json:"capabilities"`
+	Evidence      []Evidence         `json:"evidence"`
+	Findings      []Finding          `json:"findings"`
+	Groupings     []GroupingProposal `json:"grouping_proposals"`
+}
+
+type ComparisonMetric struct {
+	Key       string  `json:"key"`
+	Label     string  `json:"label"`
+	Baseline  float64 `json:"baseline"`
+	Candidate float64 `json:"candidate"`
+	Delta     float64 `json:"delta"`
+	Unit      string  `json:"unit,omitempty"`
+}
+
+type Comparison struct {
+	SchemaVersion   int                `json:"schema_version"`
+	BaselineID      string             `json:"baseline_id"`
+	CandidateID     string             `json:"candidate_id"`
+	Metrics         []ComparisonMetric `json:"metrics"`
+	AddedSurfaces   []string           `json:"added_surfaces"`
+	RemovedSurfaces []string           `json:"removed_surfaces"`
+	Provenance      string             `json:"provenance"`
+}
+
+type manifestEntry struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Properties struct {
+		Area            *float64   `json:"area"`
+		BoundsMin       [3]float64 `json:"boundsMin"`
+		BoundsMax       [3]float64 `json:"boundsMax"`
+		BufferLocations struct {
+			Indices []struct {
+				StartIndex int `json:"startIndex"`
+				EndIndex   int `json:"endIndex"`
+			} `json:"indices"`
+		} `json:"bufferLocations"`
+	} `json:"properties"`
+	Attributions struct {
+		PackedParentID string `json:"packedParentId"`
+	} `json:"attributions"`
+}
+
+type solidBounds struct {
+	ID  string
+	Min [3]float64
+	Max [3]float64
+}
+
+var generatedBodyFace = regexp.MustCompile(`(?i)^(body[0-9]+)_face_[0-9]+$`)
+
+func NormalizeSettings(settings Settings) Settings {
+	if settings.SmallSurfaceRatio <= 0 || settings.SmallSurfaceRatio > 1 {
+		settings.SmallSurfaceRatio = 0.1
+	}
+	return settings
+}
+
+func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Report, error) {
+	settings = NormalizeSettings(settings)
+	preview, err := flow360.GeometryUVFPreview(geometryID, manifest, "cached-manifest")
+	if err != nil {
+		return Report{}, err
+	}
+	var entries []manifestEntry
+	if err := json.Unmarshal(manifest, &entries); err != nil {
+		return Report{}, errors.New("invalid Geometry visualization manifest")
+	}
+
+	triangles := make([]int, 0, len(preview.Groups))
+	areas := []float64{}
+	areaByID := map[string]float64{}
+	groupMembers := map[string][]string{}
+	firstFaceByBody := map[string]string{}
+	solids := []solidBounds{}
+	for _, entry := range entries {
+		if entry.Type == "SolidGeometry" && entry.Properties.BoundsMin != entry.Properties.BoundsMax {
+			solids = append(solids, solidBounds{ID: entry.ID, Min: entry.Properties.BoundsMin, Max: entry.Properties.BoundsMax})
+		}
+		if entry.Type != "Face" {
+			continue
+		}
+		if entry.Properties.Area != nil && *entry.Properties.Area > 0 {
+			areas = append(areas, *entry.Properties.Area)
+			areaByID[entry.ID] = *entry.Properties.Area
+		}
+		if entry.Attributions.PackedParentID != "" && firstFaceByBody[entry.Attributions.PackedParentID] == "" {
+			firstFaceByBody[entry.Attributions.PackedParentID] = entry.ID
+		}
+	}
+	for _, group := range preview.Groups {
+		triangles = append(triangles, group.Triangles)
+		if match := generatedBodyFace.FindStringSubmatch(group.Name); len(match) == 2 {
+			groupMembers[strings.ToLower(match[1])] = append(groupMembers[strings.ToLower(match[1])], group.ID)
+		} else if match := generatedBodyFace.FindStringSubmatch(group.ID); len(match) == 2 {
+			groupMembers[strings.ToLower(match[1])] = append(groupMembers[strings.ToLower(match[1])], group.ID)
+		}
+	}
+	median := medianInt(triangles)
+	threshold := int(math.Max(2, math.Floor(float64(median)*settings.SmallSurfaceRatio)))
+	medianArea := medianFloat(areas)
+	areaThreshold := medianArea * settings.SmallSurfaceRatio
+	smallIDs := []string{}
+	for _, group := range preview.Groups {
+		area, hasArea := areaByID[group.ID]
+		if (hasArea && area <= areaThreshold) || (!hasArea && len(areas) == 0 && group.Triangles > 0 && group.Triangles <= threshold) {
+			smallIDs = append(smallIDs, group.ID)
+		}
+	}
+	sort.Strings(smallIDs)
+
+	dimensions := [3]float64{}
+	for index := range dimensions {
+		dimensions[index] = preview.BoundingBox.Max[index] - preview.BoundingBox.Min[index]
+	}
+	diagonal := math.Sqrt(dimensions[0]*dimensions[0] + dimensions[1]*dimensions[1] + dimensions[2]*dimensions[2])
+	hash := sha256.Sum256(manifest)
+	smallFeatureStatus := "proxy"
+	smallFeatureDetail := "Candidate surfaces use a triangle-count distribution proxy; this is not a physical feature-size calculation."
+	if len(areas) > 0 {
+		smallFeatureStatus = "available"
+		smallFeatureDetail = "Candidate surfaces use Flow360-provided CAD face areas and a user-controlled relative threshold."
+	}
+	proximityStatus := "unavailable"
+	proximityDetail := "The cached UVF manifest does not contain multiple bounded solid entities."
+	minimumSeparation, proximityBodies, hasProximity := minimumAABBSeparation(solids)
+	if hasProximity {
+		proximityStatus = "proxy"
+		proximityDetail = "Computed from solid-entity axis-aligned bounds; this is a lower-bound proxy, not exact CAD clearance."
+	}
+	report := Report{
+		SchemaVersion: SchemaVersion,
+		GeometryID:    geometryID,
+		Fingerprint:   hex.EncodeToString(hash[:]),
+		Settings:      settings,
+		Capabilities: []Capability{
+			{Key: "small-features", Status: smallFeatureStatus, Detail: smallFeatureDetail},
+			{Key: "gap-analysis", Status: proximityStatus, Detail: proximityDetail},
+			{Key: "curvature-analysis", Status: "unavailable", Detail: "The cached UVF manifest does not expose CAD curvature or tessellated curvature statistics."},
+			{Key: "proximity-analysis", Status: proximityStatus, Detail: proximityDetail},
+		},
+		Evidence: []Evidence{
+			{Key: "surface_count", Label: "Surface count", Value: len(preview.Groups), Provenance: "computed", Method: "Counted Face entries in the cached Flow360 UVF manifest."},
+			{Key: "vertex_count", Label: "Vertex count", Value: preview.Vertices, Provenance: "computed", Method: "Derived from the selected UVF position buffer length."},
+			{Key: "triangle_count", Label: "Triangle count", Value: preview.Elements, Provenance: "computed", Method: "Summed indexed triangles attributed to Face entries."},
+			{Key: "bounding_box_dimensions", Label: "Bounding-box dimensions", Value: dimensions, Provenance: "provided", Method: "Read from Flow360 UVF SolidGeometry bounds."},
+			{Key: "bounding_box_diagonal", Label: "Bounding-box diagonal", Value: diagonal, Provenance: "computed", Method: "Euclidean norm of Flow360 UVF bounds dimensions."},
+			{Key: "median_surface_triangles", Label: "Median triangles per surface", Value: median, Provenance: "computed", Method: "Median of indexed triangle counts for Face entries."},
+			{Key: "small_surface_proxy_threshold", Label: "Small-surface proxy threshold", Value: threshold, Unit: "triangles", Provenance: "inferred", Method: "max(2, floor(median triangles × configured ratio))."},
+		},
+		Findings: []Finding{
+			{ID: "curvature-analysis-unavailable", Kind: "curvature", Severity: "unknown", Title: "Curvature analysis unavailable", Detail: "No curvature samples or CAD topology are exposed by this resource.", Recommendation: "Treat curvature-based refinement as an engineering input until supported evidence is available."},
+		},
+		Groupings: []GroupingProposal{},
+	}
+	if len(areas) > 0 {
+		report.Evidence = append(report.Evidence,
+			Evidence{Key: "median_surface_area", Label: "Median surface area", Value: medianArea, Unit: "model-unit²", Provenance: "provided", Method: "Median of Flow360 UVF Face properties.area values."},
+			Evidence{Key: "small_surface_area_threshold", Label: "Small-surface area threshold", Value: areaThreshold, Unit: "model-unit²", Provenance: "computed", Method: "Median provided face area × configured ratio."},
+		)
+	}
+	if hasProximity {
+		report.Evidence = append(report.Evidence, Evidence{
+			Key: "minimum_aabb_separation", Label: "Minimum solid AABB separation", Value: minimumSeparation,
+			Unit: "model-unit", Provenance: "computed", Method: "Minimum Euclidean separation between Flow360-provided solid axis-aligned bounds.",
+		})
+		entityIDs := []string{}
+		for _, bodyID := range proximityBodies {
+			if faceID := firstFaceByBody[bodyID]; faceID != "" {
+				entityIDs = append(entityIDs, faceID)
+			}
+		}
+		report.Findings = append(report.Findings, Finding{
+			ID: "body-proximity-proxy", Kind: "proximity", Severity: "warning", Title: "Solid proximity lower bound",
+			Detail:    "The closest solid bounding boxes are separated by the reported lower bound; overlapping boxes produce zero and remain inconclusive.",
+			EntityIDs: entityIDs, EvidenceKeys: []string{"minimum_aabb_separation"},
+			Recommendation: "Inspect the implicated bodies and confirm clearance with a CAD-kernel or mesher-supported distance calculation.",
+		})
+	} else {
+		report.Findings = append(report.Findings,
+			Finding{ID: "gap-analysis-unavailable", Kind: "gap", Severity: "unknown", Title: "Gap analysis unavailable", Detail: "No multi-body distance evidence exists in the cached visualization manifest.", Recommendation: "Run a CAD-kernel or mesher-supported gap diagnostic before using a gap tolerance."},
+			Finding{ID: "proximity-analysis-unavailable", Kind: "proximity", Severity: "unknown", Title: "Proximity analysis unavailable", Detail: "Multiple bounded solids are required for the AABB proximity proxy.", Recommendation: "Do not infer close-body clearances from the rendered view alone."},
+		)
+	}
+	if len(smallIDs) > 0 {
+		title := "Low-triangle surfaces need review"
+		detail := "These surfaces are statistical tessellation outliers, not confirmed small physical features."
+		evidenceKeys := []string{"median_surface_triangles", "small_surface_proxy_threshold"}
+		if len(areas) > 0 {
+			title = "Small-area surfaces need review"
+			detail = "These surfaces fall below the configured fraction of the median Flow360-provided CAD face area."
+			evidenceKeys = []string{"median_surface_area", "small_surface_area_threshold"}
+		}
+		report.Findings = append([]Finding{{
+			ID: "small-surface-proxy", Kind: "small-feature", Severity: "warning",
+			Title: title, Detail: detail,
+			EntityIDs: smallIDs, EvidenceKeys: evidenceKeys,
+			Recommendation: "Focus the candidates in 3D and confirm physical dimensions before suppressing or refining them.",
+		}}, report.Findings...)
+	}
+	labels := make([]string, 0, len(groupMembers))
+	for label := range groupMembers {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	for _, label := range labels {
+		members := groupMembers[label]
+		if len(members) < 2 {
+			continue
+		}
+		sort.Strings(members)
+		report.Groupings = append(report.Groupings, GroupingProposal{
+			ID: "group-" + label, Label: label, Basis: "Shared generated CAD body prefix; requires engineering review.",
+			EntityIDs: members, Provenance: "inferred",
+		})
+	}
+	return report, nil
+}
+
+func Compare(baselineID string, baselineManifest json.RawMessage, candidateID string, candidateManifest json.RawMessage) (Comparison, error) {
+	baseline, err := flow360.GeometryUVFPreview(baselineID, baselineManifest, "cached-manifest")
+	if err != nil {
+		return Comparison{}, err
+	}
+	candidate, err := flow360.GeometryUVFPreview(candidateID, candidateManifest, "cached-manifest")
+	if err != nil {
+		return Comparison{}, err
+	}
+	diagonal := func(bounds flow360.BoundingBox) float64 {
+		x := bounds.Max[0] - bounds.Min[0]
+		y := bounds.Max[1] - bounds.Min[1]
+		z := bounds.Max[2] - bounds.Min[2]
+		return math.Sqrt(x*x + y*y + z*z)
+	}
+	metrics := []ComparisonMetric{
+		{Key: "surfaces", Label: "Surfaces", Baseline: float64(len(baseline.Groups)), Candidate: float64(len(candidate.Groups))},
+		{Key: "vertices", Label: "Vertices", Baseline: float64(baseline.Vertices), Candidate: float64(candidate.Vertices)},
+		{Key: "triangles", Label: "Triangles", Baseline: float64(baseline.Elements), Candidate: float64(candidate.Elements)},
+		{Key: "diagonal", Label: "Bounding-box diagonal", Baseline: diagonal(baseline.BoundingBox), Candidate: diagonal(candidate.BoundingBox)},
+	}
+	for index := range metrics {
+		metrics[index].Delta = metrics[index].Candidate - metrics[index].Baseline
+	}
+	baselineNames := groupSet(baseline.Groups)
+	candidateNames := groupSet(candidate.Groups)
+	return Comparison{
+		SchemaVersion: SchemaVersion, BaselineID: baselineID, CandidateID: candidateID,
+		Metrics:         metrics,
+		AddedSurfaces:   setDifference(candidateNames, baselineNames),
+		RemovedSurfaces: setDifference(baselineNames, candidateNames),
+		Provenance:      "Computed server-side from cached Flow360 UVF manifests; identical generated names do not prove CAD entity identity.",
+	}, nil
+}
+
+func medianInt(values []int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	copyValues := append([]int(nil), values...)
+	sort.Ints(copyValues)
+	middle := len(copyValues) / 2
+	if len(copyValues)%2 == 1 {
+		return copyValues[middle]
+	}
+	return (copyValues[middle-1] + copyValues[middle]) / 2
+}
+
+func medianFloat(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	copyValues := append([]float64(nil), values...)
+	sort.Float64s(copyValues)
+	middle := len(copyValues) / 2
+	if len(copyValues)%2 == 1 {
+		return copyValues[middle]
+	}
+	return (copyValues[middle-1] + copyValues[middle]) / 2
+}
+
+func minimumAABBSeparation(solids []solidBounds) (float64, [2]string, bool) {
+	if len(solids) < 2 {
+		return 0, [2]string{}, false
+	}
+	minimum := math.Inf(1)
+	pair := [2]string{}
+	for left := 0; left < len(solids); left++ {
+		for right := left + 1; right < len(solids); right++ {
+			distanceSquared := 0.0
+			for axis := 0; axis < 3; axis++ {
+				gap := math.Max(0, math.Max(
+					solids[left].Min[axis]-solids[right].Max[axis],
+					solids[right].Min[axis]-solids[left].Max[axis],
+				))
+				distanceSquared += gap * gap
+			}
+			distance := math.Sqrt(distanceSquared)
+			if distance < minimum {
+				minimum = distance
+				pair = [2]string{solids[left].ID, solids[right].ID}
+			}
+		}
+	}
+	return minimum, pair, true
+}
+
+func groupSet(groups []flow360.MeshGroup) map[string]struct{} {
+	result := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			name = group.ID
+		}
+		result[name] = struct{}{}
+	}
+	return result
+}
+
+func setDifference(left, right map[string]struct{}) []string {
+	result := []string{}
+	for value := range left {
+		if _, exists := right[value]; !exists {
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result
+}

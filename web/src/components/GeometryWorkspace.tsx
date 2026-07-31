@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleHelp,
   Focus,
+  GitCompare,
   GitPullRequestDraft,
   Info,
   LocateFixed,
@@ -19,7 +20,16 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import type { ResourceDetail } from '../api/client'
+import {
+  api,
+  type GeometryComparison,
+  type GeometryDiagnosticReport,
+  type ResourceDetail,
+} from '../api/client'
+import {
+  geometryReviewTemplates,
+  type GeometryReviewTemplateId,
+} from '../lib/geometryAdvanced'
 import {
   buildGeometryReview,
   formatGeometryNumber,
@@ -68,12 +78,20 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
 export default function GeometryWorkspace({
   detail,
   resourceId,
+  geometryVersions,
   onCreateSemanticPlan,
+  onCreateAdvancedPlan,
   onPlanSurfaceMesh,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  geometryVersions: Array<{ id: string; name: string }>
   onCreateSemanticPlan: (draft: GeometrySemanticDraft) => Promise<void>
+  onCreateAdvancedPlan: (
+    report: GeometryDiagnosticReport,
+    comparison: GeometryComparison | null,
+    templateId: GeometryReviewTemplateId,
+  ) => Promise<void>
   onPlanSurfaceMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
@@ -92,6 +110,16 @@ export default function GeometryWorkspace({
   const [assignmentHistory, setAssignmentHistory] = useState<Array<Record<string, GeometrySemanticAssignment>>>([])
   const [semanticMessage, setSemanticMessage] = useState('')
   const [semanticBusy, setSemanticBusy] = useState(false)
+  const [diagnosticRatio, setDiagnosticRatio] = useState(0.1)
+  const [diagnosticReport, setDiagnosticReport] = useState<GeometryDiagnosticReport | null>(null)
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false)
+  const [diagnosticError, setDiagnosticError] = useState('')
+  const [reviewTemplate, setReviewTemplate] = useState<GeometryReviewTemplateId>('aircraft')
+  const [compareId, setCompareId] = useState('')
+  const [comparison, setComparison] = useState<GeometryComparison | null>(null)
+  const [comparisonBusy, setComparisonBusy] = useState(false)
+  const [advancedPlanBusy, setAdvancedPlanBusy] = useState(false)
+  const [pendingFocusEntityIds, setPendingFocusEntityIds] = useState<string[]>([])
   const { manifest, state: viewerState } = useResourcePreview(
     detail ? 'Geometry' : null,
     resourceId ?? detail?.id ?? null,
@@ -134,6 +162,11 @@ export default function GeometryWorkspace({
     setAssignmentHistory([])
     setMeasurementPoints([])
     setSemanticMessage('')
+    setDiagnosticReport(null)
+    setDiagnosticError('')
+    setCompareId('')
+    setComparison(null)
+    setPendingFocusEntityIds([])
   }, [resourceId])
 
   const commitAssignments = (next: Record<string, GeometrySemanticAssignment>) => {
@@ -200,9 +233,75 @@ export default function GeometryWorkspace({
     const target = manifest?.groups.find((group) =>
       entityIds.includes(group.id) || entityIds.includes(group.name),
     )
-    if (!target) return
+    if (!target) {
+      if (manifest) {
+        setDiagnosticError('The affected entity is not present in the rendered surface inventory.')
+      } else {
+        setPendingFocusEntityIds(entityIds)
+        setDiagnosticError('Waiting for the synchronized 3D surface inventory before locating this finding.')
+      }
+      return
+    }
+    setPendingFocusEntityIds([])
     setViewerSelection({ groupId: target.id })
     requestCamera('fit-selection')
+  }
+
+  useEffect(() => {
+    if (pendingFocusEntityIds.length === 0 || !manifest) return
+    const target = manifest.groups.find((group) =>
+      pendingFocusEntityIds.includes(group.id) || pendingFocusEntityIds.includes(group.name),
+    )
+    if (!target) {
+      setPendingFocusEntityIds([])
+      setDiagnosticError('The affected entity is not present in the rendered surface inventory.')
+      return
+    }
+    setViewerSelection({ groupId: target.id })
+    setCameraCommand({ type: 'fit-selection', nonce: Date.now() })
+    setPendingFocusEntityIds([])
+    setDiagnosticError('')
+  }, [manifest, pendingFocusEntityIds])
+
+  const runDiagnostics = async () => {
+    if (!resourceId) return
+    setDiagnosticBusy(true)
+    setDiagnosticError('')
+    try {
+      setDiagnosticReport(await api.geometryDiagnostics(resourceId, diagnosticRatio))
+    } catch (cause) {
+      setDiagnosticReport(null)
+      setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDiagnosticBusy(false)
+    }
+  }
+
+  const runComparison = async () => {
+    if (!resourceId || !compareId) return
+    setComparisonBusy(true)
+    setDiagnosticError('')
+    try {
+      setComparison(await api.compareGeometries(resourceId, compareId))
+    } catch (cause) {
+      setComparison(null)
+      setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setComparisonBusy(false)
+    }
+  }
+
+  const createAdvancedPlan = async () => {
+    if (!diagnosticReport) return
+    setAdvancedPlanBusy(true)
+    setDiagnosticError('')
+    try {
+      await onCreateAdvancedPlan(diagnosticReport, comparison, reviewTemplate)
+    } catch (cause) {
+      setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setAdvancedPlanBusy(false)
+    }
   }
 
   return (
@@ -475,6 +574,144 @@ export default function GeometryWorkspace({
             <GitPullRequestDraft size={13} /> {semanticBusy ? 'Creating review plan…' : 'Create AI review plan'}
           </button>
           <small className="geometry-semantic-safety">Creates a local plan and preflight; no remote resource is changed.</small>
+        </section>
+
+        <section className="geometry-advanced-card">
+          <div className="geometry-section-title"><GitCompare size={13} /> Advanced diagnostics</div>
+          <p className="geometry-advanced-intro">Server-backed evidence only. Unsupported checks remain explicitly unknown.</p>
+          <label className="geometry-semantic-field">
+            Small-surface threshold ratio
+            <select
+              aria-label="Small-surface threshold ratio"
+              value={diagnosticRatio}
+              onChange={(event) => {
+                setDiagnosticRatio(Number(event.target.value))
+                setDiagnosticReport(null)
+              }}
+            >
+              <option value={0.05}>5% of median triangles</option>
+              <option value={0.1}>10% of median triangles</option>
+              <option value={0.2}>20% of median triangles</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="geometry-diagnostic-run"
+            disabled={diagnosticBusy || !resourceId}
+            onClick={() => void runDiagnostics()}
+          >
+            <ScanLine size={12} /> {diagnosticBusy ? 'Analyzing synchronized evidence…' : 'Run advanced diagnostics'}
+          </button>
+
+          {diagnosticReport && (
+            <>
+              <div className="geometry-capabilities">
+                {diagnosticReport.capabilities.map((capability) => (
+                  <div className={capability.status} key={capability.key} title={capability.detail}>
+                    <span>{capability.key.replaceAll('-', ' ')}</span>
+                    <strong>{capability.status}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="geometry-diagnostic-findings">
+                {diagnosticReport.findings.map((finding) => (
+                  <article className={finding.severity} key={finding.id}>
+                    <div>
+                      <strong>{finding.title}</strong>
+                      <small>{finding.detail}</small>
+                    </div>
+                    {(finding.entity_ids?.length ?? 0) > 0 && (
+                      <button type="button" onClick={() => focusDiagnostic(finding.entity_ids ?? [])}>
+                        <LocateFixed size={11} /> Locate {finding.entity_ids?.length}
+                      </button>
+                    )}
+                    {finding.recommendation && <p>{finding.recommendation}</p>}
+                  </article>
+                ))}
+              </div>
+              {diagnosticReport.grouping_proposals.length > 0 && (
+                <div className="geometry-grouping-proposals">
+                  <strong>Semi-automatic groups</strong>
+                  {diagnosticReport.grouping_proposals.map((proposal) => (
+                    <button
+                      type="button"
+                      key={proposal.id}
+                      title={proposal.basis}
+                      onClick={() => focusDiagnostic(proposal.entity_ids)}
+                    >
+                      <span>{proposal.label}</span>
+                      <small>{proposal.entity_ids.length} surfaces · review inferred group</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <label className="geometry-semantic-field">
+                Domain review template
+                <select
+                  aria-label="Domain review template"
+                  value={reviewTemplate}
+                  onChange={(event) => setReviewTemplate(event.target.value as GeometryReviewTemplateId)}
+                >
+                  {geometryReviewTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>{template.label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="geometry-template-checks">
+                {geometryReviewTemplates.find((template) => template.id === reviewTemplate)?.checks.map((check) => (
+                  <span key={check}>{check}</span>
+                ))}
+              </div>
+
+              {geometryVersions.length > 1 && (
+                <div className="geometry-version-compare">
+                  <label className="geometry-semantic-field">
+                    Compare with Geometry
+                    <select
+                      aria-label="Compare with Geometry"
+                      value={compareId}
+                      onChange={(event) => {
+                        setCompareId(event.target.value)
+                        setComparison(null)
+                      }}
+                    >
+                      <option value="">Select synchronized version…</option>
+                      {geometryVersions.filter((version) => version.id !== resourceId).map((version) => (
+                        <option key={version.id} value={version.id}>{version.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" disabled={!compareId || comparisonBusy} onClick={() => void runComparison()}>
+                    <GitCompare size={11} /> {comparisonBusy ? 'Comparing…' : 'Compare versions'}
+                  </button>
+                  {comparison && (
+                    <div className="geometry-comparison-metrics">
+                      {comparison.metrics.map((metric) => (
+                        <div key={metric.key}>
+                          <span>{metric.label}</span>
+                          <strong>{metric.baseline.toLocaleString()} → {metric.candidate.toLocaleString()}</strong>
+                          <small className={metric.delta === 0 ? '' : metric.delta > 0 ? 'added' : 'removed'}>
+                            {metric.delta > 0 ? '+' : ''}{metric.delta.toLocaleString()}
+                          </small>
+                        </div>
+                      ))}
+                      <p>{comparison.added_surfaces.length} added · {comparison.removed_surfaces.length} removed named surfaces</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className="geometry-semantic-plan"
+                disabled={advancedPlanBusy}
+                onClick={() => void createAdvancedPlan()}
+              >
+                <GitPullRequestDraft size={13} /> {advancedPlanBusy ? 'Creating advanced review…' : 'Create advanced review plan'}
+              </button>
+            </>
+          )}
+          {diagnosticError && <p className="geometry-semantic-message">{diagnosticError}</p>}
         </section>
 
         <section className="geometry-health-card">

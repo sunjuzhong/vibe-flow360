@@ -785,6 +785,63 @@ func TestGeometryMeshPreviewUsesLocalUVFManifest(t *testing.T) {
 	}
 }
 
+func TestGeometryDiagnosticsUsesSynchronizedManifestEvidence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage(`[
+		{"id":"solid","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[1,2,3]},"resources":{"buffers":{"type":"buffers","path":"mesh.bin","sections":[{"name":"position","length":144}]}}},
+		{"id":"body00001_face_0","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}},
+		{"id":"body00001_face_1","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":3,"endIndex":33}]}}}
+	]`)
+	if _, err := mirror.PutGeometryVisualization("prj-1", "geo-1", manifest, map[string][]byte{"mesh.bin": {0, 1, 2}}); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{mirror: mirror}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/diagnostics?small_surface_ratio=0.2", nil)
+	context.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}}
+
+	app.flow360GeometryDiagnostics(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Fingerprint  string `json:"fingerprint"`
+		Capabilities []struct {
+			Status string `json:"status"`
+		} `json:"capabilities"`
+		Findings []struct {
+			EntityIDs []string `json:"entity_ids"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Fingerprint == "" || response.Capabilities[0].Status != "proxy" || len(response.Findings[0].EntityIDs) != 1 {
+		t.Fatalf("unexpected diagnostic response: %#v", response)
+	}
+}
+
+func TestGeometryComparisonRejectsSameResource(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := &Server{}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/compare/geo-1", nil)
+	context.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}, {Key: "compare_id", Value: "geo-1"}}
+
+	app.flow360GeometryComparison(context)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "different Geometry") {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestGeometryVisualizationAssetServesOnlyManifestAndBins(t *testing.T) {
 	mirror, err := projectmirror.New(t.TempDir(), "production-default")
 	if err != nil {
