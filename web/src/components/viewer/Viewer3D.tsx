@@ -42,6 +42,11 @@ export type ViewerClipPlane = {
   constant: number
 }
 
+export type ViewerCameraCommand = {
+  type: 'fit' | 'fit-selection' | 'x' | 'y' | 'z' | 'iso'
+  nonce: number
+}
+
 export type ViewerState =
   | { status: 'idle' }
   | { status: 'loading'; progress: number }
@@ -74,6 +79,7 @@ type Props = {
   showFieldPanel?: boolean
   showEntityLegend?: boolean
   toolbar?: React.ReactNode
+  cameraCommand?: ViewerCameraCommand | null
 }
 
 export function Viewer3D({
@@ -102,6 +108,7 @@ export function Viewer3D({
   showFieldPanel = true,
   showEntityLegend = true,
   toolbar,
+  cameraCommand,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -322,6 +329,52 @@ export function Viewer3D({
       fitPerspectiveCameraToObject(camera, controls, asset)
     }
   }, [])
+
+  useEffect(() => {
+    if (!cameraCommand || assetState.status !== 'ready') return
+    const asset = assetRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!asset || !camera || !controls) return
+
+    if (cameraCommand.type === 'fit') {
+      fitPerspectiveCameraToObject(camera, controls, asset)
+      return
+    }
+
+    const box = new THREE.Box3()
+    if (cameraCommand.type === 'fit-selection' && selection?.groupId) {
+      for (const mesh of meshesRef.current.values()) {
+        if (mesh.userData.groupId === selection.groupId && mesh.visible) {
+          box.expandByObject(mesh)
+        }
+      }
+    }
+    if (box.isEmpty()) box.setFromObject(asset)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const radius = Math.max(size.length() / 2, 0.001)
+    const currentDirection = camera.position.clone().sub(controls.target).normalize()
+    const directions: Record<'x' | 'y' | 'z' | 'iso', THREE.Vector3> = {
+      x: new THREE.Vector3(1, 0, 0),
+      y: new THREE.Vector3(0, 1, 0),
+      z: new THREE.Vector3(0, 0, 1),
+      iso: new THREE.Vector3(1, 1, 1).normalize(),
+    }
+    const direction = cameraCommand.type === 'fit-selection'
+      ? currentDirection
+      : directions[cameraCommand.type]
+    const distance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.25
+    camera.up.set(0, 0, 1)
+    if (cameraCommand.type === 'z') camera.up.set(0, 1, 0)
+    camera.position.copy(center).add(direction.multiplyScalar(distance))
+    camera.near = Math.max(distance / 1000, 0.0001)
+    camera.far = Math.max(distance * 100, 100)
+    camera.updateProjectionMatrix()
+    controls.target.copy(center)
+    camera.lookAt(center)
+    controls.update()
+  }, [assetState.status, cameraCommand, selection])
 
   useViewerViewport({
     containerRef,

@@ -1,35 +1,43 @@
-import { Box, CheckCircle2, CircleDashed, GitPullRequestDraft, Ruler, ScanLine, Shapes } from 'lucide-react'
-import { useState } from 'react'
+import {
+  AlertTriangle,
+  Box,
+  CheckCircle2,
+  CircleHelp,
+  Focus,
+  GitPullRequestDraft,
+  Info,
+  Ruler,
+  Search,
+  Shapes,
+  View,
+  XCircle,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
+import {
+  buildGeometryReview,
+  formatGeometryNumber,
+  type GeometryCheckLevel,
+} from '../lib/geometryReview'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
+import {
+  LazyViewer3D,
+  type ViewerCameraCommand,
+  type ViewerSelection,
+} from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 
-function findFirst(value: unknown, keys: Set<string>): unknown {
-  if (!value || typeof value !== 'object') return undefined
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findFirst(item, keys)
-      if (found !== undefined) return found
-    }
-    return undefined
-  }
-  for (const [key, child] of Object.entries(value)) {
-    if (keys.has(key.toLowerCase()) && child !== null && child !== '') return child
-    const found = findFirst(child, keys)
-    if (found !== undefined) return found
-  }
-  return undefined
+const readinessCopy = {
+  ready: { label: 'Ready', detail: 'Available geometry evidence passes preflight.' },
+  warning: { label: 'Ready with warnings', detail: 'Review assumptions and unevaluated diagnostics before meshing.' },
+  blocked: { label: 'Blocked', detail: 'Resolve blocking geometry conditions before meshing.' },
 }
 
-function displayValue(value: unknown) {
-  if (value === undefined) return 'Not reported'
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  if (typeof value === 'object' && value && 'value' in value) {
-    const record = value as { value?: unknown; units?: unknown }
-    return `${record.value ?? '—'}${record.units ? ` ${record.units}` : ''}`
-  }
-  return JSON.stringify(value)
+function CheckIcon({ level }: { level: GeometryCheckLevel }) {
+  if (level === 'ready') return <CheckCircle2 size={14} />
+  if (level === 'blocked') return <XCircle size={14} />
+  if (level === 'warning') return <AlertTriangle size={14} />
+  return <CircleHelp size={14} />
 }
 
 export default function GeometryWorkspace({
@@ -42,53 +50,183 @@ export default function GeometryWorkspace({
   onPlanSurfaceMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [entitySearch, setEntitySearch] = useState('')
+  const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const { manifest, state: viewerState } = useResourcePreview(
     detail ? 'Geometry' : null,
     resourceId ?? detail?.id ?? null,
   )
-  const unit = findFirst(detail?.info, new Set(['length_unit', 'lengthunit', 'project_length_unit', 'unit']))
-    ?? findFirst(detail?.simulation_params, new Set(['length_unit', 'lengthunit', 'project_length_unit']))
-  const entityCount = findFirst(detail?.summary, new Set(['face_count', 'surface_count', 'entity_count', '_count']))
-    ?? manifest?.groups.length
   const status = resourceStatus(detail)
-  const checks = [
-    { label: 'Geometry processing is complete', ready: ['completed', 'processed', 'success'].includes(status.toLowerCase()) },
-    { label: 'Simulation parameters are available', ready: Boolean(detail?.simulation_params && Object.keys(detail.simulation_params).length) },
-    { label: 'Flow360 returned no partial-read errors', ready: !detail?.errors || Object.keys(detail.errors).length === 0 },
-  ]
+  const review = useMemo(
+    () => buildGeometryReview(detail, manifest, status),
+    [detail, manifest, status],
+  )
+  const selectedGroup = manifest?.groups.find((group) => group.id === viewerSelection.groupId) ?? null
+  const filteredGroups = useMemo(() => {
+    const query = entitySearch.trim().toLowerCase()
+    if (!query) return manifest?.groups ?? []
+    return (manifest?.groups ?? []).filter((group) =>
+      group.name.toLowerCase().includes(query) || group.id.toLowerCase().includes(query),
+    )
+  }, [entitySearch, manifest])
+  const blockingCount = review.checks.filter((check) => check.level === 'blocked').length
+  const warningCount = review.checks.filter((check) =>
+    check.level === 'warning' || check.level === 'unknown',
+  ).length
+  const requestCamera = (type: ViewerCameraCommand['type']) => {
+    setCameraCommand({ type, nonce: Date.now() })
+  }
+  const readiness = readinessCopy[review.readiness]
 
   return (
-    <section className="geometry-workspace">
-      <div className="viewer-section">
+    <section className="geometry-workspace geometry-review-workspace">
+      <aside className="geometry-entity-panel">
+        <div className="geometry-panel-heading">
+          <div><span>MODEL</span><strong>Surface inventory</strong></div>
+          <span className="geometry-count-badge">{manifest?.groups.length ?? 0}</span>
+        </div>
+        <label className="geometry-entity-search">
+          <Search size={13} />
+          <input
+            value={entitySearch}
+            onChange={(event) => setEntitySearch(event.target.value)}
+            placeholder="Search surfaces…"
+            aria-label="Search geometry surfaces"
+          />
+        </label>
+        <div className="geometry-entity-tree">
+          <div className="geometry-tree-root">
+            <Box size={13} />
+            <strong>Geometry bodies</strong>
+            <span>{manifest?.groups.length ?? 0} faces</span>
+          </div>
+          {filteredGroups.map((group) => (
+            <button
+              className={viewerSelection.groupId === group.id ? 'selected' : ''}
+              key={group.id}
+              onClick={() => setViewerSelection({ groupId: group.id })}
+              onDoubleClick={() => {
+                setViewerSelection({ groupId: group.id })
+                requestCamera('fit-selection')
+              }}
+              title="Select; double-click to fit"
+            >
+              <span className="viewer-color-swatch" style={{ background: group.color }} />
+              <span>{group.name}</span>
+              {group.triangles !== undefined && <small>{group.triangles} tris</small>}
+            </button>
+          ))}
+          {filteredGroups.length === 0 && (
+            <div className="geometry-empty-list">No surfaces match “{entitySearch}”.</div>
+          )}
+        </div>
+        {review.groupsAreAutogenerated && (
+          <div className="geometry-semantic-warning">
+            <AlertTriangle size={14} />
+            <span><strong>Unclassified CAD faces</strong>Names are generated and need CFD semantics.</span>
+          </div>
+        )}
+      </aside>
+
+      <div className="viewer-section geometry-review-viewer">
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          showEntityLegend={false}
+          showFieldPanel={false}
+          cameraCommand={cameraCommand}
+          toolbar={(
+            <div className="geometry-camera-toolbar" aria-label="Geometry camera controls">
+              <button onClick={() => requestCamera('fit')} title="Fit all"><Focus size={13} /> Fit</button>
+              <button
+                onClick={() => requestCamera('fit-selection')}
+                disabled={!viewerSelection.groupId}
+                title="Fit selected surface"
+              >
+                <View size={13} /> Selection
+              </button>
+              <span />
+              <button onClick={() => requestCamera('x')} title="View from positive X">X</button>
+              <button onClick={() => requestCamera('y')} title="View from positive Y">Y</button>
+              <button onClick={() => requestCamera('z')} title="View from positive Z">Z</button>
+              <button onClick={() => requestCamera('iso')} title="Isometric view">ISO</button>
+            </div>
+          )}
         />
       </div>
-      <div className="geometry-preflight">
-        <div className="geometry-preflight-heading">
-          <div><span>GEOMETRY PREFLIGHT</span><strong>Ready for surface meshing?</strong></div>
-          <Shapes size={20} />
+
+      <aside className="geometry-review-panel">
+        <div className={`geometry-readiness-card ${review.readiness}`}>
+          <div className="geometry-panel-heading">
+            <div><span>GEOMETRY PREFLIGHT</span><strong>{readiness.label}</strong></div>
+            {review.readiness === 'ready'
+              ? <CheckCircle2 size={20} />
+              : review.readiness === 'blocked'
+                ? <XCircle size={20} />
+                : <AlertTriangle size={20} />}
+          </div>
+          <p>{readiness.detail}</p>
+          <div className="geometry-readiness-counts">
+            <span className="blocked">{blockingCount} blockers</span>
+            <span className="warning">{warningCount} warnings / unknown</span>
+          </div>
         </div>
-        <dl className="geometry-facts">
-          <div><dt><Ruler size={13} /> Length unit</dt><dd>{displayValue(unit)}</dd></div>
-          <div><dt><Shapes size={13} /> Reported entities</dt><dd>{displayValue(entityCount)}</dd></div>
-        </dl>
-        <div className="geometry-checks">
-          {checks.map((check) => (
-            <div className={check.ready ? 'ready' : ''} key={check.label}>
-              {check.ready ? <CheckCircle2 size={14} /> : <CircleDashed size={14} />}
-              <span>{check.label}</span>
-            </div>
-          ))}
+
+        <div className="geometry-summary-grid">
+          <div><span><Ruler size={12} /> Dimensions</span><strong>
+            {review.dimensions
+              ? review.dimensions.map(formatGeometryNumber).join(' × ')
+              : 'Not reported'}
+            {review.dimensions && review.unit ? ` ${review.unit}` : ''}
+          </strong></div>
+          <div><span><Shapes size={12} /> Surfaces</span><strong>{manifest?.groups.length ?? '—'}</strong></div>
+          <div><span><Box size={12} /> Vertices</span><strong>{manifest?.vertices?.toLocaleString() ?? '—'}</strong></div>
+          <div><span><Ruler size={12} /> Diagonal</span><strong>
+            {review.diagonal === null
+              ? '—'
+              : `${formatGeometryNumber(review.diagonal)}${review.unit ? ` ${review.unit}` : ''}`}
+          </strong></div>
         </div>
-        <button className="geometry-plan-action" onClick={onPlanSurfaceMesh}>
+
+        <section className="geometry-selection-card">
+          <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
+          {selectedGroup ? (
+            <dl>
+              <div><dt>Name</dt><dd>{selectedGroup.name}</dd></div>
+              <div><dt>ID</dt><dd title={selectedGroup.id}>{selectedGroup.id}</dd></div>
+              <div><dt>Triangles</dt><dd>{selectedGroup.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
+              <div><dt>Vertices</dt><dd>{selectedGroup.vertices?.toLocaleString() ?? 'Not reported'}</dd></div>
+              <div><dt>CFD semantics</dt><dd>{review.groupsAreAutogenerated ? 'Unclassified' : 'Review assignment'}</dd></div>
+            </dl>
+          ) : (
+            <p>Select a surface in the viewer or model tree to inspect it.</p>
+          )}
+        </section>
+
+        <section className="geometry-health-card">
+          <div className="geometry-section-title"><Shapes size={13} /> Geometry health</div>
+          <div className="geometry-checks">
+            {review.checks.map((check) => (
+              <div className={check.level} key={check.key} title={check.detail}>
+                <CheckIcon level={check.level} />
+                <span><strong>{check.label}</strong><small>{check.detail}</small></span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <button
+          className="geometry-plan-action"
+          onClick={onPlanSurfaceMesh}
+          disabled={review.readiness === 'blocked'}
+          title={review.readiness === 'blocked' ? 'Resolve Geometry blockers before planning the Surface Mesh' : ''}
+        >
           <GitPullRequestDraft size={15} />
-          Plan Surface Mesh
+          {review.readiness === 'blocked' ? 'Resolve blockers first' : 'Plan Surface Mesh'}
         </button>
-      </div>
+      </aside>
     </section>
   )
 }

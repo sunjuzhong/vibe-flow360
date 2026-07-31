@@ -10,6 +10,7 @@ export type {
   BoundingBoxData,
   MeshGroupData,
   ViewerClipPlane,
+  ViewerCameraCommand,
   ViewerManifest,
   ViewerSelection,
   ViewerState,
