@@ -29,6 +29,7 @@ import CopilotPanel from '../components/CopilotPanel'
 import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
 import PlanPanel from '../components/PlanPanel'
+import { ProjectShellAction } from '../components/ProjectShellAction'
 import ResourceDetailPanel, {
   resourceStatus,
   type ResourceDetailTab,
@@ -381,39 +382,52 @@ export default function ProjectPage() {
           )}
         </div>
         <div className="project-shell-actions">
-          <button
+          <ProjectShellAction
+            label="Resources"
+            icon={<PanelLeftOpen size={15} />}
             className={activePanel === 'resources' ? 'active' : ''}
             onClick={() => setActivePanel((panel) => panel === 'resources' ? null : 'resources')}
             aria-expanded={activePanel === 'resources'}
-          >
-            <PanelLeftOpen size={15} /><span>Resources</span>
-          </button>
-          <button
+          />
+          <ProjectShellAction
+            label="Details"
+            icon={<PanelRightOpen size={15} />}
             className={activePanel === 'details' ? 'active' : ''}
             onClick={() => {
               setDetailTab('overview')
               setActivePanel((panel) => panel === 'details' ? null : 'details')
             }}
             aria-expanded={activePanel === 'details'}
-          >
-            <PanelRightOpen size={15} /><span>Details</span>
-          </button>
-          <button onClick={() => setSyncNonce((value) => value + 1)} disabled={loading || syncing} title="Synchronize Project">
-            <RefreshCw size={15} className={syncing ? 'spin' : ''} /><span>Sync</span>
-          </button>
+          />
+          <ProjectShellAction
+            label="Sync"
+            accessibleLabel="Synchronize Project"
+            icon={<RefreshCw size={15} className={syncing ? 'spin' : ''} />}
+            onClick={() => setSyncNonce((value) => value + 1)}
+            disabled={loading || syncing}
+          />
           {selected && (
-            <button className="primary" onClick={() => { setChatOpen(false); setPlanOpen(true) }}>
-              <GitPullRequestDraft size={15} /><span>Plan</span>
-            </button>
+            <ProjectShellAction
+              label="Plan"
+              icon={<GitPullRequestDraft size={15} />}
+              className="primary"
+              onClick={() => { setChatOpen(false); setPlanOpen(true) }}
+            />
           )}
           {items.some((item) => item.type === 'Case') && (
-            <button onClick={() => navigate(`/projects/${projectId}/compare`)} title="Compare Cases">
-              <GitCompare size={15} /><span>Compare</span>
-            </button>
+            <ProjectShellAction
+              label="Compare"
+              accessibleLabel="Compare Cases"
+              icon={<GitCompare size={15} />}
+              onClick={() => navigate(`/projects/${projectId}/compare`)}
+            />
           )}
-          <button className="ai" onClick={() => setChatOpen(true)}>
-            <MessageSquareText size={15} /><span>Ask AI</span>
-          </button>
+          <ProjectShellAction
+            label="Ask AI"
+            icon={<MessageSquareText size={15} />}
+            className="ai"
+            onClick={() => setChatOpen(true)}
+          />
           <div className={`project-connection ${flowStatus?.available ? 'online' : ''}`} title={
             flowStatus?.available
               ? `${flowStatus.environment || 'production'} · ${flowStatus.profile || 'default'}`
