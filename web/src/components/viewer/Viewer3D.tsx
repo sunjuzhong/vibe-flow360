@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -157,10 +157,14 @@ export function Viewer3D({
   const displayedFields = fieldNames
     ? availableFields.filter((field) => fieldNames.includes(field.name))
     : availableFields
+  const manifestEntityVisibility = useMemo(() => [
+    ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
+    ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
+  ], [manifest])
   const effectiveGroupVisibility = Object.fromEntries(
-    (manifest?.groups ?? []).map((group) => [
-      group.id,
-      entityVisibility?.[group.id] ?? groupVisibility[group.id] ?? group.visible,
+    manifestEntityVisibility.map(([entityId, defaultVisible]) => [
+      entityId,
+      entityVisibility?.[entityId] ?? groupVisibility[entityId] ?? defaultVisible,
     ]),
   )
 
@@ -178,9 +182,9 @@ export function Viewer3D({
 
   useEffect(() => {
     setGroupVisibilityState(Object.fromEntries(
-      (manifest?.groups ?? []).map((group) => [group.id, group.visible]),
+      manifestEntityVisibility,
     ))
-  }, [manifest])
+  }, [manifestEntityVisibility])
 
   const createScene = useCallback((container: HTMLDivElement) => {
     const scene = new THREE.Scene()
@@ -472,13 +476,17 @@ export function Viewer3D({
 
   useEffect(() => {
     if (!manifest) return
-    for (const group of manifest.groups) {
-      const visible = effectiveGroupVisibility[group.id] !== false
+    const entityIds = [
+      ...manifest.groups.map((group) => group.id),
+      ...(manifest.edges ?? []).map((edge) => edge.id),
+    ]
+    for (const entityId of entityIds) {
+      const visible = effectiveGroupVisibility[entityId] !== false
       if (uvfAssetRef.current) {
-        setEntityVisibility(uvfAssetRef.current, group.id, visible)
+        setEntityVisibility(uvfAssetRef.current, entityId, visible)
       } else {
         assetRef.current?.traverse((object) => {
-          if (object.userData.groupId === group.id) object.visible = visible
+          if (object.userData.groupId === entityId) object.visible = visible
         })
       }
     }

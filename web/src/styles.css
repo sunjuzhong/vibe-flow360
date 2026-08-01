@@ -4127,7 +4127,19 @@ button { color: inherit; }
   font: 7px 'DM Mono';
 }
 
-.geometry-entity-tree > button {
+.geometry-entity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: stretch;
+  margin: 1px 0;
+  border-radius: 5px;
+}
+
+.geometry-entity-row:hover { background: #eeefe9; }
+.geometry-entity-row.selected { color: #34400f; background: #e4edc9; }
+.geometry-entity-row.hidden { opacity: .58; }
+
+.geometry-entity-select {
   display: grid;
   width: 100%;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -4144,9 +4156,7 @@ button { color: inherit; }
   cursor: pointer;
 }
 
-.geometry-entity-tree > button:hover { background: #eeefe9; }
-.geometry-entity-tree > button.selected { color: #34400f; background: #e4edc9; }
-.geometry-entity-tree > button > span:nth-child(2) {
+.geometry-entity-select > span:nth-child(2) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4164,17 +4174,32 @@ button { color: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.geometry-entity-tree > button small {
+.geometry-entity-select small {
   color: #9a9f95;
   font: 7px 'DM Mono';
 }
-.geometry-entity-tree > button small.assigned {
+.geometry-entity-select small.assigned {
   padding: 2px 4px;
   border-radius: 3px;
   color: #5e741d;
   background: #edf3d9;
   text-transform: capitalize;
 }
+
+.geometry-entity-visibility {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #6e7669;
+  background: transparent;
+  cursor: pointer;
+}
+
+.geometry-entity-visibility:hover { color: #3f4b25; background: rgb(255 255 255 / 60%); }
+.geometry-entity-row.hidden .geometry-entity-visibility { color: #9a9f95; }
 
 .geometry-edge-root { margin-top: 5px; border-top: 1px solid #e5e7df; }
 .geometry-edge-mark {
@@ -4913,12 +4938,12 @@ button { color: inherit; }
 .geometry-review-workspace .geometry-panel-heading strong { font-size: 14px; }
 .geometry-review-workspace .geometry-entity-search input,
 .geometry-review-workspace .geometry-tree-root,
-.geometry-review-workspace .geometry-entity-tree > button,
+.geometry-review-workspace .geometry-entity-select,
 .geometry-review-workspace .geometry-empty-list,
 .geometry-review-workspace .geometry-semantic-warning span,
 .geometry-review-workspace .geometry-semantic-warning strong { font-size: 10px; }
 .geometry-review-workspace .geometry-tree-root span,
-.geometry-review-workspace .geometry-entity-tree > button small { font-size: 9px; }
+.geometry-review-workspace .geometry-entity-select small { font-size: 9px; }
 .geometry-review-workspace .geometry-readiness-card > p,
 .geometry-review-workspace .geometry-summary-grid span,
 .geometry-review-workspace .geometry-selection-card > p,

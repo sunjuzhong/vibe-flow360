@@ -7,6 +7,8 @@ import {
   Focus,
   GitCompare,
   GitPullRequestDraft,
+  Eye,
+  EyeOff,
   Info,
   LocateFixed,
   Palette,
@@ -107,6 +109,7 @@ export default function GeometryWorkspace({
   onPlanSurfaceMesh: () => void
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [entitySearch, setEntitySearch] = useState('')
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [clipEnabled, setClipEnabled] = useState(false)
@@ -177,6 +180,9 @@ export default function GeometryWorkspace({
       edge.name.toLowerCase().includes(query) || edge.id.toLowerCase().includes(query),
     )
   }, [entitySearch, manifest])
+  const entityIsVisible = (entityId: string) => entityVisibility[entityId] !== false
+  const visibleFaceCount = manifest?.groups.filter((group) => entityIsVisible(group.id)).length ?? 0
+  const visibleEdgeCount = manifest?.edges?.filter((edge) => entityIsVisible(edge.id)).length ?? 0
   const blockingCount = review.checks.filter((check) => check.level === 'blocked').length
   const warningCount = review.checks.filter((check) =>
     check.level === 'warning' || check.level === 'unknown',
@@ -214,6 +220,7 @@ export default function GeometryWorkspace({
 
   useEffect(() => {
     setViewerSelection({ groupId: null })
+    setEntityVisibility({})
     setAssignments({})
     setAssignmentHistory([])
     setMeasurementPoints([])
@@ -243,6 +250,13 @@ export default function GeometryWorkspace({
     chooseGroups(selectedGroupIds.includes(groupId)
       ? selectedGroupIds.filter((id) => id !== groupId)
       : [...selectedGroupIds, groupId])
+  }
+
+  const toggleEntityVisibility = (entityId: string) => {
+    setEntityVisibility((current) => ({
+      ...current,
+      [entityId]: current[entityId] === false,
+    }))
   }
 
   const applyAppearanceToSelection = (appearanceId = selectedAppearanceId) => {
@@ -501,54 +515,90 @@ export default function GeometryWorkspace({
           <div className="geometry-tree-root">
             <Box size={13} />
             <strong>Geometry bodies</strong>
-            <span>{manifest?.groups.length ?? 0} faces</span>
+            <span>{visibleFaceCount}/{manifest?.groups.length ?? 0} visible</span>
           </div>
-          {filteredGroups.map((group) => (
-            <button
+          {filteredGroups.map((group) => {
+            const visible = entityIsVisible(group.id)
+            return (
+            <div
               data-entity-id={group.id}
-              className={selectedGroupIdSet.has(group.id) ? 'selected' : ''}
+              className={`geometry-entity-row ${selectedGroupIdSet.has(group.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
               key={group.id}
-              onClick={(event) => toggleGroupSelection(
-                group.id,
-                event.ctrlKey || event.metaKey || event.shiftKey,
-              )}
-              title="Select; Ctrl, Cmd, or Shift-click to add/remove"
             >
-              <span
-                className="viewer-color-swatch"
-                style={{ background: entityAppearances[group.id]?.color ?? group.color }}
-              />
-              <span className="geometry-face-name">
-                <span>{group.name}</span>
-                <small title={`Display material: ${appearanceForGroup(group.id)?.name ?? 'Default CAD'}`}>
-                  {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
+              <button
+                type="button"
+                className="geometry-entity-select"
+                onClick={(event) => toggleGroupSelection(
+                  group.id,
+                  event.ctrlKey || event.metaKey || event.shiftKey,
+                )}
+                title="Select; Ctrl, Cmd, or Shift-click to add/remove"
+              >
+                <span
+                  className="viewer-color-swatch"
+                  style={{ background: entityAppearances[group.id]?.color ?? group.color }}
+                />
+                <span className="geometry-face-name">
+                  <span>{group.name}</span>
+                  <small title={`Display material: ${appearanceForGroup(group.id)?.name ?? 'Default CAD'}`}>
+                    {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
+                  </small>
+                </span>
+                <small className={assignments[group.id] ? 'assigned' : ''}>
+                  {assignments[group.id]
+                    ? assignments[group.id].role
+                    : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
                 </small>
-              </span>
-              <small className={assignments[group.id] ? 'assigned' : ''}>
-                {assignments[group.id]
-                  ? assignments[group.id].role
-                  : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
-              </small>
-            </button>
-          ))}
+              </button>
+              <button
+                type="button"
+                className="geometry-entity-visibility"
+                aria-label={`${visible ? 'Hide' : 'Show'} surface ${group.name}`}
+                aria-pressed={visible}
+                title={`${visible ? 'Hide' : 'Show'} surface`}
+                onClick={() => toggleEntityVisibility(group.id)}
+              >
+                {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
+            </div>
+            )
+          })}
           <div className="geometry-tree-root geometry-edge-root">
             <Shapes size={13} />
             <strong>CAD edges</strong>
-            <span>{manifest?.edges?.length ?? 0} edges</span>
+            <span>{visibleEdgeCount}/{manifest?.edges?.length ?? 0} visible</span>
           </div>
-          {filteredEdges.map((edge) => (
-            <button
-              className={viewerSelection.groupId === edge.id ? 'selected' : ''}
+          {filteredEdges.map((edge) => {
+            const visible = entityIsVisible(edge.id)
+            return (
+            <div
+              className={`geometry-entity-row ${viewerSelection.groupId === edge.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
               data-entity-id={edge.id}
               key={edge.id}
-              onClick={() => setViewerSelection({ groupId: edge.id })}
-              title="Select edge"
             >
-              <span className="geometry-edge-mark" />
-              <span>{edge.name}</span>
-              <small>{edge.segments !== undefined ? `${edge.segments} segs` : 'edge'}</small>
-            </button>
-          ))}
+              <button
+                type="button"
+                className="geometry-entity-select"
+                onClick={() => setViewerSelection({ groupId: edge.id })}
+                title="Select edge"
+              >
+                <span className="geometry-edge-mark" />
+                <span>{edge.name}</span>
+                <small>{edge.segments !== undefined ? `${edge.segments} segs` : 'edge'}</small>
+              </button>
+              <button
+                type="button"
+                className="geometry-entity-visibility"
+                aria-label={`${visible ? 'Hide' : 'Show'} edge ${edge.name}`}
+                aria-pressed={visible}
+                title={`${visible ? 'Hide' : 'Show'} edge`}
+                onClick={() => toggleEntityVisibility(edge.id)}
+              >
+                {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
+            </div>
+            )
+          })}
           {filteredGroups.length === 0 && filteredEdges.length === 0 && (
             <div className="geometry-empty-list">No geometry entities match “{entitySearch}”.</div>
           )}
@@ -567,6 +617,8 @@ export default function GeometryWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          entityVisibility={entityVisibility}
+          onEntityVisibilityChange={setEntityVisibility}
           entityAppearances={entityAppearances}
           clipPlane={clipPlane}
           measurementPoints={measurementPoints}
