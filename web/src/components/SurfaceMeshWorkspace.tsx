@@ -18,6 +18,7 @@ import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspecto
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
 import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
+import { ResourceReviewLayout } from './ResourceReviewLayout'
 import {
   SurfaceAdvancedReview,
   SurfaceAdvancedToolbar,
@@ -90,7 +91,6 @@ export default function SurfaceMeshWorkspace({
   })
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
   const status = resourceStatus(detail)
-  const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(status.toLowerCase())
   const metrics = [
     {
       label: 'Surface elements',
@@ -118,10 +118,48 @@ export default function SurfaceMeshWorkspace({
     { label: 'Simulation parameters are available', ready: Boolean(detail?.simulation_params && Object.keys(detail.simulation_params).length) },
     { label: 'No partial Flow360 reads were reported', ready: !detail?.errors || Object.keys(detail.errors).length === 0 },
   ]
+  const successful = ['completed', 'processed', 'success'].includes(status.toLowerCase())
+  const failed = ['failed', 'error'].includes(status.toLowerCase())
+  const unassignedBoundaryCount = review.boundaryInventory.filter((row) => row.status === 'unassigned').length
+  const reviewLevel = failed || review.boundaryConflictCount > 0
+    ? 'blocked'
+    : successful && checks.every((check) => check.ready) && previewSource !== 'fallback'
+      ? 'ready'
+      : 'warning'
+  const reviewLabel = reviewLevel === 'ready'
+    ? 'Ready for volume meshing review'
+    : reviewLevel === 'blocked' ? 'Resolve mesh review blockers' : 'Engineering review required'
+  const reviewDetail = reviewLevel === 'ready'
+    ? 'The SurfaceMesh asset, parameters, and resource reads are available for downstream review.'
+    : reviewLevel === 'blocked'
+      ? 'Failed processing or conflicting boundary assignments must be resolved before trusting this mesh.'
+      : 'Review processing state, missing evidence, and unassigned boundaries before proceeding.'
 
   return (
-    <section className="surface-mesh-workspace cfd-stage-workspace">
-      <div className={`viewer-section cfd-stage-viewer surface-mode-${review.mode}`}>
+    <ResourceReviewLayout
+      className={`surface-mesh-workspace surface-review-workspace surface-mode-${review.mode}`}
+      inventoryLabel="SurfaceMesh boundary inventory"
+      inspectorLabel="SurfaceMesh engineering review"
+      inventory={(
+        <>
+          <div className="geometry-panel-heading">
+            <div><span>BOUNDARIES</span><strong>Surface inventory</strong></div>
+            <span className="geometry-count-badge">{review.boundaryInventory.length}</span>
+          </div>
+          <SurfaceBoundaryInspector
+            inventory={review.boundaryInventory}
+            selectedId={review.selection.groupId}
+            selectedBoundary={review.selectedBoundary}
+            conflictCount={review.boundaryConflictCount}
+            visibility={review.visibility}
+            onSelect={(groupId) => review.setSelection({ groupId })}
+            onIsolate={review.isolateBoundary}
+            onToggleVisibility={review.toggleBoundaryVisibility}
+            onShowAll={review.showAllBoundaries}
+          />
+        </>
+      )}
+      viewer={(
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
@@ -147,7 +185,7 @@ export default function SurfaceMeshWorkspace({
             `${detail?.id ?? 'surface-mesh'}-review.png`,
           )}
           showFieldPanel={review.mode === 'quality'}
-          showEntityLegend={review.mode === 'boundaries'}
+          showEntityLegend={false}
           toolbar={(
             <div className="surface-combined-toolbar">
               <SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />
@@ -161,61 +199,56 @@ export default function SurfaceMeshWorkspace({
             </div>
           )}
         />
-        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
-          <ScanLine size={13} />
-          <div>
-            <strong id="surface-source-heading">{previewSource === 'fallback' ? 'Geometry context' : 'Surface mesh'}</strong>
-            <span id="surface-source-detail">
-              {previewSource === 'fallback'
-                ? 'The SurfaceMesh render asset is unavailable; this is the parent Geometry, not the mesh.'
-                : 'Inspect surface topology, boundaries, and element quality.'}
-            </span>
-          </div>
-        </div>
-        <aside className="cfd-decision-panel">
-          <div className="mesh-workspace-heading">
-            <div>
-              <span>SURFACE MESH REVIEW</span>
-              <strong>Is the surface discretization trustworthy?</strong>
-              <small>{terminal ? `Flow360 status: ${status}` : 'Processing status refreshes automatically.'}</small>
+      )}
+      inspector={(
+        <>
+          <div className={`geometry-readiness-card ${reviewLevel}`}>
+            <div className="geometry-panel-heading">
+              <div><span>SURFACE MESH REVIEW</span><strong>{reviewLabel}</strong></div>
+              {reviewLevel === 'ready' ? <CheckCircle2 size={20} /> : <Activity size={20} />}
             </div>
-            <Activity size={20} />
+            <p>{reviewDetail}</p>
+            <div className="geometry-readiness-counts">
+              {review.boundaryConflictCount > 0 && (
+                <span className="blocked">{review.boundaryConflictCount} conflicts</span>
+              )}
+              <span className="warning">{unassignedBoundaryCount} unassigned</span>
+              <span className="warning">Status · {status}</span>
+            </div>
           </div>
-          <div className="mesh-quality-grid cfd-quality-strip">
+
+          <div className="geometry-summary-grid surface-summary-grid">
             {metrics.map(({ label, value, icon: Icon }) => (
               <div key={label}>
-                <Icon size={14} />
-                <span>{label}</span>
+                <span><Icon size={12} /> {label}</span>
                 <strong>{metricText(value)}</strong>
               </div>
             ))}
           </div>
+
           <div className="geometry-checks">
             {checks.map((check) => (
-              <div className={check.ready ? 'ready' : ''} key={check.label}>
+              <div className={check.ready ? 'ready' : 'warning'} key={check.label}>
                 {check.ready ? <CheckCircle2 size={14} /> : <CircleDashed size={14} />}
-                <span>{check.label}</span>
+                <span><strong>{check.label}</strong></span>
               </div>
             ))}
             {previewSource === 'fallback' && (
-              <div>
+              <div className="warning">
                 <CircleDashed size={14} />
-                <span>Surface diagnostics asset is not available in the current CLI snapshot</span>
+                <span><strong>Geometry context fallback</strong><small>The SurfaceMesh render asset is unavailable.</small></span>
               </div>
             )}
           </div>
-          <div className="surface-review-section">
-            <div className="surface-review-heading">
-              <span>
+
+          <section className="geometry-selection-card surface-active-review">
+            <div className="geometry-section-title">
+              <ScanLine size={13} />
                 {review.mode === 'quality'
-                  ? 'QUALITY FIELDS'
-                  : review.mode === 'boundaries' ? 'BOUNDARY ASSIGNMENTS' : 'DISPLAY SUMMARY'}
-              </span>
-              {review.mode === 'quality'
-                ? <strong>{review.qualityFields.length} available</strong>
-                : review.mode === 'boundaries'
-                  ? <strong>{review.assignedBoundaryCount}/{review.boundaryInventory.length} assigned</strong>
-                  : <strong>{manifest?.elements?.toLocaleString() ?? '—'} elements</strong>}
+                  ? `Mesh quality · ${review.qualityFields.length} fields`
+                  : review.mode === 'boundaries'
+                    ? 'Selection properties'
+                    : 'Plain mesh display'}
             </div>
             {review.mode === 'quality' ? (
               <SurfaceQualityInspector
@@ -229,24 +262,24 @@ export default function SurfaceMeshWorkspace({
                 onLocateExtreme={review.locateExtreme}
               />
             ) : review.mode === 'boundaries' ? (
-              <SurfaceBoundaryInspector
-                inventory={review.boundaryInventory}
-                selectedId={review.selection.groupId}
-                selectedBoundary={review.selectedBoundary}
-                conflictCount={review.boundaryConflictCount}
-                visibility={review.visibility}
-                onSelect={(groupId) => review.setSelection({ groupId })}
-                onIsolate={review.isolateBoundary}
-                onToggleVisibility={review.toggleBoundaryVisibility}
-                onShowAll={review.showAllBoundaries}
-              />
+              review.selectedBoundary ? (
+                <dl>
+                  <div><dt>Name</dt><dd>{review.selectedBoundary.name}</dd></div>
+                  <div><dt>ID</dt><dd title={review.selectedBoundary.id}>{review.selectedBoundary.id}</dd></div>
+                  <div><dt>Triangles</dt><dd>{review.selectedBoundary.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
+                  <div><dt>Assignment</dt><dd>
+                    {review.selectedBoundary.assignments.map((assignment) => assignment.modelName).join(', ') || 'Unassigned'}
+                  </dd></div>
+                </dl>
+              ) : <p>Select a boundary in the inventory or 3D viewer to inspect it.</p>
             ) : (
               <p>
                 Plain mode shows the unclassified surface discretization without boundary colors or diagnostic fields.
                 Use it to inspect silhouette, feature capture, and local element density.
               </p>
             )}
-          </div>
+          </section>
+
           <SurfaceParameterSummary parameters={review.surfaceParameters} />
           <SurfaceAdvancedReview
             versions={advanced.comparisonVersions}
@@ -291,16 +324,9 @@ export default function SurfaceMeshWorkspace({
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}
-        </aside>
-      </div>
-      <div className="cfd-stage-guidance">
-        <strong>CFD review order</strong>
-        <span>1. Feature capture</span>
-        <span>2. Boundary grouping</span>
-        <span>3. Area / aspect ratio / skewness</span>
-        <span>4. Local refinement and boundary-layer intent</span>
-      </div>
-    </section>
+        </>
+      )}
+    />
   )
 }
 

@@ -69,7 +69,7 @@ export function SurfaceBoundaryInspector({
   }
 
   return (
-    <>
+    <div className="surface-boundary-inspector">
       {inventory.length > 0 && (
         <div className="surface-boundary-tools">
           <label className="surface-boundary-search">
@@ -163,6 +163,6 @@ export function SurfaceBoundaryInspector({
           <RotateCcw size={10} /> Show all faces
         </button>
       )}
-    </>
+    </div>
   )
 }
