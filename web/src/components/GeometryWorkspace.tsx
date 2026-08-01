@@ -551,8 +551,12 @@ export default function GeometryWorkspace({
           )}
         </section>
 
-        <section className="geometry-semantics-card">
-          <div className="geometry-section-title"><Sparkles size={13} /> CFD semantic draft</div>
+        <details className="geometry-semantics-card geometry-disclosure-card">
+          <summary>
+            <span><Sparkles size={13} /> CFD semantic draft</span>
+            <small>{assignmentList.length}/{manifest?.groups.length ?? 0} assigned</small>
+          </summary>
+          <div className="geometry-disclosure-content">
           <div className="geometry-semantic-progress">
             <span>{assignmentList.length} assigned</span>
             <span>{unassignedCount} unassigned</span>
@@ -611,10 +615,15 @@ export default function GeometryWorkspace({
             <GitPullRequestDraft size={13} /> {semanticBusy ? 'Creating review plan…' : 'Create AI review plan'}
           </button>
           <small className="geometry-semantic-safety">Creates a local plan and preflight; no remote resource is changed.</small>
-        </section>
+          </div>
+        </details>
 
-        <section className="geometry-advanced-card">
-          <div className="geometry-section-title"><GitCompare size={13} /> Advanced diagnostics</div>
+        <details className="geometry-advanced-card geometry-disclosure-card">
+          <summary>
+            <span><GitCompare size={13} /> Advanced diagnostics</span>
+            <small>{diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'On demand'}</small>
+          </summary>
+          <div className="geometry-disclosure-content">
           <p className="geometry-advanced-intro">Server-backed evidence only. Unsupported checks remain explicitly unknown.</p>
           <label className="geometry-semantic-field">
             Small-surface threshold ratio
@@ -781,10 +790,15 @@ export default function GeometryWorkspace({
             </>
           )}
           {diagnosticError && <p className="geometry-semantic-message">{diagnosticError}</p>}
-        </section>
+          </div>
+        </details>
 
-        <section className="geometry-health-card">
-          <div className="geometry-section-title"><Shapes size={13} /> Geometry health</div>
+        <details className="geometry-health-card geometry-disclosure-card">
+          <summary>
+            <span><Shapes size={13} /> Geometry health evidence</span>
+            <small>{blockingCount ? `${blockingCount} blockers` : `${warningCount} to review`}</small>
+          </summary>
+          <div className="geometry-disclosure-content">
           <div className="geometry-checks">
             {review.checks.map((check) => (
               <div className={check.level} key={check.key} title={check.detail}>
@@ -800,7 +814,8 @@ export default function GeometryWorkspace({
               </div>
             ))}
           </div>
-        </section>
+          </div>
+        </details>
 
         <button
           className="geometry-plan-action"

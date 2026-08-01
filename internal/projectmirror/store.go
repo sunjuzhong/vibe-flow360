@@ -162,6 +162,35 @@ func (s *Store) PutResource(projectID, resourceType, resourceID string, value js
 	return s.writeRawJSON(target, value)
 }
 
+// ResourceDetail returns the synchronized resource payload independently of
+// the short-lived API response cache. Resource IDs are globally unique in
+// Flow360, so callers do not need to carry a Project ID to read the mirror.
+func (s *Store) ResourceDetail(resourceType, resourceID string) (json.RawMessage, time.Time, error) {
+	if !validResourceType(resourceType) {
+		return nil, time.Time{}, errors.New("unsupported resource type")
+	}
+	if err := validateID(resourceID); err != nil {
+		return nil, time.Time{}, err
+	}
+	projectID, err := s.ResourceProjectID(resourceType, resourceID)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	target := filepath.Join(s.projectDir(projectID), "resources", resourceType, resourceID, "detail.json")
+	info, err := os.Stat(target)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	payload, err := os.ReadFile(target)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	if !json.Valid(payload) {
+		return nil, time.Time{}, errors.New("mirrored resource detail is invalid")
+	}
+	return payload, info.ModTime().UTC(), nil
+}
+
 func (s *Store) PutResourceVisualization(
 	projectID string,
 	resourceType string,

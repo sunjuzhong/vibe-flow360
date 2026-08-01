@@ -26,6 +26,14 @@ func TestStoreWritesInspectableProjectMirror(t *testing.T) {
 	if err := store.PutResource("prj-1", "Case", "case-1", json.RawMessage(`{"id":"case-1","type":"Case"}`)); err != nil {
 		t.Fatal(err)
 	}
+	detail, cachedAt, err := store.ResourceDetail("Case", "case-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mirrored map[string]any
+	if json.Unmarshal(detail, &mirrored) != nil || mirrored["id"] != "case-1" || cachedAt.IsZero() {
+		t.Fatalf("unexpected mirrored detail %s at %s", detail, cachedAt)
+	}
 
 	projectDir, err := store.ProjectDir("prj-1")
 	if err != nil {

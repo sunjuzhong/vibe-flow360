@@ -208,6 +208,79 @@ func TestResourceDetailPartialFailureFallsBackToCompleteSnapshot(t *testing.T) {
 	}
 }
 
+func TestResourceDetailCacheOnlyFallsBackToProjectMirror(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := json.RawMessage(`{"id":"geo-mirrored","type":"Geometry","info":{"status":"processed"}}`)
+	if err := mirror.PutResource("prj-1", "Geometry", "geo-mirrored", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := projectcache.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{cache: cache, mirror: mirror}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-mirrored?cache=only", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "geo-mirrored"},
+	}
+
+	app.flow360ResourceDetail(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("X-VibeSim-Data-Source"); got != "cache" {
+		t.Fatalf("got data source %q, want cache", got)
+	}
+	if !strings.Contains(recorder.Header().Get("Warning"), "Project mirror") {
+		t.Fatalf("unexpected warning %q", recorder.Header().Get("Warning"))
+	}
+	var body map[string]any
+	if json.Unmarshal(recorder.Body.Bytes(), &body) != nil || body["id"] != "geo-mirrored" {
+		t.Fatalf("unexpected body %#v", body)
+	}
+}
+
+func TestGeometryDetailRouteCoexistsWithStaticDiagnosticRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := json.RawMessage(`{"id":"geo-route","type":"Geometry","info":{"status":"processed"}}`)
+	if err := mirror.PutResource("prj-route", "Geometry", "geo-route", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := projectcache.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{router: gin.New(), cache: cache, mirror: mirror}
+	api := app.router.Group("/api")
+	api.GET("/flow360/resources/:resource_type/:resource_id", app.flow360ResourceDetail)
+	api.GET("/flow360/resources/Geometry/:resource_id", app.flow360ResourceDetail)
+	api.GET("/flow360/resources/Geometry/:resource_id/diagnostics", app.flow360GeometryDiagnostics)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-route?cache=only", nil)
+	app.router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Geometry detail route got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var body map[string]any
+	if json.Unmarshal(recorder.Body.Bytes(), &body) != nil || body["id"] != "geo-route" {
+		t.Fatalf("unexpected Geometry detail %#v", body)
+	}
+}
+
 // TestProjectInfoCacheOnlyReturnsSnapshotWithoutCallingFlow360 ensures that
 // the `?cache=only` flag serves stale snapshots when the live CLI is
 // broken — one of the core restart-recovery paths from lf5.10.

@@ -4264,6 +4264,47 @@ button { color: inherit; }
   background: #fff;
 }
 
+.geometry-disclosure-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.geometry-disclosure-card > summary {
+  display: flex;
+  min-height: 34px;
+  padding: 0 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #596154;
+  cursor: pointer;
+  list-style: none;
+}
+
+.geometry-disclosure-card > summary::-webkit-details-marker { display: none; }
+.geometry-disclosure-card > summary > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 8px;
+  font-weight: 600;
+}
+.geometry-disclosure-card > summary > small {
+  color: #92988d;
+  font: 6px 'DM Mono';
+  text-transform: uppercase;
+}
+.geometry-disclosure-card > summary::after {
+  content: '›';
+  color: #a4a99f;
+  font-size: 14px;
+  transform: rotate(90deg);
+  transition: transform .15s ease;
+}
+.geometry-disclosure-card[open] > summary::after { transform: rotate(-90deg); }
+.geometry-disclosure-card[open] > summary { border-bottom: 1px solid #eceee8; }
+.geometry-disclosure-content { padding: 10px; }
+
 .geometry-clip-controls {
   display: grid;
   grid-template-columns: 90px minmax(0, 1fr);

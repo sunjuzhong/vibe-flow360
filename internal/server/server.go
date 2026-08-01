@@ -220,6 +220,10 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/sync", s.projectSyncStatus)
 		api.POST("/flow360/projects/:project_id/sync", s.startProjectSync)
 		api.GET("/flow360/resources/:resource_type/:resource_id", s.flow360ResourceDetail)
+		// Geometry has static child routes below. Gin's radix router selects the
+		// static branch before :resource_type and does not fall back to the
+		// wildcard leaf, so register the Geometry detail leaf explicitly.
+		api.GET("/flow360/resources/Geometry/:resource_id", s.flow360ResourceDetail)
 		api.GET("/flow360/resources/:resource_type/:resource_id/logs", s.flow360ResourceLogs)
 		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
@@ -1277,10 +1281,16 @@ func isFailureState(state string) bool {
 
 func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	resourceType := c.Param("resource_type")
+	if resourceType == "" {
+		resourceType = "Geometry"
+	}
 	resourceID := c.Param("resource_id")
 	cacheKey := resourceType + "/" + resourceID
 	if strings.EqualFold(c.Query("cache"), "only") {
-		s.serveCachedJSON(c, "resource-detail", cacheKey)
+		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "local resource snapshot is unavailable"})
 		return
 	}
 	detail, err := s.flow360.ResourceDetail(
@@ -1289,7 +1299,7 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		resourceID,
 	)
 	if err != nil {
-		if s.serveCachedJSON(c, "resource-detail", cacheKey) {
+		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1300,7 +1310,7 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	// those calls fail, so treat that result as degraded: prefer the last
 	// complete snapshot and never overwrite it with partial data.
 	if len(detail.Errors) > 0 {
-		if s.serveCachedJSON(c, "resource-detail", cacheKey) {
+		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
 			return
 		}
 		// No snapshot available — the caller cannot trust a partial payload.
@@ -1318,6 +1328,30 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	}
 	s.cacheLiveJSON("resource-detail", cacheKey, raw)
 	s.writeLiveJSON(c, raw)
+}
+
+func (s *Server) serveResourceDetailSnapshot(c *gin.Context, resourceType, resourceID, cacheKey string) bool {
+	if s.cache != nil {
+		if entry, err := s.cache.Get("resource-detail", cacheKey); err == nil {
+			s.writeResourceDetailSnapshot(c, entry.Data, entry.CachedAt, "cached Flow360 API snapshot")
+			return true
+		}
+	}
+	if s.mirror != nil {
+		if payload, cachedAt, err := s.mirror.ResourceDetail(resourceType, resourceID); err == nil {
+			s.writeResourceDetailSnapshot(c, payload, cachedAt, "synchronized Project mirror")
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) writeResourceDetailSnapshot(c *gin.Context, payload json.RawMessage, cachedAt time.Time, source string) {
+	c.Header("X-VibeSim-Data-Source", "cache")
+	c.Header("X-VibeSim-Cached-At", cachedAt.Format(time.RFC3339Nano))
+	c.Header("Warning", fmt.Sprintf(`110 - "Response is from the %s"`, source))
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
 }
 
 func (s *Server) flow360ResourceLogs(c *gin.Context) {
