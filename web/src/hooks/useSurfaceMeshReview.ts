@@ -34,6 +34,7 @@ export type SurfaceMeshReviewAction =
   | { type: 'mode'; mode: SurfaceViewMode }
   | { type: 'selection'; groupId: string | null }
   | { type: 'visibility'; visibility: Record<string, boolean> }
+  | { type: 'toggle-visibility'; groupId: string }
   | { type: 'fields'; fields: UVFFieldInfo[] }
   | { type: 'field'; fieldName: string | null }
   | { type: 'range'; range: [number, number] | null }
@@ -74,6 +75,14 @@ export function reduceSurfaceMeshReviewState(
       return { ...state, selection: { groupId: action.groupId } }
     case 'visibility':
       return { ...state, visibility: action.visibility }
+    case 'toggle-visibility':
+      return {
+        ...state,
+        visibility: {
+          ...state.visibility,
+          [action.groupId]: !(state.visibility[action.groupId] ?? true),
+        },
+      }
     case 'fields': {
       const selected = action.fields.find((field) => field.name === state.selectedField)
         ?? action.fields[0]
@@ -191,6 +200,9 @@ export function useSurfaceMeshReview(
       visibility: Object.fromEntries(boundaryInventory.map((row) => [row.id, true])),
     })
   }, [boundaryInventory])
+  const toggleBoundaryVisibility = useCallback((groupId: string) => {
+    dispatch({ type: 'toggle-visibility', groupId })
+  }, [])
   const locateExtreme = useCallback(
     (direction: 'min' | 'max') => dispatch({ type: 'locate-extreme', direction }),
     [],
@@ -216,6 +228,7 @@ export function useSurfaceMeshReview(
     handleFieldsDiscovered,
     isolateBoundary,
     showAllBoundaries,
+    toggleBoundaryVisibility,
     locateExtreme,
   }
 }

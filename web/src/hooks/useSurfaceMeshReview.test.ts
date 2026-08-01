@@ -59,4 +59,22 @@ describe('SurfaceMesh review store', () => {
     expect(located.probe?.value).toBe(0.98)
     expect(located.focusTarget).toEqual([1, 2, 3])
   })
+
+  it('toggles one boundary without replacing other viewer visibility state', () => {
+    const initial = {
+      ...initialSurfaceMeshReviewState,
+      visibility: { wing: true, farfield: false },
+    }
+    const hidden = reduceSurfaceMeshReviewState(initial, {
+      type: 'toggle-visibility',
+      groupId: 'wing',
+    })
+    const shown = reduceSurfaceMeshReviewState(hidden, {
+      type: 'toggle-visibility',
+      groupId: 'farfield',
+    })
+
+    expect(hidden.visibility).toEqual({ wing: false, farfield: false })
+    expect(shown.visibility).toEqual({ wing: false, farfield: true })
+  })
 })
