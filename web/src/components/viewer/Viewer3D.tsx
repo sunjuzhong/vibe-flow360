@@ -8,6 +8,7 @@ import { UVFLoader, applyFieldColoring, createFieldHistogram, findFieldExtrema, 
 import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 import { fitPerspectiveCameraToObject } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
+import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
 
 export type MeshGroupData = {
   id: string
@@ -432,16 +433,18 @@ export function Viewer3D({
       const groupId = String(mesh.userData.groupId ?? '')
       const mat = mesh.material as THREE.MeshPhongMaterial
       const appearance = entityAppearances[groupId]
-      if (appearance) mat.color.set(appearance.color)
-      if (selectedIds.has(groupId)) {
-        mat.opacity = 1.0
-        mat.emissive = new THREE.Color(0xffff00)
-        mat.emissiveIntensity = 0.2
-      } else if (groupId !== '__wireframe__') {
-        mat.opacity = effectiveGroupVisibility[groupId] !== false ? (appearance?.opacity ?? 0.85) : 0.15
-        mat.emissive = new THREE.Color(0x000000)
-        mat.emissiveIntensity = 0
-      }
+      const defaultColor = manifest?.groups.find((group) => group.id === groupId)?.color ?? '#6f8790'
+      const style = resolveViewerMaterialStyle(
+        defaultColor,
+        appearance,
+        selectedIds.has(groupId),
+        effectiveGroupVisibility[groupId] !== false,
+      )
+      mat.color.set(style.color)
+      mat.opacity = style.opacity
+      mat.emissive.set(style.emissive)
+      mat.emissiveIntensity = style.emissiveIntensity
+      mat.needsUpdate = true
     }
     const asset = uvfAssetRef.current
     if (!asset) return
