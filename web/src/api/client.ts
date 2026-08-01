@@ -225,7 +225,7 @@ export type GeometryDiagnosticReport = {
   schema_version: number
   geometry_id: string
   fingerprint: string
-  settings: { small_surface_ratio: number }
+  settings: { small_surface_ratio: number; curvature_angle_deg: number }
   capabilities: GeometryDiagnosticCapability[]
   evidence: GeometryDiagnosticEvidence[]
   findings: GeometryDiagnosticFinding[]
@@ -585,9 +585,9 @@ export const api = {
     flow360JSON<ResourceDetail>(
       `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${cacheOnly ? '?cache=only' : ''}`,
     ),
-  geometryDiagnostics: (resourceId: string, smallSurfaceRatio = 0.1) =>
+  geometryDiagnostics: (resourceId: string, smallSurfaceRatio = 0.1, curvatureAngleDeg = 30) =>
     json<GeometryDiagnosticReport>(
-      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics?small_surface_ratio=${encodeURIComponent(smallSurfaceRatio)}`,
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics?small_surface_ratio=${encodeURIComponent(smallSurfaceRatio)}&curvature_angle_deg=${encodeURIComponent(curvatureAngleDeg)}`,
     ),
   compareGeometries: (resourceId: string, compareId: string) =>
     json<GeometryComparison>(

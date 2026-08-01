@@ -19,7 +19,7 @@ describe('advanced Geometry review', () => {
         schema_version: 1,
         geometry_id: 'geo-1',
         fingerprint: 'abc',
-        settings: { small_surface_ratio: 0.1 },
+        settings: { small_surface_ratio: 0.1, curvature_angle_deg: 30 },
         capabilities: [{ key: 'gap', status: 'unavailable', detail: 'No distance evidence.' }],
         evidence: [],
         findings: [{ id: 'gap', kind: 'gap', severity: 'unknown', title: 'Gap unavailable', detail: 'No evidence.' }],

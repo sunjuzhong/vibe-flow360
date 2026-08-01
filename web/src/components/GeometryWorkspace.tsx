@@ -111,6 +111,7 @@ export default function GeometryWorkspace({
   const [semanticMessage, setSemanticMessage] = useState('')
   const [semanticBusy, setSemanticBusy] = useState(false)
   const [diagnosticRatio, setDiagnosticRatio] = useState(0.1)
+  const [curvatureAngle, setCurvatureAngle] = useState(30)
   const [diagnosticReport, setDiagnosticReport] = useState<GeometryDiagnosticReport | null>(null)
   const [diagnosticBusy, setDiagnosticBusy] = useState(false)
   const [diagnosticError, setDiagnosticError] = useState('')
@@ -268,7 +269,7 @@ export default function GeometryWorkspace({
     setDiagnosticBusy(true)
     setDiagnosticError('')
     try {
-      setDiagnosticReport(await api.geometryDiagnostics(resourceId, diagnosticRatio))
+      setDiagnosticReport(await api.geometryDiagnostics(resourceId, diagnosticRatio, curvatureAngle))
     } catch (cause) {
       setDiagnosticReport(null)
       setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
@@ -589,9 +590,25 @@ export default function GeometryWorkspace({
                 setDiagnosticReport(null)
               }}
             >
-              <option value={0.05}>5% of median triangles</option>
-              <option value={0.1}>10% of median triangles</option>
-              <option value={0.2}>20% of median triangles</option>
+              <option value={0.05}>5% of median surface evidence</option>
+              <option value={0.1}>10% of median surface evidence</option>
+              <option value={0.2}>20% of median surface evidence</option>
+            </select>
+          </label>
+          <label className="geometry-semantic-field">
+            Face-normal variation threshold
+            <select
+              aria-label="Face-normal variation threshold"
+              value={curvatureAngle}
+              onChange={(event) => {
+                setCurvatureAngle(Number(event.target.value))
+                setDiagnosticReport(null)
+              }}
+            >
+              <option value={15}>15° sensitive</option>
+              <option value={30}>30° balanced</option>
+              <option value={45}>45° coarse</option>
+              <option value={60}>60° very coarse</option>
             </select>
           </label>
           <button
@@ -613,6 +630,9 @@ export default function GeometryWorkspace({
                   </div>
                 ))}
               </div>
+              <small className="geometry-diagnostic-fingerprint" title={diagnosticReport.fingerprint}>
+                Evidence cache key · {diagnosticReport.fingerprint.slice(0, 12)}
+              </small>
               <div className="geometry-diagnostic-findings">
                 {diagnosticReport.findings.map((finding) => (
                   <article className={finding.severity} key={finding.id}>

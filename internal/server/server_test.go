@@ -825,6 +825,25 @@ func TestGeometryDiagnosticsUsesSynchronizedManifestEvidence(t *testing.T) {
 	if response.Fingerprint == "" || response.Capabilities[0].Status != "proxy" || len(response.Findings[0].EntityIDs) != 1 {
 		t.Fatalf("unexpected diagnostic response: %#v", response)
 	}
+	if got := recorder.Header().Get("X-Geometry-Diagnostics-Cache"); got != "MISS" {
+		t.Fatalf("first diagnostic request cache status = %q", got)
+	}
+	secondRecorder := httptest.NewRecorder()
+	secondContext, _ := gin.CreateTestContext(secondRecorder)
+	secondContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/diagnostics?small_surface_ratio=0.2", nil)
+	secondContext.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}}
+	app.flow360GeometryDiagnostics(secondContext)
+	if secondRecorder.Code != http.StatusOK || secondRecorder.Header().Get("X-Geometry-Diagnostics-Cache") != "HIT" {
+		t.Fatalf("cached diagnostics got %d, cache %q", secondRecorder.Code, secondRecorder.Header().Get("X-Geometry-Diagnostics-Cache"))
+	}
+	thirdRecorder := httptest.NewRecorder()
+	thirdContext, _ := gin.CreateTestContext(thirdRecorder)
+	thirdContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/diagnostics?small_surface_ratio=0.2&curvature_angle_deg=45", nil)
+	thirdContext.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}}
+	app.flow360GeometryDiagnostics(thirdContext)
+	if thirdRecorder.Code != http.StatusOK || thirdRecorder.Header().Get("X-Geometry-Diagnostics-Cache") != "MISS" {
+		t.Fatalf("changed-threshold diagnostics got %d, cache %q", thirdRecorder.Code, thirdRecorder.Header().Get("X-Geometry-Diagnostics-Cache"))
+	}
 }
 
 func TestGeometryComparisonRejectsSameResource(t *testing.T) {

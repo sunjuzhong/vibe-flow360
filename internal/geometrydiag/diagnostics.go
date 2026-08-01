@@ -2,6 +2,7 @@ package geometrydiag
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ const SchemaVersion = 1
 
 type Settings struct {
 	SmallSurfaceRatio float64 `json:"small_surface_ratio"`
+	CurvatureAngleDeg float64 `json:"curvature_angle_deg"`
 }
 
 type Capability struct {
@@ -101,6 +103,34 @@ type manifestEntry struct {
 	Attributions struct {
 		PackedParentID string `json:"packedParentId"`
 	} `json:"attributions"`
+	Resources struct {
+		Buffers manifestBuffer `json:"buffers"`
+	} `json:"resources"`
+}
+
+type manifestBufferSection struct {
+	Name      string `json:"name"`
+	DType     string `json:"dType"`
+	Dimension int    `json:"dimension"`
+	Offset    int    `json:"offset"`
+	Length    int    `json:"length"`
+}
+
+type manifestBuffer struct {
+	Type     string                  `json:"type"`
+	Path     string                  `json:"path"`
+	Default  int                     `json:"default"`
+	Sections []manifestBufferSection `json:"sections"`
+	Levels   []struct {
+		Path     string                  `json:"path"`
+		Sections []manifestBufferSection `json:"sections"`
+	} `json:"levels"`
+}
+
+type curvatureSample struct {
+	EntityID string
+	AngleDeg float64
+	Normals  int
 }
 
 type solidBounds struct {
@@ -115,10 +145,17 @@ func NormalizeSettings(settings Settings) Settings {
 	if settings.SmallSurfaceRatio <= 0 || settings.SmallSurfaceRatio > 1 {
 		settings.SmallSurfaceRatio = 0.1
 	}
+	if settings.CurvatureAngleDeg <= 0 || settings.CurvatureAngleDeg > 180 {
+		settings.CurvatureAngleDeg = 30
+	}
 	return settings
 }
 
 func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Report, error) {
+	return AnalyzeWithBuffers(geometryID, manifest, nil, settings)
+}
+
+func AnalyzeWithBuffers(geometryID string, manifest json.RawMessage, buffers map[string][]byte, settings Settings) (Report, error) {
 	settings = NormalizeSettings(settings)
 	preview, err := flow360.GeometryUVFPreview(geometryID, manifest, "cached-manifest")
 	if err != nil {
@@ -135,9 +172,13 @@ func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Re
 	groupMembers := map[string][]string{}
 	firstFaceByBody := map[string]string{}
 	solids := []solidBounds{}
+	solidEntries := map[string]manifestEntry{}
 	for _, entry := range entries {
-		if entry.Type == "SolidGeometry" && entry.Properties.BoundsMin != entry.Properties.BoundsMax {
-			solids = append(solids, solidBounds{ID: entry.ID, Min: entry.Properties.BoundsMin, Max: entry.Properties.BoundsMax})
+		if entry.Type == "SolidGeometry" {
+			solidEntries[entry.ID] = entry
+			if entry.Properties.BoundsMin != entry.Properties.BoundsMax {
+				solids = append(solids, solidBounds{ID: entry.ID, Min: entry.Properties.BoundsMin, Max: entry.Properties.BoundsMax})
+			}
 		}
 		if entry.Type != "Face" {
 			continue
@@ -150,6 +191,16 @@ func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Re
 			firstFaceByBody[entry.Attributions.PackedParentID] = entry.ID
 		}
 	}
+	curvatureSamples := analyzeCurvature(entries, solidEntries, buffers)
+	curvatureAngles := make([]float64, 0, len(curvatureSamples))
+	highCurvatureIDs := []string{}
+	for _, sample := range curvatureSamples {
+		curvatureAngles = append(curvatureAngles, sample.AngleDeg)
+		if sample.AngleDeg >= settings.CurvatureAngleDeg {
+			highCurvatureIDs = append(highCurvatureIDs, sample.EntityID)
+		}
+	}
+	sort.Strings(highCurvatureIDs)
 	for _, group := range preview.Groups {
 		triangles = append(triangles, group.Triangles)
 		if match := generatedBodyFace.FindStringSubmatch(group.Name); len(match) == 2 {
@@ -176,7 +227,7 @@ func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Re
 		dimensions[index] = preview.BoundingBox.Max[index] - preview.BoundingBox.Min[index]
 	}
 	diagonal := math.Sqrt(dimensions[0]*dimensions[0] + dimensions[1]*dimensions[1] + dimensions[2]*dimensions[2])
-	hash := sha256.Sum256(manifest)
+	fingerprint := diagnosticFingerprint(manifest, buffers, settings)
 	smallFeatureStatus := "proxy"
 	smallFeatureDetail := "Candidate surfaces use a triangle-count distribution proxy; this is not a physical feature-size calculation."
 	if len(areas) > 0 {
@@ -190,15 +241,34 @@ func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Re
 		proximityStatus = "proxy"
 		proximityDetail = "Computed from solid-entity axis-aligned bounds; this is a lower-bound proxy, not exact CAD clearance."
 	}
+	curvatureStatus := "unavailable"
+	curvatureDetail := "No compatible tessellated normal buffer was available to the server."
+	curvatureFindings := []Finding{{
+		ID: "curvature-analysis-unavailable", Kind: "curvature", Severity: "unknown", Title: "Curvature analysis unavailable",
+		Detail: curvatureDetail, Recommendation: "Treat curvature-based refinement as an engineering input until supported evidence is available.",
+	}}
+	if len(curvatureSamples) > 0 {
+		curvatureStatus = "proxy"
+		curvatureDetail = "Computed from maximum normal-vector variation within each tessellated Face; this is not CAD curvature radius."
+		curvatureFindings = []Finding{}
+		if len(highCurvatureIDs) > 0 {
+			curvatureFindings = append(curvatureFindings, Finding{
+				ID: "high-normal-variation", Kind: "curvature", Severity: "warning", Title: "High normal-variation surfaces",
+				Detail:    "These tessellated surfaces exceed the configured maximum face-normal variation threshold.",
+				EntityIDs: highCurvatureIDs, EvidenceKeys: []string{"curvature_angle_threshold", "maximum_face_normal_variation"},
+				Recommendation: "Inspect these surfaces and confirm whether curvature-sensitive surface refinement is required.",
+			})
+		}
+	}
 	report := Report{
 		SchemaVersion: SchemaVersion,
 		GeometryID:    geometryID,
-		Fingerprint:   hex.EncodeToString(hash[:]),
+		Fingerprint:   fingerprint,
 		Settings:      settings,
 		Capabilities: []Capability{
 			{Key: "small-features", Status: smallFeatureStatus, Detail: smallFeatureDetail},
 			{Key: "gap-analysis", Status: proximityStatus, Detail: proximityDetail},
-			{Key: "curvature-analysis", Status: "unavailable", Detail: "The cached UVF manifest does not expose CAD curvature or tessellated curvature statistics."},
+			{Key: "curvature-analysis", Status: curvatureStatus, Detail: curvatureDetail},
 			{Key: "proximity-analysis", Status: proximityStatus, Detail: proximityDetail},
 		},
 		Evidence: []Evidence{
@@ -210,15 +280,21 @@ func Analyze(geometryID string, manifest json.RawMessage, settings Settings) (Re
 			{Key: "median_surface_triangles", Label: "Median triangles per surface", Value: median, Provenance: "computed", Method: "Median of indexed triangle counts for Face entries."},
 			{Key: "small_surface_proxy_threshold", Label: "Small-surface proxy threshold", Value: threshold, Unit: "triangles", Provenance: "inferred", Method: "max(2, floor(median triangles × configured ratio))."},
 		},
-		Findings: []Finding{
-			{ID: "curvature-analysis-unavailable", Kind: "curvature", Severity: "unknown", Title: "Curvature analysis unavailable", Detail: "No curvature samples or CAD topology are exposed by this resource.", Recommendation: "Treat curvature-based refinement as an engineering input until supported evidence is available."},
-		},
+		Findings:  curvatureFindings,
 		Groupings: []GroupingProposal{},
 	}
 	if len(areas) > 0 {
 		report.Evidence = append(report.Evidence,
 			Evidence{Key: "median_surface_area", Label: "Median surface area", Value: medianArea, Unit: "model-unit²", Provenance: "provided", Method: "Median of Flow360 UVF Face properties.area values."},
 			Evidence{Key: "small_surface_area_threshold", Label: "Small-surface area threshold", Value: areaThreshold, Unit: "model-unit²", Provenance: "computed", Method: "Median provided face area × configured ratio."},
+		)
+	}
+	if len(curvatureSamples) > 0 {
+		report.Evidence = append(report.Evidence,
+			Evidence{Key: "curvature_analyzed_surfaces", Label: "Curvature-proxy surfaces", Value: len(curvatureSamples), Provenance: "computed", Method: "Count of Faces with readable indexed tessellation normals."},
+			Evidence{Key: "median_face_normal_variation", Label: "Median face-normal variation", Value: medianFloat(curvatureAngles), Unit: "degree", Provenance: "computed", Method: "Median per-Face maximum pairwise angle from sampled tessellation normals."},
+			Evidence{Key: "maximum_face_normal_variation", Label: "Maximum face-normal variation", Value: maxFloat(curvatureAngles), Unit: "degree", Provenance: "computed", Method: "Maximum per-Face sampled tessellation-normal angle."},
+			Evidence{Key: "curvature_angle_threshold", Label: "Curvature-proxy threshold", Value: settings.CurvatureAngleDeg, Unit: "degree", Provenance: "provided", Method: "User-controlled threshold for tessellated face-normal variation."},
 		)
 	}
 	if hasProximity {
@@ -364,6 +440,159 @@ func minimumAABBSeparation(solids []solidBounds) (float64, [2]string, bool) {
 		}
 	}
 	return minimum, pair, true
+}
+
+func Fingerprint(manifest json.RawMessage, buffers map[string][]byte, settings Settings) string {
+	return diagnosticFingerprint(manifest, buffers, NormalizeSettings(settings))
+}
+
+func diagnosticFingerprint(manifest json.RawMessage, buffers map[string][]byte, settings Settings) string {
+	hash := sha256.New()
+	_, _ = hash.Write(manifest)
+	settingsPayload, _ := json.Marshal(settings)
+	_, _ = hash.Write(settingsPayload)
+	paths := make([]string, 0, len(buffers))
+	for path := range buffers {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		_, _ = hash.Write([]byte(path))
+		_, _ = hash.Write(buffers[path])
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func analyzeCurvature(entries []manifestEntry, solids map[string]manifestEntry, buffers map[string][]byte) []curvatureSample {
+	if len(buffers) == 0 {
+		return nil
+	}
+	result := []curvatureSample{}
+	for _, face := range entries {
+		if face.Type != "Face" || face.Attributions.PackedParentID == "" {
+			continue
+		}
+		solid, exists := solids[face.Attributions.PackedParentID]
+		if !exists {
+			continue
+		}
+		bufferPath, sections, ok := selectedManifestBuffer(solid.Resources.Buffers)
+		if !ok {
+			continue
+		}
+		payload := buffers[bufferPath]
+		indexSection, hasIndices := findBufferSection(sections, "indices")
+		normalSection, hasNormals := findBufferSection(sections, "normal", "nodeNormals")
+		if !hasIndices || !hasNormals || indexSection.DType != "uint32" || normalSection.DType != "float32" || normalSection.Dimension < 3 || normalSection.Dimension > 4 {
+			continue
+		}
+		normals := make([][3]float64, 0, 128)
+		for _, location := range face.Properties.BufferLocations.Indices {
+			count := location.EndIndex - location.StartIndex
+			if count <= 0 {
+				continue
+			}
+			step := maxInt(1, (count+127)/128)
+			for position := location.StartIndex; position < location.EndIndex && len(normals) < 128; position += step {
+				vertexIndex, ok := readUint32Section(payload, indexSection, position)
+				if !ok {
+					continue
+				}
+				normal, ok := readNormal(payload, normalSection, int(vertexIndex))
+				if ok {
+					normals = append(normals, normal)
+				}
+			}
+		}
+		angle, ok := maximumNormalAngle(normals)
+		if ok {
+			result = append(result, curvatureSample{EntityID: face.ID, AngleDeg: angle, Normals: len(normals)})
+		}
+	}
+	return result
+}
+
+func selectedManifestBuffer(buffer manifestBuffer) (string, []manifestBufferSection, bool) {
+	if buffer.Type != "lod" {
+		return buffer.Path, buffer.Sections, buffer.Path != "" && len(buffer.Sections) > 0
+	}
+	index := buffer.Default
+	if index < 0 || index >= len(buffer.Levels) {
+		return "", nil, false
+	}
+	level := buffer.Levels[index]
+	return level.Path, level.Sections, level.Path != "" && len(level.Sections) > 0
+}
+
+func findBufferSection(sections []manifestBufferSection, names ...string) (manifestBufferSection, bool) {
+	for _, section := range sections {
+		for _, name := range names {
+			if section.Name == name {
+				return section, true
+			}
+		}
+	}
+	return manifestBufferSection{}, false
+}
+
+func readUint32Section(payload []byte, section manifestBufferSection, index int) (uint32, bool) {
+	offset := section.Offset + index*4
+	end := section.Offset + section.Length
+	if index < 0 || section.Offset < 0 || section.Length < 0 || offset < section.Offset || offset+4 > end || offset+4 > len(payload) {
+		return 0, false
+	}
+	return binary.LittleEndian.Uint32(payload[offset : offset+4]), true
+}
+
+func readNormal(payload []byte, section manifestBufferSection, vertexIndex int) ([3]float64, bool) {
+	stride := section.Dimension * 4
+	offset := section.Offset + vertexIndex*stride
+	end := section.Offset + section.Length
+	if vertexIndex < 0 || stride < 12 || section.Offset < 0 || section.Length < 0 || offset < section.Offset || offset+12 > end || offset+12 > len(payload) {
+		return [3]float64{}, false
+	}
+	normal := [3]float64{
+		float64(math.Float32frombits(binary.LittleEndian.Uint32(payload[offset : offset+4]))),
+		float64(math.Float32frombits(binary.LittleEndian.Uint32(payload[offset+4 : offset+8]))),
+		float64(math.Float32frombits(binary.LittleEndian.Uint32(payload[offset+8 : offset+12]))),
+	}
+	magnitude := math.Sqrt(normal[0]*normal[0] + normal[1]*normal[1] + normal[2]*normal[2])
+	if magnitude == 0 || math.IsNaN(magnitude) || math.IsInf(magnitude, 0) {
+		return [3]float64{}, false
+	}
+	for axis := range normal {
+		normal[axis] /= magnitude
+	}
+	return normal, true
+}
+
+func maximumNormalAngle(normals [][3]float64) (float64, bool) {
+	if len(normals) < 2 {
+		return 0, false
+	}
+	minimumDot := 1.0
+	for left := 0; left < len(normals); left++ {
+		for right := left + 1; right < len(normals); right++ {
+			dot := normals[left][0]*normals[right][0] + normals[left][1]*normals[right][1] + normals[left][2]*normals[right][2]
+			minimumDot = math.Min(minimumDot, math.Max(-1, math.Min(1, dot)))
+		}
+	}
+	return math.Acos(minimumDot) * 180 / math.Pi, true
+}
+
+func maxFloat(values []float64) float64 {
+	maximum := 0.0
+	for _, value := range values {
+		maximum = math.Max(maximum, value)
+	}
+	return maximum
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func groupSet(groups []flow360.MeshGroup) map[string]struct{} {

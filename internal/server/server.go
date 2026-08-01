@@ -52,6 +52,13 @@ type Server struct {
 	projectSyncClient projectSyncClient
 	projectSyncMu     sync.Mutex
 	projectSyncJobs   map[string]struct{}
+	geometryDiagMu    sync.Mutex
+	geometryDiagCache map[string]geometryDiagnosticsCacheEntry
+}
+
+type geometryDiagnosticsCacheEntry struct {
+	Report    geometrydiag.Report
+	CreatedAt time.Time
 }
 
 func New() *Server {
@@ -107,6 +114,7 @@ func New() *Server {
 		workDir:            dataDir,
 		projectSyncClient:  flowClient,
 		projectSyncJobs:    map[string]struct{}{},
+		geometryDiagCache:  map[string]geometryDiagnosticsCacheEntry{},
 	}
 	app.routes()
 
@@ -1426,14 +1434,77 @@ func (s *Server) flow360GeometryDiagnostics(c *gin.Context) {
 		}
 		ratio = parsed
 	}
-	report, err := geometrydiag.Analyze(resourceID, manifest, geometrydiag.Settings{SmallSurfaceRatio: ratio})
+	curvatureAngle := 30.0
+	if raw := strings.TrimSpace(c.Query("curvature_angle_deg")); raw != "" {
+		parsed, parseErr := strconv.ParseFloat(raw, 64)
+		if parseErr != nil || parsed <= 0 || parsed > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "curvature_angle_deg must be greater than 0 and at most 180"})
+			return
+		}
+		curvatureAngle = parsed
+	}
+	settings := geometrydiag.Settings{SmallSurfaceRatio: ratio, CurvatureAngleDeg: curvatureAngle}
+	cacheKey := resourceID + ":" + geometrydiag.Fingerprint(manifest, nil, settings)
+	if report, ok := s.cachedGeometryDiagnostics(cacheKey); ok {
+		s.writeGeometryDiagnostics(c, report, "HIT")
+		return
+	}
+	buffers := map[string][]byte{}
+	if paths, pathErr := flow360.TessellationDefaultBinPaths(manifest); pathErr == nil {
+		for _, path := range paths {
+			payload, readErr := s.mirror.GeometryVisualizationFile(resourceID, path)
+			if readErr == nil {
+				buffers[path] = payload
+			}
+		}
+	}
+	report, err := geometrydiag.AnalyzeWithBuffers(resourceID, manifest, buffers, settings)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
+	s.storeGeometryDiagnostics(cacheKey, report)
+	s.writeGeometryDiagnostics(c, report, "MISS")
+}
+
+func (s *Server) writeGeometryDiagnostics(c *gin.Context, report geometrydiag.Report, cacheStatus string) {
 	c.Header("ETag", fmt.Sprintf("\"geometry-diagnostics-%s\"", report.Fingerprint))
 	c.Header("Cache-Control", "private, max-age=60")
+	c.Header("X-Geometry-Diagnostics-Cache", cacheStatus)
 	c.JSON(http.StatusOK, report)
+}
+
+func (s *Server) cachedGeometryDiagnostics(key string) (geometrydiag.Report, bool) {
+	s.geometryDiagMu.Lock()
+	defer s.geometryDiagMu.Unlock()
+	entry, ok := s.geometryDiagCache[key]
+	if !ok || time.Since(entry.CreatedAt) > 30*time.Minute {
+		if ok {
+			delete(s.geometryDiagCache, key)
+		}
+		return geometrydiag.Report{}, false
+	}
+	return entry.Report, true
+}
+
+func (s *Server) storeGeometryDiagnostics(key string, report geometrydiag.Report) {
+	s.geometryDiagMu.Lock()
+	defer s.geometryDiagMu.Unlock()
+	if s.geometryDiagCache == nil {
+		s.geometryDiagCache = map[string]geometryDiagnosticsCacheEntry{}
+	}
+	if len(s.geometryDiagCache) >= 64 {
+		oldestKey := ""
+		oldest := time.Now()
+		for candidate, entry := range s.geometryDiagCache {
+			if entry.CreatedAt.Before(oldest) {
+				oldestKey = candidate
+				oldest = entry.CreatedAt
+			}
+		}
+		delete(s.geometryDiagCache, oldestKey)
+	}
+	s.geometryDiagCache[key] = geometryDiagnosticsCacheEntry{Report: report, CreatedAt: time.Now()}
 }
 
 func (s *Server) flow360GeometryComparison(c *gin.Context) {

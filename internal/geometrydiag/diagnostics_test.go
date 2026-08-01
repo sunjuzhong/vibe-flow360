@@ -1,7 +1,9 @@
 package geometrydiag
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"math"
 	"testing"
 )
 
@@ -70,5 +72,52 @@ func TestAnalyzeUsesProvidedFaceAreaAndSolidBoundsWhenAvailable(t *testing.T) {
 	}
 	if got := report.Evidence[len(report.Evidence)-1].Value; got != float64(1) {
 		t.Fatalf("unexpected AABB separation: %#v", got)
+	}
+}
+
+func TestAnalyzeCurvatureReadsIndexedTessellationNormals(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"id":"body","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"buffers","path":"geometry.bin","sections":[
+			{"name":"indices","dType":"uint32","dimension":1,"offset":0,"length":12},
+			{"name":"position","dType":"float32","dimension":3,"offset":12,"length":36},
+			{"name":"normal","dType":"float32","dimension":3,"offset":48,"length":36}
+		]}}},
+		{"id":"face-curved","name":"curved","type":"Face","attributions":{"packedParentId":"body"},"properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}}
+	]`)
+	payload := make([]byte, 84)
+	for index := 0; index < 3; index++ {
+		binary.LittleEndian.PutUint32(payload[index*4:index*4+4], uint32(index))
+	}
+	normals := [][3]float32{{0, 0, 1}, {1, 0, 0}, {0, 0, 1}}
+	for index, normal := range normals {
+		for axis, value := range normal {
+			offset := 48 + index*12 + axis*4
+			binary.LittleEndian.PutUint32(payload[offset:offset+4], math.Float32bits(value))
+		}
+	}
+	report, err := AnalyzeWithBuffers("geo-curved", raw, map[string][]byte{"geometry.bin": payload}, Settings{CurvatureAngleDeg: 45})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Capabilities[2].Status != "proxy" {
+		t.Fatalf("curvature capability unavailable: %#v", report.Capabilities)
+	}
+	foundCurvature := false
+	for _, finding := range report.Findings {
+		if finding.ID == "high-normal-variation" && len(finding.EntityIDs) == 1 && finding.EntityIDs[0] == "face-curved" {
+			foundCurvature = true
+		}
+	}
+	if !foundCurvature {
+		t.Fatalf("unexpected curvature findings: %#v", report.Findings)
+	}
+	foundMaximum := false
+	for _, evidence := range report.Evidence {
+		if evidence.Key == "maximum_face_normal_variation" {
+			foundMaximum = math.Abs(evidence.Value.(float64)-90) < 1e-6
+		}
+	}
+	if !foundMaximum {
+		t.Fatalf("missing 90-degree normal variation: %#v", report.Evidence)
 	}
 }

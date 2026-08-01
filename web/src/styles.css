@@ -4423,6 +4423,16 @@ button { color: inherit; }
 .geometry-capabilities > div.unavailable { background: #f3eeee; }
 .geometry-capabilities > div.unavailable strong { color: #8f6660; }
 
+.geometry-diagnostic-fingerprint {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #969c92;
+  font: 6px 'DM Mono';
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .geometry-diagnostic-findings {
   display: grid;
   gap: 5px;
