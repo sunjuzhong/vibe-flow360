@@ -75,6 +75,28 @@ func TestAnalyzeUsesProvidedFaceAreaAndSolidBoundsWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestAnalyzeExplicitlySeparatesExactCADClearanceFromProxy(t *testing.T) {
+	manifest := json.RawMessage(`[
+		{"id":"solid-a","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"buffers","sections":[{"name":"position","length":36}]}}},
+		{"id":"solid-b","type":"SolidGeometry","properties":{"boundsMin":[2,0,0],"boundsMax":[3,1,1]},"resources":{"buffers":{"type":"buffers","sections":[{"name":"position","length":36}]}}},
+		{"id":"face-a","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}}
+	]`)
+	report, err := Analyze("geo-1", manifest, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := map[string]Capability{}
+	for _, capability := range report.Capabilities {
+		capabilities[capability.Key] = capability
+	}
+	if capabilities["exact-cad-clearance"].Status != "unavailable" {
+		t.Fatalf("exact capability must be unavailable: %#v", capabilities["exact-cad-clearance"])
+	}
+	if capabilities["proximity-analysis"].Status != "proxy" {
+		t.Fatalf("AABB proximity must remain a proxy: %#v", capabilities["proximity-analysis"])
+	}
+}
+
 func TestAnalyzeCurvatureReadsIndexedTessellationNormals(t *testing.T) {
 	raw := json.RawMessage(`[
 		{"id":"body","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"buffers","path":"geometry.bin","sections":[

@@ -19,10 +19,11 @@ import {
   View,
   XCircle,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   api,
   type GeometryComparison,
+  type GeometryDiagnosticJob,
   type GeometryDiagnosticReport,
   type ResourceDetail,
 } from '../api/client'
@@ -114,6 +115,7 @@ export default function GeometryWorkspace({
   const [curvatureAngle, setCurvatureAngle] = useState(30)
   const [diagnosticReport, setDiagnosticReport] = useState<GeometryDiagnosticReport | null>(null)
   const [diagnosticBusy, setDiagnosticBusy] = useState(false)
+  const [diagnosticJob, setDiagnosticJob] = useState<GeometryDiagnosticJob | null>(null)
   const [diagnosticError, setDiagnosticError] = useState('')
   const [reviewTemplate, setReviewTemplate] = useState<GeometryReviewTemplateId>('aircraft')
   const [compareId, setCompareId] = useState('')
@@ -121,6 +123,7 @@ export default function GeometryWorkspace({
   const [comparisonBusy, setComparisonBusy] = useState(false)
   const [advancedPlanBusy, setAdvancedPlanBusy] = useState(false)
   const [pendingFocusEntityIds, setPendingFocusEntityIds] = useState<string[]>([])
+  const diagnosticRunToken = useRef(0)
   const { manifest, state: viewerState } = useResourcePreview(
     detail ? 'Geometry' : null,
     resourceId ?? detail?.id ?? null,
@@ -264,17 +267,50 @@ export default function GeometryWorkspace({
     setDiagnosticError('')
   }, [manifest, pendingFocusEntityIds])
 
+  useEffect(() => {
+    diagnosticRunToken.current += 1
+    setDiagnosticBusy(false)
+    setDiagnosticJob(null)
+    setDiagnosticReport(null)
+  }, [resourceId])
+
   const runDiagnostics = async () => {
     if (!resourceId) return
+    const runToken = ++diagnosticRunToken.current
     setDiagnosticBusy(true)
+    setDiagnosticJob(null)
     setDiagnosticError('')
     try {
-      setDiagnosticReport(await api.geometryDiagnostics(resourceId, diagnosticRatio, curvatureAngle))
+      let job = await api.startGeometryDiagnostics(resourceId, diagnosticRatio, curvatureAngle)
+      if (runToken !== diagnosticRunToken.current) return
+      setDiagnosticJob(job)
+      while (job.status === 'queued' || job.status === 'running') {
+        await new Promise((resolve) => window.setTimeout(resolve, 350))
+        if (runToken !== diagnosticRunToken.current) return
+        job = await api.geometryDiagnosticsJob(resourceId, job.id)
+        setDiagnosticJob(job)
+      }
+      if (job.status === 'completed' && job.report) {
+        setDiagnosticReport(job.report)
+      } else if (job.status === 'failed') {
+        throw new Error(job.error || 'Geometry diagnostics failed')
+      }
     } catch (cause) {
       setDiagnosticReport(null)
       setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setDiagnosticBusy(false)
+      if (runToken === diagnosticRunToken.current) setDiagnosticBusy(false)
+    }
+  }
+
+  const cancelDiagnostics = async () => {
+    if (!resourceId || !diagnosticJob || !diagnosticBusy) return
+    diagnosticRunToken.current += 1
+    setDiagnosticBusy(false)
+    try {
+      setDiagnosticJob(await api.cancelGeometryDiagnostics(resourceId, diagnosticJob.id))
+    } catch (cause) {
+      setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
     }
   }
 
@@ -619,6 +655,19 @@ export default function GeometryWorkspace({
           >
             <ScanLine size={12} /> {diagnosticBusy ? 'Analyzing synchronized evidence…' : 'Run advanced diagnostics'}
           </button>
+          {diagnosticBusy && diagnosticJob && (
+            <div className="geometry-diagnostic-progress" role="status" aria-live="polite">
+              <div>
+                <span>{diagnosticJob.stage.replaceAll('-', ' ')}</span>
+                <strong>{diagnosticJob.progress}%</strong>
+              </div>
+              <progress max={100} value={diagnosticJob.progress} />
+              <button type="button" onClick={() => void cancelDiagnostics()}>Cancel analysis</button>
+            </div>
+          )}
+          {!diagnosticBusy && diagnosticJob?.status === 'cancelled' && (
+            <small className="geometry-diagnostic-cancelled">Diagnostic analysis cancelled.</small>
+          )}
 
           {diagnosticReport && (
             <>

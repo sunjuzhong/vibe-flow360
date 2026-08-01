@@ -19,6 +19,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
+	"github.com/sunjuzhong/vibe-flow360/internal/geometrydiag"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
@@ -843,6 +844,72 @@ func TestGeometryDiagnosticsUsesSynchronizedManifestEvidence(t *testing.T) {
 	app.flow360GeometryDiagnostics(thirdContext)
 	if thirdRecorder.Code != http.StatusOK || thirdRecorder.Header().Get("X-Geometry-Diagnostics-Cache") != "MISS" {
 		t.Fatalf("changed-threshold diagnostics got %d, cache %q", thirdRecorder.Code, thirdRecorder.Header().Get("X-Geometry-Diagnostics-Cache"))
+	}
+}
+
+func TestGeometryDiagnosticsJobCompletesAndCanBeRead(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage(`[
+		{"id":"solid","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[1,2,3]},"resources":{"buffers":{"type":"buffers","path":"mesh.bin","sections":[{"name":"position","length":36}]}}},
+		{"id":"face-1","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}}
+	]`)
+	if _, err := mirror.PutGeometryVisualization("prj-1", "geo-1", manifest, map[string][]byte{"mesh.bin": make([]byte, 36)}); err != nil {
+		t.Fatal(err)
+	}
+	jobRoot := t.TempDir()
+	jobs, err := geometrydiag.NewJobStore(jobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{mirror: mirror, geometryJobs: jobs, geometryJobSlots: make(chan struct{}, 1)}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/resources/Geometry/geo-1/diagnostics/jobs", bytes.NewBufferString(`{"small_surface_ratio":0.1,"curvature_angle_deg":30}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}}
+
+	app.startGeometryDiagnosticsJob(context)
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var started geometrydiag.Job
+	if err := json.Unmarshal(recorder.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	var completed geometrydiag.Job
+	for time.Now().Before(deadline) {
+		completed, _ = jobs.Get(started.ID)
+		if completed.Status == geometrydiag.JobCompleted {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if completed.Status != geometrydiag.JobCompleted || completed.Report == nil || completed.Progress != 100 {
+		t.Fatalf("unexpected completed job: %#v", completed)
+	}
+
+	getRecorder := httptest.NewRecorder()
+	getContext, _ := gin.CreateTestContext(getRecorder)
+	getContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/diagnostics/jobs/"+started.ID, nil)
+	getContext.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}, {Key: "job_id", Value: started.ID}}
+	app.getGeometryDiagnosticsJob(getContext)
+	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), `"status":"completed"`) {
+		t.Fatalf("got %d: %s", getRecorder.Code, getRecorder.Body.String())
+	}
+
+	reopened, err := geometrydiag.NewJobStore(jobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.Get(started.ID)
+	if !ok || persisted.Status != geometrydiag.JobCompleted || persisted.Report == nil {
+		t.Fatalf("job did not survive store restart: %#v", persisted)
 	}
 }
 

@@ -4405,6 +4405,34 @@ button { color: inherit; }
   margin-top: 8px;
 }
 
+.geometry-diagnostic-progress {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid #d9dfd3;
+  border-radius: 6px;
+  background: #f8faf6;
+}
+
+.geometry-diagnostic-progress > div {
+  display: flex;
+  justify-content: space-between;
+  color: #626b5d;
+  font-size: 7px;
+  text-transform: capitalize;
+}
+
+.geometry-diagnostic-progress progress { width: 100%; accent-color: #687c5d; }
+.geometry-diagnostic-progress button {
+  justify-self: end;
+  border: 0;
+  background: transparent;
+  color: #876354;
+  font-size: 7px;
+  cursor: pointer;
+}
+.geometry-diagnostic-cancelled { color: #876354; font-size: 7px; }
+
 .geometry-capabilities > div {
   display: grid;
   gap: 2px;

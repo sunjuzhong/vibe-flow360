@@ -232,6 +232,21 @@ export type GeometryDiagnosticReport = {
   grouping_proposals: GeometryGroupingProposal[]
 }
 
+export type GeometryDiagnosticJob = {
+  id: string
+  geometry_id: string
+  cache_key: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  stage: string
+  settings: { small_surface_ratio: number; curvature_angle_deg: number }
+  report?: GeometryDiagnosticReport
+  error?: string
+  created_at: string
+  updated_at: string
+  finished_at?: string
+}
+
 export type GeometryComparison = {
   schema_version: number
   baseline_id: string
@@ -551,6 +566,13 @@ async function mutate<T>(path: string, body?: unknown): Promise<T> {
   return payload as T
 }
 
+async function remove<T>(path: string): Promise<T> {
+  const response = await fetch(path, { method: 'DELETE' })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || payload.message || response.statusText)
+  return payload as T
+}
+
 async function responseError(response: Response): Promise<Error> {
   const body = await response.text()
   let message = body || response.statusText
@@ -590,6 +612,19 @@ export const api = {
   geometryDiagnostics: (resourceId: string, smallSurfaceRatio = 0.1, curvatureAngleDeg = 30) =>
     json<GeometryDiagnosticReport>(
       `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics?small_surface_ratio=${encodeURIComponent(smallSurfaceRatio)}&curvature_angle_deg=${encodeURIComponent(curvatureAngleDeg)}`,
+    ),
+  startGeometryDiagnostics: (resourceId: string, smallSurfaceRatio = 0.1, curvatureAngleDeg = 30) =>
+    mutate<GeometryDiagnosticJob>(
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics/jobs`,
+      { small_surface_ratio: smallSurfaceRatio, curvature_angle_deg: curvatureAngleDeg },
+    ),
+  geometryDiagnosticsJob: (resourceId: string, jobId: string) =>
+    json<GeometryDiagnosticJob>(
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics/jobs/${encodeURIComponent(jobId)}`,
+    ),
+  cancelGeometryDiagnostics: (resourceId: string, jobId: string) =>
+    remove<GeometryDiagnosticJob>(
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics/jobs/${encodeURIComponent(jobId)}`,
     ),
   compareGeometries: (resourceId: string, compareId: string) =>
     json<GeometryComparison>(

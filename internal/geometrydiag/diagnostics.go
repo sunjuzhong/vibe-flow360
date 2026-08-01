@@ -270,6 +270,7 @@ func AnalyzeWithBuffers(geometryID string, manifest json.RawMessage, buffers map
 			{Key: "gap-analysis", Status: proximityStatus, Detail: proximityDetail},
 			{Key: "curvature-analysis", Status: curvatureStatus, Detail: curvatureDetail},
 			{Key: "proximity-analysis", Status: proximityStatus, Detail: proximityDetail},
+			{Key: "exact-cad-clearance", Status: "unavailable", Detail: "The synchronized Flow360 visualization API exposes tessellation and entity bounds, but no CAD topology or exact distance-query result. AABB proximity remains explicitly labeled as a proxy."},
 		},
 		Evidence: []Evidence{
 			{Key: "surface_count", Label: "Surface count", Value: len(preview.Groups), Provenance: "computed", Method: "Counted Face entries in the cached Flow360 UVF manifest."},

@@ -54,6 +54,8 @@ type Server struct {
 	projectSyncJobs   map[string]struct{}
 	geometryDiagMu    sync.Mutex
 	geometryDiagCache map[string]geometryDiagnosticsCacheEntry
+	geometryJobs      *geometrydiag.JobStore
+	geometryJobSlots  chan struct{}
 }
 
 type geometryDiagnosticsCacheEntry struct {
@@ -93,6 +95,10 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	geometryJobStore, err := geometrydiag.NewJobStore(filepath.Join(dataDir, "geometry-diagnostics"))
+	if err != nil {
+		panic(err)
+	}
 
 	interventionStore, err := agent.NewInterventionStore(filepath.Join(dataDir, "interventions"))
 	if err != nil {
@@ -115,6 +121,8 @@ func New() *Server {
 		projectSyncClient:  flowClient,
 		projectSyncJobs:    map[string]struct{}{},
 		geometryDiagCache:  map[string]geometryDiagnosticsCacheEntry{},
+		geometryJobs:       geometryJobStore,
+		geometryJobSlots:   make(chan struct{}, 2),
 	}
 	app.routes()
 
@@ -217,6 +225,9 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview-mesh", s.flow360ResourceMeshPreview)
 		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics", s.flow360GeometryDiagnostics)
+		api.POST("/flow360/resources/Geometry/:resource_id/diagnostics/jobs", s.startGeometryDiagnosticsJob)
+		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/:job_id", s.getGeometryDiagnosticsJob)
+		api.DELETE("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/:job_id", s.cancelGeometryDiagnosticsJob)
 		api.GET("/flow360/resources/Geometry/:resource_id/compare/:compare_id", s.flow360GeometryComparison)
 		api.GET("/flow360/resources/:resource_type/:resource_id/visualization/*asset_path", s.flow360ResourceVisualizationAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
