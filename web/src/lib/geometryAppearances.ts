@@ -28,12 +28,16 @@ function validAppearance(value: unknown): value is GeometryAppearance {
 export function parseGeometryAppearanceLibrary(raw: string | null): GeometryAppearance[] {
   if (!raw) return defaultGeometryAppearances
   try {
-    const custom = (JSON.parse(raw) as unknown[])
+    const saved = (JSON.parse(raw) as unknown[])
       .filter(validAppearance)
+    const builtins = defaultGeometryAppearances.map((preset) => {
+      const override = saved.find((item) => item.id === preset.id)
+      return override ? { ...preset, ...override, builtin: true } : preset
+    })
+    const custom = saved
+      .filter((item) => !defaultGeometryAppearances.some((preset) => preset.id === item.id))
       .map((item) => ({ ...item, builtin: false }))
-    return [...defaultGeometryAppearances, ...custom.filter((item) =>
-      !defaultGeometryAppearances.some((preset) => preset.id === item.id),
-    )]
+    return [...builtins, ...custom]
   } catch {
     return defaultGeometryAppearances
   }
@@ -47,7 +51,7 @@ export function saveGeometryAppearanceLibrary(
   appearances: GeometryAppearance[],
   storage: StorageLike = window.localStorage,
 ) {
-  storage.setItem(LIBRARY_KEY, JSON.stringify(appearances.filter((item) => !item.builtin)))
+  storage.setItem(LIBRARY_KEY, JSON.stringify(appearances.map(({ builtin: _builtin, ...item }) => item)))
 }
 
 export function loadGeometryAppearanceAssignments(
@@ -73,9 +77,15 @@ export function saveGeometryAppearanceAssignments(
 export function buildGeometryEntityAppearances(
   assignments: Record<string, string>,
   appearances: GeometryAppearance[],
+  groupIds: string[] = [],
+  defaultAppearanceId = 'default-cad',
 ) {
   const byId = new Map(appearances.map((appearance) => [appearance.id, appearance]))
-  return Object.fromEntries(Object.entries(assignments).flatMap(([groupId, appearanceId]) => {
+  const resolvedAssignments = {
+    ...Object.fromEntries(groupIds.map((groupId) => [groupId, defaultAppearanceId])),
+    ...assignments,
+  }
+  return Object.fromEntries(Object.entries(resolvedAssignments).flatMap(([groupId, appearanceId]) => {
     const appearance = byId.get(appearanceId)
     return appearance ? [[groupId, { color: appearance.color, opacity: appearance.opacity }]] : []
   }))

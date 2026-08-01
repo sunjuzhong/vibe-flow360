@@ -35,12 +35,16 @@ describe('geometry appearance persistence', () => {
     expect(loadGeometryAppearanceAssignments('geo-2', storage)).toEqual({})
   })
 
-  it('shares custom presets without serializing builtins', () => {
+  it('shares custom presets and editable builtin overrides', () => {
     const storage = memoryStorage()
     const custom = newGeometryAppearance('Shared style', '#334455', 0.8, 'shared')
-    saveGeometryAppearanceLibrary([...defaultGeometryAppearances, custom], storage)
+    const editedBuiltins = defaultGeometryAppearances.map((appearance) =>
+      appearance.id === 'default-cad' ? { ...appearance, opacity: 0.42 } : appearance,
+    )
+    saveGeometryAppearanceLibrary([...editedBuiltins, custom], storage)
     const loaded = loadGeometryAppearanceLibrary(storage)
     expect(loaded).toHaveLength(defaultGeometryAppearances.length + 1)
+    expect(loaded[0]).toMatchObject({ id: 'default-cad', opacity: 0.42, builtin: true })
     expect(loaded.at(-1)).toMatchObject({ id: 'shared', name: 'Shared style' })
   })
 
@@ -62,6 +66,16 @@ describe('geometry appearance persistence', () => {
     expect(after).toEqual({
       faceA: { color: '#aabbcc', opacity: 0.35 },
       faceB: { color: '#aabbcc', opacity: 0.35 },
+    })
+  })
+
+  it('treats unassigned faces as reactively bound to Default CAD', () => {
+    const appearances = defaultGeometryAppearances.map((appearance) =>
+      appearance.id === 'default-cad' ? { ...appearance, opacity: 0.3 } : appearance,
+    )
+    expect(buildGeometryEntityAppearances({}, appearances, ['faceA', 'faceB'])).toEqual({
+      faceA: { color: '#6f8790', opacity: 0.3 },
+      faceB: { color: '#6f8790', opacity: 0.3 },
     })
   })
 })

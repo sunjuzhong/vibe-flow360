@@ -196,8 +196,12 @@ export default function GeometryWorkspace({
   const appearanceForGroup = (groupId: string) =>
     appearanceById.get(appearanceAssignments[groupId]) ?? defaultAppearance
   const entityAppearances = useMemo(
-    () => buildGeometryEntityAppearances(appearanceAssignments, appearances),
-    [appearanceAssignments, appearances],
+    () => buildGeometryEntityAppearances(
+      appearanceAssignments,
+      appearances,
+      manifest?.groups.map((group) => group.id) ?? [],
+    ),
+    [appearanceAssignments, appearances, manifest],
   )
   const selectedAppearanceNames = new Set(selectedGroups.map((group) => appearanceForGroup(group.id)?.name))
 
@@ -250,7 +254,7 @@ export default function GeometryWorkspace({
   }
 
   const updateSelectedAppearance = (patch: Partial<{ name: string; color: string; opacity: number }>) => {
-    if (!selectedAppearance || selectedAppearance.builtin) return
+    if (!selectedAppearance) return
     const next = appearances.map((item) => item.id === selectedAppearance.id
       ? { ...item, ...patch }
       : item)
@@ -737,13 +741,12 @@ export default function GeometryWorkspace({
               Name
               <input
                 value={selectedAppearance?.name ?? ''}
-                disabled={selectedAppearance?.builtin}
                 onChange={(event) => updateSelectedAppearance({ name: event.target.value })}
               />
             </label>
             <div className="geometry-appearance-fields">
-              <label>Color<input aria-label="Appearance color" type="color" value={selectedAppearance?.color ?? '#6f8790'} disabled={selectedAppearance?.builtin} onInput={(event) => updateSelectedAppearance({ color: event.currentTarget.value })} /></label>
-              <label>Opacity <strong>{Math.round((selectedAppearance?.opacity ?? 0.9) * 100)}%</strong><input aria-label="Appearance opacity" type="range" min="0.05" max="1" step="0.05" value={selectedAppearance?.opacity ?? 0.9} disabled={selectedAppearance?.builtin} onInput={(event) => updateSelectedAppearance({ opacity: Number(event.currentTarget.value) })} /></label>
+              <label>Color<input aria-label="Appearance color" type="color" value={selectedAppearance?.color ?? '#6f8790'} onInput={(event) => updateSelectedAppearance({ color: event.currentTarget.value })} /></label>
+              <label>Opacity <strong>{Math.round((selectedAppearance?.opacity ?? 0.9) * 100)}%</strong><input aria-label="Appearance opacity" type="range" min="0.05" max="1" step="0.05" value={selectedAppearance?.opacity ?? 0.9} onInput={(event) => updateSelectedAppearance({ opacity: Number(event.currentTarget.value) })} /></label>
             </div>
             <button
               type="button"
@@ -759,9 +762,8 @@ export default function GeometryWorkspace({
               <button type="button" disabled={appearances.find((item) => item.id === selectedAppearanceId)?.builtin} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
             </div>
             <small className="geometry-semantic-safety">
-              {selectedAppearance?.builtin
-                ? 'Built-in material is read-only. Duplicate it to customize.'
-                : 'Changes auto-save and update every bound UVF surface immediately.'}
+              Changes auto-save and update every bound UVF surface immediately.
+              {selectedAppearance?.builtin ? ' Built-in material IDs are protected from deletion.' : ''}
             </small>
           </div>
         </details>
