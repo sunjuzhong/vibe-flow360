@@ -174,8 +174,10 @@ Projects or existing deployments.
 
 ## Local Project mirror
 
-Opening a Project starts a bounded full metadata synchronization before the
-resource workbench is shown. Set `VIBESIM_DATA_DIR` to an absolute path when
+Opening a Project shows a recent local inventory immediately, then refreshes
+resource metadata progressively in the background. Completed mirrors remain
+fresh for five minutes unless the user requests a complete refresh. Set
+`VIBESIM_DATA_DIR` to an absolute path when
 Vibe Flow360 may be started from different working directories:
 
 ```dotenv
@@ -192,17 +194,17 @@ ID:
   tree.json
   items.json
   resources/<Geometry|SurfaceMesh|VolumeMesh|Case>/<resource-id>/detail.json
-  resources/Geometry/<geometry-id>/visualize/manifest/
+  resources/<Geometry|SurfaceMesh|VolumeMesh|Case>/<resource-id>/visualize/manifest/
     manifest.json
     <buffer>.bin
 ```
 
 Each resource detail contains `info`, `state`, `summary`, raw
 `simulation_params`, and—for Cases—the result artifact list. Geometry UVF
-tessellation manifests and their referenced `.bin` buffers are synchronized
-atomically for Three.js display. The
-`metadata+geometry-visualization` policy still deliberately excludes large CAD,
-mesh, surface, volume, and Case result archives. Small result histories used by
+tessellation manifests and their referenced `.bin` buffers are downloaded
+atomically when a 3D preview is first opened, then reused from the mirror. The
+initial `metadata-only` synchronization deliberately excludes large CAD, mesh,
+surface, volume, and Case result archives. Small result histories used by
 convergence analysis are downloaded separately under
 `.vibesim/cases/<case-id>/`.
 

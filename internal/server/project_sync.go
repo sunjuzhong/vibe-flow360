@@ -16,6 +16,7 @@ import (
 )
 
 const projectSyncWorkerCount = 3
+const projectSyncFreshness = 5 * time.Minute
 
 type projectSyncClient interface {
 	ProjectInfo(context.Context, string) (json.RawMessage, error)
@@ -50,6 +51,15 @@ func (s *Server) startProjectSync(c *gin.Context) {
 		s.writeProjectSyncManifest(c, http.StatusAccepted, projectID)
 		return
 	}
+	force := strings.EqualFold(strings.TrimSpace(c.Query("force")), "true")
+	if !force {
+		if existing, err := s.mirror.GetManifest(projectID); err == nil && projectSyncManifestFresh(existing, time.Now()) {
+			s.projectSyncMu.Unlock()
+			c.Header("Cache-Control", "no-store")
+			c.JSON(http.StatusOK, existing)
+			return
+		}
+	}
 	manifest := projectmirror.NewManifest(projectID, s.mirror.Namespace())
 	if err := s.mirror.PutManifest(manifest); err != nil {
 		s.projectSyncMu.Unlock()
@@ -67,6 +77,16 @@ func (s *Server) startProjectSync(c *gin.Context) {
 		s.projectSyncMu.Unlock()
 	}()
 	c.JSON(http.StatusAccepted, manifest)
+}
+
+func projectSyncManifestFresh(manifest projectmirror.Manifest, now time.Time) bool {
+	if manifest.CompletedAt == nil {
+		return false
+	}
+	if manifest.Status != projectmirror.StatusCompleted && manifest.Status != projectmirror.StatusPartial {
+		return false
+	}
+	return now.Sub(*manifest.CompletedAt) >= 0 && now.Sub(*manifest.CompletedAt) < projectSyncFreshness
 }
 
 func (s *Server) projectSyncStatus(c *gin.Context) {
@@ -116,9 +136,24 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 		{kind: "project-tree", load: client.ProjectTree},
 		{kind: "project-items", load: client.ProjectItems},
 	}
-	var itemsRaw json.RawMessage
+	type projectSectionResult struct {
+		section projectSection
+		raw     json.RawMessage
+		err     error
+	}
+	sectionResults := make(chan projectSectionResult, len(sections))
 	for _, section := range sections {
-		raw, err := section.load(ctx, projectID)
+		section := section
+		go func() {
+			raw, err := section.load(ctx, projectID)
+			sectionResults <- projectSectionResult{section: section, raw: raw, err: err}
+		}()
+	}
+	var itemsRaw json.RawMessage
+	for range sections {
+		result := <-sectionResults
+		section := result.section
+		raw, err := result.raw, result.err
 		if err != nil {
 			failSection(section.kind, err)
 			persist()
@@ -201,22 +236,8 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 					err = fmt.Errorf("partial Flow360 detail: %s", strings.Join(keys, ", "))
 				}
 				var raw json.RawMessage
-				var artifacts map[string]projectmirror.ArtifactStatus
 				if err == nil {
 					raw, err = json.Marshal(detail)
-				}
-				if err == nil {
-					visualization, visErr := client.ResourceVisualization(ctx, item.Type, item.ID)
-					if visErr == nil {
-						artifacts, _ = s.mirror.PutResourceVisualization(
-							projectID,
-							item.Type,
-							item.ID,
-							visualization.Manifest,
-							visualization.Bins,
-							0,
-						)
-					}
 				}
 				if err == nil {
 					err = s.mirror.PutResource(projectID, item.Type, item.ID, raw)
@@ -234,7 +255,6 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 					manifest.FailedResources++
 				} else {
 					status.Status = "completed"
-					status.Artifacts = artifacts
 					status.SyncedAt = time.Now().UTC()
 					manifest.SyncedResources++
 				}

@@ -1390,8 +1390,43 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 				return
 			}
 		}
+		if s.projectSyncClient != nil {
+			projectID, projectErr := s.mirror.ResourceProjectID(resourceType, resourceID)
+			if projectErr == nil {
+				visualization, visualizationErr := s.projectSyncClient.ResourceVisualization(
+					c.Request.Context(),
+					resourceType,
+					resourceID,
+				)
+				if visualizationErr == nil {
+					if _, persistErr := s.mirror.PutResourceVisualization(
+						projectID,
+						resourceType,
+						resourceID,
+						visualization.Manifest,
+						visualization.Bins,
+						0,
+					); persistErr == nil {
+						assetURL := fmt.Sprintf(
+							"/api/flow360/resources/%s/%s/visualization/manifest.json",
+							resourceType,
+							resourceID,
+						)
+						if preview, previewErr := flow360.GeometryUVFPreview(resourceID, visualization.Manifest, assetURL); previewErr == nil {
+							c.Header("Cache-Control", "private, max-age=60")
+							c.JSON(http.StatusOK, preview)
+							return
+						}
+					}
+				}
+			}
+		}
 	}
 
+	if s.flow360 == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "3D preview data is not available for this resource"})
+		return
+	}
 	preview, err := s.flow360.ResourcePreviewManifest(
 		c.Request.Context(),
 		resourceType,

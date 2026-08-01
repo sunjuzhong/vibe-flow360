@@ -23,17 +23,22 @@ type fakeProjectSyncClient struct {
 	details              map[string]flow360.ResourceDetail
 	failures             map[string]error
 	visualizationFailure error
+	visualizationCalls   int
 	calls                map[string]int
 	delay                time.Duration
 }
 
 func (f *fakeProjectSyncClient) ResourceVisualization(_ context.Context, resourceType, resourceID string) (flow360.ResourceVisualization, error) {
+	f.mu.Lock()
+	f.visualizationCalls++
+	f.mu.Unlock()
 	if f.visualizationFailure != nil {
 		return flow360.ResourceVisualization{}, f.visualizationFailure
 	}
 	return flow360.ResourceVisualization{
 		Manifest: json.RawMessage(`[
-			{"type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"body.bin"}}}
+			{"id":"body-1","type":"SolidGeometry","properties":{"boundsMin":[-1,-1,-1],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"buffers","path":"body.bin","sections":[{"name":"position","length":36}]}}},
+			{"id":"face-1","name":"Face 1","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}}
 		]`),
 		Bins: map[string][]byte{"body.bin": {1, 2, 3}},
 	}, nil
@@ -130,8 +135,6 @@ func TestSyncProjectWritesEveryResourceAndCompatibilityCache(t *testing.T) {
 		"tree.json",
 		"items.json",
 		filepath.Join("resources", "Geometry", "geo-1", "detail.json"),
-		filepath.Join("resources", "Geometry", "geo-1", "visualize", "manifest", "manifest.json"),
-		filepath.Join("resources", "Geometry", "geo-1", "visualize", "manifest", "body.bin"),
 		filepath.Join("resources", "Case", "case-1", "detail.json"),
 	} {
 		if _, err := os.Stat(filepath.Join(projectDir, relative)); err != nil {
@@ -141,8 +144,8 @@ func TestSyncProjectWritesEveryResourceAndCompatibilityCache(t *testing.T) {
 	if _, err := app.cache.Get("resource-detail", "Case/case-1"); err != nil {
 		t.Fatalf("compatibility cache is missing: %v", err)
 	}
-	if len(manifest.Resources["Geometry/geo-1"].Artifacts) != 2 {
-		t.Fatalf("Geometry artifacts were not recorded: %#v", manifest.Resources["Geometry/geo-1"])
+	if client.visualizationCalls != 0 {
+		t.Fatalf("initial synchronization downloaded %d visualizations, want none", client.visualizationCalls)
 	}
 }
 
@@ -235,7 +238,74 @@ func TestStartProjectSyncJoinsConcurrentRequests(t *testing.T) {
 	}
 }
 
-func TestSyncProjectWritesVisualizationForAllResourceTypes(t *testing.T) {
+func TestStartProjectSyncReusesFreshCompletedMirror(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+			"Case/case-1":    {ID: "case-1", Type: "Case", Errors: map[string]string{}},
+		},
+		failures: map[string]error{},
+	}
+	app := newProjectSyncTestServer(t, client)
+	if manifest := app.syncProject(t.Context(), "prj-1", client); manifest.Status != projectmirror.StatusCompleted {
+		t.Fatalf("unexpected manifest %#v", manifest)
+	}
+
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/projects/prj-1/sync", nil)
+	requestContext.Params = gin.Params{{Key: "project_id", Value: "prj-1"}}
+	app.startProjectSync(requestContext)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("fresh sync got status %d, want 200: %s", recorder.Code, recorder.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	for _, key := range []string{"Geometry/geo-1", "Case/case-1"} {
+		if client.calls[key] != 1 {
+			t.Fatalf("fresh mirror resynchronized %s %d times", key, client.calls[key])
+		}
+	}
+}
+
+func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+			"Case/case-1":    {ID: "case-1", Type: "Case", Errors: map[string]string{}},
+		},
+		failures: map[string]error{},
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+
+	requestPreview := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		requestContext, _ := gin.CreateTestContext(recorder)
+		requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
+		requestContext.Params = gin.Params{
+			{Key: "resource_type", Value: "Geometry"},
+			{Key: "resource_id", Value: "geo-1"},
+		}
+		app.flow360ResourceMeshPreview(requestContext)
+		return recorder
+	}
+	if first := requestPreview(); first.Code != http.StatusOK {
+		t.Fatalf("first preview got %d: %s", first.Code, first.Body)
+	}
+	if second := requestPreview(); second.Code != http.StatusOK {
+		t.Fatalf("cached preview got %d: %s", second.Code, second.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.visualizationCalls != 1 {
+		t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+	}
+}
+
+func TestSyncProjectDefersVisualizationForAllResourceTypes(t *testing.T) {
 	client := &fakeProjectSyncClient{
 		details: map[string]flow360.ResourceDetail{
 			"Geometry/geo-1": {
@@ -273,11 +343,8 @@ func TestSyncProjectWritesVisualizationForAllResourceTypes(t *testing.T) {
 	if manifest.TotalResources != 3 || manifest.SyncedResources != 3 {
 		t.Fatalf("unexpected progress %#v", manifest)
 	}
-	projectDir, err := app.mirror.ProjectDir("prj-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Verify visualization files exist for all resource types
+	// Resource metadata is mirrored, but large visualization files are fetched
+	// only when a user opens a resource preview.
 	for _, resource := range []struct {
 		resourceType string
 		resourceID   string
@@ -286,25 +353,13 @@ func TestSyncProjectWritesVisualizationForAllResourceTypes(t *testing.T) {
 		{"SurfaceMesh", "sm-1"},
 		{"Case", "case-1"},
 	} {
-		for _, relative := range []string{
-			filepath.Join("resources", resource.resourceType, resource.resourceID, "visualize", "manifest", "manifest.json"),
-			filepath.Join("resources", resource.resourceType, resource.resourceID, "visualize", "manifest", "body.bin"),
-		} {
-			if _, err := os.Stat(filepath.Join(projectDir, relative)); err != nil {
-				t.Fatalf("%s visualization %s is missing: %v", resource.resourceType, relative, err)
-			}
-		}
-		// Verify checksum is populated in artifacts
 		key := resource.resourceType + "/" + resource.resourceID
-		artifacts := manifest.Resources[key].Artifacts
-		if len(artifacts) == 0 {
-			t.Fatalf("%s has no artifacts", key)
+		if len(manifest.Resources[key].Artifacts) != 0 {
+			t.Fatalf("%s unexpectedly recorded visualization artifacts", key)
 		}
-		for artifactKey, artifact := range artifacts {
-			if artifact.Checksum == "" {
-				t.Fatalf("%s artifact %q has no checksum", key, artifactKey)
-			}
-		}
+	}
+	if client.visualizationCalls != 0 {
+		t.Fatalf("initial synchronization downloaded %d visualizations, want none", client.visualizationCalls)
 	}
 }
 

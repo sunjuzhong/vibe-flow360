@@ -577,8 +577,10 @@ export const api = {
     flow360JSON<ProjectTreeResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/tree${cacheOnly ? '?cache=only' : ''}`),
   projectItems: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
-  startProjectSync: (projectId: string) =>
-    mutate<ProjectSyncManifest>(`/api/flow360/projects/${encodeURIComponent(projectId)}/sync`),
+  startProjectSync: (projectId: string, force = false) =>
+    mutate<ProjectSyncManifest>(
+      `/api/flow360/projects/${encodeURIComponent(projectId)}/sync${force ? '?force=true' : ''}`,
+    ),
   projectSyncStatus: (projectId: string) =>
     json<ProjectSyncManifest>(`/api/flow360/projects/${encodeURIComponent(projectId)}/sync`),
   resourceDetail: (resourceType: string, resourceId: string, cacheOnly = false) =>

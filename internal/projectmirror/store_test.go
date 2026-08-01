@@ -48,7 +48,7 @@ func TestStoreWritesInspectableProjectMirror(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ProjectID != "prj-1" || got.ArtifactPolicy != ArtifactPolicyMetadataVisualization || got.LocalPath != projectDir {
+	if got.ProjectID != "prj-1" || got.ArtifactPolicy != ArtifactPolicyMetadataOnly || got.LocalPath != projectDir {
 		t.Fatalf("unexpected manifest %#v", got)
 	}
 }

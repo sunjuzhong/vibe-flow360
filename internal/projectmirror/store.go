@@ -14,6 +14,7 @@ import (
 
 const (
 	SchemaVersion                       = 3
+	ArtifactPolicyMetadataOnly          = "metadata-only"
 	ArtifactPolicyMetadataVisualization = "metadata+geometry-visualization"
 	maxGeometryVisualizationFileSize    = 25 * 1024 * 1024
 
@@ -71,7 +72,7 @@ func NewManifest(projectID, namespace string) Manifest {
 		SchemaVersion:  SchemaVersion,
 		ProjectID:      projectID,
 		Namespace:      namespace,
-		ArtifactPolicy: ArtifactPolicyMetadataVisualization,
+		ArtifactPolicy: ArtifactPolicyMetadataOnly,
 		Status:         StatusSyncing,
 		Failures:       map[string]string{},
 		Resources:      map[string]ResourceStatus{},
@@ -280,6 +281,46 @@ func (s *Store) ResourceVisualizationManifest(resourceType, resourceID string) (
 		return nil, errors.New("cached resource visualization manifest is invalid")
 	}
 	return payload, nil
+}
+
+// ResourceProjectID locates the mirrored Project that owns a resource. Flow360
+// resource IDs are globally unique, so preview routes do not need to carry the
+// Project ID merely to persist an on-demand visualization.
+func (s *Store) ResourceProjectID(resourceType, resourceID string) (string, error) {
+	if !validResourceType(resourceType) {
+		return "", errors.New("unsupported resource type")
+	}
+	if err := validateID(resourceID); err != nil {
+		return "", err
+	}
+	projects, err := os.ReadDir(s.root)
+	if err != nil {
+		return "", err
+	}
+	for _, project := range projects {
+		if !project.IsDir() || validateID(project.Name()) != nil {
+			continue
+		}
+		detail := filepath.Join(s.root, project.Name(), "resources", resourceType, resourceID, "detail.json")
+		if info, statErr := os.Stat(detail); statErr == nil && info.Mode().IsRegular() {
+			return project.Name(), nil
+		}
+		var inventory struct {
+			Items []struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"items"`
+		}
+		payload, readErr := os.ReadFile(filepath.Join(s.root, project.Name(), "items.json"))
+		if readErr == nil && json.Unmarshal(payload, &inventory) == nil {
+			for _, item := range inventory.Items {
+				if item.ID == resourceID && item.Type == resourceType {
+					return project.Name(), nil
+				}
+			}
+		}
+	}
+	return "", os.ErrNotExist
 }
 
 // GeometryVisualizationManifest is retained for backward compatibility.

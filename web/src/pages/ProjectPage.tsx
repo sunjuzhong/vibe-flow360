@@ -171,8 +171,8 @@ export default function ProjectPage() {
     }
   }, [activePanel, closePanel, panelRef])
 
-  const loadProject = useCallback(async () => {
-    setLoading(true)
+  const loadProject = useCallback(async (cacheOnly = false, showLoading = true) => {
+    if (showLoading) setLoading(true)
     setError('')
     setCacheWarning('')
     let cachedLoaded = false
@@ -189,14 +189,18 @@ export default function ProjectPage() {
       setProjectDataSource('cache')
       cachedAt = cachedInfo.cachedAt || cachedTree.cachedAt || cachedItems.cachedAt || ''
       setProjectCachedAt(cachedAt)
-      setLoading(false)
       cachedLoaded = true
       if (!resourceIdRef.current) {
         navigateRef.current(`/projects/${projectId}/resources/${cachedTree.data.root.id}`, { replace: true })
       }
-      return
+      if (showLoading) setLoading(false)
+      return true
     } catch {
       // A cache miss is expected on the first visit.
+    }
+    if (cacheOnly) {
+      if (showLoading) setLoading(false)
+      return false
     }
     try {
       const [info, tree, itemList] = await Promise.all([
@@ -216,6 +220,7 @@ export default function ProjectPage() {
       if (!resourceIdRef.current) {
         navigateRef.current(`/projects/${projectId}/resources/${tree.data.root.id}`, { replace: true })
       }
+      return true
     } catch (cause) {
       const message = String(cause).replace('Error: ', '')
       if (cachedLoaded) {
@@ -223,18 +228,15 @@ export default function ProjectPage() {
       } else {
         setError(message)
       }
+      return false
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [projectId])
 
   useEffect(() => {
     api.flow360Status().then(setFlowStatus).catch(() => setFlowStatus({ available: false }))
   }, [])
-
-  useEffect(() => {
-    void loadProject()
-  }, [loadProject])
 
   useEffect(() => {
     const handleOpenIntervention = (event: Event) => {
@@ -255,14 +257,20 @@ export default function ProjectPage() {
       timer = window.setTimeout(resolve, 500)
     })
     const synchronize = async () => {
-      setSyncing(true)
       setSyncError('')
       setError('')
+      let inventoryLoaded = await loadProject(true)
+      if (cancelled) return
+      setSyncing(!inventoryLoaded)
       try {
-        let manifest = await api.startProjectSync(projectId)
+        let manifest = await api.startProjectSync(projectId, syncNonce > 0)
         if (cancelled) return
         setSyncManifest(manifest)
         while (!cancelled && manifest.status === 'syncing') {
+          if (!inventoryLoaded && manifest.total_resources > 0) {
+            inventoryLoaded = await loadProject(true)
+            if (inventoryLoaded) setSyncing(false)
+          }
           await wait()
           if (cancelled) return
           manifest = await api.projectSyncStatus(projectId)
@@ -283,7 +291,7 @@ export default function ProjectPage() {
       } finally {
         if (!cancelled) {
           setSyncing(false)
-          await loadProject()
+          await loadProject(inventoryLoaded, !inventoryLoaded)
         }
       }
     }
