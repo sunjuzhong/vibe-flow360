@@ -43,7 +43,10 @@ export type ViewerManifest = {
 
 export type ViewerSelection = {
   groupId: string | null
+  groupIds?: string[]
 }
+
+export type ViewerEntityAppearance = { color: string; opacity: number }
 
 export type ViewerClipPlane = {
   normal: [number, number, number]
@@ -89,6 +92,7 @@ type Props = {
   toolbar?: React.ReactNode
   cameraCommand?: ViewerCameraCommand | null
   showNormals?: boolean
+  entityAppearances?: Record<string, ViewerEntityAppearance>
 }
 
 export function Viewer3D({
@@ -119,6 +123,7 @@ export function Viewer3D({
   toolbar,
   cameraCommand,
   showNormals = false,
+  entityAppearances = {},
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -352,10 +357,13 @@ export function Viewer3D({
 
     const box = new THREE.Box3()
     if (cameraCommand.type === 'fit-selection' && selection?.groupId) {
-      const selectedEntity = uvfAssetRef.current?.getEntityObject(selection.groupId)
-      if (selectedEntity?.visible) box.expandByObject(selectedEntity)
+      const selectedIds = selection.groupIds?.length ? selection.groupIds : [selection.groupId]
+      for (const groupId of selectedIds) {
+        const selectedEntity = uvfAssetRef.current?.getEntityObject(groupId)
+        if (selectedEntity?.visible) box.expandByObject(selectedEntity)
+      }
       for (const mesh of meshesRef.current.values()) {
-        if (mesh.userData.groupId === selection.groupId && mesh.visible) {
+        if (selectedIds.includes(mesh.userData.groupId) && mesh.visible) {
           box.expandByObject(mesh)
         }
       }
@@ -419,15 +427,18 @@ export function Viewer3D({
 
   useEffect(() => {
     if (!selection) return
+    const selectedIds = new Set(selection.groupIds?.length ? selection.groupIds : [selection.groupId])
     for (const [, mesh] of meshesRef.current) {
       const groupId = String(mesh.userData.groupId ?? '')
       const mat = mesh.material as THREE.MeshPhongMaterial
-      if (groupId === selection.groupId) {
+      const appearance = entityAppearances[groupId]
+      if (appearance) mat.color.set(appearance.color)
+      if (selectedIds.has(groupId)) {
         mat.opacity = 1.0
         mat.emissive = new THREE.Color(0xffff00)
         mat.emissiveIntensity = 0.2
       } else if (groupId !== '__wireframe__') {
-        mat.opacity = effectiveGroupVisibility[groupId] !== false ? 0.85 : 0.15
+        mat.opacity = effectiveGroupVisibility[groupId] !== false ? (appearance?.opacity ?? 0.85) : 0.15
         mat.emissive = new THREE.Color(0x000000)
         mat.emissiveIntensity = 0
       }
@@ -454,7 +465,7 @@ export function Viewer3D({
         material.needsUpdate = true
       })
     })
-  }, [assetState.status, selection, manifest, entityVisibility, groupVisibility])
+  }, [assetState.status, selection, manifest, entityVisibility, groupVisibility, entityAppearances])
 
   useEffect(() => {
     if (!manifest) return
@@ -599,7 +610,14 @@ export function Viewer3D({
       const intersection = intersects[0]
       const groupId = intersection.object.userData.groupId
       if (groupId !== '__wireframe__') {
-        onSelectionChange?.({ groupId })
+        const current = selection?.groupIds?.length
+          ? selection.groupIds
+          : selection?.groupId ? [selection.groupId] : []
+        const additive = e.ctrlKey || e.metaKey || e.shiftKey
+        const groupIds = additive
+          ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
+          : [groupId]
+        onSelectionChange?.({ groupId: groupIds.at(-1) ?? null, groupIds })
         setHoveredGroup(groupId)
         if (selectedField && uvfAssetRef.current && intersection.object instanceof THREE.Mesh) {
           onFieldProbe?.(probeFieldAtIntersection(
@@ -797,7 +815,7 @@ export function Viewer3D({
           {manifest.groups.map((g) => (
             <div
               key={g.id}
-                className={`viewer-legend-item ${selection?.groupId === g.id ? 'selected' : ''} ${effectiveGroupVisibility[g.id] === false ? 'hidden' : ''}`}
+                className={`viewer-legend-item ${(selection?.groupIds ?? [selection?.groupId]).includes(g.id) ? 'selected' : ''} ${effectiveGroupVisibility[g.id] === false ? 'hidden' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 onSelectionChange?.({ groupId: g.id })

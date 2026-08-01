@@ -9,12 +9,16 @@ import {
   GitPullRequestDraft,
   Info,
   LocateFixed,
+  Palette,
+  Plus,
   Ruler,
+  Save,
   ScanLine,
   Scissors,
   Search,
   Shapes,
   Sparkles,
+  Trash2,
   Undo2,
   View,
   XCircle,
@@ -46,6 +50,13 @@ import {
   type GeometrySurfaceRole,
 } from '../lib/geometrySemantics'
 import { resourceStatus } from './ResourceDetailPanel'
+import {
+  loadGeometryAppearanceAssignments,
+  loadGeometryAppearanceLibrary,
+  newGeometryAppearance,
+  saveGeometryAppearanceAssignments,
+  saveGeometryAppearanceLibrary,
+} from '../lib/geometryAppearances'
 import {
   LazyViewer3D,
   type ViewerCameraCommand,
@@ -108,6 +119,12 @@ export default function GeometryWorkspace({
   const [bodyIntent, setBodyIntent] = useState<GeometryBodyIntent>('undecided')
   const [selectedRole, setSelectedRole] = useState<GeometrySurfaceRole>('wall')
   const [assignments, setAssignments] = useState<Record<string, GeometrySemanticAssignment>>({})
+  const [appearanceAssignments, setAppearanceAssignments] = useState<Record<string, string>>({})
+  const [appearances, setAppearances] = useState(loadGeometryAppearanceLibrary)
+  const [selectedAppearanceId, setSelectedAppearanceId] = useState('default-cad')
+  const [appearanceName, setAppearanceName] = useState('Default CAD')
+  const [appearanceColor, setAppearanceColor] = useState('#6f8790')
+  const [appearanceOpacity, setAppearanceOpacity] = useState(0.9)
   const [assignmentHistory, setAssignmentHistory] = useState<Array<Record<string, GeometrySemanticAssignment>>>([])
   const [semanticMessage, setSemanticMessage] = useState('')
   const [semanticBusy, setSemanticBusy] = useState(false)
@@ -135,6 +152,12 @@ export default function GeometryWorkspace({
   )
   const selectedGroup = manifest?.groups.find((group) => group.id === viewerSelection.groupId) ?? null
   const selectedEdge = manifest?.edges?.find((edge) => edge.id === viewerSelection.groupId) ?? null
+  const selectedGroupIds = viewerSelection.groupIds?.length
+    ? viewerSelection.groupIds
+    : selectedGroup ? [selectedGroup.id] : []
+  const selectedGroups = manifest?.groups.filter((group) => selectedGroupIds.includes(group.id)) ?? []
+  const selectedGroupIdSet = new Set(selectedGroupIds)
+  const resourceKey = resourceId ?? detail?.id ?? ''
   const clipPlane = useMemo<ViewerClipPlane | null>(() => {
     if (!clipEnabled) return null
     const normal: [number, number, number] = clipAxis === 'x'
@@ -167,6 +190,12 @@ export default function GeometryWorkspace({
   const readiness = readinessCopy[review.readiness]
   const assignmentList = Object.values(assignments).sort((a, b) => a.groupName.localeCompare(b.groupName))
   const unassignedCount = Math.max(0, (manifest?.groups.length ?? 0) - assignmentList.length)
+  const entityAppearances = useMemo(() => Object.fromEntries(
+    Object.entries(appearanceAssignments).flatMap(([groupId, appearanceId]) => {
+      const appearance = appearances.find((item) => item.id === appearanceId)
+      return appearance ? [[groupId, { color: appearance.color, opacity: appearance.opacity }]] : []
+    }),
+  ), [appearanceAssignments, appearances])
 
   useEffect(() => {
     setViewerSelection({ groupId: null })
@@ -179,7 +208,81 @@ export default function GeometryWorkspace({
     setCompareId('')
     setComparison(null)
     setPendingFocusEntityIds([])
-  }, [resourceId])
+    setAppearanceAssignments(resourceKey ? loadGeometryAppearanceAssignments(resourceKey) : {})
+  }, [resourceKey])
+
+  useEffect(() => {
+    const appearance = appearances.find((item) => item.id === selectedAppearanceId)
+    if (!appearance) return
+    setAppearanceName(appearance.name)
+    setAppearanceColor(appearance.color)
+    setAppearanceOpacity(appearance.opacity)
+  }, [appearances, selectedAppearanceId])
+
+  const setGeometryAppearanceAssignments = (next: Record<string, string>) => {
+    setAppearanceAssignments(next)
+    if (resourceKey) saveGeometryAppearanceAssignments(resourceKey, next)
+  }
+
+  const chooseGroups = (ids: string[]) => {
+    setViewerSelection({ groupId: ids.at(-1) ?? null, groupIds: ids })
+  }
+
+  const toggleGroupSelection = (groupId: string, additive: boolean) => {
+    if (!additive) {
+      chooseGroups([groupId])
+      return
+    }
+    chooseGroups(selectedGroupIds.includes(groupId)
+      ? selectedGroupIds.filter((id) => id !== groupId)
+      : [...selectedGroupIds, groupId])
+  }
+
+  const applyAppearanceToSelection = () => {
+    if (selectedGroups.length === 0) return
+    const next = { ...appearanceAssignments }
+    for (const group of selectedGroups) next[group.id] = selectedAppearanceId
+    setGeometryAppearanceAssignments(next)
+  }
+
+  const createAppearance = () => {
+    const appearance = newGeometryAppearance(appearanceName, appearanceColor, appearanceOpacity)
+    const next = [...appearances, appearance]
+    setAppearances(next)
+    saveGeometryAppearanceLibrary(next)
+    setSelectedAppearanceId(appearance.id)
+  }
+
+  const updateAppearance = () => {
+    const current = appearances.find((item) => item.id === selectedAppearanceId)
+    if (!current || current.builtin) return
+    const next = appearances.map((item) => item.id === current.id
+      ? { ...item, name: appearanceName.trim() || item.name, color: appearanceColor, opacity: appearanceOpacity }
+      : item)
+    setAppearances(next)
+    saveGeometryAppearanceLibrary(next)
+  }
+
+  const duplicateAppearance = () => {
+    const appearance = newGeometryAppearance(`${appearanceName} copy`, appearanceColor, appearanceOpacity)
+    const next = [...appearances, appearance]
+    setAppearances(next)
+    saveGeometryAppearanceLibrary(next)
+    setSelectedAppearanceId(appearance.id)
+  }
+
+  const deleteAppearance = () => {
+    const current = appearances.find((item) => item.id === selectedAppearanceId)
+    if (!current || current.builtin) return
+    const nextLibrary = appearances.filter((item) => item.id !== current.id)
+    const nextAssignments = Object.fromEntries(
+      Object.entries(appearanceAssignments).filter(([, appearanceId]) => appearanceId !== current.id),
+    )
+    setAppearances(nextLibrary)
+    saveGeometryAppearanceLibrary(nextLibrary)
+    setGeometryAppearanceAssignments(nextAssignments)
+    setSelectedAppearanceId('default-cad')
+  }
 
   const commitAssignments = (next: Record<string, GeometrySemanticAssignment>) => {
     setAssignmentHistory((history) => [...history.slice(-9), assignments])
@@ -367,6 +470,13 @@ export default function GeometryWorkspace({
             aria-label="Search geometry entities"
           />
         </label>
+        <div className="geometry-selection-tools">
+          <strong>{selectedGroups.length} face{selectedGroups.length === 1 ? '' : 's'} selected</strong>
+          <button type="button" onClick={() => chooseGroups(filteredGroups.map((group) => group.id))}>
+            Select filtered
+          </button>
+          <button type="button" disabled={selectedGroupIds.length === 0} onClick={() => chooseGroups([])}>Clear</button>
+        </div>
         <div className="geometry-entity-tree">
           <div className="geometry-tree-root">
             <Box size={13} />
@@ -376,16 +486,18 @@ export default function GeometryWorkspace({
           {filteredGroups.map((group) => (
             <button
               data-entity-id={group.id}
-              className={viewerSelection.groupId === group.id ? 'selected' : ''}
+              className={selectedGroupIdSet.has(group.id) ? 'selected' : ''}
               key={group.id}
-              onClick={() => setViewerSelection({ groupId: group.id })}
-              onDoubleClick={() => {
-                setViewerSelection({ groupId: group.id })
-                requestCamera('fit-selection')
-              }}
-              title="Select; double-click to fit"
+              onClick={(event) => toggleGroupSelection(
+                group.id,
+                event.ctrlKey || event.metaKey || event.shiftKey,
+              )}
+              title="Select; Ctrl, Cmd, or Shift-click to add/remove"
             >
-              <span className="viewer-color-swatch" style={{ background: group.color }} />
+              <span
+                className="viewer-color-swatch"
+                style={{ background: entityAppearances[group.id]?.color ?? group.color }}
+              />
               <span>{group.name}</span>
               <small className={assignments[group.id] ? 'assigned' : ''}>
                 {assignments[group.id]
@@ -405,11 +517,7 @@ export default function GeometryWorkspace({
               data-entity-id={edge.id}
               key={edge.id}
               onClick={() => setViewerSelection({ groupId: edge.id })}
-              onDoubleClick={() => {
-                setViewerSelection({ groupId: edge.id })
-                requestCamera('fit-selection')
-              }}
-              title="Select edge; double-click to fit"
+              title="Select edge"
             >
               <span className="geometry-edge-mark" />
               <span>{edge.name}</span>
@@ -434,6 +542,7 @@ export default function GeometryWorkspace({
           state={viewerState}
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
+          entityAppearances={entityAppearances}
           clipPlane={clipPlane}
           measurementPoints={measurementPoints}
           onPickPoint={measurementEnabled ? (point) => {
@@ -567,7 +676,13 @@ export default function GeometryWorkspace({
 
         <section className="geometry-selection-card">
           <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
-          {selectedGroup ? (
+          {selectedGroups.length > 1 ? (
+            <dl>
+              <div><dt>Type</dt><dd>Face selection</dd></div>
+              <div><dt>Selected</dt><dd>{selectedGroups.length} faces</dd></div>
+              <div><dt>Triangles</dt><dd>{selectedGroups.reduce((sum, group) => sum + (group.triangles ?? 0), 0).toLocaleString()}</dd></div>
+            </dl>
+          ) : selectedGroup ? (
             <dl>
               <div><dt>Name</dt><dd>{selectedGroup.name}</dd></div>
               <div><dt>ID</dt><dd title={selectedGroup.id}>{selectedGroup.id}</dd></div>
@@ -590,6 +705,48 @@ export default function GeometryWorkspace({
             <p>Select a face or edge in the viewer or model tree to inspect it.</p>
           )}
         </section>
+
+        <details className="geometry-appearance-card geometry-disclosure-card" open>
+          <summary>
+            <span><Palette size={13} /> Appearance library</span>
+            <small>Shared across projects</small>
+          </summary>
+          <div className="geometry-disclosure-content">
+            <label className="geometry-semantic-field">
+              Preset
+              <select value={selectedAppearanceId} onChange={(event) => setSelectedAppearanceId(event.target.value)}>
+                {appearances.map((appearance) => (
+                  <option key={appearance.id} value={appearance.id}>
+                    {appearance.name}{appearance.builtin ? ' · built-in' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="geometry-semantic-field">
+              Name
+              <input value={appearanceName} onChange={(event) => setAppearanceName(event.target.value)} />
+            </label>
+            <div className="geometry-appearance-fields">
+              <label>Color<input aria-label="Appearance color" type="color" value={appearanceColor} onChange={(event) => setAppearanceColor(event.target.value)} /></label>
+              <label>Opacity <strong>{Math.round(appearanceOpacity * 100)}%</strong><input aria-label="Appearance opacity" type="range" min="0.05" max="1" step="0.05" value={appearanceOpacity} onChange={(event) => setAppearanceOpacity(Number(event.target.value))} /></label>
+            </div>
+            <button
+              type="button"
+              className="geometry-appearance-assign"
+              disabled={selectedGroups.length === 0}
+              onClick={applyAppearanceToSelection}
+            >
+              Apply to selected ({selectedGroups.length})
+            </button>
+            <div className="geometry-appearance-actions">
+              <button type="button" onClick={createAppearance}><Plus size={11} /> New</button>
+              <button type="button" onClick={duplicateAppearance}>Duplicate</button>
+              <button type="button" disabled={appearances.find((item) => item.id === selectedAppearanceId)?.builtin} onClick={updateAppearance}><Save size={11} /> Save</button>
+              <button type="button" disabled={appearances.find((item) => item.id === selectedAppearanceId)?.builtin} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
+            </div>
+            <small className="geometry-semantic-safety">Display only. CFD boundary roles remain independent.</small>
+          </div>
+        </details>
 
         <details className="geometry-semantics-card geometry-disclosure-card">
           <summary>
@@ -622,9 +779,9 @@ export default function GeometryWorkspace({
           <div className="geometry-semantic-actions">
             <button
               type="button"
-              disabled={!selectedGroup}
-              onClick={() => selectedGroup && assignGroups([selectedGroup], selectedRole)}
-            >Assign selected</button>
+              disabled={selectedGroups.length === 0}
+              onClick={() => assignGroups(selectedGroups, selectedRole)}
+            >Assign selected ({selectedGroups.length})</button>
             <button
               type="button"
               disabled={filteredGroups.length === 0}

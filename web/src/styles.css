@@ -4077,6 +4077,34 @@ button { color: inherit; }
   font-size: 9px;
 }
 
+.geometry-selection-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px;
+  margin: 0 10px 7px;
+}
+
+.geometry-selection-tools strong {
+  overflow: hidden;
+  color: #697061;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geometry-selection-tools button {
+  padding: 4px 6px;
+  border: 1px solid #d9dbd3;
+  border-radius: 4px;
+  color: #5e6658;
+  background: #fff;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.geometry-selection-tools button:disabled { opacity: .4; cursor: not-allowed; }
+
 .geometry-entity-tree {
   min-height: 0;
   flex: 1;
@@ -4262,6 +4290,7 @@ button { color: inherit; }
 
 .geometry-selection-card,
 .geometry-inspection-card,
+.geometry-appearance-card,
 .geometry-semantics-card,
 .geometry-advanced-card,
 .geometry-health-card {
@@ -4394,6 +4423,85 @@ button { color: inherit; }
 }
 
 .geometry-semantic-field { margin-top: 8px; }
+
+.geometry-semantic-field input[type='text'],
+.geometry-appearance-card .geometry-semantic-field > input {
+  min-height: 27px;
+  padding: 4px 6px;
+  border: 1px solid #d9dbd3;
+  border-radius: 5px;
+  color: #454c40;
+  background: #fff;
+  font-size: 10px;
+}
+
+.geometry-appearance-fields {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.geometry-appearance-fields label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  color: #858b80;
+  font-size: 9px;
+}
+
+.geometry-appearance-fields input[type='color'] {
+  width: 32px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid #d9dbd3;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.geometry-appearance-fields input[type='range'] { grid-column: 1 / -1; width: 100%; }
+.geometry-appearance-fields strong { color: #596154; font: 9px 'DM Mono'; }
+
+.geometry-appearance-assign {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 9px;
+  border: 1px solid #9db53f;
+  border-radius: 5px;
+  color: #2f3b10;
+  background: #bad954;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.geometry-appearance-assign:disabled { opacity: .45; cursor: not-allowed; }
+
+.geometry-appearance-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.geometry-appearance-actions button {
+  display: flex;
+  min-width: 0;
+  min-height: 27px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid #d9dbd3;
+  border-radius: 4px;
+  color: #5e6658;
+  background: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.geometry-appearance-actions button:disabled { opacity: .4; cursor: not-allowed; }
 
 .geometry-semantic-actions {
   display: grid;
