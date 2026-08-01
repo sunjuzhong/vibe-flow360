@@ -19,7 +19,7 @@ function memoryStorage() {
 }
 
 describe('geometry appearance persistence', () => {
-  it('keeps builtins and rejects malformed custom appearances', () => {
+  it('migrates legacy seeds and rejects malformed custom appearances', () => {
     const parsed = parseGeometryAppearanceLibrary(JSON.stringify([
       { id: 'custom', name: 'My style', color: '#123456', opacity: 0.6 },
       { id: 'broken', name: 'Broken', color: 'red', opacity: 4 },
@@ -35,17 +35,34 @@ describe('geometry appearance persistence', () => {
     expect(loadGeometryAppearanceAssignments('geo-2', storage)).toEqual({})
   })
 
-  it('shares custom presets and editable builtin overrides', () => {
+  it('shares regular seeded materials and their edits', () => {
     const storage = memoryStorage()
     const custom = newGeometryAppearance('Shared style', '#334455', 0.8, 'shared')
-    const editedBuiltins = defaultGeometryAppearances.map((appearance) =>
+    const editedSeeds = defaultGeometryAppearances.map((appearance) =>
       appearance.id === 'default-cad' ? { ...appearance, opacity: 0.42 } : appearance,
     )
-    saveGeometryAppearanceLibrary([...editedBuiltins, custom], storage)
+    saveGeometryAppearanceLibrary([...editedSeeds, custom], storage)
     const loaded = loadGeometryAppearanceLibrary(storage)
     expect(loaded).toHaveLength(defaultGeometryAppearances.length + 1)
-    expect(loaded[0]).toMatchObject({ id: 'default-cad', opacity: 0.42, builtin: true })
+    expect(loaded[0]).toEqual({ id: 'default-cad', name: 'Default CAD', color: '#6f8790', opacity: 0.42 })
     expect(loaded.at(-1)).toMatchObject({ id: 'shared', name: 'Shared style' })
+  })
+
+  it('does not recreate a deleted seeded material in version 2 storage', () => {
+    const storage = memoryStorage()
+    saveGeometryAppearanceLibrary(defaultGeometryAppearances.filter((item) => item.id !== 'transparent'), storage)
+    expect(loadGeometryAppearanceLibrary(storage).map((item) => item.id)).toEqual(['default-cad', 'rotating'])
+  })
+
+  it('keeps Surface associations stable when a material name changes', () => {
+    const assignments = { faceA: 'shared-material-id' }
+    const before = buildGeometryEntityAppearances(assignments, [
+      { id: 'shared-material-id', name: 'Old name', color: '#112233', opacity: 0.8 },
+    ])
+    const after = buildGeometryEntityAppearances(assignments, [
+      { id: 'shared-material-id', name: 'Renamed safely', color: '#112233', opacity: 0.8 },
+    ])
+    expect(after).toEqual(before)
   })
 
   it('creates normalized custom appearances', () => {

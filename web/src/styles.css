@@ -4835,6 +4835,27 @@ button { color: inherit; }
   white-space: nowrap;
 }
 
+.geometry-selection-material {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #eff0eb;
+  color: #747b6f;
+  font-size: 10px;
+}
+
+.geometry-selection-material select {
+  width: 100%;
+  min-height: 29px;
+  padding: 4px 6px;
+  border: 1px solid #cfd4c7;
+  border-radius: 5px;
+  color: #424b3d;
+  background: #fff;
+  font-size: 10px;
+}
+
 .geometry-review-panel .geometry-checks {
   display: grid;
   gap: 1px;

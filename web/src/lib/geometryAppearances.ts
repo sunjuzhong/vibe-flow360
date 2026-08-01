@@ -3,7 +3,6 @@ export type GeometryAppearance = {
   name: string
   color: string
   opacity: number
-  builtin?: boolean
 }
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>
@@ -12,9 +11,9 @@ const LIBRARY_KEY = 'vibe-flow360.geometry-appearances.v1'
 const assignmentKey = (resourceId: string) => `vibe-flow360.geometry-appearance-assignments.v1:${resourceId}`
 
 export const defaultGeometryAppearances: GeometryAppearance[] = [
-  { id: 'default-cad', name: 'Default CAD', color: '#6f8790', opacity: 0.9, builtin: true },
-  { id: 'transparent', name: 'Transparent enclosure', color: '#8fb8c8', opacity: 0.28, builtin: true },
-  { id: 'rotating', name: 'Rotating zone', color: '#d59a2d', opacity: 0.78, builtin: true },
+  { id: 'default-cad', name: 'Default CAD', color: '#6f8790', opacity: 0.9 },
+  { id: 'transparent', name: 'Transparent enclosure', color: '#8fb8c8', opacity: 0.28 },
+  { id: 'rotating', name: 'Rotating zone', color: '#d59a2d', opacity: 0.78 },
 ]
 
 function validAppearance(value: unknown): value is GeometryAppearance {
@@ -28,16 +27,23 @@ function validAppearance(value: unknown): value is GeometryAppearance {
 export function parseGeometryAppearanceLibrary(raw: string | null): GeometryAppearance[] {
   if (!raw) return defaultGeometryAppearances
   try {
-    const saved = (JSON.parse(raw) as unknown[])
-      .filter(validAppearance)
-    const builtins = defaultGeometryAppearances.map((preset) => {
-      const override = saved.find((item) => item.id === preset.id)
-      return override ? { ...preset, ...override, builtin: true } : preset
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const versioned = parsed as { version?: number; items?: unknown[] }
+      if (versioned.version === 2 && Array.isArray(versioned.items)) {
+        const items = versioned.items.filter(validAppearance)
+        return items.length > 0 ? items : defaultGeometryAppearances
+      }
+    }
+    const legacy = Array.isArray(parsed) ? parsed.filter(validAppearance) : []
+    const seeded = defaultGeometryAppearances.map((preset) => {
+      const override = legacy.find((item) => item.id === preset.id)
+      return override ? { ...preset, ...override } : preset
     })
-    const custom = saved
-      .filter((item) => !defaultGeometryAppearances.some((preset) => preset.id === item.id))
-      .map((item) => ({ ...item, builtin: false }))
-    return [...builtins, ...custom]
+    const custom = legacy.filter((item) =>
+      !defaultGeometryAppearances.some((preset) => preset.id === item.id),
+    )
+    return [...seeded, ...custom]
   } catch {
     return defaultGeometryAppearances
   }
@@ -51,7 +57,7 @@ export function saveGeometryAppearanceLibrary(
   appearances: GeometryAppearance[],
   storage: StorageLike = window.localStorage,
 ) {
-  storage.setItem(LIBRARY_KEY, JSON.stringify(appearances.map(({ builtin: _builtin, ...item }) => item)))
+  storage.setItem(LIBRARY_KEY, JSON.stringify({ version: 2, items: appearances }))
 }
 
 export function loadGeometryAppearanceAssignments(

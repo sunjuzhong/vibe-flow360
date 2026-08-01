@@ -200,10 +200,17 @@ export default function GeometryWorkspace({
       appearanceAssignments,
       appearances,
       manifest?.groups.map((group) => group.id) ?? [],
+      defaultAppearance?.id,
     ),
-    [appearanceAssignments, appearances, manifest],
+    [appearanceAssignments, appearances, defaultAppearance?.id, manifest],
   )
   const selectedAppearanceNames = new Set(selectedGroups.map((group) => appearanceForGroup(group.id)?.name))
+  const selectedSurfaceAppearanceIds = new Set(
+    selectedGroups.map((group) => appearanceForGroup(group.id)?.id).filter(Boolean),
+  )
+  const selectedSurfaceAppearanceId = selectedSurfaceAppearanceIds.size === 1
+    ? [...selectedSurfaceAppearanceIds][0]
+    : '__mixed__'
 
   useEffect(() => {
     setViewerSelection({ groupId: null })
@@ -238,11 +245,16 @@ export default function GeometryWorkspace({
       : [...selectedGroupIds, groupId])
   }
 
-  const applyAppearanceToSelection = () => {
+  const applyAppearanceToSelection = (appearanceId = selectedAppearanceId) => {
     if (selectedGroups.length === 0) return
     const next = { ...appearanceAssignments }
-    for (const group of selectedGroups) next[group.id] = selectedAppearanceId
+    for (const group of selectedGroups) next[group.id] = appearanceId
     setGeometryAppearanceAssignments(next)
+  }
+
+  const assignSurfaceMaterial = (appearanceId: string) => {
+    setSelectedAppearanceId(appearanceId)
+    applyAppearanceToSelection(appearanceId)
   }
 
   const createAppearance = () => {
@@ -277,15 +289,19 @@ export default function GeometryWorkspace({
 
   const deleteAppearance = () => {
     const current = appearances.find((item) => item.id === selectedAppearanceId)
-    if (!current || current.builtin) return
+    if (!current || appearances.length <= 1) return
     const nextLibrary = appearances.filter((item) => item.id !== current.id)
+    const fallback = nextLibrary[0]
     const nextAssignments = Object.fromEntries(
-      Object.entries(appearanceAssignments).filter(([, appearanceId]) => appearanceId !== current.id),
+      Object.entries(appearanceAssignments).map(([groupId, appearanceId]) => [
+        groupId,
+        appearanceId === current.id ? fallback.id : appearanceId,
+      ]),
     )
     setAppearances(nextLibrary)
     saveGeometryAppearanceLibrary(nextLibrary)
     setGeometryAppearanceAssignments(nextAssignments)
-    setSelectedAppearanceId('default-cad')
+    setSelectedAppearanceId(fallback.id)
   }
 
   const commitAssignments = (next: Record<string, GeometrySemanticAssignment>) => {
@@ -719,6 +735,23 @@ export default function GeometryWorkspace({
           ) : (
             <p>Select a face or edge in the viewer or model tree to inspect it.</p>
           )}
+          {selectedGroups.length > 0 && (
+            <label className="geometry-selection-material">
+              Surface material
+              <select
+                aria-label="Surface material for selected faces"
+                value={selectedSurfaceAppearanceId}
+                onChange={(event) => assignSurfaceMaterial(event.target.value)}
+              >
+                {selectedSurfaceAppearanceId === '__mixed__' && (
+                  <option value="__mixed__" disabled>Mixed materials</option>
+                )}
+                {appearances.map((appearance) => (
+                  <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </section>
 
         <details className="geometry-appearance-card geometry-disclosure-card" open>
@@ -728,12 +761,10 @@ export default function GeometryWorkspace({
           </summary>
           <div className="geometry-disclosure-content">
             <label className="geometry-semantic-field">
-              Preset
+              Material record
               <select value={selectedAppearanceId} onChange={(event) => setSelectedAppearanceId(event.target.value)}>
                 {appearances.map((appearance) => (
-                  <option key={appearance.id} value={appearance.id}>
-                    {appearance.name}{appearance.builtin ? ' · built-in' : ''}
-                  </option>
+                  <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
                 ))}
               </select>
             </label>
@@ -752,18 +783,17 @@ export default function GeometryWorkspace({
               type="button"
               className="geometry-appearance-assign"
               disabled={selectedGroups.length === 0}
-              onClick={applyAppearanceToSelection}
+              onClick={() => applyAppearanceToSelection()}
             >
               Apply material to selected ({selectedGroups.length})
             </button>
             <div className="geometry-appearance-actions">
               <button type="button" onClick={createAppearance}><Plus size={11} /> New</button>
               <button type="button" onClick={duplicateAppearance}>Duplicate</button>
-              <button type="button" disabled={appearances.find((item) => item.id === selectedAppearanceId)?.builtin} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
+              <button type="button" disabled={appearances.length <= 1} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
             </div>
             <small className="geometry-semantic-safety">
-              Changes auto-save and update every bound UVF surface immediately.
-              {selectedAppearance?.builtin ? ' Built-in material IDs are protected from deletion.' : ''}
+              Material ID: {selectedAppearance?.id}. Names are editable labels; Surface links use the stable ID.
             </small>
           </div>
         </details>
