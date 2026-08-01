@@ -21,10 +21,17 @@ type MeshPreview struct {
 	Format      string      `json:"format"`
 	BoundingBox BoundingBox `json:"bounding_box"`
 	Groups      []MeshGroup `json:"groups"`
+	Edges       []MeshEdge  `json:"edges,omitempty"`
 	Vertices    int         `json:"vertices"`
 	Elements    int         `json:"elements"`
 	DownloadURL string      `json:"download_url,omitempty"`
 	Warnings    []string    `json:"warnings,omitempty"`
+}
+
+type MeshEdge struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Segments int    `json:"segments,omitempty"`
 }
 
 type BoundingBox struct {
@@ -93,7 +100,6 @@ func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL st
 		Format:   "flow360-uvf",
 		Groups:   []MeshGroup{},
 	}
-	groupIndex := 0
 	boundsSet := false
 	for _, entry := range entries {
 		switch entry.Type {
@@ -136,11 +142,23 @@ func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL st
 			preview.Groups = append(preview.Groups, MeshGroup{
 				ID:        entry.ID,
 				Name:      name,
-				Color:     colorPalette[groupIndex%len(colorPalette)],
+				Color:     "#6f8790",
 				Visible:   true,
 				Triangles: triangles,
 			})
-			groupIndex++
+		case "Edge":
+			segments := 0
+			for _, location := range entry.Properties.BufferLocations.Indices {
+				points := (location.EndIndex - location.StartIndex) / 3
+				if points > 1 {
+					segments += points - 1
+				}
+			}
+			name := entry.Name
+			if strings.TrimSpace(name) == "" {
+				name = entry.ID
+			}
+			preview.Edges = append(preview.Edges, MeshEdge{ID: entry.ID, Name: name, Segments: segments})
 		}
 	}
 	if preview.AssetURL == "" || len(preview.Groups) == 0 || preview.Vertices == 0 {

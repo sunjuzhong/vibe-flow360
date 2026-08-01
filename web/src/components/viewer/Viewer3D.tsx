@@ -18,6 +18,12 @@ export type MeshGroupData = {
   vertices?: number
 }
 
+export type MeshEdgeData = {
+  id: string
+  name: string
+  segments?: number
+}
+
 export type BoundingBoxData = {
   min: [number, number, number]
   max: [number, number, number]
@@ -28,6 +34,7 @@ export type ViewerManifest = {
   format: string
   bounding_box: BoundingBoxData
   groups: MeshGroupData[]
+  edges?: MeshEdgeData[]
   vertices: number
   elements: number
   download_url?: string
@@ -195,9 +202,6 @@ export function Viewer3D({
     dir.position.set(5, 10, 7)
     scene.add(dir)
 
-    const grid = new THREE.GridHelper(10, 20, 0xc4c7bb, 0xd9dbd2)
-    scene.add(grid)
-
     sceneRef.current = scene
     cameraRef.current = camera
     rendererRef.current = renderer
@@ -348,6 +352,8 @@ export function Viewer3D({
 
     const box = new THREE.Box3()
     if (cameraCommand.type === 'fit-selection' && selection?.groupId) {
+      const selectedEntity = uvfAssetRef.current?.getEntityObject(selection.groupId)
+      if (selectedEntity?.visible) box.expandByObject(selectedEntity)
       for (const mesh of meshesRef.current.values()) {
         if (mesh.userData.groupId === selection.groupId && mesh.visible) {
           box.expandByObject(mesh)
@@ -412,7 +418,7 @@ export function Viewer3D({
   }, [manifest, state.status, updateGeometry])
 
   useEffect(() => {
-    if (!selection || !meshesRef.current.size) return
+    if (!selection) return
     for (const [, mesh] of meshesRef.current) {
       const groupId = String(mesh.userData.groupId ?? '')
       const mat = mesh.material as THREE.MeshPhongMaterial
@@ -426,7 +432,29 @@ export function Viewer3D({
         mat.emissiveIntensity = 0
       }
     }
-  }, [selection, manifest, entityVisibility, groupVisibility])
+    const asset = uvfAssetRef.current
+    if (!asset) return
+    asset.object.traverse((object) => {
+      if (!(object instanceof THREE.Line)) return
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.forEach((material) => {
+        if (!(material instanceof THREE.LineBasicMaterial)) return
+        material.color.set(0x30352d)
+        material.opacity = 0.72
+        material.needsUpdate = true
+      })
+    })
+    asset.getEntityObject(selection.groupId ?? '')?.traverse((object) => {
+      if (!(object instanceof THREE.Line)) return
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.forEach((material) => {
+        if (!(material instanceof THREE.LineBasicMaterial)) return
+        material.color.set(0xd59a2d)
+        material.opacity = 1
+        material.needsUpdate = true
+      })
+    })
+  }, [assetState.status, selection, manifest, entityVisibility, groupVisibility])
 
   useEffect(() => {
     if (!manifest) return

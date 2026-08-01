@@ -182,6 +182,14 @@ func TestGeometryUVFPreviewBuildsFaceGroupsAndBounds(t *testing.T) {
 			"properties":{"bufferLocations":{"indices":[
 				{"startIndex":0,"endIndex":6}
 			]}}
+		},
+		{
+			"id":"edge-1",
+			"name":"Leading edge",
+			"type":"Edge",
+			"properties":{"bufferLocations":{"indices":[
+				{"startIndex":0,"endIndex":9}
+			]}}
 		}
 	]`)
 	preview, err := GeometryUVFPreview(
@@ -201,5 +209,11 @@ func TestGeometryUVFPreviewBuildsFaceGroupsAndBounds(t *testing.T) {
 	}
 	if len(preview.Groups) != 1 || preview.Groups[0].ID != "face-1" || preview.Groups[0].Triangles != 2 {
 		t.Fatalf("unexpected groups %#v", preview.Groups)
+	}
+	if preview.Groups[0].Color != "#6f8790" {
+		t.Fatalf("Geometry faces should share one default color: %#v", preview.Groups)
+	}
+	if len(preview.Edges) != 1 || preview.Edges[0].ID != "edge-1" || preview.Edges[0].Segments != 2 {
+		t.Fatalf("unexpected edges %#v", preview.Edges)
 	}
 }

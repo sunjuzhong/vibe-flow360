@@ -4135,6 +4135,14 @@ button { color: inherit; }
   text-transform: capitalize;
 }
 
+.geometry-edge-root { margin-top: 5px; border-top: 1px solid #e5e7df; }
+.geometry-edge-mark {
+  width: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: #59636a;
+}
+
 .geometry-empty-list {
   padding: 22px 10px;
   color: #999e95;
@@ -4757,6 +4765,42 @@ button { color: inherit; }
   min-height: 35px;
   margin-top: 9px;
 }
+
+/* Geometry review is information-dense, but must remain readable at normal zoom. */
+.geometry-review-workspace .geometry-panel-heading span { font-size: 10px; }
+.geometry-review-workspace .geometry-panel-heading strong { font-size: 14px; }
+.geometry-review-workspace .geometry-entity-search input,
+.geometry-review-workspace .geometry-tree-root,
+.geometry-review-workspace .geometry-entity-tree > button,
+.geometry-review-workspace .geometry-empty-list,
+.geometry-review-workspace .geometry-semantic-warning span,
+.geometry-review-workspace .geometry-semantic-warning strong { font-size: 10px; }
+.geometry-review-workspace .geometry-tree-root span,
+.geometry-review-workspace .geometry-entity-tree > button small { font-size: 9px; }
+.geometry-review-workspace .geometry-readiness-card > p,
+.geometry-review-workspace .geometry-summary-grid span,
+.geometry-review-workspace .geometry-selection-card > p,
+.geometry-review-workspace .geometry-selection-card dt,
+.geometry-review-workspace .geometry-selection-card dd,
+.geometry-review-workspace .geometry-disclosure-card > summary > span,
+.geometry-review-workspace .geometry-clip-controls label,
+.geometry-review-workspace .geometry-semantic-field,
+.geometry-review-workspace .geometry-clip-controls select,
+.geometry-review-workspace .geometry-semantic-field select,
+.geometry-review-workspace .geometry-measurement-result,
+.geometry-review-workspace .geometry-semantic-actions button,
+.geometry-review-workspace .geometry-semantic-plan,
+.geometry-review-workspace .geometry-advanced-intro,
+.geometry-review-workspace .geometry-diagnostic-run,
+.geometry-review-workspace .geometry-version-compare > button,
+.geometry-review-workspace .geometry-review-panel .geometry-checks strong,
+.geometry-review-workspace .geometry-review-panel .geometry-checks small,
+.geometry-review-workspace .geometry-review-panel .geometry-checks > div > button { font-size: 10px; }
+.geometry-review-workspace .geometry-readiness-counts span,
+.geometry-review-workspace .geometry-summary-grid strong,
+.geometry-review-workspace .geometry-disclosure-card > summary > small,
+.geometry-review-workspace .geometry-semantic-progress span,
+.geometry-review-workspace .geometry-semantic-safety { font-size: 9px; }
 
 @media (max-width: 1100px) {
   .project-canvas > .geometry-review-workspace {
