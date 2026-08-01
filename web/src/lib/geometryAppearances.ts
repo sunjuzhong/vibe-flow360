@@ -70,6 +70,17 @@ export function saveGeometryAppearanceAssignments(
   storage.setItem(assignmentKey(resourceId), JSON.stringify(assignments))
 }
 
+export function buildGeometryEntityAppearances(
+  assignments: Record<string, string>,
+  appearances: GeometryAppearance[],
+) {
+  const byId = new Map(appearances.map((appearance) => [appearance.id, appearance]))
+  return Object.fromEntries(Object.entries(assignments).flatMap(([groupId, appearanceId]) => {
+    const appearance = byId.get(appearanceId)
+    return appearance ? [[groupId, { color: appearance.color, opacity: appearance.opacity }]] : []
+  }))
+}
+
 export function newGeometryAppearance(
   name: string,
   color: string,

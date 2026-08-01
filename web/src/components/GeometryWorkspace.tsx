@@ -12,7 +12,6 @@ import {
   Palette,
   Plus,
   Ruler,
-  Save,
   ScanLine,
   Scissors,
   Search,
@@ -51,6 +50,7 @@ import {
 } from '../lib/geometrySemantics'
 import { resourceStatus } from './ResourceDetailPanel'
 import {
+  buildGeometryEntityAppearances,
   loadGeometryAppearanceAssignments,
   loadGeometryAppearanceLibrary,
   newGeometryAppearance,
@@ -122,9 +122,6 @@ export default function GeometryWorkspace({
   const [appearanceAssignments, setAppearanceAssignments] = useState<Record<string, string>>({})
   const [appearances, setAppearances] = useState(loadGeometryAppearanceLibrary)
   const [selectedAppearanceId, setSelectedAppearanceId] = useState('default-cad')
-  const [appearanceName, setAppearanceName] = useState('Default CAD')
-  const [appearanceColor, setAppearanceColor] = useState('#6f8790')
-  const [appearanceOpacity, setAppearanceOpacity] = useState(0.9)
   const [assignmentHistory, setAssignmentHistory] = useState<Array<Record<string, GeometrySemanticAssignment>>>([])
   const [semanticMessage, setSemanticMessage] = useState('')
   const [semanticBusy, setSemanticBusy] = useState(false)
@@ -190,12 +187,19 @@ export default function GeometryWorkspace({
   const readiness = readinessCopy[review.readiness]
   const assignmentList = Object.values(assignments).sort((a, b) => a.groupName.localeCompare(b.groupName))
   const unassignedCount = Math.max(0, (manifest?.groups.length ?? 0) - assignmentList.length)
-  const entityAppearances = useMemo(() => Object.fromEntries(
-    Object.entries(appearanceAssignments).flatMap(([groupId, appearanceId]) => {
-      const appearance = appearances.find((item) => item.id === appearanceId)
-      return appearance ? [[groupId, { color: appearance.color, opacity: appearance.opacity }]] : []
-    }),
-  ), [appearanceAssignments, appearances])
+  const appearanceById = useMemo(
+    () => new Map(appearances.map((appearance) => [appearance.id, appearance])),
+    [appearances],
+  )
+  const defaultAppearance = appearanceById.get('default-cad') ?? appearances[0]
+  const selectedAppearance = appearanceById.get(selectedAppearanceId) ?? defaultAppearance
+  const appearanceForGroup = (groupId: string) =>
+    appearanceById.get(appearanceAssignments[groupId]) ?? defaultAppearance
+  const entityAppearances = useMemo(
+    () => buildGeometryEntityAppearances(appearanceAssignments, appearances),
+    [appearanceAssignments, appearances],
+  )
+  const selectedAppearanceNames = new Set(selectedGroups.map((group) => appearanceForGroup(group.id)?.name))
 
   useEffect(() => {
     setViewerSelection({ groupId: null })
@@ -210,14 +214,6 @@ export default function GeometryWorkspace({
     setPendingFocusEntityIds([])
     setAppearanceAssignments(resourceKey ? loadGeometryAppearanceAssignments(resourceKey) : {})
   }, [resourceKey])
-
-  useEffect(() => {
-    const appearance = appearances.find((item) => item.id === selectedAppearanceId)
-    if (!appearance) return
-    setAppearanceName(appearance.name)
-    setAppearanceColor(appearance.color)
-    setAppearanceOpacity(appearance.opacity)
-  }, [appearances, selectedAppearanceId])
 
   const setGeometryAppearanceAssignments = (next: Record<string, string>) => {
     setAppearanceAssignments(next)
@@ -246,25 +242,29 @@ export default function GeometryWorkspace({
   }
 
   const createAppearance = () => {
-    const appearance = newGeometryAppearance(appearanceName, appearanceColor, appearanceOpacity)
+    const appearance = newGeometryAppearance('New display material', '#6f8790', 0.9)
     const next = [...appearances, appearance]
     setAppearances(next)
     saveGeometryAppearanceLibrary(next)
     setSelectedAppearanceId(appearance.id)
   }
 
-  const updateAppearance = () => {
-    const current = appearances.find((item) => item.id === selectedAppearanceId)
-    if (!current || current.builtin) return
-    const next = appearances.map((item) => item.id === current.id
-      ? { ...item, name: appearanceName.trim() || item.name, color: appearanceColor, opacity: appearanceOpacity }
+  const updateSelectedAppearance = (patch: Partial<{ name: string; color: string; opacity: number }>) => {
+    if (!selectedAppearance || selectedAppearance.builtin) return
+    const next = appearances.map((item) => item.id === selectedAppearance.id
+      ? { ...item, ...patch }
       : item)
     setAppearances(next)
     saveGeometryAppearanceLibrary(next)
   }
 
   const duplicateAppearance = () => {
-    const appearance = newGeometryAppearance(`${appearanceName} copy`, appearanceColor, appearanceOpacity)
+    if (!selectedAppearance) return
+    const appearance = newGeometryAppearance(
+      `${selectedAppearance.name} copy`,
+      selectedAppearance.color,
+      selectedAppearance.opacity,
+    )
     const next = [...appearances, appearance]
     setAppearances(next)
     saveGeometryAppearanceLibrary(next)
@@ -498,7 +498,12 @@ export default function GeometryWorkspace({
                 className="viewer-color-swatch"
                 style={{ background: entityAppearances[group.id]?.color ?? group.color }}
               />
-              <span>{group.name}</span>
+              <span className="geometry-face-name">
+                <span>{group.name}</span>
+                <small title={`Display material: ${appearanceForGroup(group.id)?.name ?? 'Default CAD'}`}>
+                  {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
+                </small>
+              </span>
               <small className={assignments[group.id] ? 'assigned' : ''}>
                 {assignments[group.id]
                   ? assignments[group.id].role
@@ -681,6 +686,11 @@ export default function GeometryWorkspace({
               <div><dt>Type</dt><dd>Face selection</dd></div>
               <div><dt>Selected</dt><dd>{selectedGroups.length} faces</dd></div>
               <div><dt>Triangles</dt><dd>{selectedGroups.reduce((sum, group) => sum + (group.triangles ?? 0), 0).toLocaleString()}</dd></div>
+              <div><dt>Display material</dt><dd>
+                {selectedAppearanceNames.size === 1
+                  ? [...selectedAppearanceNames][0]
+                  : `${selectedAppearanceNames.size} materials`}
+              </dd></div>
             </dl>
           ) : selectedGroup ? (
             <dl>
@@ -688,6 +698,7 @@ export default function GeometryWorkspace({
               <div><dt>ID</dt><dd title={selectedGroup.id}>{selectedGroup.id}</dd></div>
               <div><dt>Triangles</dt><dd>{selectedGroup.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
               <div><dt>Vertices</dt><dd>{selectedGroup.vertices?.toLocaleString() ?? 'Not reported'}</dd></div>
+              <div><dt>Display material</dt><dd>{appearanceForGroup(selectedGroup.id)?.name ?? 'Default CAD'}</dd></div>
               <div><dt>CFD semantics</dt><dd>
                 {assignments[selectedGroup.id]
                   ? `${assignments[selectedGroup.id].role} · ${assignments[selectedGroup.id].provenance}`
@@ -708,7 +719,7 @@ export default function GeometryWorkspace({
 
         <details className="geometry-appearance-card geometry-disclosure-card" open>
           <summary>
-            <span><Palette size={13} /> Appearance library</span>
+            <span><Palette size={13} /> Display material</span>
             <small>Shared across projects</small>
           </summary>
           <div className="geometry-disclosure-content">
@@ -724,11 +735,15 @@ export default function GeometryWorkspace({
             </label>
             <label className="geometry-semantic-field">
               Name
-              <input value={appearanceName} onChange={(event) => setAppearanceName(event.target.value)} />
+              <input
+                value={selectedAppearance?.name ?? ''}
+                disabled={selectedAppearance?.builtin}
+                onChange={(event) => updateSelectedAppearance({ name: event.target.value })}
+              />
             </label>
             <div className="geometry-appearance-fields">
-              <label>Color<input aria-label="Appearance color" type="color" value={appearanceColor} onChange={(event) => setAppearanceColor(event.target.value)} /></label>
-              <label>Opacity <strong>{Math.round(appearanceOpacity * 100)}%</strong><input aria-label="Appearance opacity" type="range" min="0.05" max="1" step="0.05" value={appearanceOpacity} onChange={(event) => setAppearanceOpacity(Number(event.target.value))} /></label>
+              <label>Color<input aria-label="Appearance color" type="color" value={selectedAppearance?.color ?? '#6f8790'} disabled={selectedAppearance?.builtin} onInput={(event) => updateSelectedAppearance({ color: event.currentTarget.value })} /></label>
+              <label>Opacity <strong>{Math.round((selectedAppearance?.opacity ?? 0.9) * 100)}%</strong><input aria-label="Appearance opacity" type="range" min="0.05" max="1" step="0.05" value={selectedAppearance?.opacity ?? 0.9} disabled={selectedAppearance?.builtin} onInput={(event) => updateSelectedAppearance({ opacity: Number(event.currentTarget.value) })} /></label>
             </div>
             <button
               type="button"
@@ -736,15 +751,18 @@ export default function GeometryWorkspace({
               disabled={selectedGroups.length === 0}
               onClick={applyAppearanceToSelection}
             >
-              Apply to selected ({selectedGroups.length})
+              Apply material to selected ({selectedGroups.length})
             </button>
             <div className="geometry-appearance-actions">
               <button type="button" onClick={createAppearance}><Plus size={11} /> New</button>
               <button type="button" onClick={duplicateAppearance}>Duplicate</button>
-              <button type="button" disabled={appearances.find((item) => item.id === selectedAppearanceId)?.builtin} onClick={updateAppearance}><Save size={11} /> Save</button>
               <button type="button" disabled={appearances.find((item) => item.id === selectedAppearanceId)?.builtin} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
             </div>
-            <small className="geometry-semantic-safety">Display only. CFD boundary roles remain independent.</small>
+            <small className="geometry-semantic-safety">
+              {selectedAppearance?.builtin
+                ? 'Built-in material is read-only. Duplicate it to customize.'
+                : 'Changes auto-save and update every bound UVF surface immediately.'}
+            </small>
           </div>
         </details>
 

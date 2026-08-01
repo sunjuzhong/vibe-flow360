@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildGeometryEntityAppearances,
   defaultGeometryAppearances,
   loadGeometryAppearanceLibrary,
   loadGeometryAppearanceAssignments,
@@ -46,6 +47,21 @@ describe('geometry appearance persistence', () => {
   it('creates normalized custom appearances', () => {
     expect(newGeometryAppearance('  Steel look  ', '#abcdef', 0.7, 'appearance-1')).toEqual({
       id: 'appearance-1', name: 'Steel look', color: '#abcdef', opacity: 0.7,
+    })
+  })
+
+  it('reactively derives every face bound to a changed appearance', () => {
+    const assignments = { faceA: 'shared', faceB: 'shared' }
+    const before = buildGeometryEntityAppearances(assignments, [
+      { id: 'shared', name: 'Shared', color: '#112233', opacity: 0.8 },
+    ])
+    const after = buildGeometryEntityAppearances(assignments, [
+      { id: 'shared', name: 'Shared', color: '#aabbcc', opacity: 0.35 },
+    ])
+    expect(before.faceA).toEqual({ color: '#112233', opacity: 0.8 })
+    expect(after).toEqual({
+      faceA: { color: '#aabbcc', opacity: 0.35 },
+      faceB: { color: '#aabbcc', opacity: 0.35 },
     })
   })
 })
