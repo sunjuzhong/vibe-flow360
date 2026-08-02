@@ -68,6 +68,13 @@ export function reduceSurfaceMeshReviewState(
           ? state.selection
           : { groupId: null },
         visibility: Object.fromEntries(action.groups.map((group) => [group.id, group.visible])),
+        qualityFields: [],
+        selectedField: null,
+        range: null,
+        histogram: null,
+        extrema: null,
+        probe: null,
+        focusTarget: null,
       }
     case 'mode':
       return { ...state, mode: action.mode, probe: action.mode === 'quality' ? state.probe : null }
@@ -85,7 +92,6 @@ export function reduceSurfaceMeshReviewState(
       }
     case 'fields': {
       const selected = action.fields.find((field) => field.name === state.selectedField)
-        ?? action.fields[0]
         ?? null
       return {
         ...state,
