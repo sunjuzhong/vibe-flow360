@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility } from '.'
+import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('decodes indexed faces and edge positions', () => {
@@ -293,6 +293,10 @@ describe('Flow360 UVF Three.js library', () => {
       min: { value: 0, entityId: 'face-1', position: [0, 0, 0] },
       max: { value: 1, entityId: 'face-1', position: [0, 1, 0] },
     })
+    setWireframeOverlay(asset, true)
+    applyFieldColoring(asset, 'pressure', 'viridis')
+    expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material.wireframe).toBe(true)
+    expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material.vertexColors).toBe(true)
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
     asset.dispose()

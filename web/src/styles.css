@@ -1369,6 +1369,12 @@ button { color: inherit; }
   gap: 6px;
   font-weight: 600;
 }
+.viewer-field-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .viewer-field-label select {
   font-size: 9px;
   padding: 2px 4px;
@@ -1376,6 +1382,20 @@ button { color: inherit; }
   border-radius: 4px;
   background: #fff;
   color: #3f443a;
+}
+.viewer-field-wire-toggle {
+  padding: 3px 7px;
+  border: 1px solid #d5d7ce;
+  border-radius: 4px;
+  background: #fff;
+  color: #545b4c;
+  font: 600 8px 'DM Mono';
+  cursor: pointer;
+}
+.viewer-field-wire-toggle.active {
+  border-color: #788f1f;
+  color: #596d12;
+  background: #eff8ce;
 }
 .viewer-colormap-bar {
   display: flex;

@@ -13,6 +13,7 @@ export {
   setGroupVisibility,
 } from './loader'
 export { sampleColormap, applyScalarField, createColormapTexture, listColormaps, type ColormapName } from './colormap'
+export { canUseLogFieldScale, formatFieldRange, formatFieldValue, normalizeFieldValue, resolveFieldScale } from './fieldScale'
 export { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 export type {
   UVFAsset,
@@ -28,6 +29,8 @@ export type {
   UVFFieldHistogramBin,
   UVFFieldProbe,
   UVFFieldInfo,
+  UVFFieldScale,
+  UVFResolvedFieldScale,
   UVFLoadProgress,
   UVFLOD,
 } from './types'

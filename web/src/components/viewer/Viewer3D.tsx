@@ -4,8 +4,8 @@ import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { UVFLoader, applyFieldColoring, createFieldHistogram, findFieldExtrema, probeFieldAtIntersection, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
-import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import { fitPerspectiveCameraToObject } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
@@ -142,6 +142,7 @@ export function Viewer3D({
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
   const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
   const [colormap, setColormap] = useState<ColormapName>('viridis')
+  const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
   const [groupVisibility, setGroupVisibilityState] = useState<Record<string, boolean>>({})
@@ -157,6 +158,12 @@ export function Viewer3D({
   const displayedFields = fieldNames
     ? availableFields.filter((field) => fieldNames.includes(field.name))
     : availableFields
+  const activeField = displayedFields.find((field) => field.name === selectedField)
+  const activeFieldRange = activeField ? formatFieldRange(activeField.min, activeField.max) : null
+  const resolvedFieldScale = activeField
+    ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
+    : 'linear'
+  const effectiveWireframe = wireframe ?? wireframeOn
   const manifestEntityVisibility = useMemo(() => [
     ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
     ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
@@ -677,9 +684,12 @@ export function Viewer3D({
 
   useEffect(() => {
     if (uvfAssetRef.current) {
-      applyFieldColoring(uvfAssetRef.current, selectedField, colormap, { range: fieldRange })
+      applyFieldColoring(uvfAssetRef.current, selectedField, colormap, {
+        range: fieldRange,
+        scale: resolvedFieldScale,
+      })
     }
-  }, [assetState.status, selectedField, colormap, fieldRange])
+  }, [assetState.status, selectedField, colormap, fieldRange, resolvedFieldScale])
 
   useEffect(() => {
     if (uvfAssetRef.current) {
@@ -711,13 +721,13 @@ export function Viewer3D({
 
   useEffect(() => {
     if (uvfAssetRef.current) {
-      setWireframeOverlay(uvfAssetRef.current, wireframe ?? wireframeOn)
+      setWireframeOverlay(uvfAssetRef.current, effectiveWireframe)
     }
-  }, [wireframe, wireframeOn])
+  }, [effectiveWireframe])
 
   const handleWireframeToggle = () => {
-    const next = !wireframeOn
-    setWireframeOn(next)
+    const next = !effectiveWireframe
+    if (wireframe === undefined) setWireframeOn(next)
     onWireframeChange?.(next)
   }
 
@@ -757,10 +767,10 @@ export function Viewer3D({
           <span>{assetStats.faces} faces</span>
           <span>{assetStats.edges} edges</span>
           <button
-            className={`viewer-wireframe-toggle ${wireframeOn ? 'active' : ''}`}
+            className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
             onClick={handleWireframeToggle}
             aria-label="Toggle wireframe overlay"
-            aria-pressed={wireframeOn}
+            aria-pressed={effectiveWireframe}
             title="Toggle wireframe"
           >
             Wire
@@ -781,35 +791,59 @@ export function Viewer3D({
               <option value="">None</option>
               {displayedFields.map((f) => (
                 <option key={f.name} value={f.name}>
-                  {f.name} ({f.kind}, {f.min.toFixed(2)}–{f.max.toFixed(2)})
+                  {f.name} ({f.kind}, {formatFieldRange(f.min, f.max).join('–')})
                 </option>
               ))}
             </select>
           </label>
           {selectedField && (
-            <label className="viewer-field-label">
-              Colormap:
-              <select
-                value={colormap}
-                onChange={(e) => setColormap(e.target.value as ColormapName)}
+            <div className="viewer-field-controls">
+              <label className="viewer-field-label">
+                Colormap:
+                <select
+                  value={colormap}
+                  onChange={(e) => setColormap(e.target.value as ColormapName)}
+                >
+                  {colormaps.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="viewer-field-label">
+                Scale:
+                <select
+                  value={fieldScale}
+                  onChange={(e) => setFieldScale(e.target.value as UVFFieldScale)}
+                >
+                  <option value="auto">Auto ({resolvedFieldScale === 'log' ? 'Log10' : 'Linear'})</option>
+                  <option value="linear">Linear</option>
+                  <option value="log" disabled={!activeField || !canUseLogFieldScale(activeField.min, activeField.max)}>
+                    Log10
+                  </option>
+                </select>
+              </label>
+              <button
+                className={`viewer-field-wire-toggle ${effectiveWireframe ? 'active' : ''}`}
+                type="button"
+                onClick={handleWireframeToggle}
+                aria-pressed={effectiveWireframe}
+                title="Overlay mesh edges on the field colors"
               >
-                {colormaps.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </label>
+                Wire overlay
+              </button>
+            </div>
           )}
           {selectedField && (
             <div className="viewer-colormap-bar">
               <span className="viewer-colormap-min">
-                {displayedFields.find((f) => f.name === selectedField)?.min.toFixed(2)}
+                {activeFieldRange?.[0] ?? '—'}
               </span>
               <div
                 className="viewer-colormap-gradient"
                 style={{ background: buildGradientCSS(colormap) }}
               />
               <span className="viewer-colormap-max">
-                {displayedFields.find((f) => f.name === selectedField)?.max.toFixed(2)}
+                {activeFieldRange?.[1] ?? '—'}
               </span>
             </div>
           )}

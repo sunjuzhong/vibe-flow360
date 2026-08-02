@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { sampleColormap, type ColormapName } from './colormap'
+import { normalizeFieldValue } from './fieldScale'
 import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
@@ -317,7 +318,6 @@ export function applyFieldColoring(
         const vertexCount = positionAttr.count
         const dimension = Math.max(1, field.dimension ?? fieldSection.length / vertexCount)
         const colors = new Float32Array(vertexCount * 3)
-        const range = field.max - field.min || 1
         const selectedRange = normalizeRange(options.range)
         for (let i = 0; i < vertexCount; i++) {
           const value = field.kind === 'vector'
@@ -329,7 +329,7 @@ export function applyFieldColoring(
             colors[i * 3 + 1] = outside[1]
             colors[i * 3 + 2] = outside[2]
           } else {
-            const t = (value - field.min) / range
+            const t = normalizeFieldValue(value, field.min, field.max, options.scale)
             const color = sampleColormap(t, colormap)
             colors[i * 3] = color.r
             colors[i * 3 + 1] = color.g

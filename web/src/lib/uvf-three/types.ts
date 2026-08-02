@@ -88,9 +88,13 @@ export type UVFFieldHistogram = {
   bins: UVFFieldHistogramBin[]
 }
 
+export type UVFFieldScale = 'auto' | 'linear' | 'log'
+export type UVFResolvedFieldScale = Exclude<UVFFieldScale, 'auto'>
+
 export type UVFFieldColorOptions = {
   range?: [number, number] | null
   outsideColor?: [number, number, number]
+  scale?: UVFResolvedFieldScale
 }
 
 export type UVFFieldProbe = {
