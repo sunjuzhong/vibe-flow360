@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
 import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
-import { fitPerspectiveCameraToObject } from '../../lib/viewerCamera'
+import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
 
@@ -130,6 +130,7 @@ export function Viewer3D({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const cameraBoundsRadiusRef = useRef<number | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
@@ -186,6 +187,16 @@ export function Viewer3D({
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
     onSelectedFieldChange?.(field)
   }
+
+  const fitCameraToObject = useCallback((
+    camera: THREE.PerspectiveCamera,
+    controls: OrbitControls,
+    object: THREE.Object3D,
+  ) => {
+    const fit = fitPerspectiveCameraToObject(camera, controls, object)
+    cameraBoundsRadiusRef.current = fit?.radius ?? null
+    return fit
+  }, [])
 
   useEffect(() => {
     setGroupVisibilityState(Object.fromEntries(
@@ -316,9 +327,9 @@ export function Viewer3D({
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (camera && controls) {
-      fitPerspectiveCameraToObject(camera, controls, root)
+      fitCameraToObject(camera, controls, root)
     }
-  }, [])
+  }, [fitCameraToObject])
 
   useEffect(() => {
     const container = containerRef.current
@@ -329,8 +340,13 @@ export function Viewer3D({
     let rafId: number
     const animate = () => {
       rafId = requestAnimationFrame(animate)
-      renderer.render(scene, cameraRef.current!)
-      controlsRef.current?.update()
+      const camera = cameraRef.current
+      const controls = controlsRef.current
+      controls?.update()
+      if (camera && controls && cameraBoundsRadiusRef.current) {
+        updatePerspectiveCameraClipping(camera, controls.target, cameraBoundsRadiusRef.current)
+      }
+      if (camera) renderer.render(scene, camera)
     }
     animate()
 
@@ -351,9 +367,9 @@ export function Viewer3D({
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (asset && camera && controls) {
-      fitPerspectiveCameraToObject(camera, controls, asset)
+      fitCameraToObject(camera, controls, asset)
     }
-  }, [])
+  }, [fitCameraToObject])
 
   useEffect(() => {
     if (!cameraCommand || assetState.status !== 'ready') return
@@ -363,7 +379,7 @@ export function Viewer3D({
     if (!asset || !camera || !controls) return
 
     if (cameraCommand.type === 'fit') {
-      fitPerspectiveCameraToObject(camera, controls, asset)
+      fitCameraToObject(camera, controls, asset)
       return
     }
 
@@ -398,13 +414,12 @@ export function Viewer3D({
     camera.up.set(0, 0, 1)
     if (cameraCommand.type === 'z') camera.up.set(0, 1, 0)
     camera.position.copy(center).add(direction.multiplyScalar(distance))
-    camera.near = Math.max(distance / 1000, 0.0001)
-    camera.far = Math.max(distance * 100, 100)
-    camera.updateProjectionMatrix()
     controls.target.copy(center)
+    cameraBoundsRadiusRef.current = radius
+    configurePerspectiveCameraForBounds(camera, controls, radius, distance)
     camera.lookAt(center)
     controls.update()
-  }, [assetState.status, cameraCommand, selection])
+  }, [assetState.status, cameraCommand, fitCameraToObject, selection])
 
   useViewerViewport({
     containerRef,

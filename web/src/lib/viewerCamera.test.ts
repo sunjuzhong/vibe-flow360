@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { fitPerspectiveCameraToObject, resizePerspectiveViewport } from './viewerCamera'
+import { fitPerspectiveCameraToObject, resizePerspectiveViewport, updatePerspectiveCameraClipping } from './viewerCamera'
 
 function createFixture(aspect: number) {
   const camera = new THREE.PerspectiveCamera(45, aspect, 0.01, 1000)
@@ -8,6 +8,8 @@ function createFixture(aspect: number) {
   const controls = {
     target: new THREE.Vector3(),
     update: () => undefined,
+    minDistance: 0,
+    maxDistance: Infinity,
   }
   const object = new THREE.Mesh(
     new THREE.BoxGeometry(2, 1, 1),
@@ -37,6 +39,8 @@ describe('responsive viewer camera framing', () => {
     expect(portraitFit.distance).toBeGreaterThan(desktopFit.distance)
     expect(portrait.camera.near).toBeGreaterThan(0)
     expect(portrait.camera.far).toBeGreaterThan(portrait.camera.near)
+    expect(portrait.controls.minDistance).toBeGreaterThan(0)
+    expect(portrait.controls.maxDistance).toBeGreaterThan(portraitFit.distance)
   })
 
   it('preserves the current viewing direction across refits', () => {
@@ -64,5 +68,22 @@ describe('responsive viewer camera framing', () => {
     expect(camera.projectionMatrix.equals(before)).toBe(false)
     expect(resizePerspectiveViewport(renderer as THREE.WebGLRenderer, camera, 0, 844)).toBe(false)
     expect(sizes).toHaveLength(1)
+  })
+
+  it('keeps the whole asset inside the clipping range at close and far zoom distances', () => {
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+    const target = new THREE.Vector3()
+    const radius = 2
+
+    camera.position.set(0, 0, radius * 0.02)
+    expect(updatePerspectiveCameraClipping(camera, target, radius)).toBe(true)
+    expect(camera.near).toBeGreaterThan(0)
+    expect(camera.near).toBeLessThan(radius)
+    expect(camera.far).toBeGreaterThan(camera.position.distanceTo(target) + radius)
+
+    camera.position.set(0, 0, radius * 90)
+    expect(updatePerspectiveCameraClipping(camera, target, radius)).toBe(true)
+    expect(camera.near).toBeLessThan(camera.position.distanceTo(target) - radius)
+    expect(camera.far).toBeGreaterThan(camera.position.distanceTo(target) + radius)
   })
 })

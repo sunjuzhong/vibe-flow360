@@ -3,12 +3,51 @@ import * as THREE from 'three'
 type CameraControls = {
   target: THREE.Vector3
   update: () => void
+  minDistance?: number
+  maxDistance?: number
 }
 
 export type CameraFit = {
   center: THREE.Vector3
   radius: number
   distance: number
+}
+
+const CLIP_MARGIN_RADII = 1.5
+
+export function updatePerspectiveCameraClipping(
+  camera: THREE.PerspectiveCamera,
+  target: THREE.Vector3,
+  radius: number,
+): boolean {
+  if (!Number.isFinite(radius) || radius <= 0) return false
+  const distance = camera.position.distanceTo(target)
+  if (!Number.isFinite(distance)) return false
+
+  const minimumNear = Math.max(radius * 1e-4, 1e-6)
+  const nextNear = Math.max(minimumNear, distance - radius * CLIP_MARGIN_RADII)
+  const nextFar = Math.max(nextNear + radius * 2, distance + radius * CLIP_MARGIN_RADII)
+  const tolerance = radius * 1e-6
+  if (Math.abs(camera.near - nextNear) <= tolerance && Math.abs(camera.far - nextFar) <= tolerance) {
+    return false
+  }
+
+  camera.near = nextNear
+  camera.far = nextFar
+  camera.updateProjectionMatrix()
+  return true
+}
+
+export function configurePerspectiveCameraForBounds(
+  camera: THREE.PerspectiveCamera,
+  controls: CameraControls,
+  radius: number,
+  preferredDistance = camera.position.distanceTo(controls.target),
+): void {
+  if (!Number.isFinite(radius) || radius <= 0) return
+  controls.minDistance = Math.max(radius * 0.01, 1e-6)
+  controls.maxDistance = Math.max(radius * 100, preferredDistance * 10)
+  updatePerspectiveCameraClipping(camera, controls.target, radius)
 }
 
 export function resizePerspectiveViewport(
@@ -46,10 +85,8 @@ export function fitPerspectiveCameraToObject(
 
   controls.target.copy(sphere.center)
   camera.position.copy(sphere.center).addScaledVector(direction, distance)
-  camera.near = Math.max(0.001, distance - sphere.radius * 2)
-  camera.far = Math.max(camera.near + 1, distance + sphere.radius * 4)
   camera.lookAt(sphere.center)
-  camera.updateProjectionMatrix()
+  configurePerspectiveCameraForBounds(camera, controls, sphere.radius, distance)
   controls.update()
   return { center: sphere.center.clone(), radius: sphere.radius, distance }
 }
