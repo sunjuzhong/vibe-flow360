@@ -101,7 +101,7 @@ export function SurfaceAdvancedReview({
 }) {
   return (
     <details className="surface-advanced-review">
-      <summary><span><GitCompare size={11} /> Advanced review</span><small>Compare · Clip · Measure · AI patch</small></summary>
+      <summary><span><GitCompare size={14} /> Advanced review</span><small>Compare · Clip · Measure · AI patch</small></summary>
       <div className="surface-advanced-content">
         <label className="surface-compare-select">
           Compare with

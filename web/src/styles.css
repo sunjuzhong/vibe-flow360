@@ -3606,7 +3606,7 @@ button { color: inherit; }
   justify-content: space-between;
   padding-top: 9px;
   color: #4c5548;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 650;
   cursor: pointer;
 }
@@ -3614,24 +3614,25 @@ button { color: inherit; }
   padding: 2px 5px;
   border-radius: 999px;
   background: #e8ebdf;
-  font: 7px 'DM Mono';
+  font: 9px 'DM Mono';
 }
 .surface-parameter-summary dl { margin: 7px 0 0; }
 .surface-parameter-summary dl > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  padding: 4px 0;
+  padding: 6px 0;
   border-top: 1px solid #e8eae3;
 }
 .surface-parameter-summary dt {
   overflow: hidden;
   color: #777e73;
-  font-size: 7px;
+  font-size: 10px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.surface-parameter-summary dd { margin: 0; color: #485143; font: 7px 'DM Mono'; }
+.surface-parameter-summary dd { margin: 0; color: #485143; font: 10px/1.35 'DM Mono'; }
 .surface-advanced-review {
   margin-top: 9px;
   border-top: 1px solid #dfe2d9;
@@ -3644,11 +3645,11 @@ button { color: inherit; }
   padding-top: 9px;
   cursor: pointer;
 }
-.surface-advanced-review summary span { display: inline-flex; align-items: center; gap: 4px; color: #4c5548; font-size: 8px; font-weight: 650; }
-.surface-advanced-review summary small { color: #878e83; font-size: 7px; }
+.surface-advanced-review summary span { display: inline-flex; align-items: center; gap: 5px; color: #4c5548; font-size: 11px; font-weight: 650; }
+.surface-advanced-review summary small { color: #878e83; font-size: 9px; }
 .surface-advanced-content { display: grid; gap: 8px; margin-top: 8px; }
-.surface-advanced-content > p { margin: 0; color: #7d8479; font-size: 7px; }
-.surface-compare-select { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 6px; color: #727a6e; font-size: 7px; }
+.surface-advanced-content > p { margin: 0; color: #7d8479; font-size: 10px; }
+.surface-compare-select { display: grid; grid-template-columns: 88px 1fr; align-items: center; gap: 7px; color: #727a6e; font-size: 10px; }
 .surface-compare-select select,
 .surface-advanced-controls select {
   min-width: 0;
@@ -3657,7 +3658,7 @@ button { color: inherit; }
   border-radius: 4px;
   color: #4d5748;
   background: #fff;
-  font-size: 7px;
+  font-size: 10px;
 }
 .surface-comparison-result {
   display: grid;
@@ -3667,16 +3668,16 @@ button { color: inherit; }
   border-radius: 6px;
   background: rgba(255,255,255,.65);
 }
-.surface-comparison-result > strong { color: #485443; font-size: 8px; }
+.surface-comparison-result > strong { color: #485443; font-size: 11px; }
 .surface-comparison-result > span,
-.surface-comparison-result > p { margin: 0; color: #838a7f; font-size: 7px; }
+.surface-comparison-result > p { margin: 0; color: #838a7f; font-size: 10px; }
 .surface-parameter-diff { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding-top: 3px; border-top: 1px solid #e6e8e1; }
-.surface-parameter-diff span { overflow: hidden; color: #687163; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
-.surface-parameter-diff small { color: #485443; font: 7px 'DM Mono'; }
+.surface-parameter-diff span { overflow: hidden; color: #687163; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.surface-parameter-diff small { color: #485443; font: 9px 'DM Mono'; }
 .surface-quality-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 3px; }
 .surface-quality-comparison > div { min-width: 0; }
 .surface-quality-comparison span,
-.surface-quality-comparison small { display: block; overflow: hidden; color: #737c6e; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.surface-quality-comparison small { display: block; overflow: hidden; color: #737c6e; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .surface-quality-comparison > div > div { display: flex; height: 34px; align-items: flex-end; gap: 1px; margin: 3px 0; }
 .surface-quality-comparison i { min-width: 1px; flex: 1; border-radius: 1px 1px 0 0; background: #789521; }
 .surface-quality-comparison > div:nth-child(2) i { background: #43849a; }
@@ -3689,18 +3690,18 @@ button { color: inherit; }
   border: 1px solid #e0e3da;
   border-radius: 6px;
 }
-.surface-advanced-controls > label { display: flex; align-items: center; gap: 4px; color: #65705f; font-size: 7px; }
+.surface-advanced-controls > label { display: flex; align-items: center; gap: 6px; color: #65705f; font-size: 10px; }
 .surface-advanced-controls > label,
 .surface-measurement-result { grid-column: 1 / -1; }
 .surface-advanced-controls input[type='range'] { width: 100%; accent-color: #789521; }
 .surface-measurement-result { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; }
-.surface-measurement-result span { color: #838a7f; font-size: 7px; }
-.surface-measurement-result strong { color: #4a5b40; font: 8px 'DM Mono'; }
+.surface-measurement-result span { color: #838a7f; font-size: 9px; }
+.surface-measurement-result strong { color: #4a5b40; font: 10px 'DM Mono'; }
 .surface-measurement-result button { display: grid; padding: 3px; place-items: center; border: 1px solid #daddd4; border-radius: 4px; color: #747c70; background: #fff; }
 .surface-remediation { padding: 7px; border: 1px solid #d7dfc6; border-radius: 6px; background: #f4f7ec; }
-.surface-remediation > strong { display: flex; align-items: center; gap: 4px; color: #526640; font-size: 8px; }
-.surface-remediation > p { margin: 4px 0 6px; color: #747d6e; font-size: 7px; line-height: 1.45; }
-.surface-remediation > button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #9daf73; border-radius: 4px; color: #40542f; background: #e8f0d8; font-size: 7px; cursor: pointer; }
+.surface-remediation > strong { display: flex; align-items: center; gap: 5px; color: #526640; font-size: 11px; }
+.surface-remediation > p { margin: 5px 0 7px; color: #747d6e; font-size: 10px; line-height: 1.45; }
+.surface-remediation > button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #9daf73; border-radius: 4px; color: #40542f; background: #e8f0d8; font-size: 10px; cursor: pointer; }
 .surface-remediation > button:disabled { opacity: .5; cursor: not-allowed; }
 
 .cfd-stage-guidance {

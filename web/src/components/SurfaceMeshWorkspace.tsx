@@ -48,14 +48,24 @@ function findMetric(value: unknown, aliases: string[]): unknown {
 }
 
 function metricText(value: unknown) {
-  if (value === undefined || value === null || value === '') return 'Not reported'
   if (typeof value === 'number') return value.toLocaleString()
   if (typeof value === 'string') return value
-  if (typeof value === 'object' && 'value' in value) {
+  if (value && typeof value === 'object' && 'value' in value) {
     const metric = value as { value?: unknown; units?: unknown }
     return `${metric.value ?? '—'}${metric.units ? ` ${metric.units}` : ''}`
   }
   return JSON.stringify(value)
+}
+
+function isReportedMetric(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false
+  if (typeof value !== 'object') return true
+  if (Array.isArray(value)) return value.length > 0
+  if ('value' in value) {
+    const metric = value as { value?: unknown }
+    return metric.value !== undefined && metric.value !== null && metric.value !== ''
+  }
+  return Object.keys(value).length > 0
 }
 
 export default function SurfaceMeshWorkspace({
@@ -89,41 +99,44 @@ export default function SurfaceMeshWorkspace({
     currentDetail: detail,
     selectedField: review.selectedField,
   })
-  const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
+  const metricSources = [detail?.summary, detail?.state, detail?.simulation_params]
   const status = resourceStatus(detail)
   const metrics = [
     {
       label: 'Surface elements',
-      value: findMetric(source, ['face_count', 'surface_element_count', 'element_count', 'num_faces']),
+      value: findMetric(metricSources, ['face_count', 'surface_element_count', 'element_count', 'num_faces']),
       icon: Grid3X3,
     },
     {
       label: 'Minimum edge',
-      value: findMetric(source, ['min_edge_length', 'minimum_edge_length', 'min_length']),
+      value: findMetric(metricSources, ['min_edge_length', 'minimum_edge_length', 'min_length']),
       icon: Ruler,
     },
     {
       label: 'Maximum aspect ratio',
-      value: findMetric(source, ['max_aspect_ratio', 'maximum_aspect_ratio', 'aspect_ratio']),
+      value: findMetric(metricSources, ['max_aspect_ratio', 'maximum_aspect_ratio', 'aspect_ratio']),
       icon: Triangle,
     },
     {
       label: 'Maximum skewness',
-      value: findMetric(source, ['max_skewness', 'maximum_skewness', 'skewness']),
+      value: findMetric(metricSources, ['max_skewness', 'maximum_skewness', 'skewness']),
       icon: ScanLine,
     },
   ]
-  const checks = [
-    { label: 'Surface mesh reached a terminal success state', ready: ['completed', 'processed', 'success'].includes(status.toLowerCase()) },
-    { label: 'Simulation parameters are available', ready: Boolean(detail?.simulation_params && Object.keys(detail.simulation_params).length) },
-    { label: 'No partial Flow360 reads were reported', ready: !detail?.errors || Object.keys(detail.errors).length === 0 },
-  ]
+  const reportedMetrics = metrics.filter((metric) => isReportedMetric(metric.value))
   const successful = ['completed', 'processed', 'success'].includes(status.toLowerCase())
   const failed = ['failed', 'error'].includes(status.toLowerCase())
+  const hasSimulationParams = Boolean(detail?.simulation_params && Object.keys(detail.simulation_params).length)
+  const partialReadCount = Object.keys(detail?.errors ?? {}).length
+  const reviewNotices = [
+    ...(!hasSimulationParams ? ['Surface meshing parameters are unavailable.'] : []),
+    ...(partialReadCount > 0 ? [`${partialReadCount} partial Flow360 read${partialReadCount === 1 ? '' : 's'} require attention.`] : []),
+    ...(previewSource === 'fallback' ? ['SurfaceMesh render data is unavailable; geometry context is shown as a fallback.'] : []),
+  ]
   const unassignedBoundaryCount = review.boundaryInventory.filter((row) => row.status === 'unassigned').length
   const reviewLevel = failed || review.boundaryConflictCount > 0
     ? 'blocked'
-    : successful && checks.every((check) => check.ready) && previewSource !== 'fallback'
+    : successful && hasSimulationParams && partialReadCount === 0 && previewSource !== 'fallback'
       ? 'ready'
       : 'warning'
   const reviewLabel = reviewLevel === 'ready'
@@ -212,34 +225,32 @@ export default function SurfaceMeshWorkspace({
               {review.boundaryConflictCount > 0 && (
                 <span className="blocked">{review.boundaryConflictCount} conflicts</span>
               )}
-              <span className="warning">{unassignedBoundaryCount} unassigned</span>
+              {unassignedBoundaryCount > 0 && <span className="warning">{unassignedBoundaryCount} unassigned</span>}
               <span className="warning">Status · {status}</span>
             </div>
           </div>
 
-          <div className="geometry-summary-grid surface-summary-grid">
-            {metrics.map(({ label, value, icon: Icon }) => (
-              <div key={label}>
-                <span><Icon size={12} /> {label}</span>
-                <strong>{metricText(value)}</strong>
-              </div>
-            ))}
-          </div>
+          {reportedMetrics.length > 0 && (
+            <div className="geometry-summary-grid surface-summary-grid">
+              {reportedMetrics.map(({ label, value, icon: Icon }) => (
+                <div key={label}>
+                  <span><Icon size={12} /> {label}</span>
+                  <strong>{metricText(value)}</strong>
+                </div>
+              ))}
+            </div>
+          )}
 
-          <div className="geometry-checks">
-            {checks.map((check) => (
-              <div className={check.ready ? 'ready' : 'warning'} key={check.label}>
-                {check.ready ? <CheckCircle2 size={14} /> : <CircleDashed size={14} />}
-                <span><strong>{check.label}</strong></span>
-              </div>
-            ))}
-            {previewSource === 'fallback' && (
-              <div className="warning">
-                <CircleDashed size={14} />
-                <span><strong>Geometry context fallback</strong><small>The SurfaceMesh render asset is unavailable.</small></span>
-              </div>
-            )}
-          </div>
+          {reviewNotices.length > 0 && (
+            <div className="geometry-checks surface-review-notices">
+              {reviewNotices.map((notice) => (
+                <div className="warning" key={notice}>
+                  <CircleDashed size={14} />
+                  <span><strong>{notice}</strong></span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <section className="geometry-selection-card surface-active-review">
             <div className="geometry-section-title">
@@ -280,7 +291,9 @@ export default function SurfaceMeshWorkspace({
             )}
           </section>
 
-          <SurfaceParameterSummary parameters={review.surfaceParameters} />
+          {review.surfaceParameters.length > 0 && (
+            <SurfaceParameterSummary parameters={review.surfaceParameters} />
+          )}
           <SurfaceAdvancedReview
             versions={advanced.comparisonVersions}
             compareId={advanced.compareId}
