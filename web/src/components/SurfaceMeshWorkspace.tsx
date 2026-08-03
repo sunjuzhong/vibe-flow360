@@ -14,6 +14,10 @@ import { LazyViewer3D } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
 import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
+import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
+import { useDistanceTool } from '../hooks/useDistanceTool'
+import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspector'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
 import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
@@ -71,6 +75,9 @@ function isReportedMetric(value: unknown): boolean {
 export default function SurfaceMeshWorkspace({
   detail,
   resourceId,
+  projectId,
+  resourceRef,
+  annotationsModel,
   geometryResourceId,
   versions,
   onCreateRemediationPlan,
@@ -78,6 +85,9 @@ export default function SurfaceMeshWorkspace({
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  projectId: string
+  resourceRef: ResourceRef
+  annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
   versions: ProjectItem[]
   onCreateRemediationPlan: (recommendation: SurfaceRemediationRecommendation) => Promise<void>
@@ -99,6 +109,7 @@ export default function SurfaceMeshWorkspace({
     currentDetail: detail,
     selectedField: review.selectedField,
   })
+  const distance = useDistanceTool({ projectId, resourceRef, annotationsModel })
   const metricSources = [detail?.summary, detail?.state, detail?.simulation_params]
   const status = resourceStatus(detail)
   const metrics = [
@@ -190,8 +201,10 @@ export default function SurfaceMeshWorkspace({
           onFieldProbe={review.mode === 'quality' ? review.setProbe : undefined}
           focusTarget={review.focusTarget}
           clipPlane={advanced.clipPlane}
-          measurementPoints={advanced.measurementPoints}
-          onPickPoint={advanced.measurementEnabled ? advanced.pickPoint : undefined}
+          projectId={projectId}
+          resourceRef={resourceRef}
+          toolInput={distance.toolInput}
+          overlays={distance.overlays}
           captureRequest={advanced.captureRequest}
           onCapture={(dataUrl) => downloadDataUrl(
             dataUrl,
@@ -204,9 +217,9 @@ export default function SurfaceMeshWorkspace({
               <SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />
               <SurfaceAdvancedToolbar
                 clipping={advanced.clipEnabled}
-                measuring={advanced.measurementEnabled}
+                measuring={distance.active}
                 onToggleClipping={() => advanced.setClipEnabled(!advanced.clipEnabled)}
-                onToggleMeasuring={() => advanced.setMeasurementEnabled(!advanced.measurementEnabled)}
+                onToggleMeasuring={distance.toggle}
                 onCapture={advanced.requestCapture}
               />
             </div>
@@ -307,9 +320,6 @@ export default function SurfaceMeshWorkspace({
             clipEnabled={advanced.clipEnabled}
             clipAxis={advanced.clipAxis}
             clipPosition={advanced.clipPosition}
-            measurementEnabled={advanced.measurementEnabled}
-            measurementPointCount={advanced.measurementPoints.length}
-            measurementDistance={advanced.distance}
             field={review.selectedFieldInfo}
             probe={review.probe}
             remediationBusy={advanced.remediationBusy}
@@ -318,8 +328,6 @@ export default function SurfaceMeshWorkspace({
             onClipEnabled={advanced.setClipEnabled}
             onClipAxis={advanced.setClipAxis}
             onClipPosition={advanced.setClipPosition}
-            onMeasurementEnabled={advanced.setMeasurementEnabled}
-            onClearMeasurement={advanced.clearMeasurement}
             onCreateRemediation={() => {
               if (!review.selectedFieldInfo || !review.probe) return
               const recommendation = buildSurfaceRemediationRecommendation({
@@ -330,6 +338,7 @@ export default function SurfaceMeshWorkspace({
               void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
             }}
           />
+          <DistanceToolPanel model={distance} />
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
             Plan Volume Mesh

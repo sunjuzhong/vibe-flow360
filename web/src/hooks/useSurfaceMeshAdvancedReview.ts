@@ -8,7 +8,6 @@ import {
 } from '../lib/uvf-three'
 import {
   compareSurfaceParameters,
-  measurementDistance,
   surfaceComparisonParameters,
   type SurfaceParameterDifference,
 } from '../lib/surfaceMeshAdvanced'
@@ -29,8 +28,6 @@ type State = {
   clipEnabled: boolean
   clipAxis: 'x' | 'y' | 'z'
   clipPosition: number
-  measurementEnabled: boolean
-  measurementPoints: Array<[number, number, number]>
   captureRequest: number
   remediationBusy: boolean
   remediationError: string
@@ -44,9 +41,6 @@ type Action =
   | { type: 'clip-enabled'; enabled: boolean }
   | { type: 'clip-axis'; axis: 'x' | 'y' | 'z' }
   | { type: 'clip-position'; position: number }
-  | { type: 'measurement-enabled'; enabled: boolean }
-  | { type: 'pick-point'; point: [number, number, number] }
-  | { type: 'clear-measurement' }
   | { type: 'capture' }
   | { type: 'remediation-start' }
   | { type: 'remediation-done' }
@@ -60,8 +54,6 @@ const initialState: State = {
   clipEnabled: false,
   clipAxis: 'x',
   clipPosition: 0,
-  measurementEnabled: false,
-  measurementPoints: [],
   captureRequest: 0,
   remediationBusy: false,
   remediationError: '',
@@ -83,21 +75,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, clipAxis: action.axis }
     case 'clip-position':
       return { ...state, clipPosition: action.position }
-    case 'measurement-enabled':
-      return {
-        ...state,
-        measurementEnabled: action.enabled,
-        measurementPoints: action.enabled ? state.measurementPoints : [],
-      }
-    case 'pick-point':
-      return {
-        ...state,
-        measurementPoints: state.measurementPoints.length >= 2
-          ? [action.point]
-          : [...state.measurementPoints, action.point],
-      }
-    case 'clear-measurement':
-      return { ...state, measurementPoints: [] }
     case 'capture':
       return { ...state, captureRequest: state.captureRequest + 1 }
     case 'remediation-start':
@@ -132,7 +109,6 @@ export function useSurfaceMeshAdvancedReview({
       : state.clipAxis === 'y' ? [0, 1, 0] : [0, 0, 1]
     return { normal, constant: -state.clipPosition }
   }, [state.clipAxis, state.clipEnabled, state.clipPosition])
-  const distance = measurementDistance(state.measurementPoints)
 
   useEffect(() => {
     if (!state.compareId) return
@@ -195,14 +171,10 @@ export function useSurfaceMeshAdvancedReview({
     ...state,
     comparisonVersions,
     clipPlane,
-    distance,
     setCompareId: (id: string) => dispatch({ type: 'compare-id', id }),
     setClipEnabled: (enabled: boolean) => dispatch({ type: 'clip-enabled', enabled }),
     setClipAxis: (axis: 'x' | 'y' | 'z') => dispatch({ type: 'clip-axis', axis }),
     setClipPosition: (position: number) => dispatch({ type: 'clip-position', position }),
-    setMeasurementEnabled: (enabled: boolean) => dispatch({ type: 'measurement-enabled', enabled }),
-    pickPoint: (point: [number, number, number]) => dispatch({ type: 'pick-point', point }),
-    clearMeasurement: () => dispatch({ type: 'clear-measurement' }),
     requestCapture: () => dispatch({ type: 'capture' }),
     runRemediation: async (task: () => Promise<void>) => {
       dispatch({ type: 'remediation-start' })

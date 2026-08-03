@@ -595,6 +595,9 @@ export default function ProjectPage() {
               <GeometryWorkspace
                 detail={detail}
                 resourceId={selected.id}
+                projectId={projectId}
+                resourceRef={{ id: selected.id, type: selected.type }}
+                annotationsModel={annotations}
                 geometryVersions={items
                   .filter((item) => item.type === 'Geometry')
                   .map((item) => ({ id: item.id, name: item.name }))}
@@ -643,6 +646,9 @@ export default function ProjectPage() {
               <SurfaceMeshWorkspace
                 detail={detail}
                 resourceId={selected.id}
+                projectId={projectId}
+                resourceRef={{ id: selected.id, type: selected.type }}
+                annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
                 versions={surfaceMeshVersions}
                 onCreateRemediationPlan={async (recommendation: SurfaceRemediationRecommendation) => {

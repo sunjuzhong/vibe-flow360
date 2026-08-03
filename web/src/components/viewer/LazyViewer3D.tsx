@@ -32,8 +32,6 @@ export type ViewerToolbarProps = {
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
   focusTarget?: [number, number, number] | null
   clipPlane?: import('./Viewer3D').ViewerClipPlane | null
-  measurementPoints?: Array<[number, number, number]>
-  onPickPoint?: (point: [number, number, number]) => void
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean

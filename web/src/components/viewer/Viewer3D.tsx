@@ -16,8 +16,6 @@ import {
   buildPointerRay,
   pickScene,
   resolvePickCandidate,
-  type OverlayAnnotation,
-  type OverlayPrimitive,
   type ResourceRef,
   type ToolInputConsumer,
   type ViewerOverlayFrame,
@@ -101,8 +99,6 @@ type Props = {
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
   focusTarget?: [number, number, number] | null
   clipPlane?: ViewerClipPlane | null
-  measurementPoints?: Array<[number, number, number]>
-  onPickPoint?: (point: [number, number, number]) => void
   projectId?: string
   resourceRef?: ResourceRef
   toolInput?: ToolInputConsumer
@@ -136,8 +132,6 @@ export function Viewer3D({
   onFieldProbe,
   focusTarget,
   clipPlane,
-  measurementPoints = [],
-  onPickPoint,
   projectId,
   resourceRef,
   toolInput,
@@ -204,30 +198,6 @@ export function Viewer3D({
     if (!manifest?.asset_url) return null
     return { id: manifest.asset_url, type: manifest.format || 'viewer-asset' }
   }, [manifest?.asset_url, manifest?.format, resourceRef])
-  const legacyMeasurementAnnotations = useMemo<readonly OverlayAnnotation[]>(() => {
-    if (!activeResourceRef || measurementPoints.length === 0) return []
-    const primitives: OverlayPrimitive[] = measurementPoints.map((point, index) => ({
-      kind: 'point' as const,
-      key: `point-${index}`,
-      position: point,
-      color: '#e06b3c',
-      size: 8,
-    }))
-    if (measurementPoints.length > 1) {
-      primitives.push({
-        kind: 'polyline' as const,
-        key: 'line',
-        points: measurementPoints,
-        color: '#e06b3c',
-      })
-    }
-    return [{
-      annotationId: '__legacy_measurement__',
-      coordinateFrame: { kind: 'asset-local', resourceRef: activeResourceRef },
-      primitives,
-      state: 'draft',
-    }]
-  }, [activeResourceRef, measurementPoints])
   const manifestEntityVisibility = useMemo(() => [
     ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
     ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
@@ -633,11 +603,11 @@ export function Viewer3D({
       resourceRef: activeResourceRef,
       assetWorldMatrix: asset.matrixWorld,
       saved: overlays?.saved,
-      draft: [...(overlays?.draft ?? []), ...legacyMeasurementAnnotations],
+      draft: overlays?.draft,
       hover: overlays?.hover,
       visible: overlays?.visible,
     })
-  }, [activeResourceRef, assetState.status, legacyMeasurementAnnotations, overlays])
+  }, [activeResourceRef, assetState.status, overlays])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -715,18 +685,9 @@ export function Viewer3D({
   }
 
   const createInputController = () => {
-    const legacyTool: ToolInputConsumer | undefined = onPickPoint
-      ? {
-          onPick: (pick) => {
-            if (!pick) return false
-            onPickPoint([...pick.localPosition])
-            return true
-          },
-        }
-      : undefined
     return new ViewerInputController({
       resolvePick: resolvePointerPick,
-      activeTool: toolInput ?? legacyTool,
+      activeTool: toolInput,
       fieldProbe: {
         isActive: () => Boolean(selectedField && uvfAssetRef.current && onFieldProbe),
         allowMiss: true,

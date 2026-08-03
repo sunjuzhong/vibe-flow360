@@ -1,4 +1,4 @@
-import { Camera, GitCompare, Ruler, Scissors, Sparkles, X } from 'lucide-react'
+import { Camera, GitCompare, Ruler, Scissors, Sparkles } from 'lucide-react'
 import type { ProjectItem } from '../../api/client'
 import type { UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 import type {
@@ -57,9 +57,6 @@ export function SurfaceAdvancedReview({
   clipEnabled,
   clipAxis,
   clipPosition,
-  measurementEnabled,
-  measurementPointCount,
-  measurementDistance,
   field,
   probe,
   remediationBusy,
@@ -68,8 +65,6 @@ export function SurfaceAdvancedReview({
   onClipEnabled,
   onClipAxis,
   onClipPosition,
-  onMeasurementEnabled,
-  onClearMeasurement,
   onCreateRemediation,
 }: {
   versions: ProjectItem[]
@@ -84,9 +79,6 @@ export function SurfaceAdvancedReview({
   clipEnabled: boolean
   clipAxis: 'x' | 'y' | 'z'
   clipPosition: number
-  measurementEnabled: boolean
-  measurementPointCount: number
-  measurementDistance: number | null
   field?: UVFFieldInfo
   probe: UVFFieldProbe | null
   remediationBusy: boolean
@@ -95,8 +87,6 @@ export function SurfaceAdvancedReview({
   onClipEnabled: (enabled: boolean) => void
   onClipAxis: (axis: 'x' | 'y' | 'z') => void
   onClipPosition: (position: number) => void
-  onMeasurementEnabled: (enabled: boolean) => void
-  onClearMeasurement: () => void
   onCreateRemediation: () => void
 }) {
   return (
@@ -156,21 +146,6 @@ export function SurfaceAdvancedReview({
                 onChange={(event) => onClipPosition(Number(event.target.value))}
               />
             </>
-          )}
-          <label>
-            <input
-              type="checkbox"
-              checked={measurementEnabled}
-              onChange={(event) => onMeasurementEnabled(event.target.checked)}
-            />
-            Point-to-point measurement
-          </label>
-          {measurementEnabled && (
-            <div className="surface-measurement-result">
-              <span>{measurementPointCount}/2 points</span>
-              <strong>{measurementDistance === null ? 'Pick two surface points' : measurementDistance.toPrecision(7)}</strong>
-              <button type="button" onClick={onClearMeasurement} aria-label="Clear measurement"><X size={10} /></button>
-            </div>
           )}
         </div>
         <div className="surface-remediation">

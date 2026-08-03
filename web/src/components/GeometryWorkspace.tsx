@@ -42,7 +42,6 @@ import {
   type GeometryCheckLevel,
 } from '../lib/geometryReview'
 import {
-  geometryMeasurementDistance,
   geometrySurfaceRoles,
   suggestGeometrySemantics,
   type GeometryBodyIntent,
@@ -66,6 +65,10 @@ import {
   type ViewerSelection,
 } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
+import { useDistanceTool } from '../hooks/useDistanceTool'
+import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 
 const readinessCopy = {
   ready: { label: 'Ready', detail: 'Available geometry evidence passes preflight.' },
@@ -92,6 +95,9 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
 export default function GeometryWorkspace({
   detail,
   resourceId,
+  projectId,
+  resourceRef,
+  annotationsModel,
   geometryVersions,
   onCreateSemanticPlan,
   onCreateAdvancedPlan,
@@ -99,6 +105,9 @@ export default function GeometryWorkspace({
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  projectId: string
+  resourceRef: ResourceRef
+  annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryVersions: Array<{ id: string; name: string }>
   onCreateSemanticPlan: (draft: GeometrySemanticDraft) => Promise<void>
   onCreateAdvancedPlan: (
@@ -115,8 +124,6 @@ export default function GeometryWorkspace({
   const [clipEnabled, setClipEnabled] = useState(false)
   const [clipAxis, setClipAxis] = useState<'x' | 'y' | 'z'>('x')
   const [clipPosition, setClipPosition] = useState(0)
-  const [measurementEnabled, setMeasurementEnabled] = useState(false)
-  const [measurementPoints, setMeasurementPoints] = useState<Array<[number, number, number]>>([])
   const [showNormals, setShowNormals] = useState(false)
   const [captureRequest, setCaptureRequest] = useState(0)
   const [bodyIntent, setBodyIntent] = useState<GeometryBodyIntent>('undecided')
@@ -150,6 +157,12 @@ export default function GeometryWorkspace({
     () => buildGeometryReview(detail, manifest, status),
     [detail, manifest, status],
   )
+  const distance = useDistanceTool({
+    projectId,
+    resourceRef,
+    annotationsModel,
+    unit: review.unit,
+  })
   const selectedGroup = manifest?.groups.find((group) => group.id === viewerSelection.groupId) ?? null
   const selectedEdge = manifest?.edges?.find((edge) => edge.id === viewerSelection.groupId) ?? null
   const selectedGroupIds = viewerSelection.groupIds?.length
@@ -165,7 +178,6 @@ export default function GeometryWorkspace({
       : clipAxis === 'y' ? [0, 1, 0] : [0, 0, 1]
     return { normal, constant: -clipPosition }
   }, [clipAxis, clipEnabled, clipPosition])
-  const measurementDistance = geometryMeasurementDistance(measurementPoints)
   const filteredGroups = useMemo(() => {
     const query = entitySearch.trim().toLowerCase()
     if (!query) return manifest?.groups ?? []
@@ -223,7 +235,6 @@ export default function GeometryWorkspace({
     setEntityVisibility({})
     setAssignments({})
     setAssignmentHistory([])
-    setMeasurementPoints([])
     setSemanticMessage('')
     setDiagnosticReport(null)
     setDiagnosticError('')
@@ -621,10 +632,10 @@ export default function GeometryWorkspace({
           onEntityVisibilityChange={setEntityVisibility}
           entityAppearances={entityAppearances}
           clipPlane={clipPlane}
-          measurementPoints={measurementPoints}
-          onPickPoint={measurementEnabled ? (point) => {
-            setMeasurementPoints((points) => points.length >= 2 ? [point] : [...points, point])
-          } : undefined}
+          projectId={projectId}
+          resourceRef={resourceRef}
+          toolInput={distance.toolInput}
+          overlays={distance.overlays}
           captureRequest={captureRequest}
           onCapture={(dataUrl) => downloadDataUrl(
             dataUrl,
@@ -657,12 +668,9 @@ export default function GeometryWorkspace({
                 title="Toggle clipping plane"
               ><Scissors size={13} /> Clip</button>
               <button
-                className={measurementEnabled ? 'active' : ''}
-                aria-pressed={measurementEnabled}
-                onClick={() => {
-                  setMeasurementEnabled((enabled) => !enabled)
-                  setMeasurementPoints([])
-                }}
+                className={distance.active ? 'active' : ''}
+                aria-pressed={distance.active}
+                onClick={distance.toggle}
                 title="Measure between two picked points"
               ><Ruler size={13} /> Measure</button>
               <button
@@ -712,7 +720,7 @@ export default function GeometryWorkspace({
           </strong></div>
         </div>
 
-        {(clipEnabled || measurementEnabled) && (
+        {clipEnabled && (
           <section className="geometry-inspection-card">
             <div className="geometry-section-title"><Ruler size={13} /> Inspection tools</div>
             {clipEnabled && (
@@ -737,19 +745,10 @@ export default function GeometryWorkspace({
                 </label>
               </div>
             )}
-            {measurementEnabled && (
-              <div className="geometry-measurement-result">
-                <span>{measurementPoints.length}/2 points</span>
-                <strong>
-                  {measurementDistance === null
-                    ? 'Pick two surface points'
-                    : `${formatGeometryNumber(measurementDistance)}${review.unit ? ` ${review.unit}` : ''}`}
-                </strong>
-                <button type="button" onClick={() => setMeasurementPoints([])}>Clear</button>
-              </div>
-            )}
           </section>
         )}
+
+        <DistanceToolPanel model={distance} />
 
         <section className="geometry-selection-card">
           <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
