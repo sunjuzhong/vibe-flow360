@@ -20,6 +20,10 @@ export interface InputConsumer {
 export interface ToolInputConsumer extends InputConsumer {
   readonly onHover?: (pick: PickResult | null) => void
   readonly pickPolicy?: PickPolicy
+  /** Completed control points that can be dragged for fine adjustment. */
+  readonly controlPoints?: readonly PickResult[]
+  readonly onControlPointChange?: (index: number, pick: PickResult) => void
+  readonly onControlPointCommit?: (index: number, pick: PickResult) => void
 }
 
 export interface ViewerInputControllerOptions {

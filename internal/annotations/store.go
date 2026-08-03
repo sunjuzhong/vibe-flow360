@@ -94,6 +94,8 @@ type PatchInput struct {
 	Name    *string                     `json:"name,omitempty"`
 	Style   *map[string]json.RawMessage `json:"style,omitempty"`
 	Visible *bool                       `json:"visible,omitempty"`
+	Points  *[]PickResult               `json:"points,omitempty"`
+	Result  *json.RawMessage            `json:"result,omitempty"`
 }
 
 type Store struct {
@@ -209,7 +211,7 @@ func (s *Store) Patch(projectID, annotationID string, input PatchInput) (Annotat
 	if err := validateIDs(projectID, annotationID); err != nil {
 		return Annotation{}, err
 	}
-	if input.Name == nil && input.Style == nil && input.Visible == nil {
+	if input.Name == nil && input.Style == nil && input.Visible == nil && input.Points == nil && input.Result == nil {
 		return Annotation{}, validationError("patch must contain at least one supported field")
 	}
 	s.mu.Lock()
@@ -226,6 +228,12 @@ func (s *Store) Patch(projectID, annotationID string, input PatchInput) (Annotat
 	}
 	if input.Visible != nil {
 		annotation.Visible = *input.Visible
+	}
+	if input.Points != nil {
+		annotation.Points = append([]PickResult(nil), (*input.Points)...)
+	}
+	if input.Result != nil {
+		annotation.Result = cloneRaw(*input.Result)
 	}
 	annotation.UpdatedAt = time.Now().UTC()
 	if err := validateAnnotation(annotation); err != nil {

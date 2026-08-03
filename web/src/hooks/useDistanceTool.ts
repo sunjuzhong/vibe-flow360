@@ -145,7 +145,16 @@ export function useDistanceTool({
       return true
     },
     onHover: (pick) => dispatch({ type: 'hover', pick }),
-  }), [assetRef.id, assetRef.type, capturing, projectId])
+    controlPoints: session.status === 'complete-draft' || session.status === 'saved' ? points : undefined,
+    onControlPointChange: (index, pick) => dispatch({ type: 'replace-point', index, pick }),
+    onControlPointCommit: (index, pick) => {
+      dispatch({ type: 'replace-point', index, pick })
+      if (session.status !== 'saved') return
+      const nextPoints = session.points.map((point, pointIndex) => pointIndex === index ? pick : point)
+      const nextResult = resultWithUnit(distanceToolDefinition.computeResult(nextPoints), displayUnit)
+      void annotationsModel.update(session.annotation.id, { points: nextPoints, result: nextResult })
+    },
+  }), [annotationsModel, assetRef.id, assetRef.type, capturing, displayUnit, points, projectId, session])
 
   const overlays = useMemo<ViewerOverlayContent>(() => {
     const usesExplicitAssetFrame = assetRef !== resourceRef || suppliedCoordinateFrame !== undefined

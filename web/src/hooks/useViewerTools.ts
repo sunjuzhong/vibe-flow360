@@ -4,7 +4,6 @@ import type { ViewerOverlayContent } from '../components/viewer/LazyViewer3D'
 import {
   BASIC_TOOL_DEFINITIONS,
   BASIC_TOOLS,
-  POLYLINE_TOOL_ID,
   asBasicToolAnnotation,
   basicToolAnnotationOverlay,
   basicToolResultSummary,
@@ -212,7 +211,16 @@ export function useViewerTools({
       return true
     },
     onHover: (pick) => apply({ type: 'hover', pick }),
-  }), [apply, assetRef.id, assetRef.type, capturing, definition.pickPolicy, projectId])
+    controlPoints: session.status === 'complete-draft' || session.status === 'saved' ? points : undefined,
+    onControlPointChange: (index, pick) => apply({ type: 'replace-point', index, pick }),
+    onControlPointCommit: (index, pick) => {
+      apply({ type: 'replace-point', index, pick })
+      if (session.status !== 'saved') return
+      const nextPoints = session.points.map((point, pointIndex) => pointIndex === index ? pick : point)
+      const nextResult = definition.computeResult(nextPoints)
+      void annotationsModel.update(session.annotation.id, { points: nextPoints, result: nextResult })
+    },
+  }), [annotationsModel, apply, assetRef.id, assetRef.type, capturing, definition, points, projectId, session])
 
   const compatibleAnnotations = useMemo(() => {
     const usesExplicitAssetFrame = assetRef !== resourceRef || suppliedCoordinateFrame !== undefined
@@ -280,10 +288,10 @@ export function useViewerTools({
   }, [annotationsModel, apply, coordinateFrame, definition, resourceRef, session])
 
   const onDoubleClick = useCallback((event: { preventDefault(): void }) => {
-    if (definition.id !== POLYLINE_TOOL_ID || !capturing) return
+    if (definition.completion.kind !== 'open' || !capturing) return
     event.preventDefault()
     finish()
-  }, [capturing, definition.id, finish])
+  }, [capturing, definition.completion.kind, finish])
 
   return {
     tools: BASIC_TOOLS,

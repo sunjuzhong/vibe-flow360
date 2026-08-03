@@ -182,6 +182,7 @@ export type ToolSession<TResult extends JsonValue = JsonValue> =
 export type ToolAction<TResult extends JsonValue = JsonValue> =
   | { readonly type: 'activate' }
   | { readonly type: 'pick'; readonly pick: PickResult }
+  | { readonly type: 'replace-point'; readonly index: number; readonly pick: PickResult }
   | { readonly type: 'hover'; readonly pick: PickResult | null }
   | { readonly type: 'undo-last' }
   | { readonly type: 'finish' }

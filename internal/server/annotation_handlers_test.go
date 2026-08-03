@@ -82,7 +82,7 @@ func TestAnnotationHandlersCRUDAndEmptyList(t *testing.T) {
 	}
 	patch := performAnnotationRequest(router, http.MethodPatch,
 		"/api/projects/project-a/annotations/"+created.ID,
-		[]byte(`{"name":"Renamed","visible":false,"style":{"width":2}}`))
+		[]byte(`{"name":"Renamed","visible":false,"style":{"width":2},"points":[{"localPosition":[1,2,3],"worldPosition":[1,2,3],"projectId":"project-a","resourceRef":{"id":"geo-1","type":"Geometry"},"coordinateFrame":{"kind":"asset-local","resourceRef":{"id":"geo-1","type":"Geometry"}},"snap":{"type":"none"}}],"result":{"distance":4}}`))
 	if patch.Code != http.StatusOK {
 		t.Fatalf("patch: %d %s", patch.Code, patch.Body.String())
 	}
@@ -91,7 +91,8 @@ func TestAnnotationHandlersCRUDAndEmptyList(t *testing.T) {
 		t.Fatal(err)
 	}
 	if updated.Name != "Renamed" || updated.Visible || updated.ProjectID != created.ProjectID ||
-		updated.ID != created.ID || !updated.CreatedAt.Equal(created.CreatedAt) {
+		updated.ID != created.ID || !updated.CreatedAt.Equal(created.CreatedAt) ||
+		updated.Points[0].LocalPosition[0] != 1 || string(updated.Result) != `{"distance":4}` {
 		t.Fatalf("patch changed immutable identity: %#v", updated)
 	}
 	deleted := performAnnotationRequest(router, http.MethodDelete,

@@ -20,6 +20,7 @@ import {
   cycleSnapCandidate,
   pickScene,
   replaceSnapCandidates,
+  resolveFreePoint,
   resolvePickCandidate,
   selectedSnapCandidate,
   setSnapBypassed,
@@ -28,6 +29,7 @@ import {
   type CadTopologyProvider,
   type CadTopologyCandidates,
   type OverlayAnnotation,
+  type PickResult,
   type ResourceRef,
   type SnapCycleState,
   type SnapStatusModel,
@@ -87,6 +89,32 @@ export type ViewerCameraCommand = {
 }
 
 export type ViewerOverlayContent = Omit<ViewerOverlayFrame, 'resourceRef' | 'assetWorldMatrix'>
+
+function nearestControlPointIndex(
+  points: readonly PickResult[] | undefined,
+  clientX: number,
+  clientY: number,
+  camera: THREE.Camera | null,
+  viewport: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | undefined,
+  threshold = 14,
+): number | null {
+  if (!points?.length || !camera || !viewport?.width || !viewport.height) return null
+  let nearestIndex: number | null = null
+  let nearestDistanceSquared = Number.POSITIVE_INFINITY
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    const projected = new THREE.Vector3(...point.worldPosition).project(camera)
+    if (projected.z < -1 || projected.z > 1) continue
+    const x = viewport.left + (projected.x + 1) * viewport.width / 2
+    const y = viewport.top + (1 - projected.y) * viewport.height / 2
+    const distanceSquared = (clientX - x) ** 2 + (clientY - y) ** 2
+    if (distanceSquared <= threshold ** 2 && distanceSquared < nearestDistanceSquared) {
+      nearestIndex = index
+      nearestDistanceSquared = distanceSquared
+    }
+  }
+  return nearestIndex
+}
 
 export type ViewerState =
   | { status: 'idle' }
@@ -174,12 +202,14 @@ export function Viewer3D({
   const uvfAssetRef = useRef<UVFAsset | null>(null)
   const annotationOverlayRef = useRef<ViewerOverlayLayer | null>(null)
   const inputControllerRef = useRef<ViewerInputController | null>(null)
+  const draggedControlPointRef = useRef<{ index: number; pointerId: number } | null>(null)
   const snapResolverRef = useRef(new DefaultSnapResolver())
   const snapCycleRef = useRef<SnapCycleState>(createSnapCycleState())
   const cadTopologyRef = useRef<{ asset: THREE.Object3D; provider: CadTopologyProvider } | null>(null)
   const normalsOverlayRef = useRef<THREE.Group | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
+  const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number; triangles: number } | null>(null)
   const [precision, setPrecision] = useState<{ assetURL: string | null; selection: ViewerPrecisionSelection }>({
@@ -226,7 +256,7 @@ export function Viewer3D({
       coordinateFrame: { kind: 'world' },
       state: 'hover',
       primitives: [
-        { kind: 'point', key: 'snap-point', position: indicator.position, color: '#22d3ee', size: 0.016 },
+        { kind: 'point', key: 'snap-point', position: indicator.position, color: '#22d3ee', size: 8 },
         { kind: 'label', key: 'snap-label', position: indicator.position, text: indicator.label, color: '#67e8f9' },
       ],
     }]
@@ -708,8 +738,24 @@ export function Viewer3D({
       resourceRef: activeResourceRef,
       assetRoot: asset,
     })
-    const snapActive = Boolean(toolInput) && (toolInput?.isActive?.() ?? true)
-    if (!intersection || !basePick || !snapActive) {
+    const toolInteractionActive = Boolean(toolInput) && (
+      (toolInput?.isActive?.() ?? true) || Boolean(toolInput?.controlPoints?.length)
+    )
+    if (!intersection || !basePick) {
+      if (snapStatus) setSnapStatus(null)
+      snapCycleRef.current = createSnapCycleState()
+      if (!toolInteractionActive) return basePick
+      const controls = controlsRef.current
+      return resolveFreePoint(raycaster, {
+        projectId: projectId ?? 'viewer-local',
+        resourceRef: activeResourceRef,
+        assetRoot: asset,
+        planePoint: controls?.target.clone() ?? new THREE.Vector3(),
+        planeNormal: camera.getWorldDirection(new THREE.Vector3()),
+        fallbackDistance: controls ? camera.position.distanceTo(controls.target) : undefined,
+      })
+    }
+    if (!toolInteractionActive) {
       if (snapStatus) setSnapStatus(null)
       snapCycleRef.current = createSnapCycleState()
       return basePick
@@ -830,23 +876,63 @@ export function Viewer3D({
   }, [toolInput])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const controlPointIndex = nearestControlPointIndex(
+      toolInput?.controlPoints,
+      event.clientX,
+      event.clientY,
+      cameraRef.current,
+      containerRef.current?.getBoundingClientRect(),
+    )
+    if (controlPointIndex !== null && toolInput?.onControlPointChange) {
+      draggedControlPointRef.current = { index: controlPointIndex, pointerId: event.pointerId }
+      setDraggingControlPoint(controlPointIndex)
+      if (controlsRef.current) controlsRef.current.enabled = false
+      event.currentTarget.setPointerCapture(event.pointerId)
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     const controller = createInputController()
     inputControllerRef.current = controller
     controller.onPointerDown(pointerEvent(event))
   }
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragged = draggedControlPointRef.current
+    if (dragged?.pointerId === event.pointerId) {
+      const pick = resolvePointerPick(pointerEvent(event))
+      if (pick) {
+        toolInput?.onControlPointChange?.(dragged.index, pick)
+        toolInput?.onControlPointCommit?.(dragged.index, pick)
+      }
+      draggedControlPointRef.current = null
+      setDraggingControlPoint(null)
+      if (controlsRef.current) controlsRef.current.enabled = true
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      event.preventDefault()
+      return
+    }
     inputControllerRef.current?.onPointerUp(pointerEvent(event))
     inputControllerRef.current = null
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragged = draggedControlPointRef.current
+    if (dragged?.pointerId === event.pointerId) {
+      const pick = resolvePointerPick(pointerEvent(event))
+      if (pick) toolInput?.onControlPointChange?.(dragged.index, pick)
+      event.preventDefault()
+      return
+    }
     const controller = inputControllerRef.current ?? createInputController()
     inputControllerRef.current = controller
     controller.onPointerMove(pointerEvent(event))
   }
 
   const handlePointerLeave = () => {
+    if (draggedControlPointRef.current) return
     inputControllerRef.current?.onPointerLeave()
     inputControllerRef.current = null
     setHoveredGroup(null)
@@ -912,13 +998,16 @@ export function Viewer3D({
     >
       <div
         ref={containerRef}
-        className="viewer-3d"
-        onPointerDown={handlePointerDown}
+        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''}`}
+        onPointerDownCapture={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
         onDoubleClick={onDoubleClick}
         onPointerCancel={() => {
+          draggedControlPointRef.current = null
+          setDraggingControlPoint(null)
+          if (controlsRef.current) controlsRef.current.enabled = true
           inputControllerRef.current?.cancelPointer()
           inputControllerRef.current = null
         }}

@@ -74,6 +74,21 @@ export function reduceToolSession<TResult extends JsonValue>(
     return { status: 'collecting', tool, points, hover: null }
   }
 
+  if (action.type === 'replace-point') {
+    if (state.status !== 'complete-draft' && state.status !== 'saved') return state
+    if (action.index < 0 || action.index >= state.points.length) return state
+    const points = state.points.map((point, index) => index === action.index ? action.pick : point)
+    const draft = draftFrom(tool, points)
+    if (draft.status !== 'complete-draft') return draft
+    return state.status === 'saved'
+      ? {
+          ...draft,
+          status: 'saved',
+          annotation: { ...state.annotation, points, result: draft.result },
+        }
+      : draft
+  }
+
   if (action.type === 'hover') {
     return canCapture(state) ? { ...state, hover: action.pick } : state
   }

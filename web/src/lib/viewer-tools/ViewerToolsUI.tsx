@@ -137,6 +137,7 @@ function DistancePanel({ model }: { model: WorkspaceViewerToolsModel }) {
           </dl>
         </div>
       )}
+      {distance.result && <p className="viewer-tool-adjust-hint">Drag a point in the viewer to fine-tune it.</p>}
       <DistanceActions model={model} />
     </PanelShell>
   )
@@ -166,6 +167,7 @@ function BasicPanel({ model }: { model: WorkspaceViewerToolsModel }) {
       {basic.notice && <p className="viewer-tool-notice" role="status">{basic.notice}</p>}
       {basic.error && <p className="viewer-tool-error" role="alert">{basic.error}</p>}
       {basic.resultSummary && <div className="viewer-tool-result"><small>RESULT</small><strong>{basic.resultSummary}</strong></div>}
+      {basic.resultSummary && <p className="viewer-tool-adjust-hint">Drag any control point in the viewer to fine-tune it.</p>}
       <BasicActions model={model} />
     </PanelShell>
   )

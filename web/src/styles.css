@@ -1502,6 +1502,15 @@ button { color: inherit; }
   color: #2d3b19;
   background: #eef5dc;
 }
+.viewer-3d.viewer-tool-point-dragging,
+.viewer-3d.viewer-tool-point-dragging canvas {
+  cursor: grabbing !important;
+}
+.viewer-tool-adjust-hint {
+  margin: 8px 0 0;
+  color: #707867;
+  font: 10px/1.4 'DM Mono', monospace;
+}
 .viewer-tools-menu {
   position: absolute;
   z-index: 15;

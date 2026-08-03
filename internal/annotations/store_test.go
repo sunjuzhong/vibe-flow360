@@ -310,6 +310,30 @@ func TestPatchRejectsEmptyAndInvalidStyle(t *testing.T) {
 	}
 }
 
+func TestPatchUpdatesGeometryWhilePreservingIdentity(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create("project-a", validInput("project-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := cloneAnnotation(created).Points
+	points[0].LocalPosition = []float64{0.25, 0.5, 0.75}
+	result := json.RawMessage(`{"distance":3.5}`)
+	updated, err := store.Patch("project-a", created.ID, PatchInput{Points: &points, Result: &result})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != created.ID || updated.ProjectID != created.ProjectID || !updated.CreatedAt.Equal(created.CreatedAt) {
+		t.Fatalf("patch changed immutable identity: %#v", updated)
+	}
+	if updated.Points[0].LocalPosition[0] != 0.25 || string(updated.Result) != string(result) {
+		t.Fatalf("geometry patch not persisted: %#v", updated)
+	}
+}
+
 func TestStoreRejectsOversizePayloadWithoutLeavingFile(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)

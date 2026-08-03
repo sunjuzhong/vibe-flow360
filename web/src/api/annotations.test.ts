@@ -93,13 +93,22 @@ describe('annotation API client', () => {
       style: created.style,
       visible: true,
     })
-    await patchAnnotation('project-a', created.id, { visible: false })
+    const adjustedPoints = [{ ...created.points[0], localPosition: [1, 2, 3] as const }]
+    await patchAnnotation<DistanceResult>('project-a', created.id, {
+      visible: false,
+      points: adjustedPoints,
+      result: { distance: 3 },
+    })
 
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ visible: false })
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      visible: false,
+      points: adjustedPoints,
+      result: { distance: 3 },
+    })
     expect(fetchMock.mock.calls[1][1].method).toBe('PATCH')
   })
 

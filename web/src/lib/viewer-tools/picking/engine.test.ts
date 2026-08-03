@@ -5,6 +5,7 @@ import {
   isSurfacePickable,
   pickScene,
   putOnViewerOverlayLayer,
+  resolveFreePoint,
   resolvePickCandidate,
   SURFACE_PICK_LAYER,
   VIEWER_OVERLAY_LAYER,
@@ -145,5 +146,27 @@ describe('picking engine', () => {
       new THREE.Raycaster(new THREE.Vector3(4, 4, 5), new THREE.Vector3(0, 0, -1)),
       [triangle(true)],
     )).toBeNull()
+  })
+
+  it('resolves a free-space point on the camera-aligned interaction plane', () => {
+    const root = new THREE.Group()
+    root.position.set(1, 0, 0)
+    root.updateMatrixWorld(true)
+    const raycaster = buildPointerRay(
+      { clientX: 50, clientY: 50 },
+      camera(),
+      { left: 0, top: 0, width: 100, height: 100 },
+    )
+    const result = resolveFreePoint(raycaster, {
+      projectId: 'project-1',
+      resourceRef,
+      assetRoot: root,
+      planePoint: new THREE.Vector3(0, 0, 0),
+      planeNormal: new THREE.Vector3(0, 0, -1),
+    })
+    expect(result.worldPosition).toEqual([0, 0, 0])
+    expect(result.localPosition).toEqual([-1, 0, 0])
+    expect(result.entityType).toBe('point')
+    expect(result.snap).toEqual({ type: 'none', confidence: 0 })
   })
 })

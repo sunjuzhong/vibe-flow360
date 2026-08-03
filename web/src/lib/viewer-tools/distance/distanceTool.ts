@@ -77,7 +77,7 @@ export function createDistanceOverlays({
     key: `endpoint-${index}`,
     position: pick.localPosition,
     color: '#f59e0b',
-    size: 0.018,
+    size: 9,
   }))
   if (points.length === 2) {
     primitives.push({
@@ -110,7 +110,7 @@ export function createDistanceOverlays({
       key: 'hover-endpoint',
       position: hover.localPosition,
       color: '#fde68a',
-      size: 0.014,
+      size: 7,
     })
   }
   return primitives

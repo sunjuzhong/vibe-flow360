@@ -126,6 +126,21 @@ describe('viewer tool definitions and runtime', () => {
     expect(state.status === 'complete-draft' && state.points).toHaveLength(2)
   })
 
+  it('recomputes a completed result when a control point is adjusted', () => {
+    const runtime = createToolRuntime(distanceDefinition)
+    const complete = dispatch(distanceDefinition, [
+      { type: 'activate' },
+      { type: 'pick', pick: pick(0) },
+      { type: 'pick', pick: pick(2) },
+    ])
+    const adjusted = runtime.reducer(complete, { type: 'replace-point', index: 1, pick: pick(5) })
+    expect(adjusted).toMatchObject({
+      status: 'complete-draft',
+      points: [pick(0), pick(5)],
+      result: { distance: 5 },
+    })
+  })
+
   it('only finishes an open tool after minPoints and supports hover and undo-last', () => {
     const runtime = createToolRuntime(polylineDefinition)
     let state = runtime.reducer(runtime.initialState, { type: 'activate' })

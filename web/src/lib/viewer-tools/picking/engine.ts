@@ -29,6 +29,14 @@ export interface ResolvePickOptions {
   readonly coordinateFrame?: CoordinateFrame
 }
 
+export interface ResolveFreePointOptions extends ResolvePickOptions {
+  /** Point on the interaction plane used when the pointer ray misses geometry. */
+  readonly planePoint: THREE.Vector3
+  /** Usually the camera direction, producing a screen-aligned interaction plane. */
+  readonly planeNormal: THREE.Vector3
+  readonly fallbackDistance?: number
+}
+
 export function buildPointerRay(
   pointer: PointerCoordinates,
   camera: THREE.Camera,
@@ -85,6 +93,31 @@ export function resolvePickCandidate(
     triangleIndex: candidate.faceIndex ?? undefined,
     normal: normal ? tuple(normal) : undefined,
     snap: { type: 'surface', distance: candidate.distance, confidence: 1 },
+  }
+}
+
+/** Resolve a stable free-space point for tools when no surface/snap target is available. */
+export function resolveFreePoint(
+  raycaster: THREE.Raycaster,
+  options: ResolveFreePointOptions,
+): PickResult {
+  const normal = options.planeNormal.clone().normalize()
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, options.planePoint)
+  const worldPosition = raycaster.ray.intersectPlane(plane, new THREE.Vector3())
+    ?? raycaster.ray.at(options.fallbackDistance ?? raycaster.ray.origin.distanceTo(options.planePoint), new THREE.Vector3())
+  options.assetRoot.updateWorldMatrix(true, false)
+  const localPosition = options.assetRoot.worldToLocal(worldPosition.clone())
+  return {
+    localPosition: tuple(localPosition),
+    worldPosition: tuple(worldPosition),
+    projectId: options.projectId,
+    resourceRef: options.resourceRef,
+    coordinateFrame: options.coordinateFrame ?? {
+      kind: 'asset-local',
+      resourceRef: options.resourceRef,
+    },
+    entityType: 'point',
+    snap: { type: 'none', confidence: 0 },
   }
 }
 

@@ -14,7 +14,7 @@ export interface ProjectAnnotationsApi<TResult extends JsonValue = JsonValue> {
   patch(
     projectId: string,
     annotationId: string,
-    input: PatchAnnotationInput,
+    input: PatchAnnotationInput<TResult>,
   ): Promise<ViewerAnnotation<TResult>>
   delete(projectId: string, annotationId: string): Promise<void>
 }
@@ -34,7 +34,7 @@ export interface ProjectAnnotationsModel<TResult extends JsonValue = JsonValue>
   readonly saving: boolean
   readonly retry: () => Promise<void>
   readonly create: (input: CreateAnnotationInput<TResult>) => Promise<ViewerAnnotation<TResult> | null>
-  readonly update: (annotationId: string, input: PatchAnnotationInput) => Promise<boolean>
+  readonly update: (annotationId: string, input: PatchAnnotationInput<TResult>) => Promise<boolean>
   readonly rename: (annotationId: string, name: string) => Promise<boolean>
   readonly setVisible: (annotationId: string, visible: boolean) => Promise<boolean>
   readonly remove: (annotationId: string) => Promise<boolean>
@@ -188,7 +188,7 @@ export class ProjectAnnotationsController<TResult extends JsonValue = JsonValue>
     }
   }
 
-  async updateAnnotation(annotationId: string, input: PatchAnnotationInput): Promise<boolean> {
+  async updateAnnotation(annotationId: string, input: PatchAnnotationInput<TResult>): Promise<boolean> {
     const projectId = this.snapshot.projectId
     const previous = this.snapshot.annotations.find((annotation) => annotation.id === annotationId)
     if (!projectId || !previous) return false
@@ -282,7 +282,7 @@ export function useProjectAnnotations<TResult extends JsonValue = JsonValue>(
   const retry = useCallback(() => controller.retry(), [controller])
   const create = useCallback((input: CreateAnnotationInput<TResult>) => controller.create(input), [controller])
   const update = useCallback(
-    (annotationId: string, input: PatchAnnotationInput) => controller.updateAnnotation(annotationId, input),
+    (annotationId: string, input: PatchAnnotationInput<TResult>) => controller.updateAnnotation(annotationId, input),
     [controller],
   )
   const rename = useCallback(

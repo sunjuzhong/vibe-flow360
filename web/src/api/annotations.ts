@@ -18,10 +18,12 @@ export type CreateAnnotationInput<TResult extends JsonValue = JsonValue> = Pick<
   readonly visible?: boolean
 }
 
-export interface PatchAnnotationInput {
+export interface PatchAnnotationInput<TResult extends JsonValue = JsonValue> {
   readonly name?: string
   readonly style?: Readonly<Record<string, JsonValue>>
   readonly visible?: boolean
+  readonly points?: ReadonlyArray<ViewerAnnotation<TResult>['points'][number]>
+  readonly result?: TResult
 }
 
 export class AnnotationApiError extends Error {
@@ -120,7 +122,7 @@ export async function createAnnotation<TResult extends JsonValue = JsonValue>(
 export async function patchAnnotation<TResult extends JsonValue = JsonValue>(
   projectId: string,
   annotationId: string,
-  input: PatchAnnotationInput,
+  input: PatchAnnotationInput<TResult>,
 ): Promise<ViewerAnnotation<TResult>> {
   return parseViewerAnnotation<TResult>(await request(
     annotationPath(projectId, annotationId),
