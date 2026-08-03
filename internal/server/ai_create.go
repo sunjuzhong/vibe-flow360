@@ -60,9 +60,14 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 
-	blueprint, err := aicreate.FromIntent(request.Intent)
+	blueprint, err := aicreate.Design(c.Request.Context(), s.agent, request.Intent)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		var missing *aicreate.MissingInputError
+		if errors.As(err, &missing) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "The geometry agent needs more information before it can create reliable CAD.", "questions": missing.Questions})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -71,24 +76,25 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare generated geometry"})
 		return
 	}
-	stagingDir, err := os.MkdirTemp(stagingRoot, "cylinder-")
+	stagingDir, err := os.MkdirTemp(stagingRoot, "agent-cad-")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare generated geometry"})
 		return
 	}
 	defer os.RemoveAll(stagingDir)
-	geometryPath := filepath.Join(stagingDir, "cylinder.step")
-	geometryFile, err := os.OpenFile(geometryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	geometryName := safeGeometryName(blueprint.Geometry.Name) + ".step"
+	geometryPath := filepath.Join(stagingDir, geometryName)
+	generator := s.cadGenerator
+	if generator == nil {
+		generator = aicreate.NewCadQueryGenerator()
+	}
+	validation, err := generator.Generate(c.Request.Context(), blueprint.Geometry, geometryPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create generated geometry"})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "The agent designed the geometry, but exact CAD generation failed: " + err.Error()})
 		return
 	}
-	writeErr := aicreate.WriteCylinderSTEP(geometryFile, blueprint.Geometry)
-	closeErr := geometryFile.Close()
-	if writeErr != nil || closeErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not write generated geometry"})
-		return
-	}
+	blueprint.Geometry.Validated = true
+	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP validation passed: %d solid, %d faces, volume %.8g m^3 (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, validation.Kernel)
 	if err := validateAICreateAsset(geometryPath, "geometry"); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
@@ -96,7 +102,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 
 	rawResult, err := s.flow360.CreateProjectSync(
 		c.Request.Context(), []string{geometryPath}, "geometry", blueprint.ProjectName,
-		"m", "standard", "", request.FolderID, []string{"ai-create", blueprint.Template},
+		blueprint.Geometry.Unit, "standard", "", request.FolderID, []string{"ai-create", "agent-cad-v1"},
 	)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateProjectError(err)})
@@ -142,16 +148,16 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	evidence := []plans.Evidence{
-		{Key: "geometry.template", Value: blueprint.Template, Provenance: "derived", Description: "Procedural geometry selected from the user intent."},
-		{Key: "geometry.diameter", Value: blueprint.Geometry.DiameterM, Provenance: "inferred", Description: "Cylinder diameter in metres."},
-		{Key: "meshing.defaults.boundary_layer_first_layer_thickness", Value: 2.5e-5, Provenance: "derived", Description: "Wall-resolved cylinder-flow starting point in metres."},
+		{Key: "geometry.generator", Value: blueprint.Geometry.Generator, Provenance: "derived", Description: "Constrained CAD program selected by the geometry agent."},
+		{Key: "geometry.operations", Value: len(blueprint.Geometry.Operations), Provenance: "derived", Description: "Validated parametric and boolean CAD operations."},
+		{Key: "geometry.validation", Value: blueprint.Geometry.Validation, Provenance: "derived", Description: "Exact CAD kernel and STEP round-trip validation."},
 		{Key: "models.Wall.entities", Value: "Geometry face groups", Provenance: "derived", Description: "Resolved from the imported CAD entity cache."},
-		{Key: "operating_condition.velocity_magnitude", Value: 10, Provenance: "defaulted", Description: "Reviewable cylinder-flow template default."},
+		{Key: "simulation.parameters", Value: "agent-derived and schema-preflighted", Provenance: "inferred", Description: "Operating, meshing, and solver values interpreted from the request and explicit assumptions."},
 	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: remote.ProjectID, ProjectName: blueprint.ProjectName,
-		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: "cylinder.step",
-		Target: blueprint.Target, Name: "AI Create · Cylinder flow baseline", Intent: request.Intent,
+		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: geometryName,
+		Target: blueprint.Target, Name: "AI Create · " + blueprint.ProjectName, Intent: request.Intent,
 		Patch: patch, Baseline: baseline, Evidence: evidence, ValidationHints: blueprint.Assumptions,
 		IdempotencyKey: "ai-create:" + remote.ProjectID,
 	})
@@ -171,8 +177,21 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	c.JSON(http.StatusCreated, aiCreateResponse{
 		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
-		Stages: []string{"Interpreted requirement", "Generated exact CAD", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters", "Passed Flow360 schema preflight"},
+		Stages: []string{"Agent interpreted requirement", "Agent authored a constrained CAD program", "Generated and validated exact STEP", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters", "Passed Flow360 schema preflight"},
 	})
+}
+
+var unsafeGeometryName = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+func safeGeometryName(name string) string {
+	name = strings.Trim(unsafeGeometryName.ReplaceAllString(strings.TrimSpace(name), "-"), "-")
+	if name == "" {
+		return "agent-geometry"
+	}
+	if len(name) > 80 {
+		name = strings.Trim(name[:80], "-")
+	}
+	return name
 }
 
 const (
@@ -243,8 +262,9 @@ func validateAICreateAsset(path, sourceType string) error {
 				return fmt.Errorf("read generated STEP: %w", err)
 			}
 			upper := bytes.ToUpper(preview)
-			if !bytes.Contains(upper, []byte("ISO-10303-21")) || !bytes.Contains(upper, []byte("CYLINDRICAL_SURFACE")) || bytes.Contains(upper, []byte("FACET_NORMAL")) {
-				return fmt.Errorf("%s is not a validated analytic STEP B-rep", filepath.Base(path))
+			hasTopology := bytes.Contains(upper, []byte("ADVANCED_FACE")) || bytes.Contains(upper, []byte("MANIFOLD_SOLID_BREP"))
+			if !bytes.Contains(upper, []byte("ISO-10303-21")) || !hasTopology || bytes.Contains(upper, []byte("FACET_NORMAL")) {
+				return fmt.Errorf("%s is not a validated exact STEP B-rep", filepath.Base(path))
 			}
 		}
 	}

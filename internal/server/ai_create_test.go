@@ -14,21 +14,37 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
 
+type fakeCADGenerator struct{}
+
+func (fakeCADGenerator) Generate(_ context.Context, _ aicreate.Geometry, outputPath string) (aicreate.GeometryValidation, error) {
+	step := "ISO-10303-21;\nDATA;\n#1=MANIFOLD_SOLID_BREP('agent geometry',#2);\n#2=ADVANCED_FACE('',(),#3,.T.);\nENDSEC;\nEND-ISO-10303-21;\n"
+	if err := os.WriteFile(outputPath, []byte(step), 0o600); err != nil {
+		return aicreate.GeometryValidation{}, err
+	}
+	return aicreate.GeometryValidation{SolidCount: 1, FaceCount: 6, Volume: 1, Kernel: "test kernel"}, nil
+}
+
 func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Agent Flow Geometry\",\"summary\":\"Agent-designed external-flow geometry.\",\"geometry\":{\"name\":\"agent-body\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"box\",\"params\":{\"length\":2,\"width\":1,\"height\":0.5}}],\"result\":\"body\"},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.03,\"first_layer_thickness_m\":0.000025,\"max_steps\":10000},\"assumptions\":[\"Review inferred values.\"],\"questions\":[]}"}}]}`))
+	}))
+	defer agentServer.Close()
 	fakeFlow360 := filepath.Join(root, "flow360")
 	fakePython := filepath.Join(root, "python")
 	script := `#!/bin/sh
 case " $* " in
   *" project create "*)
     case " $* " in *" --sync "*) ;; *) exit 9 ;; esac
-    case " $* " in *"/cylinder.step "*) ;; *) exit 10 ;; esac
+    case " $* " in *"/agent-body.step "*) ;; *) exit 10 ;; esac
     printf '%s' '{"project_id":"project-ai-1"}'
     ;;
   *" project items project-ai-1 "*)
@@ -57,9 +73,11 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 		t.Fatal(err)
 	}
 	app := &Server{
-		flow360: &flow360.Client{Binary: fakeFlow360, Timeout: time.Second},
-		plans:   planStore,
-		workDir: root,
+		flow360:      &flow360.Client{Binary: fakeFlow360, Timeout: time.Second},
+		agent:        &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: agentServer.URL, Model: "test", Client: agentServer.Client()},
+		cadGenerator: fakeCADGenerator{},
+		plans:        planStore,
+		workDir:      root,
 	}
 
 	body := bytes.NewBufferString(`{"intent":"帮我实现一个圆柱扰流的仿真试验","folder_id":"folder-1"}`)
@@ -210,16 +228,10 @@ func TestValidateAICreateAssetRejectsSTLAsGeometry(t *testing.T) {
 	if err := validateAICreateAsset(fakeSTEP, "geometry"); err == nil {
 		t.Fatal("renamed STL was accepted as STEP Geometry")
 	}
-	stepPath := filepath.Join(root, "cylinder.step")
-	file, err := os.Create(stepPath)
-	if err != nil {
+	stepPath := filepath.Join(root, "agent-shape.step")
+	step := "ISO-10303-21;\nDATA;\n#1=MANIFOLD_SOLID_BREP('shape',#2);\n#2=ADVANCED_FACE('',(),#3,.T.);\nENDSEC;\nEND-ISO-10303-21;\n"
+	if err := os.WriteFile(stepPath, []byte(step), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	blueprint, _ := aicreate.FromIntent("cylinder flow")
-	writeErr := aicreate.WriteCylinderSTEP(file, blueprint.Geometry)
-	closeErr := file.Close()
-	if writeErr != nil || closeErr != nil {
-		t.Fatalf("write STEP: %v / %v", writeErr, closeErr)
 	}
 	if err := validateAICreateAsset(stepPath, "geometry"); err != nil {
 		t.Fatalf("validated STEP was rejected: %v", err)

@@ -24,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
+	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
 	"github.com/sunjuzhong/vibe-flow360/internal/annotations"
 	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
@@ -42,6 +43,7 @@ type Server struct {
 	router             *gin.Engine
 	flow360            *flow360.Client
 	agent              *agent.Service
+	cadGenerator       aicreate.Generator
 	plans              *plans.Store
 	imports            *importplans.Store
 	cache              *projectcache.Store
@@ -121,6 +123,7 @@ func New() *Server {
 		router:             router,
 		flow360:            flowClient,
 		agent:              aiService,
+		cadGenerator:       aicreate.NewCadQueryGenerator(),
 		plans:              planStore,
 		imports:            importStore,
 		cache:              cacheStore,

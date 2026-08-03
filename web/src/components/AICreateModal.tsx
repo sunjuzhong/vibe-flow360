@@ -5,7 +5,8 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 
 const progressStages = [
   'Understanding the engineering goal',
-  'Generating geometry and boundary intent',
+  'Designing a parametric CAD program',
+  'Generating and validating exact STEP geometry',
   'Creating the Flow360 Project',
   'Loading complete mesh and Case parameters',
   'Validating all parameters against Flow360',
@@ -73,7 +74,7 @@ export default function AICreateModal({
         <div>
           <p className="eyebrow">AI CREATE</p>
           <h2 id="ai-create-title">Describe the simulation you want</h2>
-          <p>The built-in cylinder template uses validated analytic STEP CAD. Other shapes require a supported STEP or IGES model.</p>
+          <p>The built-in agent decides how to construct the geometry, generates exact CAD, and prepares a reviewable Flow360 setup. It will ask for dimensions or CAD when the shape cannot be inferred reliably.</p>
         </div>
       </div>
       <form onSubmit={submit}>
@@ -81,7 +82,7 @@ export default function AICreateModal({
           ref={inputRef}
           value={intent}
           onChange={(event) => setIntent(event.target.value)}
-          placeholder="For example: Set up an external-flow simulation around a circular cylinder."
+          placeholder="Describe the geometry, dimensions, flow conditions, and engineering objective."
           rows={3}
           disabled={busy}
           aria-label="Simulation requirement"
@@ -95,11 +96,7 @@ export default function AICreateModal({
           </button>
         </div>
       </form>
-      {!busy && !intent && (
-        <button className="ai-create-example" type="button" onClick={() => { setIntent('Set up an external-flow simulation around a circular cylinder.'); inputRef.current?.focus() }}>
-          Try “cylinder flow simulation”
-        </button>
-      )}
+      {!busy && !intent && <p className="ai-create-example">Tip: defining dimensions and operating conditions lets the agent create a more faithful model.</p>}
       {busy && (
         <ol className="ai-create-progress" aria-live="polite">
           {progressStages.map((stage, index) => (

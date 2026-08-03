@@ -30,17 +30,18 @@ export type AICreateResult = {
   root_resource_id: string
   root_resource_type: string
   blueprint: {
-    template: string
+    version: string
+    decision: 'generate'
     project_name: string
     summary: string
     geometry: {
-      kind: string
-      diameter_m: number
-      span_m: number
+      name: string
+      unit: 'm'
       representation: string
       format: string
       generator: string
-      generator_version: string
+      operations: Array<{ id: string; op: string; params: Record<string, unknown> }>
+      result: string
       validated: boolean
       validation: string
     }
@@ -790,8 +791,19 @@ export const api = {
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run`),
-  aiCreate: (intent: string, folderId: string) =>
-    mutate<AICreateResult>('/api/ai-create', { intent, folder_id: folderId }),
+  aiCreate: async (intent: string, folderId: string) => {
+    const response = await fetch('/api/ai-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent, folder_id: folderId }),
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const questions = Array.isArray(body.questions) ? body.questions.join(' ') : ''
+      throw new Error([body.error || response.statusText, questions].filter(Boolean).join(' '))
+    }
+    return body as AICreateResult
+  },
   abortImport: async (id: string) => {
     const response = await fetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' })
     const body = await response.json().catch(() => ({}))

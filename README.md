@@ -72,6 +72,7 @@ Requirements:
 - Go 1.24+
 - Node.js 22+
 - an installed and authenticated `flow360` CLI
+- `uv` for the isolated CadQuery/OpenCascade runtime used by AI Create
 
 Start the backend:
 
@@ -119,6 +120,14 @@ External Codex runs with `codex exec --ephemeral --sandbox read-only`. Vibe
 Flow360 passes CFD context in the prompt, captures only the final response, and
 does not forward Flow360 credentials. The external agent cannot approve or
 submit a Flow360 run; the existing reviewed Plan workflow remains authoritative.
+
+AI Create requires a configured model provider. The model produces a validated,
+declarative CAD operation graph rather than arbitrary Python; the local
+CadQuery/OpenCascade runtime executes that graph, exports exact STEP, and checks
+that it round-trips as one valid closed solid before anything is sent to
+Flow360. `make install` preloads the pinned CadQuery runtime. Optional runtime
+settings are `VIBESIM_UV_BINARY`, `VIBESIM_UV_CACHE_DIR`,
+`VIBESIM_CAD_TIMEOUT_SECONDS`, and `VIBESIM_CAD_OFFLINE=true`.
 
 ## Flow360 configuration
 

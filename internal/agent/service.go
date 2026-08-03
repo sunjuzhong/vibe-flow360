@@ -173,6 +173,72 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 	return result.Choices[0].Message.Content, nil
 }
 
+// Complete runs a purpose-specific prompt through the configured model without
+// applying the conversational AgentAction contract. Callers are responsible
+// for validating the returned structured output before using it.
+func (s *Service) Complete(ctx context.Context, systemPrompt, userPrompt, requestedModel string) (string, error) {
+	if strings.TrimSpace(systemPrompt) == "" || strings.TrimSpace(userPrompt) == "" {
+		return "", errors.New("system and user prompts are required")
+	}
+	provider := s.effectiveProvider()
+	if provider == "codex" {
+		return s.chatWithCodex(ctx, systemPrompt, userPrompt, requestedModel)
+	}
+	if provider != "builtin" {
+		return "", fmt.Errorf("unsupported agent provider %q; use builtin or codex", provider)
+	}
+	if strings.TrimSpace(s.APIKey) == "" {
+		return "", errors.New("AI Create requires a configured model provider")
+	}
+
+	payload := struct {
+		Model       string    `json:"model"`
+		Messages    []Message `json:"messages"`
+		Temperature float64   `json:"temperature"`
+	}{
+		Model: firstNonEmpty(requestedModel, s.Model),
+		Messages: []Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+		Temperature: 0.1,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	response, err := s.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("AI provider request failed: %w", err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("AI provider returned %s", response.Status)
+	}
+	var result struct {
+		Choices []struct {
+			Message Message `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", fmt.Errorf("decode AI response: %w", err)
+	}
+	if len(result.Choices) == 0 || strings.TrimSpace(result.Choices[0].Message.Content) == "" {
+		return "", errors.New("AI provider returned an empty response")
+	}
+	return result.Choices[0].Message.Content, nil
+}
+
 func (s *Service) ChatWithValidation(ctx context.Context, request ChatRequest) (string, *Action, error) {
 	rawResponse, err := s.Chat(ctx, request)
 	if err != nil {
