@@ -319,6 +319,7 @@ export default function VolumeMeshWorkspace({
             entityVisibility={entityVisibility}
             onEntityVisibilityChange={setEntityVisibility}
             selectedField={activeSlice}
+            showEntityLegend={false}
             onFieldsDiscovered={handleFieldsDiscovered}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
@@ -352,17 +353,6 @@ export default function VolumeMeshWorkspace({
             )}
           />
           <ViewerToolPanel model={tools} />
-          <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
-            <ScanLine size={13} />
-            <div>
-              <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Volume mesh'}</strong>
-              <span aria-label="volume mesh description">
-                {previewSource === 'fallback'
-                  ? 'The VolumeMesh slice asset is unavailable; this is the parent Geometry, not volume cells.'
-                  : 'Inspect crinkled slices, cell growth, boundary layers, and zone interfaces.'}
-              </span>
-            </div>
-          </div>
         </>
       )}
       inspector={(
@@ -406,6 +396,15 @@ export default function VolumeMeshWorkspace({
               <p>Select a cell zone or region in the inventory or 3D viewer to inspect it.</p>
             )}
           </section>
+          {previewSource === 'fallback' && (
+            <div className="volume-source-warning" role="status">
+              <AlertCircle size={14} />
+              <span>
+                <strong>Geometry context shown</strong>
+                The VolumeMesh slice asset is unavailable; these are parent Geometry surfaces, not volume cells.
+              </span>
+            </div>
+          )}
           <div className="geometry-checks volume-mesh-checks">
             {checks.map((check) => (
               <div className={check.status === 'missing' ? 'unknown' : check.status} key={check.label}>

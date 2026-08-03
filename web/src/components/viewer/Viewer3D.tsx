@@ -1027,30 +1027,32 @@ export function Viewer3D({
           <p>{visibleState.message}</p>
         </div>
       )}
-      {assetStats && visibleState.status === 'ready' && (
-        <div className="viewer-asset-stats">
-          <span>{assetStats.faces} faces</span>
-          <span>{assetStats.edges} edges</span>
-          <span>{assetStats.triangles.toLocaleString()} tris</span>
-          <ViewerPrecisionControl
-            levels={precisionInfo.levels}
-            currentLevel={precisionInfo.currentLevel}
-            selection={precisionSelection}
-            onChange={(selection) => setPrecision({ assetURL: manifest?.asset_url ?? null, selection })}
-          />
-          <button
-            className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
-            onClick={handleWireframeToggle}
-            aria-label="Toggle wireframe overlay"
-            aria-pressed={effectiveWireframe}
-            title="Toggle wireframe"
-          >
-            Wire
-          </button>
+      {(assetStats || toolbar) && visibleState.status === 'ready' && (
+        <div className="viewer-controls-rail">
+          {assetStats && (
+            <div className="viewer-asset-stats">
+              <span>{assetStats.faces} faces</span>
+              <span>{assetStats.edges} edges</span>
+              <span>{assetStats.triangles.toLocaleString()} tris</span>
+              <ViewerPrecisionControl
+                levels={precisionInfo.levels}
+                currentLevel={precisionInfo.currentLevel}
+                selection={precisionSelection}
+                onChange={(selection) => setPrecision({ assetURL: manifest?.asset_url ?? null, selection })}
+              />
+              <button
+                className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
+                onClick={handleWireframeToggle}
+                aria-label="Toggle wireframe overlay"
+                aria-pressed={effectiveWireframe}
+                title="Toggle wireframe"
+              >
+                Wire
+              </button>
+            </div>
+          )}
+          {toolbar && <div className="viewer-toolbar-slot">{toolbar}</div>}
         </div>
-      )}
-      {toolbar && visibleState.status === 'ready' && (
-        <div className="viewer-toolbar-slot">{toolbar}</div>
       )}
       {snapStatus && visibleState.status === 'ready' && (
         <div className={`viewer-snap-status viewer-snap-status-${snapStatus.mode}`} role="status" aria-live="polite">

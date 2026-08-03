@@ -55,6 +55,17 @@
   min-height: 100%;
 }
 
+.resource-review-viewer .viewer-3d-container {
+  box-sizing: border-box;
+  padding-bottom: 52px;
+}
+
+.resource-review-viewer .viewer-controls-rail {
+  right: 10px;
+  bottom: 7px;
+  left: 10px;
+}
+
 .surface-review-workspace .resource-review-inventory > .geometry-panel-heading {
   padding: 14px 13px 10px;
 }
@@ -148,6 +159,27 @@
 .volume-review-workspace .volume-selection-card dl {
   margin: 7px 0 0;
 }
+
+.volume-review-workspace .volume-mesh-checks {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.volume-source-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid #e3cf95;
+  border-radius: 7px;
+  color: #8c7340;
+  background: #f8f0dd;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.volume-source-warning span,
+.volume-source-warning strong { display: block; }
 
 .volume-review-workspace .volume-review-order ol {
   display: grid;

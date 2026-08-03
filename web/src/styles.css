@@ -1329,6 +1329,22 @@ button { color: inherit; }
   font-size: 10px;
   text-align: center;
 }
+.viewer-controls-rail {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+.viewer-controls-rail .viewer-asset-stats,
+.viewer-controls-rail .viewer-toolbar-slot {
+  position: static;
+  transform: none;
+}
 .viewer-asset-stats {
   position: absolute;
   z-index: 2;
@@ -1337,6 +1353,7 @@ button { color: inherit; }
   display: flex;
   gap: 5px;
 }
+.viewer-controls-rail .viewer-asset-stats { flex-wrap: wrap; }
 .viewer-asset-stats span {
   padding: 4px 7px;
   border: 1px solid rgb(255 255 255 / 70%);
@@ -3345,7 +3362,13 @@ button { color: inherit; }
 .canvas-stage-strip > div { flex-direction: row; justify-content: center; gap: 6px; }
 .canvas-stage-strip > div:not(:last-child)::after { top: 50%; left: calc(50% + 32px); right: calc(-50% + 32px); }
 .canvas-stage-strip > div > span { width: 20px; height: 20px; background: #f7f7f3; }
-.canvas-stage-strip small { font-size: 7px; }
+.canvas-stage-strip small {
+  position: relative;
+  z-index: 2;
+  padding: 0 4px;
+  background: #f7f7f3;
+  font-size: 7px;
+}
 
 .canvas-info-button {
   justify-self: end;
