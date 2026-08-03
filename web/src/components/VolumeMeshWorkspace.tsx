@@ -13,11 +13,19 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
+import { useDistanceTool } from '../hooks/useDistanceTool'
+import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import {
+  createViewerContext,
+  findLengthUnit,
+} from '../lib/viewer-tools/context/ViewerContext'
+import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFFieldInfo } from '../lib/uvf-three'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
@@ -103,12 +111,18 @@ export function computeReadiness(detail: ResourceDetail | null): ReadinessCheck[
 export default function VolumeMeshWorkspace({
   detail,
   resourceId,
+  projectId,
+  resourceRef,
+  annotationsModel,
   geometryResourceId,
   onPlanCase,
   onShowLogs,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  projectId: string
+  resourceRef: ResourceRef
+  annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
   onPlanCase: () => void
   onShowLogs?: () => void
@@ -135,6 +149,29 @@ export default function VolumeMeshWorkspace({
   const terminal = ['completed', 'processed', 'success', 'failed', 'error'].includes(statusLower)
   const failed = ['failed', 'error'].includes(statusLower)
   const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
+  const unit = findLengthUnit([
+    detail?.simulation_params,
+    detail?.summary,
+    detail?.state,
+  ])
+  const viewerContext = useMemo(() => createViewerContext({
+    projectId,
+    resourceRef,
+    assetSource: previewSource,
+    fallbackAssetRef: geometryResourceId
+      ? { id: geometryResourceId, type: 'Geometry' }
+      : null,
+    unit,
+    capabilities: ['distance', 'surface-picking', 'field-probe'],
+  }), [geometryResourceId, previewSource, projectId, resourceRef, unit])
+  const distance = useDistanceTool({
+    projectId,
+    resourceRef: viewerContext.resourceRef,
+    assetRef: viewerContext.assetRef,
+    coordinateFrame: viewerContext.coordinateFrame,
+    annotationsModel,
+    unit: viewerContext.unit,
+  })
 
   const metrics = [
     {
@@ -181,6 +218,10 @@ export default function VolumeMeshWorkspace({
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
           onFieldsDiscovered={handleFieldsDiscovered}
+          projectId={projectId}
+          resourceRef={viewerContext.assetRef}
+          toolInput={distance.toolInput}
+          overlays={distance.overlays}
           toolbar={
             volumeFields.length > 0 ? (
               <>
@@ -256,6 +297,7 @@ export default function VolumeMeshWorkspace({
               </div>
             ))}
           </div>
+          <DistanceToolPanel model={distance} />
           <div className="geometry-plan-action-stack">
             <button
               className="geometry-plan-action"

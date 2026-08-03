@@ -17,13 +17,21 @@ import {
   BarChart3,
   ScanLine,
 } from 'lucide-react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
 import type { ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
+import { useDistanceTool } from '../hooks/useDistanceTool'
+import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import {
+  createViewerContext,
+  findLengthUnit,
+} from '../lib/viewer-tools/context/ViewerContext'
+import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFFieldInfo } from '../lib/uvf-three'
 
 function formatConvergenceStatus(status: string): string {
@@ -190,12 +198,18 @@ function StatusBadge({ status }: { status: CaseStatusView }) {
 export default function CaseWorkspace({
   detail,
   resourceId,
+  projectId,
+  resourceRef,
+  annotationsModel,
   geometryResourceId,
   onPlanCase,
   onRefresh,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
+  projectId: string
+  resourceRef: ResourceRef
+  annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
   onPlanCase: () => void
   onRefresh: () => void
@@ -217,6 +231,29 @@ export default function CaseWorkspace({
     detail && geometryResourceId ? 'Geometry' : null,
     geometryResourceId ?? null,
   )
+  const unit = findLengthUnit([
+    detail?.simulation_params,
+    detail?.summary,
+    detail?.state,
+  ])
+  const viewerContext = useMemo(() => createViewerContext({
+    projectId,
+    resourceRef,
+    assetSource: previewSource,
+    fallbackAssetRef: geometryResourceId
+      ? { id: geometryResourceId, type: 'Geometry' }
+      : null,
+    unit,
+    capabilities: ['distance', 'surface-picking', 'field-probe'],
+  }), [geometryResourceId, previewSource, projectId, resourceRef, unit])
+  const distance = useDistanceTool({
+    projectId,
+    resourceRef: viewerContext.resourceRef,
+    assetRef: viewerContext.assetRef,
+    coordinateFrame: viewerContext.coordinateFrame,
+    annotationsModel,
+    unit: viewerContext.unit,
+  })
   const velocity = findMetric(viewModel.operatingPoint, ['velocity_magnitude', 'velocity', 'mach'])
 
   const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
@@ -232,6 +269,10 @@ export default function CaseWorkspace({
           selection={viewerSelection}
           onSelectionChange={setViewerSelection}
           onFieldsDiscovered={handleFieldsDiscovered}
+          projectId={projectId}
+          resourceRef={viewerContext.assetRef}
+          toolInput={distance.toolInput}
+          overlays={distance.overlays}
           toolbar={
             caseFields.length > 0 ? (
               <span className="viewer-toolbar-field-hint">
@@ -288,6 +329,7 @@ export default function CaseWorkspace({
               <GitPullRequestDraft size={14} /> Plan variation
             </button>
           </div>
+          <DistanceToolPanel model={distance} />
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}

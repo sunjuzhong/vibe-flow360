@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react'
 import type { CreateAnnotationInput } from '../api/annotations'
 import type { ViewerOverlayContent } from '../components/viewer/LazyViewer3D'
 import type { ProjectAnnotationsModel } from './useProjectAnnotations'
-import { resolveCompatibleAnnotations } from '../lib/viewer-tools/compatibility'
+import {
+  areCoordinateFramesCompatible,
+  resolveCompatibleAnnotations,
+} from '../lib/viewer-tools/compatibility'
 import {
   DISTANCE_TOOL_ID,
   distanceAnnotationOverlay,
@@ -62,20 +65,29 @@ export type DistanceToolModel = {
 export function useDistanceTool({
   projectId,
   resourceRef,
+  assetRef = resourceRef,
+  coordinateFrame: suppliedCoordinateFrame,
   annotationsModel,
   unit = 'model units',
 }: {
   projectId: string
+  /** Project resource that owns a saved annotation. */
   resourceRef: ResourceRef
+  /** Resource whose geometry is currently rendered and picked. */
+  assetRef?: ResourceRef
+  /** Explicit frame for fallback assets or other compatible views. */
+  coordinateFrame?: CoordinateFrame
   annotationsModel: ProjectAnnotationsModel<JsonValue>
   unit?: string | null
 }): DistanceToolModel {
   const [session, dispatch] = useReducer(runtime.reducer, runtime.initialState)
   const displayUnit = unit?.trim() || 'model units'
   const coordinateFrame = useMemo<CoordinateFrame>(
-    () => ({ kind: 'asset-local', resourceRef }),
-    [resourceRef.id, resourceRef.type, resourceRef.version],
+    () => suppliedCoordinateFrame ?? { kind: 'asset-local', resourceRef: assetRef },
+    [assetRef.id, assetRef.type, assetRef.version, suppliedCoordinateFrame],
   )
+  const contextKey = `${projectId}:${resourceRef.type}:${resourceRef.id}:${resourceRef.version ?? ''}`
+    + `:${assetRef.type}:${assetRef.id}:${assetRef.version ?? ''}`
   const capturing = isCapturing(session)
   const active = capturing || session.status === 'complete-draft' || session.status === 'saving'
     || session.status === 'error'
@@ -105,6 +117,10 @@ export function useDistanceTool({
 
   useEffect(() => {
     dispatch({ type: 'cancel' })
+  }, [contextKey])
+
+  useEffect(() => {
+    dispatch({ type: 'cancel' })
   }, [projectId, resourceRef.id, resourceRef.type, resourceRef.version])
 
   useEffect(() => {
@@ -122,20 +138,25 @@ export function useDistanceTool({
     isActive: () => capturing,
     onPick: (pick) => {
       if (!pick || pick.projectId !== projectId
-        || pick.resourceRef.id !== resourceRef.id
-        || pick.resourceRef.type !== resourceRef.type) return false
+        || pick.resourceRef.id !== assetRef.id
+        || pick.resourceRef.type !== assetRef.type) return false
       dispatch({ type: 'pick', pick })
       return true
     },
     onHover: (pick) => dispatch({ type: 'hover', pick }),
-  }), [capturing, projectId, resourceRef.id, resourceRef.type])
+  }), [assetRef.id, assetRef.type, capturing, projectId])
 
   const overlays = useMemo<ViewerOverlayContent>(() => {
-    const compatible = resolveCompatibleAnnotations(annotationsModel.annotations, {
-      projectId,
-      resourceRef,
-      coordinateFrame,
-    })
+    const usesExplicitAssetFrame = assetRef !== resourceRef || suppliedCoordinateFrame !== undefined
+    const compatible = usesExplicitAssetFrame
+      ? annotationsModel.annotations.filter((annotation) => annotation.visible
+        && annotation.projectId === projectId
+        && areCoordinateFramesCompatible(annotation.coordinateFrame, coordinateFrame))
+      : resolveCompatibleAnnotations(annotationsModel.annotations, {
+        projectId,
+        resourceRef,
+        coordinateFrame,
+      })
     const saved = compatible.flatMap((annotation) => {
       const distance = asDistanceAnnotation(annotation)
       return distance ? [distanceAnnotationOverlay(distance)] : []
@@ -164,7 +185,7 @@ export function useDistanceTool({
         state: 'hover',
       }] : [],
     }
-  }, [annotationsModel.annotations, coordinateFrame, points, projectId, resourceRef, result, session])
+  }, [annotationsModel.annotations, assetRef, coordinateFrame, points, projectId, resourceRef, result, session, suppliedCoordinateFrame])
 
   const save = useCallback(async (): Promise<boolean> => {
     if (session.status !== 'complete-draft') return false

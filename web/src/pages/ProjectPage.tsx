@@ -593,6 +593,7 @@ export default function ProjectPage() {
 
             {selected.type === 'Geometry' && (
               <GeometryWorkspace
+                key={selected.id}
                 detail={detail}
                 resourceId={selected.id}
                 projectId={projectId}
@@ -644,6 +645,7 @@ export default function ProjectPage() {
             )}
             {selected.type === 'SurfaceMesh' && (
               <SurfaceMeshWorkspace
+                key={selected.id}
                 detail={detail}
                 resourceId={selected.id}
                 projectId={projectId}
@@ -677,8 +679,12 @@ export default function ProjectPage() {
             )}
             {selected.type === 'VolumeMesh' && (
               <VolumeMeshWorkspace
+                key={selected.id}
                 detail={detail}
                 resourceId={selected.id}
+                projectId={projectId}
+                resourceRef={{ id: selected.id, type: selected.type }}
+                annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => {
                   setChatOpen(false)
@@ -692,8 +698,12 @@ export default function ProjectPage() {
             )}
             {selected.type === 'Case' && (
               <CaseWorkspace
+                key={selected.id}
                 detail={detail}
                 resourceId={selected.id}
+                projectId={projectId}
+                resourceRef={{ id: selected.id, type: selected.type }}
+                annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => {
                   setChatOpen(false)
