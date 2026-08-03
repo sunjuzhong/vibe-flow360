@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
@@ -18,7 +19,9 @@ func TestPreflightLevels(t *testing.T) {
 		levels []string
 	}{
 		{"Geometry", "surface-mesh", []string{"SurfaceMesh"}},
+		{"Geometry", "volume-mesh", []string{"SurfaceMesh", "VolumeMesh"}},
 		{"Geometry", "case", []string{"SurfaceMesh", "VolumeMesh", "Case"}},
+		{"SurfaceMesh", "volume-mesh", []string{"VolumeMesh"}},
 		{"SurfaceMesh", "case", []string{"VolumeMesh", "Case"}},
 		{"VolumeMesh", "case", []string{"Case"}},
 		{"Case", "case", []string{"Case"}},
@@ -65,6 +68,30 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 }
 
+func TestPlanFormSchemaReturnsOnlyActiveRouteStages(t *testing.T) {
+	temp := t.TempDir()
+	fake := filepath.Join(temp, "python")
+	script := `#!/bin/sh
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"VolumeMesh":{"type":"object","properties":{"meshing":{"type":"object","properties":{}}}},"Case":{"type":"object","properties":{"operating_condition":{"type":"object","properties":{}}}}}}'
+`
+	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fake)
+	result, err := (&Client{Binary: "flow360"}).PlanFormSchema(
+		context.Background(), "SurfaceMesh", "case", json.RawMessage(`{"unit_system":{"name":"SI"}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.Stages, []string{"VolumeMesh", "Case"}) {
+		t.Fatalf("unexpected route stages: %#v", result.Stages)
+	}
+	if len(result.Schemas) != 2 || result.Schemas["SurfaceMesh"] != nil {
+		t.Fatalf("unexpected projected schemas: %#v", result.Schemas)
+	}
+}
+
 func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
 		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
@@ -81,6 +108,15 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	}
 	if result.Valid || len(result.Issues) == 0 {
 		t.Fatalf("expected missing CFD inputs, got %#v", result)
+	}
+	for _, stage := range []string{"SurfaceMesh", "VolumeMesh", "Case"} {
+		schema, ok := result.EditorSchemas[stage]
+		if !ok || !json.Valid(schema) {
+			t.Fatalf("installed Flow360 schema did not produce a valid %s editor schema", stage)
+		}
+		if strings.Contains(string(schema), "private_attribute_asset_cache") {
+			t.Fatalf("%s editor schema exposed private Flow360 attributes", stage)
+		}
 	}
 }
 

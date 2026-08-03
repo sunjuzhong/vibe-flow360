@@ -239,6 +239,8 @@ func (s *Server) routes() {
 		api.POST("/flow360/sweep", s.generateSweepPlan)
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)
+		api.POST("/plans/form-schema", s.planFormSchema)
+		api.POST("/plans/assist", s.assistPlanForm)
 		api.GET("/plans/:plan_id", s.getPlan)
 		api.GET("/plans/:plan_id/execution", s.planExecution)
 		api.POST("/plans/:plan_id/preflight", s.preflightPlan)

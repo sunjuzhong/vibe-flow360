@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 
@@ -8,6 +8,8 @@ type SchemaFormDialogProps = {
   submitting: boolean
   onCancel: () => void
   onSubmit: (values: Record<string, unknown>) => void
+  initialValues?: Record<string, unknown>
+  sparse?: boolean
 }
 
 type UnionDraft = { variant: number; value: unknown }
@@ -18,16 +20,26 @@ export default function SchemaFormDialog({
   submitting,
   onCancel,
   onSubmit,
+  initialValues,
+  sparse = false,
 }: SchemaFormDialogProps) {
-  const initial = useMemo(() => initialValue(schema), [schema])
+  const initial = useMemo(
+    () => initialValues ?? initialValue(schema, sparse),
+    [initialValues, schema, sparse],
+  )
   const [value, setValue] = useState<unknown>(initial)
   const [error, setError] = useState('')
   const hasRecommendation = schemaHasRecommendation(schema)
 
+  useEffect(() => {
+    setValue(initial)
+    setError('')
+  }, [initial])
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
     try {
-      const serialized = serializeValue(schema, value)
+      const serialized = serializeValue(schema, value, sparse)
       if (!isRecord(serialized)) throw new Error('The Flow360 form root must be an object.')
       setError('')
       onSubmit(serialized)
@@ -63,7 +75,7 @@ export default function SchemaFormDialog({
           ))}
         </div>
         <div className="schema-form-body">
-          <SchemaField schema={schema} value={value} onChange={setValue} path="" />
+          <SchemaFormFields schema={schema} value={value} onChange={setValue} sparse={sparse} />
         </div>
         {error && <div className="schema-form-error">{error}</div>}
         <footer>
@@ -81,34 +93,91 @@ export default function SchemaFormDialog({
   )
 }
 
+export function SchemaFormFields({
+  schema,
+  value,
+  onChange,
+  sparse = false,
+  baseline,
+}: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  sparse?: boolean
+  baseline?: unknown
+}) {
+  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} baseline={baseline} />
+}
+
 function SchemaField({
   schema,
   value,
   onChange,
   path,
+  sparse,
+  baseline,
 }: {
   schema: DynamicFormSchema
   value: unknown
   onChange: (value: unknown) => void
   path: string
+  sparse: boolean
+  baseline?: unknown
 }) {
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
   if (schema.type === 'object') {
     const object = isRecord(value) ? value : {}
+    const baselineObject = isRecord(baseline) ? baseline : {}
+    const requiredKeys = Array.isArray(schema.required) ? schema.required : []
     return (
       <fieldset className="schema-object">
         {path && <legend>{title}</legend>}
         {schema.description && path && <p>{schema.description}</p>}
-        {Object.entries(schema.properties ?? {}).map(([key, child]) => (
-          <SchemaField
-            key={key}
-            schema={child}
-            path={path ? `${path}.${key}` : key}
-            value={object[key]}
-            onChange={(next) => onChange({ ...object, [key]: next })}
-          />
-        ))}
+        {Object.entries(schema.properties ?? {}).map(([key, child]) => {
+          const childPath = path ? `${path}.${key}` : key
+          const present = Object.prototype.hasOwnProperty.call(object, key)
+          const required = child.required === true || requiredKeys.includes(key)
+          if (sparse && !present && !required) {
+            return (
+              <div className="schema-add-field" key={key}>
+                <span>
+                  <strong>{child.title || humanize(key)}</strong>
+                  {baselineObject[key] !== undefined && <small>Inherited: {compactValue(baselineObject[key])}</small>}
+                  {child.description && <small>{child.description}</small>}
+                </span>
+                <button type="button" onClick={() => onChange({ ...object, [key]: initialValue(child, true) })}>
+                  <Plus size={13} /> Change
+                </button>
+              </div>
+            )
+          }
+          return (
+            <div className="schema-edit-field" key={key}>
+              <SchemaField
+                schema={child}
+                path={childPath}
+                value={present ? object[key] : initialValue(child, sparse)}
+                baseline={baselineObject[key]}
+                sparse={sparse}
+                onChange={(next) => onChange({ ...object, [key]: next })}
+              />
+              {sparse && !required && present && (
+                <button
+                  type="button"
+                  className="schema-remove-change"
+                  onClick={() => {
+                    const next = { ...object }
+                    delete next[key]
+                    onChange(next)
+                  }}
+                >
+                  <Trash2 size={12} /> Keep inherited
+                </button>
+              )}
+            </div>
+          )
+        })}
       </fieldset>
     )
   }
@@ -176,6 +245,7 @@ function SchemaField({
               schema={schema.items ?? { type: 'json' }}
               path={`${path}.${index}`}
               value={item}
+              sparse={sparse}
               onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
             />
             <button type="button" className="icon-button" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${title} ${index + 1}`}>
@@ -183,14 +253,14 @@ function SchemaField({
             </button>
           </div>
         ))}
-        <button type="button" onClick={() => onChange([...array, initialValue(schema.items ?? { type: 'json' })])}>
+        <button type="button" onClick={() => onChange([...array, initialValue(schema.items ?? { type: 'json' }, sparse)])}>
           <Plus size={14} /> Add item
         </button>
       </fieldset>
     )
   }
   if (schema.type === 'union') {
-    const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }) }
+    const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
     const selected = schema.variants?.[draft.variant] ?? { type: 'json' as const }
     return (
       <fieldset className="schema-object">
@@ -201,7 +271,7 @@ function SchemaField({
             value={draft.variant}
             onChange={(event) => {
               const variant = Number(event.target.value)
-              onChange({ variant, value: initialValue(schema.variants?.[variant] ?? { type: 'json' }) })
+              onChange({ variant, value: initialValue(schema.variants?.[variant] ?? { type: 'json' }, sparse) })
             }}
           >
             {(schema.variants ?? []).map((variant, index) => (
@@ -209,7 +279,7 @@ function SchemaField({
             ))}
           </select>
         </label>
-        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} onChange={(next) => onChange({ ...draft, value: next })} />
+        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} onChange={(next) => onChange({ ...draft, value: next })} />
       </fieldset>
     )
   }
@@ -351,11 +421,17 @@ function FieldLabel({ schema, title, path }: { schema: DynamicFormSchema; title:
   )
 }
 
-export function initialValue(schema: DynamicFormSchema): unknown {
+export function initialValue(schema: DynamicFormSchema, sparse = false): unknown {
   if (schema.default !== undefined && schema.default !== null) return schema.default
   switch (schema.type) {
-    case 'object':
-      return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([key, child]) => [key, initialValue(child)]))
+    case 'object': {
+      const requiredKeys = Array.isArray(schema.required) ? schema.required : []
+      return Object.fromEntries(
+        Object.entries(schema.properties ?? {})
+          .filter(([key, child]) => !sparse || child.required === true || requiredKeys.includes(key))
+          .map(([key, child]) => [key, initialValue(child, sparse)]),
+      )
+    }
     case 'array':
       return []
     case 'quantity':
@@ -370,7 +446,7 @@ export function initialValue(schema: DynamicFormSchema): unknown {
     case 'enum':
       return schema.options?.[0]
     case 'union':
-      return { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }) }
+      return { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
     case 'json':
       return '{}'
     default:
@@ -378,16 +454,23 @@ export function initialValue(schema: DynamicFormSchema): unknown {
   }
 }
 
-export function serializeValue(schema: DynamicFormSchema, value: unknown): unknown {
+export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
   switch (schema.type) {
     case 'object': {
       const object = isRecord(value) ? value : {}
+      if (sparse) {
+        return Object.fromEntries(
+          Object.entries(object)
+            .filter(([key]) => Boolean(schema.properties?.[key]))
+            .map(([key, childValue]) => [key, serializeValue(schema.properties![key], childValue, true)]),
+        )
+      }
       return Object.fromEntries(
-        Object.entries(schema.properties ?? {}).map(([key, child]) => [key, serializeValue(child, object[key])]),
+        Object.entries(schema.properties ?? {}).map(([key, child]) => [key, serializeValue(child, object[key], false)]),
       )
     }
     case 'array':
-      return (Array.isArray(value) ? value : []).map((item) => serializeValue(schema.items ?? { type: 'json' }, item))
+      return (Array.isArray(value) ? value : []).map((item) => serializeValue(schema.items ?? { type: 'json' }, item, sparse))
     case 'quantity': {
       const object = isRecord(value) ? value : {}
       const numeric = Number(object.value)
@@ -415,7 +498,7 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown): unkno
     }
     case 'union': {
       const draft = isUnionDraft(value) ? value : { variant: 0, value }
-      return serializeValue(schema.variants?.[draft.variant] ?? { type: 'json' }, draft.value)
+      return serializeValue(schema.variants?.[draft.variant] ?? { type: 'json' }, draft.value, sparse)
     }
     case 'json':
       if (typeof value !== 'string') return value
@@ -439,6 +522,15 @@ function isUnionDraft(value: unknown): value is UnionDraft {
 
 function humanize(value: string) {
   return value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function compactValue(value: unknown) {
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
+  if (isRecord(value)) {
+    if ('value' in value) return `${String(value.value)}${value.units ? ` ${String(value.units)}` : ''}`
+    return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? '' : 's'}`
+  }
+  return String(value)
 }
 
 function schemaHasRecommendation(schema: DynamicFormSchema): boolean {

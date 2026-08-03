@@ -347,6 +347,22 @@ export type PlanPreflight = {
   validated_at: string
 }
 
+export type PlanFormSchemaResponse = {
+  schema_version: number
+  validator_version?: string
+  source_type: string
+  target: 'surface-mesh' | 'volume-mesh' | 'case'
+  stages: Array<'SurfaceMesh' | 'VolumeMesh' | 'Case'>
+  schemas: Partial<Record<'SurfaceMesh' | 'VolumeMesh' | 'Case', DynamicFormSchema>>
+  baseline: Record<string, unknown>
+}
+
+export type PlanAssistResponse = {
+  action: AgentAction
+  proposal?: AgentProposal
+  preflight?: Omit<PlanPreflight, 'validated_revision' | 'validated_at'>
+}
+
 export type SimulationPlan = {
   id: string
   project_id: string
@@ -693,6 +709,26 @@ export const api = {
     intent: string
     patch: Record<string, unknown>
   }) => mutate<SimulationPlan>('/api/plans', input),
+  planFormSchema: (input: {
+    project_id: string
+    project_name: string
+    source_id: string
+    source_type: string
+    source_name: string
+    target: string
+    patch?: Record<string, unknown>
+  }) => mutate<PlanFormSchemaResponse>('/api/plans/form-schema', input),
+  assistPlanForm: (input: {
+    project_id: string
+    project_name: string
+    source_id: string
+    source_type: string
+    source_name: string
+    target: string
+    intent: string
+    prompt: string
+    patch?: Record<string, unknown>
+  }) => mutate<PlanAssistResponse>('/api/plans/assist', input),
   preflightPlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/preflight`),
   applyPlanInputs: (planId: string, revision: number, values: Record<string, unknown>) =>

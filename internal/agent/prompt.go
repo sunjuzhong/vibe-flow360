@@ -11,7 +11,7 @@ import (
 const (
 	maxProjectContextBytes   = 4000
 	maxSimulationParamsBytes = 6000
-	maxSchemaBytes           = 3000
+	maxSchemaBytes           = 24000
 	maxEvidenceBytes         = 4000
 	maxUserFeedbackBytes     = 2000
 	maxHistoryTurns          = 20
@@ -165,7 +165,15 @@ func truncateRaw(raw json.RawMessage, maxBytes int) json.RawMessage {
 	if len(raw) <= maxBytes {
 		return raw
 	}
-	return json.RawMessage(truncate(string(raw), maxBytes))
+	preview := truncate(string(raw), maxBytes-128)
+	wrapped, err := json.Marshal(map[string]any{
+		"_truncated": true,
+		"preview":    preview,
+	})
+	if err != nil {
+		return json.RawMessage(`{"_truncated":true}`)
+	}
+	return wrapped
 }
 
 type RecoveryPromptInput struct {

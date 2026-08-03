@@ -17,12 +17,13 @@ import {
   X,
 } from 'lucide-react'
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type ProjectInfo, type ResourceDetail, type ResourceNode, type SimulationPlan } from '../api/client'
+import { api, type AgentAction, type PlanFormSchemaResponse, type ProjectInfo, type ResourceDetail, type ResourceNode, type SimulationPlan } from '../api/client'
 import {
   compactParameterValue,
   downstreamStages,
   hasPath,
   mergeStagePatches,
+  partitionPatchByStages,
   stageDefinitions,
   stageForPath,
   unwrapSimulationParams,
@@ -34,7 +35,7 @@ import { executionTemplate, preflightPrimaryAction } from '../lib/planPresentati
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 import ExecutionMonitor from './ExecutionMonitor'
-import SchemaFormDialog from './SchemaForm'
+import SchemaFormDialog, { SchemaFormFields, serializeValue } from './SchemaForm'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
   Geometry: [
@@ -91,14 +92,6 @@ function parsePatch(label: string, value: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-function safePatch(value: string): Record<string, unknown> {
-  try {
-    return parsePatch('Stage', value)
-  } catch {
-    return {}
-  }
-}
-
 function parameterLabel(path: string) {
   return path
     .split('.')
@@ -132,12 +125,19 @@ export default function PlanPanel({
   const [name, setName] = useState('')
   const [intent, setIntent] = useState('')
   const [target, setTarget] = useState<SimulationPlan['target']>(options[0]?.value ?? 'case')
-  const [stagePatches, setStagePatches] = useState<Record<SimulationStage, string>>({
-    SurfaceMesh: '{}',
-    VolumeMesh: '{}',
-    Case: '{}',
+  const [stageValues, setStageValues] = useState<Record<SimulationStage, Record<string, unknown>>>({
+    SurfaceMesh: {},
+    VolumeMesh: {},
+    Case: {},
   })
   const [advancedPatch, setAdvancedPatch] = useState('{}')
+  const [formSchema, setFormSchema] = useState<PlanFormSchemaResponse | null>(null)
+  const [schemaLoading, setSchemaLoading] = useState(false)
+  const [schemaError, setSchemaError] = useState('')
+  const [assistPrompt, setAssistPrompt] = useState('')
+  const [assistLoading, setAssistLoading] = useState(false)
+  const [assistAction, setAssistAction] = useState<AgentAction | null>(null)
+  const [assistPreflight, setAssistPreflight] = useState<{ valid: boolean; issues: Array<{ message: string; path?: string }> } | null>(null)
   const [reviewed, setReviewed] = useState(false)
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -166,8 +166,13 @@ export default function PlanPanel({
     setName(`${resource.name} · ${options[0]?.label ?? 'Case'}`)
     setIntent('')
     setTarget(options[0]?.value ?? 'case')
-    setStagePatches({ SurfaceMesh: '{}', VolumeMesh: '{}', Case: '{}' })
+    setStageValues({ SurfaceMesh: {}, VolumeMesh: {}, Case: {} })
     setAdvancedPatch('{}')
+    setFormSchema(null)
+    setSchemaError('')
+    setAssistPrompt('')
+    setAssistAction(null)
+    setAssistPreflight(null)
     setReviewed(false)
     setExecuteConfirmed(false)
     setSchemaFormOpen(false)
@@ -222,16 +227,48 @@ export default function PlanPanel({
     [detail?.simulation_params],
   )
 
+  useEffect(() => {
+    if (!open || !showForm || !activeStages.length) return
+    let cancelled = false
+    setSchemaLoading(true)
+    setSchemaError('')
+    void api.planFormSchema({
+      project_id: project.id,
+      project_name: project.name,
+      source_id: resource.id,
+      source_type: resource.type,
+      source_name: resource.name,
+      target,
+    }).then((response) => {
+      if (cancelled) return
+      setFormSchema(response)
+    }).catch((cause) => {
+      if (cancelled) return
+      setFormSchema(null)
+      setSchemaError(errorMessage(cause))
+    }).finally(() => {
+      if (!cancelled) setSchemaLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [activeStages, open, project.id, project.name, resource.id, resource.name, resource.type, showForm, target])
+
+  const structuredStagePatches = () => Object.fromEntries(activeStages.map((stage) => {
+    const schema = formSchema?.schemas[stage]
+    if (!schema) throw new Error(`${stageDefinitions[stage].label} schema is unavailable`)
+    const serialized = serializeValue(schema, stageValues[stage], true)
+    if (!serialized || Array.isArray(serialized) || typeof serialized !== 'object') {
+      throw new Error(`${stageDefinitions[stage].label} form did not produce an object`)
+    }
+    return [stage, serialized as Record<string, unknown>]
+  })) as Partial<Record<SimulationStage, Record<string, unknown>>>
+
   const createPlan = async (event: FormEvent) => {
     event.preventDefault()
     if (loading || submittingAction) return
     setError('')
     let parsedPatch: Record<string, unknown>
     try {
-      const parsedStages = Object.fromEntries(activeStages.map((stage) => [
-        stage,
-        parsePatch(`${stageDefinitions[stage].label} step`, stagePatches[stage]),
-      ])) as Partial<Record<SimulationStage, Record<string, unknown>>>
+      const parsedStages = structuredStagePatches()
       const parsedAdvanced = parsePatch('Advanced', advancedPatch)
       parsedPatch = mergeStagePatches(activeStages, parsedStages, parsedAdvanced)
       if (!parsedPatch || Array.isArray(parsedPatch) || typeof parsedPatch !== 'object') {
@@ -267,6 +304,38 @@ export default function PlanPanel({
     } finally {
       setLoading(false)
       setSubmittingAction(null)
+    }
+  }
+
+  const fillWithAI = async () => {
+    if (assistLoading || schemaLoading || !formSchema || !assistPrompt.trim()) return
+    setAssistLoading(true)
+    setAssistAction(null)
+    setAssistPreflight(null)
+    setError('')
+    try {
+      const currentPatch = mergeStagePatches(activeStages, structuredStagePatches(), parsePatch('Advanced', advancedPatch))
+      const response = await api.assistPlanForm({
+        project_id: project.id,
+        project_name: project.name,
+        source_id: resource.id,
+        source_type: resource.type,
+        source_name: resource.name,
+        target,
+        intent,
+        prompt: assistPrompt,
+        patch: currentPatch,
+      })
+      setAssistAction(response.action)
+      setAssistPreflight(response.preflight ?? null)
+      if (response.proposal) {
+        setStageValues(partitionPatchByStages(response.proposal.patch, activeStages))
+        if (response.proposal.name.trim()) setName(response.proposal.name)
+      }
+    } catch (cause) {
+      setError(`AI form fill failed: ${errorMessage(cause)}`)
+    } finally {
+      setAssistLoading(false)
     }
   }
 
@@ -439,7 +508,13 @@ export default function PlanPanel({
                 </label>
                 <label>
                   <span>Run up to</span>
-                  <select value={target} onChange={(event) => setTarget(event.target.value as SimulationPlan['target'])}>
+                  <select value={target} onChange={(event) => {
+                    setTarget(event.target.value as SimulationPlan['target'])
+                    setStageValues({ SurfaceMesh: {}, VolumeMesh: {}, Case: {} })
+                    setFormSchema(null)
+                    setAssistAction(null)
+                    setAssistPreflight(null)
+                  }}>
                     {options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
                   </select>
                 </label>
@@ -447,10 +522,42 @@ export default function PlanPanel({
                   <span>Engineering intent</span>
                   <textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="What decision should this run support?" required />
                 </label>
+                <section className="plan-ai-form-fill">
+                  <div>
+                    <span><Sparkles size={15} /> AI form fill</span>
+                    <small>Describe the CFD setup in your own words. The Agent will fill only fields allowed by the active Flow360 stage schemas.</small>
+                  </div>
+                  <div className="plan-ai-form-row">
+                    <textarea
+                      value={assistPrompt}
+                      onChange={(event) => setAssistPrompt(event.target.value)}
+                      placeholder="例如：外流场，Mach 0.8，攻角 3°，先用稳态 RANS，关注升阻力；网格优先控制成本。"
+                    />
+                    <button type="button" onClick={() => void fillWithAI()} disabled={assistLoading || schemaLoading || !formSchema || !assistPrompt.trim()}>
+                      {assistLoading ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
+                      {assistLoading ? 'Filling…' : 'Fill active stages'}
+                    </button>
+                  </div>
+                  {assistAction && (
+                    <div className="plan-ai-form-result">
+                      <strong>{assistAction.message}</strong>
+                      {assistAction.assumptions?.map((item) => <span key={item}>Assumption · {item}</span>)}
+                      {assistAction.questions?.map((item) => <span key={item.field}>Needs input · {item.message}</span>)}
+                      {assistAction.warnings?.map((item) => <span key={item}>Warning · {item}</span>)}
+                      {assistPreflight && (
+                        <em className={assistPreflight.valid ? 'ready' : 'needs-input'}>
+                          {assistPreflight.valid
+                            ? 'AI values pass Flow360 preflight.'
+                            : `${assistPreflight.issues.length} Flow360 issue${assistPreflight.issues.length === 1 ? '' : 's'} remain; review the highlighted inputs before compiling.`}
+                        </em>
+                      )}
+                    </div>
+                  )}
+                </section>
                 <div className="plan-stage-workflow">
                   <div className="plan-stage-workflow-heading">
                     <span>Parameters by execution step</span>
-                    <small>Generated from Flow360 SimulationParams stage relevance. Existing values remain inherited until changed.</small>
+                    <small>{resource.type} → {activeStages.join(' → ')} · generated from Flow360 SimulationParams stage relevance. Existing values remain inherited until changed.</small>
                   </div>
                   <div className="plan-source-context">
                     <span className="plan-stage-number">0</span>
@@ -462,7 +569,8 @@ export default function PlanPanel({
                   </div>
                   {activeStages.map((stage, index) => {
                     const definition = stageDefinitions[stage]
-                    const stagePatch = safePatch(stagePatches[stage])
+                    const stagePatch = stageValues[stage]
+                    const schema = formSchema?.schemas[stage]
                     return (
                       <section className="plan-stage-card" key={stage}>
                         <header>
@@ -514,26 +622,31 @@ export default function PlanPanel({
                         </div>
                         <details className="plan-stage-editor">
                           <summary><ChevronDown size={13} /> Change {definition.label} parameters</summary>
-                          <label>
-                            <span>{definition.label} merge patch</span>
-                            <textarea
-                              className="plan-code-input"
-                              value={stagePatches[stage]}
-                              onChange={(event) => setStagePatches((current) => ({
-                                ...current,
-                                [stage]: event.target.value,
-                              }))}
-                              placeholder={JSON.stringify(definition.example, null, 2)}
-                              spellCheck={false}
-                            />
-                            <small>Only parameters for this execution step belong here. Flow360 schema preflight remains authoritative.</small>
-                          </label>
+                          <div className="plan-stage-schema-editor">
+                            {schemaLoading && !schema && <div className="plan-neutral"><RefreshCw size={13} className="spin" /> Loading the installed Flow360 schema…</div>}
+                            {schema && (
+                              <SchemaFormFields
+                                schema={schema}
+                                value={stageValues[stage]}
+                                baseline={baselineParams}
+                                sparse
+                                onChange={(next) => setStageValues((current) => ({
+                                  ...current,
+                                  [stage]: next && typeof next === 'object' && !Array.isArray(next)
+                                    ? next as Record<string, unknown>
+                                    : {},
+                                }))}
+                              />
+                            )}
+                            {!schemaLoading && !schema && <div className="plan-error"><AlertCircle size={13} />{schemaError || `${definition.label} schema is unavailable.`}</div>}
+                            <small>Only explicitly changed fields enter the patch. Every other value remains inherited from the source resource.</small>
+                          </div>
                         </details>
                       </section>
                     )
                   })}
                   <details className="plan-stage-editor plan-advanced-editor">
-                    <summary><Code2 size={13} /> Advanced SimulationParams patch</summary>
+                    <summary><Code2 size={13} /> Expert mode · raw SimulationParams patch</summary>
                     <label>
                       <span>Additional JSON merge patch</span>
                       <textarea className="plan-code-input" value={advancedPatch} onChange={(event) => setAdvancedPatch(event.target.value)} spellCheck={false} />
@@ -546,7 +659,7 @@ export default function PlanPanel({
                   <button type="button" onClick={onClose} disabled={loading || !!submittingAction}>Cancel</button>
                   <button
                     className="primary"
-                    disabled={loading || !!submittingAction || !name.trim() || !intent.trim()}
+                    disabled={loading || schemaLoading || !formSchema || !!submittingAction || !name.trim() || !intent.trim()}
                     type="submit"
                   >
                     {loading && submittingAction === 'compile'

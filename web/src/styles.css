@@ -1605,6 +1605,17 @@ button { color: inherit; }
 .plan-form input:focus,.plan-form select:focus,.plan-form textarea:focus { border-color: #98ae55; box-shadow: 0 0 0 3px rgba(159,185,80,.13); }
 .plan-form textarea.plan-code-input { min-height: 150px; color: #cfe4b3; background: #252a21; font: 8px/1.6 'DM Mono'; tab-size: 2; }
 .plan-form > label > small { display: block; margin-top: 5px; color: #999e94; font-size: 7px; line-height: 1.5; }
+.plan-ai-form-fill { margin: 4px 0 16px; padding: 13px; border: 1px solid #c8d99a; border-radius: 9px; background: linear-gradient(135deg,#f5f8e9,#edf4d7); }
+.plan-ai-form-fill > div:first-child > span { display: flex; align-items: center; gap: 6px; color: #516d11; font-size: 9px; font-weight: 700; }
+.plan-ai-form-fill > div:first-child > small { display: block; margin-top: 4px; color: #7f8874; font-size: 7px; line-height: 1.45; }
+.plan-ai-form-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 8px; margin-top: 10px; }
+.plan-ai-form-row textarea { min-height: 68px; background: rgba(255,255,255,.86); }
+.plan-ai-form-row button { display: inline-flex; min-width: 126px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid #9fb64c; border-radius: 7px; color: #293712; background: #b9d758; font-size: 8px; font-weight: 700; cursor: pointer; }
+.plan-ai-form-row button:disabled { cursor: not-allowed; opacity: .5; }
+.plan-ai-form-result { display: grid; gap: 4px; margin-top: 9px; padding: 9px; border-radius: 7px; color: #68705f; background: rgba(255,255,255,.66); font-size: 7px; line-height: 1.45; }
+.plan-ai-form-result strong { color: #4d5c36; }
+.plan-ai-form-result em { padding-top: 4px; color: #8b6818; font-style: normal; }
+.plan-ai-form-result em.ready { color: #557317; }
 .plan-stage-workflow { margin: 4px 0 17px; }
 .plan-stage-workflow-heading { margin-bottom: 9px; }
 .plan-stage-workflow-heading > span,.plan-stage-workflow-heading > small { display: block; }
@@ -1653,6 +1664,9 @@ button { color: inherit; }
 .plan-stage-editor > label > span { margin-bottom: 6px; color: #686e63; font-size: 7px; font-weight: 700; }
 .plan-stage-editor > label > small { margin-top: 5px; color: #92978d; font-size: 6px; line-height: 1.45; }
 .plan-stage-editor textarea.plan-code-input { width: 100%; min-height: 115px; padding: 10px; border: 1px solid #cfd2c8; border-radius: 7px; color: #cfe4b3; background: #252a21; font: 8px/1.6 'DM Mono'; resize: vertical; }
+.plan-stage-schema-editor { max-height: 520px; overflow-y: auto; padding: 0 13px 13px; }
+.plan-stage-schema-editor > .schema-object { margin: 0; }
+.plan-stage-schema-editor > small { display: block; margin-top: 7px; color: #868d81; font-size: 7px; line-height: 1.45; }
 .plan-advanced-editor { margin-top: 9px; overflow: hidden; border: 1px solid #d5d8cf; border-radius: 8px; }
 .plan-form-actions { display: flex; justify-content: flex-end; gap: 7px; padding-top: 8px; }
 .plan-form-actions button,.approval-card button,.execution-card button { display: inline-flex; min-height: 35px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid #ced1c7; border-radius: 7px; color: #656b60; background: #fff; font-size: 8px; cursor: pointer; }
@@ -1868,6 +1882,16 @@ button { color: inherit; }
 .schema-object > legend { padding: 0 6px; color: #596052; font-size: 9px; font-weight: 700; }
 .schema-object > p { margin: 0 0 10px; color: #8d9288; font-size: 7px; line-height: 1.5; }
 .schema-object .schema-object { margin: 10px 0 0; }
+.schema-add-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 8px 9px; border-bottom: 1px solid #e7e9e2; }
+.schema-add-field:last-child { border-bottom: 0; }
+.schema-add-field > span { min-width: 0; }
+.schema-add-field strong,.schema-add-field small { display: block; }
+.schema-add-field strong { color: #596052; font-size: 8px; }
+.schema-add-field small { margin-top: 3px; color: #8a9085; font-size: 7px; line-height: 1.4; }
+.schema-add-field button,.schema-remove-change { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid #cbd0c2; border-radius: 6px; color: #617035; background: #fff; font-size: 7px; cursor: pointer; }
+.schema-edit-field { position: relative; padding: 7px 0; border-bottom: 1px solid #e7e9e2; }
+.schema-edit-field:last-child { border-bottom: 0; }
+.schema-edit-field > .schema-remove-change { margin: -5px 0 8px; color: #7b8276; }
 .schema-field { display: block; margin: 0 0 12px; }
 .schema-field:last-child { margin-bottom: 0; }
 .schema-field-label { display: block; margin-bottom: 6px; }

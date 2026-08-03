@@ -83,4 +83,31 @@ describe('schema-driven Flow360 form', () => {
       entities: ['face-1', 'face-2'],
     })
   })
+
+  it('keeps optional stage values sparse so inherited parameters are not overwritten', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        meshing: {
+          type: 'object',
+          properties: {
+            defaults: {
+              type: 'object',
+              properties: {
+                surface_max_edge_length: { type: 'quantity', unit: 'meter', value_schema: { type: 'number' } },
+                curvature_resolution_angle: { type: 'quantity', unit: 'degree', value_schema: { type: 'number' } },
+              },
+            },
+          },
+        },
+        operating_condition: { type: 'object', properties: {} },
+      },
+    }
+    expect(initialValue(schema, true)).toEqual({})
+    expect(serializeValue(schema, {
+      meshing: { defaults: { surface_max_edge_length: { value: '0.05', units: 'meter' } } },
+    }, true)).toEqual({
+      meshing: { defaults: { surface_max_edge_length: { value: 0.05, units: 'meter' } } },
+    })
+  })
 })

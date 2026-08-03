@@ -192,6 +192,30 @@ export function mergeStagePatches(
   return deepMerge(staged, advanced)
 }
 
+export function partitionPatchByStages(
+  patch: Record<string, unknown>,
+  activeStages: SimulationStage[],
+): Record<SimulationStage, Record<string, unknown>> {
+  const result: Record<SimulationStage, Record<string, unknown>> = {
+    SurfaceMesh: {},
+    VolumeMesh: {},
+    Case: {},
+  }
+  const fallback = activeStages[activeStages.length - 1]
+  const visit = (value: unknown, path: string[]) => {
+    if (isRecord(value) && !isQuantity(value)) {
+      for (const [key, child] of Object.entries(value)) visit(child, [...path, key])
+      return
+    }
+    if (!path.length || !fallback) return
+    const inferred = stageForPath(path.join('.'))
+    const stage = activeStages.includes(inferred) ? inferred : fallback
+    setPath(result[stage], path, value)
+  }
+  visit(patch, [])
+  return result
+}
+
 export function stageForPath(path: string): SimulationStage {
   if (
     path.startsWith('operating_condition')
@@ -237,6 +261,22 @@ function deepMerge(
     }
   }
   return result
+}
+
+function setPath(target: Record<string, unknown>, path: string[], value: unknown) {
+  let cursor = target
+  path.forEach((segment, index) => {
+    if (index === path.length - 1) {
+      cursor[segment] = value
+      return
+    }
+    if (!isRecord(cursor[segment])) cursor[segment] = {}
+    cursor = cursor[segment] as Record<string, unknown>
+  })
+}
+
+function isQuantity(value: Record<string, unknown>) {
+  return 'value' in value && ('units' in value || Object.keys(value).length === 1)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

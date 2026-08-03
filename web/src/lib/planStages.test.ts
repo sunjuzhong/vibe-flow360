@@ -3,6 +3,7 @@ import {
   downstreamStages,
   hasPath,
   mergeStagePatches,
+  partitionPatchByStages,
   stageForPath,
   unwrapSimulationParams,
 } from './planStages'
@@ -10,10 +11,44 @@ import {
 describe('stage-aware simulation planning', () => {
   it('derives exactly the downstream stages selected by Run up to', () => {
     expect(downstreamStages('Geometry', 'surface-mesh')).toEqual(['SurfaceMesh'])
+    expect(downstreamStages('Geometry', 'volume-mesh')).toEqual(['SurfaceMesh', 'VolumeMesh'])
     expect(downstreamStages('Geometry', 'case')).toEqual(['SurfaceMesh', 'VolumeMesh', 'Case'])
+    expect(downstreamStages('SurfaceMesh', 'volume-mesh')).toEqual(['VolumeMesh'])
     expect(downstreamStages('SurfaceMesh', 'case')).toEqual(['VolumeMesh', 'Case'])
     expect(downstreamStages('VolumeMesh', 'case')).toEqual(['Case'])
     expect(downstreamStages('Case', 'case')).toEqual(['Case'])
+    expect(downstreamStages('VolumeMesh', 'surface-mesh')).toEqual([])
+  })
+
+  it('partitions one AI patch back into the active route without changing its meaning', () => {
+    const stages = downstreamStages('Geometry', 'case')
+    const partitioned = partitionPatchByStages({
+      meshing: {
+        defaults: {
+          surface_max_edge_length: { value: 0.1, units: 'meter' },
+          boundary_layer_growth_rate: 1.2,
+        },
+      },
+      operating_condition: { alpha: { value: 3, units: 'degree' } },
+    }, stages)
+    expect(partitioned.SurfaceMesh).toEqual({
+      meshing: { defaults: { surface_max_edge_length: { value: 0.1, units: 'meter' } } },
+    })
+    expect(partitioned.VolumeMesh).toEqual({
+      meshing: { defaults: { boundary_layer_growth_rate: 1.2 } },
+    })
+    expect(partitioned.Case).toEqual({
+      operating_condition: { alpha: { value: 3, units: 'degree' } },
+    })
+    expect(mergeStagePatches(stages, partitioned, {})).toEqual({
+      meshing: {
+        defaults: {
+          surface_max_edge_length: { value: 0.1, units: 'meter' },
+          boundary_layer_growth_rate: 1.2,
+        },
+      },
+      operating_condition: { alpha: { value: 3, units: 'degree' } },
+    })
   })
 
   it('deep-merges overlapping meshing defaults without losing either stage', () => {

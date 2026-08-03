@@ -15,7 +15,7 @@ import (
 const (
 	preflightContractVersion = 1
 	maxPreflightInputSize    = 2 * 1024 * 1024
-	maxPreflightOutputSize   = 2 * 1024 * 1024
+	maxPreflightOutputSize   = 8 * 1024 * 1024
 )
 
 type PreflightIssue struct {
@@ -27,11 +27,21 @@ type PreflightIssue struct {
 }
 
 type PreflightResult struct {
-	SchemaVersion    int              `json:"schema_version"`
-	ValidatorVersion string           `json:"validator_version,omitempty"`
-	Valid            bool             `json:"valid"`
-	Issues           []PreflightIssue `json:"issues"`
-	FormSchema       json.RawMessage  `json:"form_schema"`
+	SchemaVersion    int                        `json:"schema_version"`
+	ValidatorVersion string                     `json:"validator_version,omitempty"`
+	Valid            bool                       `json:"valid"`
+	Issues           []PreflightIssue           `json:"issues"`
+	FormSchema       json.RawMessage            `json:"form_schema"`
+	EditorSchemas    map[string]json.RawMessage `json:"editor_schemas,omitempty"`
+}
+
+type PlanFormSchema struct {
+	SchemaVersion    int                        `json:"schema_version"`
+	ValidatorVersion string                     `json:"validator_version,omitempty"`
+	SourceType       string                     `json:"source_type"`
+	Target           string                     `json:"target"`
+	Stages           []string                   `json:"stages"`
+	Schemas          map[string]json.RawMessage `json:"schemas"`
 }
 
 func (c *Client) PreflightSimulationParams(
@@ -114,7 +124,44 @@ func (c *Client) PreflightSimulationParams(
 	if !json.Valid(result.FormSchema) {
 		return PreflightResult{}, errors.New("Flow360 schema preflight returned an invalid form schema")
 	}
+	for stage, schema := range result.EditorSchemas {
+		if !json.Valid(schema) {
+			return PreflightResult{}, fmt.Errorf("Flow360 schema preflight returned an invalid %s editor schema", stage)
+		}
+	}
 	return result, nil
+}
+
+// PlanFormSchema projects the installed Flow360 SimulationParams schema onto
+// exactly the execution stages between source and target. It intentionally
+// reuses the preflight bridge so the editor and final validation cannot drift
+// to different schema versions.
+func (c *Client) PlanFormSchema(
+	ctx context.Context,
+	rootType string,
+	target string,
+	params json.RawMessage,
+) (PlanFormSchema, error) {
+	normalizedRoot, stages, err := preflightLevels(rootType, target)
+	if err != nil {
+		return PlanFormSchema{}, err
+	}
+	result, err := c.PreflightSimulationParams(ctx, rootType, target, params)
+	if err != nil {
+		return PlanFormSchema{}, err
+	}
+	schemas := make(map[string]json.RawMessage, len(stages))
+	for _, stage := range stages {
+		schema, ok := result.EditorSchemas[stage]
+		if !ok || !json.Valid(schema) {
+			return PlanFormSchema{}, fmt.Errorf("Flow360 did not provide the %s editor schema", stage)
+		}
+		schemas[stage] = append(json.RawMessage(nil), schema...)
+	}
+	return PlanFormSchema{
+		SchemaVersion: result.SchemaVersion, ValidatorVersion: result.ValidatorVersion,
+		SourceType: normalizedRoot, Target: target, Stages: stages, Schemas: schemas,
+	}, nil
 }
 
 func preflightLevels(rootType, target string) (string, []string, error) {
@@ -389,6 +436,68 @@ def normalize(node):
         return {**base, "type": node_type}
     return {**base, "type": "json"}
 
+EDITOR_PATHS = {
+    "SurfaceMesh": (
+        ("meshing", "defaults", "surface_max_edge_length"),
+        ("meshing", "defaults", "surface_edge_growth_rate"),
+        ("meshing", "defaults", "curvature_resolution_angle"),
+        ("meshing", "defaults", "surface_max_aspect_ratio"),
+        ("meshing", "defaults", "surface_max_adaptation_iterations"),
+        ("meshing", "defaults", "target_surface_node_count"),
+        ("meshing", "refinements"),
+        ("meshing", "surface_meshing"),
+        ("meshing", "outputs"),
+    ),
+    "VolumeMesh": (
+        ("meshing", "defaults", "boundary_layer_first_layer_thickness"),
+        ("meshing", "defaults", "boundary_layer_growth_rate"),
+        ("meshing", "defaults", "volume_edge_growth_rate"),
+        ("meshing", "defaults", "sliding_interface_tolerance"),
+        ("meshing", "gap_treatment_strength"),
+        ("meshing", "volume_zones"),
+        ("meshing", "refinements"),
+        ("meshing", "volume_meshing"),
+    ),
+    "Case": (
+        ("operating_condition",),
+        ("models",),
+        ("time_stepping",),
+        ("run_control",),
+        ("reference_geometry",),
+        ("outputs",),
+        ("user_defined_fields",),
+        ("user_defined_dynamics",),
+    ),
+}
+
+def projected_editor_schema(stage):
+    root = {
+        "type": "object",
+        "title": f"{stage} parameters",
+        "description": f"Flow360 parameters relevant to the {stage} execution stage.",
+        "properties": {},
+        "required": [],
+    }
+    for path in EDITOR_PATHS.get(stage, ()):
+        raw = schema_at_path(path)
+        if not raw:
+            continue
+        leaf = normalize(raw)
+        leaf["path"] = ".".join(path)
+        leaf["required"] = False
+        cursor = root
+        for index, segment in enumerate(path):
+            if index == len(path) - 1:
+                cursor.setdefault("properties", {})[segment] = leaf
+                continue
+            cursor = cursor.setdefault("properties", {}).setdefault(segment, {
+                "type": "object",
+                "title": str(segment).replace("_", " ").title(),
+                "properties": {},
+                "required": [],
+            })
+    return root
+
 def inferred_location(raw):
     location = raw.get("loc", [])
     if location:
@@ -587,11 +696,17 @@ for issue in issues:
 for issue in issues:
     issue.pop("_loc", None)
 
+editor_schemas = {
+    stage: projected_editor_schema(stage)
+    for stage in levels
+}
+
 print(json.dumps({
     "schema_version": 1,
     "validator_version": str(schema_version),
     "valid": errors is None or len(errors) == 0,
     "issues": issues,
     "form_schema": form_schema,
+    "editor_schemas": editor_schemas,
 }, ensure_ascii=False, separators=(",", ":")))
 `
