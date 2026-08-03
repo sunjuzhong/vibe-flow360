@@ -549,9 +549,22 @@ func collectRecords(value any) []map[string]any {
 }
 
 func (c *Client) CreateProject(ctx context.Context, files []string, sourceType, name, unit, workflow, solverVersion, folderID string, tags []string) (json.RawMessage, error) {
+	return c.createProject(ctx, files, sourceType, name, unit, workflow, solverVersion, folderID, tags, false)
+}
+
+// CreateProjectSync waits for the uploaded root resource to finish processing.
+// AI Create needs the root ID immediately so it can attach its generated plan.
+func (c *Client) CreateProjectSync(ctx context.Context, files []string, sourceType, name, unit, workflow, solverVersion, folderID string, tags []string) (json.RawMessage, error) {
+	return c.createProject(ctx, files, sourceType, name, unit, workflow, solverVersion, folderID, tags, true)
+}
+
+func (c *Client) createProject(ctx context.Context, files []string, sourceType, name, unit, workflow, solverVersion, folderID string, tags []string, syncRoot bool) (json.RawMessage, error) {
 	args := []string{"project", "create"}
 	args = append(args, files...)
 	args = append(args, "--from", sourceType, "--name", name, "--unit", unit)
+	if syncRoot {
+		args = append(args, "--sync")
+	}
 	if sourceType == "geometry" && workflow != "" {
 		args = append(args, "--workflow", workflow)
 	}

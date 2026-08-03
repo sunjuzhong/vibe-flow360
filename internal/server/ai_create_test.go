@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,7 +22,16 @@ func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 	root := t.TempDir()
 	fakeFlow360 := filepath.Join(root, "flow360")
 	script := `#!/bin/sh
-printf '%s' '{"project_id":"project-ai-1","geometry_id":"geometry-ai-1"}'
+case " $* " in
+  *" project create "*)
+    case " $* " in *" --sync "*) ;; *) exit 9 ;; esac
+    printf '%s' '{"project_id":"project-ai-1"}'
+    ;;
+  *" project items project-ai-1 "*)
+    printf '%s' '{"items":[{"id":"geometry-ai-1","name":"Cylinder","parent_id":null,"type":"Geometry"}]}'
+    ;;
+  *) exit 8 ;;
+esac
 `
 	if err := os.WriteFile(fakeFlow360, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
@@ -57,6 +68,43 @@ printf '%s' '{"project_id":"project-ai-1","geometry_id":"geometry-ai-1"}'
 	}
 	if _, err := os.Stat(filepath.Join(root, "ai-create")); err != nil {
 		t.Fatalf("expected durable staging root: %v", err)
+	}
+}
+
+func TestNormalizeAICreateResultRetriesUntilAsyncRootAppears(t *testing.T) {
+	lookups := 0
+	lookup := func(_ context.Context, projectID string) (json.RawMessage, error) {
+		lookups++
+		if projectID != "project-ai-2" {
+			t.Fatalf("unexpected project ID %q", projectID)
+		}
+		if lookups == 1 {
+			return json.RawMessage(`{"items":[]}`), nil
+		}
+		return json.RawMessage(`{"items":[{"id":"geometry-ai-2","type":"Geometry","parent_id":null}]}`), nil
+	}
+	normalized, err := normalizeAICreateResultWithLookup(
+		context.Background(), json.RawMessage(`{"project_id":"project-ai-2"}`),
+		"geometry", lookup, 3, time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lookups != 2 || !bytes.Contains(normalized, []byte(`"root_resource_id":"geometry-ai-2"`)) {
+		t.Fatalf("unexpected recovery after %d lookups: %s", lookups, normalized)
+	}
+}
+
+func TestNormalizeAICreateResultReportsCreatedProjectWhenRootNeverAppears(t *testing.T) {
+	lookup := func(context.Context, string) (json.RawMessage, error) {
+		return nil, errors.New("not ready")
+	}
+	_, err := normalizeAICreateResultWithLookup(
+		context.Background(), json.RawMessage(`{"project_id":"project-ai-3"}`),
+		"geometry", lookup, 2, time.Millisecond,
+	)
+	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("Project project-ai-3 was created")) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
@@ -82,7 +85,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 
-	rawResult, err := s.flow360.CreateProject(
+	rawResult, err := s.flow360.CreateProjectSync(
 		c.Request.Context(), []string{geometryPath}, "geometry", blueprint.ProjectName,
 		"m", "standard", "", request.FolderID, []string{"ai-create", blueprint.Template},
 	)
@@ -90,9 +93,14 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 did not accept the AI-created project"})
 		return
 	}
-	normalized, err := normalizeImportResult(rawResult, "geometry")
+	normalized, err := s.normalizeAICreateResult(c.Request.Context(), rawResult, "geometry")
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		projectID := findStringFieldFromRaw(rawResult, map[string]bool{"project_id": true, "projectid": true})
+		payload := gin.H{"error": err.Error()}
+		if projectID != "" {
+			payload["project_id"] = projectID
+		}
+		c.JSON(http.StatusBadGateway, payload)
 		return
 	}
 	var remote struct {
@@ -130,4 +138,84 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: []string{"Interpreted requirement", "Generated cylinder geometry", "Created Flow360 Project", "Loaded simulation plan"},
 	})
+}
+
+const (
+	aiCreateRootLookupAttempts = 8
+	aiCreateRootLookupDelay    = 350 * time.Millisecond
+)
+
+func (s *Server) normalizeAICreateResult(ctx context.Context, raw json.RawMessage, sourceType string) (json.RawMessage, error) {
+	return normalizeAICreateResultWithLookup(
+		ctx, raw, sourceType, s.flow360.ProjectItems,
+		aiCreateRootLookupAttempts, aiCreateRootLookupDelay,
+	)
+}
+
+func normalizeAICreateResultWithLookup(
+	ctx context.Context,
+	raw json.RawMessage,
+	sourceType string,
+	lookup func(context.Context, string) (json.RawMessage, error),
+	attempts int,
+	delay time.Duration,
+) (json.RawMessage, error) {
+	normalized, err := normalizeImportResult(raw, sourceType)
+	if err == nil {
+		return normalized, nil
+	}
+	projectID := findStringFieldFromRaw(raw, map[string]bool{"project_id": true, "projectid": true})
+	if projectID == "" {
+		return nil, err
+	}
+	expectedType := strings.ReplaceAll(strings.ToLower(sourceType), "-", "")
+	var lastErr error
+	if attempts < 1 {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		items, itemsErr := lookup(ctx, projectID)
+		if itemsErr == nil {
+			if rootID := findTypedResourceIDFromRaw(items, expectedType); rootID != "" {
+				var flowResult any
+				if json.Unmarshal(raw, &flowResult) != nil {
+					flowResult = map[string]any{"raw": string(raw)}
+				}
+				return json.Marshal(map[string]any{
+					"project_id": projectID, "root_resource_id": rootID,
+					"root_resource_type": sourceType, "flow360_result": flowResult,
+				})
+			}
+			lastErr = errors.New("root resource is not visible in the Project yet")
+		} else {
+			lastErr = itemsErr
+		}
+		if attempt == attempts-1 {
+			break
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, fmt.Errorf("Project %s was created, but its root resource is not available yet: %w", projectID, lastErr)
+}
+
+func findStringFieldFromRaw(raw json.RawMessage, keys map[string]bool) string {
+	var data any
+	if json.Unmarshal(raw, &data) != nil {
+		return ""
+	}
+	return findStringField(data, keys)
+}
+
+func findTypedResourceIDFromRaw(raw json.RawMessage, expectedType string) string {
+	var data any
+	if json.Unmarshal(raw, &data) != nil {
+		return ""
+	}
+	return findTypedResourceID(data, expectedType)
 }
