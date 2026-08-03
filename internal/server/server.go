@@ -24,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
+	"github.com/sunjuzhong/vibe-flow360/internal/annotations"
 	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
@@ -49,13 +50,14 @@ type Server struct {
 	interventionEngine *agent.Engine
 	workDir            string
 
-	projectSyncClient projectSyncClient
-	projectSyncMu     sync.Mutex
-	projectSyncJobs   map[string]struct{}
-	geometryDiagMu    sync.Mutex
-	geometryDiagCache map[string]geometryDiagnosticsCacheEntry
-	geometryJobs      *geometrydiag.JobStore
-	geometryJobSlots  chan struct{}
+	projectSyncClient  projectSyncClient
+	projectSyncMu      sync.Mutex
+	projectSyncJobs    map[string]struct{}
+	geometryDiagMu     sync.Mutex
+	geometryDiagCache  map[string]geometryDiagnosticsCacheEntry
+	geometryJobs       *geometrydiag.JobStore
+	geometryJobSlots   chan struct{}
+	annotationHandlers *AnnotationHandlers
 }
 
 type geometryDiagnosticsCacheEntry struct {
@@ -99,6 +101,14 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	annotationStore, err := annotations.NewStore(filepath.Join(
+		dataDir,
+		"annotations",
+		cacheNamespace(flowClient.Environment, flowClient.Profile),
+	))
+	if err != nil {
+		panic(err)
+	}
 
 	interventionStore, err := agent.NewInterventionStore(filepath.Join(dataDir, "interventions"))
 	if err != nil {
@@ -123,6 +133,7 @@ func New() *Server {
 		geometryDiagCache:  map[string]geometryDiagnosticsCacheEntry{},
 		geometryJobs:       geometryJobStore,
 		geometryJobSlots:   make(chan struct{}, 2),
+		annotationHandlers: NewAnnotationHandlers(annotationStore),
 	}
 	app.routes()
 
@@ -208,6 +219,7 @@ func (s *Server) Run(addr string) error {
 func (s *Server) routes() {
 	api := s.router.Group("/api")
 	{
+		s.annotationHandlers.RegisterRoutes(api)
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"ok": true, "service": "vibe-flow360"})
 		})

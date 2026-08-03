@@ -1,3 +1,12 @@
+import { annotationsApi } from './annotations'
+
+export {
+  AnnotationApiError,
+  annotationsApi,
+  type CreateAnnotationInput,
+  type PatchAnnotationInput,
+} from './annotations'
+
 export type Flow360Status = {
   available: boolean
   binary?: string
@@ -600,6 +609,7 @@ async function responseError(response: Response): Promise<Error> {
 }
 
 export const api = {
+  annotations: annotationsApi,
   flow360Status: () => json<Flow360Status>('/api/flow360/status'),
   projects: (folderId?: string, cacheOnly = false) => {
     const params = new URLSearchParams()
