@@ -9,6 +9,7 @@ import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFie
 import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
+import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSelection } from './ViewerPrecisionControl'
 
 export type MeshGroupData = {
   id: string
@@ -134,13 +135,19 @@ export function Viewer3D({
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
+  const loadedAssetURLRef = useRef<string | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
   const measurementOverlayRef = useRef<THREE.Group | null>(null)
   const normalsOverlayRef = useRef<THREE.Group | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
-  const [assetStats, setAssetStats] = useState<{ faces: number; edges: number } | null>(null)
+  const [assetStats, setAssetStats] = useState<{ faces: number; edges: number; triangles: number } | null>(null)
+  const [precision, setPrecision] = useState<{ assetURL: string | null; selection: ViewerPrecisionSelection }>({
+    assetURL: null,
+    selection: 'default',
+  })
+  const [precisionInfo, setPrecisionInfo] = useState({ levels: 1, currentLevel: 0 })
   const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
   const [colormap, setColormap] = useState<ColormapName>('viridis')
   const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
@@ -165,6 +172,8 @@ export function Viewer3D({
     ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
     : 'linear'
   const effectiveWireframe = wireframe ?? wireframeOn
+  const precisionSelection = precision.assetURL === manifest?.asset_url ? precision.selection : 'default'
+  const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const manifestEntityVisibility = useMemo(() => [
     ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
     ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
@@ -242,6 +251,8 @@ export function Viewer3D({
     manifest: ViewerManifest,
     signal: AbortSignal,
     onProgress: (progress: number) => void,
+    lodLevel?: number,
+    preserveCamera = false,
   ) => {
     const scene = sceneRef.current
     if (!scene) return
@@ -263,6 +274,7 @@ export function Viewer3D({
     if (manifest.format === 'flow360-uvf') {
       const asset = await new UVFLoader().load(manifest.asset_url, {
         signal,
+        lodLevel,
         onProgress: ({ progress }) => onProgress(progress),
       })
       if (signal.aborted) {
@@ -272,7 +284,9 @@ export function Viewer3D({
       root = asset.object
       assetDisposeRef.current = asset.dispose
       uvfAssetRef.current = asset
-      setAssetStats({ faces: asset.faces, edges: asset.edges })
+      setAssetStats({ faces: asset.faces, edges: asset.edges, triangles: asset.triangles })
+      const switchableLevels = commonPrecisionLevels(asset.entityLODs)
+      setPrecisionInfo({ levels: switchableLevels, currentLevel: asset.currentLOD })
       setAvailableFields(asset.fields)
       onFieldsDiscoveredRef.current?.(asset.fields)
       setInternalSelectedField(null)
@@ -285,6 +299,7 @@ export function Viewer3D({
       root = gltf.scene
       assetDisposeRef.current = () => disposeObject(root)
       uvfAssetRef.current = null
+      setPrecisionInfo({ levels: 1, currentLevel: 0 })
       setAvailableFields([])
       onFieldsDiscoveredRef.current?.([])
       setInternalSelectedField(null)
@@ -327,7 +342,15 @@ export function Viewer3D({
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (camera && controls) {
-      fitCameraToObject(camera, controls, root)
+      if (preserveCamera) {
+        const sphere = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere())
+        if (Number.isFinite(sphere.radius) && sphere.radius > 0) {
+          cameraBoundsRadiusRef.current = sphere.radius
+          configurePerspectiveCameraForBounds(camera, controls, sphere.radius)
+        }
+      } else {
+        fitCameraToObject(camera, controls, root)
+      }
     }
   }, [fitCameraToObject])
 
@@ -431,14 +454,20 @@ export function Viewer3D({
   useEffect(() => {
     if (manifest && state.status === 'ready') {
       const controller = new AbortController()
+      const preserveCamera = loadedAssetURLRef.current === manifest.asset_url && assetRef.current !== null
       setAssetState({ status: 'loading', progress: 0 })
       void updateGeometry(
         manifest,
         controller.signal,
         (progress) => setAssetState({ status: 'loading', progress }),
+        requestedLODLevel,
+        preserveCamera,
       )
         .then(() => {
-          if (!controller.signal.aborted) setAssetState({ status: 'ready' })
+          if (!controller.signal.aborted) {
+            loadedAssetURLRef.current = manifest.asset_url
+            setAssetState({ status: 'ready' })
+          }
         })
         .catch((cause) => {
           if (controller.signal.aborted) return
@@ -450,7 +479,7 @@ export function Viewer3D({
       return () => controller.abort()
     }
     setAssetState(state)
-  }, [manifest, state.status, updateGeometry])
+  }, [manifest, requestedLODLevel, state.status, updateGeometry])
 
   useEffect(() => {
     if (!selection) return
@@ -738,7 +767,7 @@ export function Viewer3D({
     if (uvfAssetRef.current) {
       setWireframeOverlay(uvfAssetRef.current, effectiveWireframe)
     }
-  }, [effectiveWireframe])
+  }, [assetState.status, effectiveWireframe])
 
   const handleWireframeToggle = () => {
     const next = !effectiveWireframe
@@ -781,6 +810,13 @@ export function Viewer3D({
         <div className="viewer-asset-stats">
           <span>{assetStats.faces} faces</span>
           <span>{assetStats.edges} edges</span>
+          <span>{assetStats.triangles.toLocaleString()} tris</span>
+          <ViewerPrecisionControl
+            levels={precisionInfo.levels}
+            currentLevel={precisionInfo.currentLevel}
+            selection={precisionSelection}
+            onChange={(selection) => setPrecision({ assetURL: manifest?.asset_url ?? null, selection })}
+          />
           <button
             className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
             onClick={handleWireframeToggle}

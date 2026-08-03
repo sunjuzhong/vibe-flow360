@@ -1347,6 +1347,27 @@ button { color: inherit; }
   font-family: 'DM Mono';
   font-size: 7px;
 }
+.viewer-precision-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 3px 2px 7px;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 999px;
+  color: #545b4c;
+  background: rgb(255 255 255 / 86%);
+  box-shadow: 0 2px 8px rgb(39 46 31 / 8%);
+  font: 7px 'DM Mono';
+}
+.viewer-precision-control select {
+  max-width: 132px;
+  padding: 2px 5px;
+  border: 1px solid #d5d7ce;
+  border-radius: 999px;
+  color: #4d5648;
+  background: #fff;
+  font: 7px 'DM Mono';
+}
 .viewer-field-panel {
   position: absolute;
   z-index: 3;

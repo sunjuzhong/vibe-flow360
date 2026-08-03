@@ -20,6 +20,12 @@ names, solver fields, quality thresholds, or product workflows.
 LOD state is reported per solid entity because one manifest may contain solids
 with different level counts and different defaults.
 
+Viewer consumers may request any explicit LOD index through `UVFLoader.load()`.
+An `undefined` request preserves each entity's manifest default. A global
+precision selector must only expose the intersection supported by all
+multi-level solid entities; single-buffer entities remain unchanged at every
+selection.
+
 ## Consumer responsibilities
 
 Consumers decide what an entity or field means. For example, the Surface Mesh
