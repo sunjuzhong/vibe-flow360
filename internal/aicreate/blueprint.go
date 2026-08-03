@@ -61,19 +61,19 @@ func FromIntent(intent string) (Blueprint, error) {
 		}
 	}
 	if diameter != 1 || span != 1 {
-		return Blueprint{}, errors.New("the built-in exact CAD cylinder is 1 m in diameter and span; upload a STEP, IGES, or BREP file for other dimensions")
+		return Blueprint{}, errors.New("the built-in exact CAD cylinder is 1 m in diameter and span; upload a STEP or IGES file for other dimensions")
 	}
 	maxEdge := diameter / 30
 	firstLayerThickness := 2.5e-5
 	return Blueprint{
-		Template:    "cylinder-flow-v3",
-		ProjectName: "AI Create · Cylinder Flow (Exact CAD)",
+		Template:    "cylinder-flow-v4",
+		ProjectName: "AI Create · Cylinder Flow (Exact STEP CAD)",
 		Summary:     "Low-speed external flow around an analytic B-rep circular cylinder, prepared through Case setup.",
 		Geometry: Geometry{
 			Kind: "cylinder", DiameterM: diameter, SpanM: span,
-			Representation: "analytic-brep", Format: "brep",
+			Representation: "analytic-brep", Format: "step",
 			Generator: "CadQuery/OpenCascade", GeneratorVersion: "CadQuery 2.6.1 / OpenCascade 7.8.1",
-			Validated: true, Validation: "Closed solid; 3 analytic faces; volume pi/4 m^3; no tessellation records.",
+			Validated: true, Validation: "Closed STEP B-rep solid; 3 analytic faces; volume pi/4 m^3; no tessellated facets.",
 		},
 		SimulationParams: map[string]any{
 			"meshing": map[string]any{"defaults": map[string]any{

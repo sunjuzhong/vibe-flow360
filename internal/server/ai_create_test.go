@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 case " $* " in
   *" project create "*)
     case " $* " in *" --sync "*) ;; *) exit 9 ;; esac
-    case " $* " in *"/cylinder.brep "*) ;; *) exit 10 ;; esac
+    case " $* " in *"/cylinder.step "*) ;; *) exit 10 ;; esac
     printf '%s' '{"project_id":"project-ai-1"}'
     ;;
   *" project items project-ai-1 "*)
@@ -123,6 +124,25 @@ func TestNormalizeAICreateResultRetriesUntilAsyncRootAppears(t *testing.T) {
 	}
 }
 
+func TestNormalizeAICreateResultRecoversRootFromTypedProjectResponse(t *testing.T) {
+	lookup := func(_ context.Context, projectID string) (json.RawMessage, error) {
+		if projectID != "project-ai-typed" {
+			t.Fatalf("unexpected Project ID %q", projectID)
+		}
+		return json.RawMessage(`{"items":[{"id":"geometry-ai-typed","type":"Geometry"}]}`), nil
+	}
+	normalized, err := normalizeAICreateResultWithLookup(
+		context.Background(), json.RawMessage(`{"id":"project-ai-typed","type":"Project"}`),
+		"geometry", lookup, 1, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(normalized, []byte(`"root_resource_id":"geometry-ai-typed"`)) {
+		t.Fatalf("typed Project response was not normalized: %s", normalized)
+	}
+}
+
 func TestNormalizeAICreateResultReportsCreatedProjectWhenRootNeverAppears(t *testing.T) {
 	lookup := func(context.Context, string) (json.RawMessage, error) {
 		return nil, errors.New("not ready")
@@ -166,25 +186,34 @@ func TestValidateAICreateAssetRejectsSTLAsGeometry(t *testing.T) {
 	if err := validateAICreateAsset(stlPath, "geometry"); err == nil {
 		t.Fatal("STL was accepted as CAD Geometry")
 	}
-	fakeBREP := filepath.Join(root, "renamed.brep")
-	if err := os.WriteFile(fakeBREP, []byte("solid cylinder\nfacet normal 0 0 1"), 0o600); err != nil {
+	fakeSTEP := filepath.Join(root, "renamed.step")
+	if err := os.WriteFile(fakeSTEP, []byte("solid cylinder\nfacet normal 0 0 1"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateAICreateAsset(fakeBREP, "geometry"); err == nil {
-		t.Fatal("renamed STL was accepted as BREP Geometry")
+	if err := validateAICreateAsset(fakeSTEP, "geometry"); err == nil {
+		t.Fatal("renamed STL was accepted as STEP Geometry")
 	}
-	brepPath := filepath.Join(root, "cylinder.brep")
-	file, err := os.Create(brepPath)
+	stepPath := filepath.Join(root, "cylinder.step")
+	file, err := os.Create(stepPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	blueprint, _ := aicreate.FromIntent("cylinder flow")
-	writeErr := aicreate.WriteCylinderBREP(file, blueprint.Geometry)
+	writeErr := aicreate.WriteCylinderSTEP(file, blueprint.Geometry)
 	closeErr := file.Close()
 	if writeErr != nil || closeErr != nil {
-		t.Fatalf("write BREP: %v / %v", writeErr, closeErr)
+		t.Fatalf("write STEP: %v / %v", writeErr, closeErr)
 	}
-	if err := validateAICreateAsset(brepPath, "geometry"); err != nil {
-		t.Fatalf("validated BREP was rejected: %v", err)
+	if err := validateAICreateAsset(stepPath, "geometry"); err != nil {
+		t.Fatalf("validated STEP was rejected: %v", err)
+	}
+}
+
+func TestHumanizeAICreateProjectError(t *testing.T) {
+	if got := humanizeAICreateProjectError(errors.New("NameResolutionError: failed to resolve host")); !strings.Contains(got, "network") {
+		t.Fatalf("unexpected network error: %q", got)
+	}
+	if got := humanizeAICreateProjectError(errors.New("not a supported geometry or surface mesh file")); !strings.Contains(got, "CAD format") {
+		t.Fatalf("unexpected CAD error: %q", got)
 	}
 }

@@ -74,13 +74,13 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	defer os.RemoveAll(stagingDir)
-	geometryPath := filepath.Join(stagingDir, "cylinder.brep")
+	geometryPath := filepath.Join(stagingDir, "cylinder.step")
 	geometryFile, err := os.OpenFile(geometryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create generated geometry"})
 		return
 	}
-	writeErr := aicreate.WriteCylinderBREP(geometryFile, blueprint.Geometry)
+	writeErr := aicreate.WriteCylinderSTEP(geometryFile, blueprint.Geometry)
 	closeErr := geometryFile.Close()
 	if writeErr != nil || closeErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not write generated geometry"})
@@ -96,12 +96,12 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		"m", "standard", "", request.FolderID, []string{"ai-create", blueprint.Template},
 	)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 did not accept the AI-created project"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateProjectError(err)})
 		return
 	}
 	normalized, err := s.normalizeAICreateResult(c.Request.Context(), rawResult, "geometry")
 	if err != nil {
-		projectID := findStringFieldFromRaw(rawResult, map[string]bool{"project_id": true, "projectid": true})
+		projectID := findProjectIDFromRaw(rawResult)
 		payload := gin.H{"error": err.Error()}
 		if projectID != "" {
 			payload["project_id"] = projectID
@@ -147,7 +147,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: remote.ProjectID, ProjectName: blueprint.ProjectName,
-		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: "cylinder.brep",
+		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: "cylinder.step",
 		Target: blueprint.Target, Name: "AI Create · Cylinder flow baseline", Intent: request.Intent,
 		Patch: patch, Baseline: baseline, Evidence: evidence, ValidationHints: blueprint.Assumptions,
 		IdempotencyKey: "ai-create:" + remote.ProjectID,
@@ -225,26 +225,41 @@ func validateAICreateAsset(path, sourceType string) error {
 	extension := strings.ToLower(filepath.Ext(path))
 	if strings.EqualFold(sourceType, "geometry") {
 		switch extension {
-		case ".step", ".stp", ".igs", ".iges", ".brep", ".cax", ".catpart", ".catproduct":
+		case ".step", ".stp", ".igs", ".iges", ".cax", ".catpart", ".catproduct":
 		default:
-			return fmt.Errorf("%s is a tessellated or unsupported asset; Flow360 Geometry requires STEP, IGES, BREP, CAX, or CATIA CAD", filepath.Base(path))
+			return fmt.Errorf("%s is a tessellated or unsupported asset; Flow360 Geometry requires a client-supported exact CAD format such as STEP or IGES", filepath.Base(path))
 		}
-		if extension == ".brep" {
+		if extension == ".step" || extension == ".stp" {
 			file, err := os.Open(path)
 			if err != nil {
-				return fmt.Errorf("read generated BREP: %w", err)
+				return fmt.Errorf("read generated STEP: %w", err)
 			}
 			defer file.Close()
 			preview, err := io.ReadAll(io.LimitReader(file, 256<<10))
 			if err != nil {
-				return fmt.Errorf("read generated BREP: %w", err)
+				return fmt.Errorf("read generated STEP: %w", err)
 			}
-			if !bytes.Contains(preview, []byte("CASCADE Topology")) || !bytes.Contains(preview, []byte("Surfaces")) || bytes.Contains(bytes.ToLower(preview), []byte("facet normal")) {
-				return fmt.Errorf("%s is not a validated analytic OpenCascade BREP", filepath.Base(path))
+			upper := bytes.ToUpper(preview)
+			if !bytes.Contains(upper, []byte("ISO-10303-21")) || !bytes.Contains(upper, []byte("CYLINDRICAL_SURFACE")) || bytes.Contains(upper, []byte("FACET_NORMAL")) {
+				return fmt.Errorf("%s is not a validated analytic STEP B-rep", filepath.Base(path))
 			}
 		}
 	}
 	return nil
+}
+
+func humanizeAICreateProjectError(err error) string {
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "name resolution"), strings.Contains(message, "failed to resolve"), strings.Contains(message, "connection error"):
+		return "Could not reach Flow360. Check the network connection and try again."
+	case strings.Contains(message, "not a supported geometry"), strings.Contains(message, "not a supported geometry or surface mesh file"):
+		return "The generated CAD format is not supported by the installed Flow360 client."
+	case strings.Contains(message, "authentication"), strings.Contains(message, "unauthorized"), strings.Contains(message, "api key"):
+		return "Flow360 authentication failed. Check the active profile and try again."
+	default:
+		return "Flow360 could not create the AI-generated Project. Check the service connection and try again."
+	}
 }
 
 const (
@@ -271,7 +286,7 @@ func normalizeAICreateResultWithLookup(
 	if err == nil {
 		return normalized, nil
 	}
-	projectID := findStringFieldFromRaw(raw, map[string]bool{"project_id": true, "projectid": true})
+	projectID := findProjectIDFromRaw(raw)
 	if projectID == "" {
 		return nil, err
 	}
@@ -317,6 +332,17 @@ func findStringFieldFromRaw(raw json.RawMessage, keys map[string]bool) string {
 		return ""
 	}
 	return findStringField(data, keys)
+}
+
+func findProjectIDFromRaw(raw json.RawMessage) string {
+	var data any
+	if json.Unmarshal(raw, &data) != nil {
+		return ""
+	}
+	if projectID := findStringField(data, map[string]bool{"project_id": true, "projectid": true}); projectID != "" {
+		return projectID
+	}
+	return findTypedResourceID(data, "project")
 }
 
 func findTypedResourceIDFromRaw(raw json.RawMessage, expectedType string) string {

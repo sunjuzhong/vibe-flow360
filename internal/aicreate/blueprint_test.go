@@ -11,10 +11,10 @@ func TestFromIntentBuildsCylinderBlueprint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if blueprint.Template != "cylinder-flow-v3" || blueprint.Geometry.DiameterM != 1 || blueprint.Target != "case" {
+	if blueprint.Template != "cylinder-flow-v4" || blueprint.Geometry.DiameterM != 1 || blueprint.Target != "case" {
 		t.Fatalf("unexpected blueprint: %#v", blueprint)
 	}
-	if blueprint.Geometry.Representation != "analytic-brep" || blueprint.Geometry.Format != "brep" || !blueprint.Geometry.Validated {
+	if blueprint.Geometry.Representation != "analytic-brep" || blueprint.Geometry.Format != "step" || !blueprint.Geometry.Validated {
 		t.Fatalf("expected validated CAD provenance: %#v", blueprint.Geometry)
 	}
 	if len(blueprint.SimulationParams) == 0 || len(blueprint.Assumptions) == 0 {
@@ -44,18 +44,18 @@ func TestFromIntentRejectsUnsupportedGeometry(t *testing.T) {
 	}
 }
 
-func TestWriteCylinderBREPContainsAnalyticSurfacesWithoutTessellation(t *testing.T) {
+func TestWriteCylinderSTEPContainsAnalyticSurfacesWithoutTessellation(t *testing.T) {
 	blueprint, _ := FromIntent("cylinder flow")
 	var output bytes.Buffer
-	if err := WriteCylinderBREP(&output, blueprint.Geometry); err != nil {
+	if err := WriteCylinderSTEP(&output, blueprint.Geometry); err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"CASCADE Topology V3", "Surfaces 3", "Triangulations 0", "So"} {
+	for _, marker := range []string{"ISO-10303-21", "ADVANCED_FACE", "CYLINDRICAL_SURFACE"} {
 		if !strings.Contains(output.String(), marker) {
 			t.Fatalf("missing B-rep marker %q", marker)
 		}
 	}
-	if strings.Contains(output.String(), "facet normal") {
+	if strings.Contains(strings.ToUpper(output.String()), "FACET_NORMAL") {
 		t.Fatal("exact CAD asset unexpectedly contains STL facets")
 	}
 }

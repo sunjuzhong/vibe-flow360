@@ -73,7 +73,7 @@ export default function AICreateModal({
         <div>
           <p className="eyebrow">AI CREATE</p>
           <h2 id="ai-create-title">Describe the simulation you want</h2>
-          <p>The built-in cylinder template uses validated analytic CAD. Other shapes require a supported STEP, IGES, or BREP model.</p>
+          <p>The built-in cylinder template uses validated analytic STEP CAD. Other shapes require a supported STEP or IGES model.</p>
         </div>
       </div>
       <form onSubmit={submit}>
