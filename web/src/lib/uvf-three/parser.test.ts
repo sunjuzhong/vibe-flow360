@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay } from '.'
+import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay, validateUVFBufferFileCount } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('decodes indexed faces and edge positions', () => {
@@ -62,6 +62,19 @@ describe('Flow360 UVF Three.js library', () => {
     for (const path of ['../body.bin', '/body.bin', 'body.glb', 'nested//body.bin', String.raw`nested\body.bin`]) {
       expect(() => safeUVFBufferPath(path)).toThrow()
     }
+  })
+
+  it('accepts multi-slice manifests while preserving file-count and total-byte limits', () => {
+    expect(() => validateUVFBufferFileCount(
+      Array.from({ length: 37 }, (_, index) => `slice-${index}.bin`),
+    )).not.toThrow()
+    expect(() => validateUVFBufferFileCount(
+      Array.from({ length: 65 }, (_, index) => `slice-${index}.bin`),
+    )).toThrow('too many buffers')
+
+    const limit = 256 * 1024 * 1024
+    expect(accumulateUVFBufferBytes(limit - 1, 1)).toBe(limit)
+    expect(() => accumulateUVFBufferBytes(limit, 1)).toThrow('total size limit')
   })
 
   it('extracts field catalog from non-structural sections', () => {

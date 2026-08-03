@@ -3388,6 +3388,10 @@ button { color: inherit; }
 .cfd-decision-panel .volume-check span { font-size: 8px; }
 .cfd-decision-panel .volume-check small { font-size: 7px; }
 .cfd-source-detail { display: block; margin-top: 7px; color: #8a7445; font: 7px 'DM Mono'; text-align: center; }
+.cfd-stage-viewer .viewer-toolbar-slot {
+  bottom: 48px;
+  left: calc((100% - 528px) / 2);
+}
 .surface-mode-plain .cfd-decision-panel,
 .surface-mode-quality .cfd-decision-panel { right: 18px; }
 
@@ -3989,6 +3993,10 @@ button { color: inherit; }
     max-height: 50%;
     padding: 12px;
   }
+  .cfd-stage-viewer .viewer-toolbar-slot {
+    bottom: 48px;
+    left: 50%;
+  }
   .cfd-quality-strip > div:nth-child(n+3) { display: none; }
   .case-analysis-heading { align-items: flex-start; flex-direction: column; gap: 5px; padding: 14px 12px 0; }
   .case-analysis-heading > small { text-align: left; }
@@ -4023,6 +4031,10 @@ button { color: inherit; }
     transform: none;
     flex-wrap: wrap;
     justify-content: center;
+  }
+  .cfd-stage-viewer .viewer-toolbar-slot {
+    bottom: 5px;
+    left: 5px;
   }
   .viewer-legend {
     display: none;

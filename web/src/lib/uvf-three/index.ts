@@ -1,6 +1,7 @@
 export {
   UVFLoader,
   Flow360UVFLoader,
+  accumulateUVFBufferBytes,
   buildUVFAsset,
   extractFieldCatalog,
   applyFieldColoring,
@@ -11,6 +12,7 @@ export {
   setWireframeOverlay,
   setEntityVisibility,
   setGroupVisibility,
+  validateUVFBufferFileCount,
 } from './loader'
 export { sampleColormap, applyScalarField, createColormapTexture, listColormaps, type ColormapName } from './colormap'
 export { canUseLogFieldScale, formatFieldRange, formatFieldValue, normalizeFieldValue, resolveFieldScale } from './fieldScale'

@@ -6,7 +6,8 @@ import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntit
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = 25 * 1024 * 1024
-const maxBufferFiles = 10
+const maxBufferFiles = 64
+const maxTotalBufferBytes = 256 * 1024 * 1024
 
 const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
 
@@ -30,10 +31,11 @@ export class UVFLoader {
     const solids = entries.filter((entry) => entry.type === 'SolidGeometry')
     const paths = [...new Set(solids.map((solid) => safeUVFBufferPath(resolveUVFBuffer(solid, options.lodLevel).path)))]
     if (!paths.length) throw new Error('UVF manifest has no geometry buffers')
-    if (paths.length > maxBufferFiles) throw new Error('UVF manifest references too many buffers')
+    validateUVFBufferFileCount(paths)
 
     const buffers = new Map<string, ArrayBuffer>()
     let loadedFiles = 0
+    let loadedBytes = 0
     for (const path of paths) {
       const bufferURL = new URL(path, resolvedManifestURL)
       const response = await fetch(bufferURL, { signal: options.signal })
@@ -41,6 +43,7 @@ export class UVFLoader {
       enforceContentLength(response, maxBufferBytes, `UVF buffer ${path}`)
       const data = await response.arrayBuffer()
       if (data.byteLength > maxBufferBytes) throw new Error(`UVF buffer ${path} exceeds the size limit`)
+      loadedBytes = accumulateUVFBufferBytes(loadedBytes, data.byteLength)
       buffers.set(path, data)
       loadedFiles++
       options.onProgress?.({
@@ -52,6 +55,18 @@ export class UVFLoader {
     }
     return buildUVFAsset(entries, buffers, options.lodLevel)
   }
+}
+
+export function validateUVFBufferFileCount(paths: readonly string[]): void {
+  if (paths.length > maxBufferFiles) throw new Error('UVF manifest references too many buffers')
+}
+
+export function accumulateUVFBufferBytes(loadedBytes: number, nextBufferBytes: number): number {
+  const total = loadedBytes + nextBufferBytes
+  if (!Number.isSafeInteger(total) || total > maxTotalBufferBytes) {
+    throw new Error('UVF buffers exceed the total size limit')
+  }
+  return total
 }
 
 export function extractFieldCatalog(entries: UVFEntry[], lodLevel?: number): UVFFieldInfo[] {
