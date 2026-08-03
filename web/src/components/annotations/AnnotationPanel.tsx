@@ -9,6 +9,7 @@ export interface AnnotationPanelProps<TResult extends JsonValue = JsonValue> {
     ProjectAnnotationsModel<TResult>,
     | 'annotations'
     | 'loading'
+    | 'stale'
     | 'error'
     | 'savingIds'
     | 'retry'
@@ -194,21 +195,29 @@ export function AnnotationPanel<TResult extends JsonValue = JsonValue>({
     [model.annotations, resource, toolId, visibility],
   )
 
-  if (model.loading) {
+  if (model.loading && model.annotations.length === 0) {
     return <section className="annotation-panel" aria-label="Project annotations" aria-busy="true">Loading annotations…</section>
   }
 
   return (
-    <section className="annotation-panel" aria-label="Project annotations">
+    <section className="annotation-panel" aria-label="Project annotations" aria-busy={model.loading}>
       <header>
         <h2>Annotations</h2>
         <span aria-label={`${filteredAnnotations.length} of ${model.annotations.length} annotations`}>
           {filteredAnnotations.length} / {model.annotations.length}
         </span>
       </header>
+      {model.loading ? (
+        <div className="annotation-panel__sync-status" role="status">
+          Refreshing annotations from the local server…
+        </div>
+      ) : null}
       {model.error ? (
-        <div role="alert">
-          <span>{model.error}</span>
+        <div className="annotation-panel__load-error" role="alert">
+          <span>
+            {model.error}
+            {model.stale ? ' Showing the last data loaded from the local server.' : ''}
+          </span>
           <button type="button" onClick={() => void model.retry()} aria-label="Retry loading project annotations">
             Retry
           </button>

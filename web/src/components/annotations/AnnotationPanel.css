@@ -20,6 +20,31 @@
   line-height: 1.2;
 }
 
+.annotation-panel__sync-status,
+.annotation-panel__load-error {
+  padding: 7px 8px;
+  border-radius: 6px;
+  line-height: 1.35;
+}
+
+.annotation-panel__sync-status {
+  color: var(--text-muted, #66727d);
+  background: var(--surface-subtle, #eef1f3);
+}
+
+.annotation-panel__load-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--danger-text, #9f2d2d);
+  background: var(--danger-subtle, #fff0f0);
+}
+
+.annotation-panel__load-error button {
+  flex: 0 0 auto;
+}
+
 .annotation-panel ul {
   display: grid;
   gap: 6px;

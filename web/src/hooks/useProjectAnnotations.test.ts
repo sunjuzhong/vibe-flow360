@@ -118,12 +118,78 @@ describe('ProjectAnnotationsController', () => {
     expect(controller.getSnapshot()).toMatchObject({
       annotations: [],
       loading: false,
+      stale: false,
       error: 'network unavailable',
     })
 
     await controller.retry()
     expect(controller.getSnapshot()).toMatchObject({ annotations: [], loading: false, error: null })
     expect(list).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains loaded annotations and the active draft across a failed retry', async () => {
+    const retry = deferred<ViewerAnnotation<Result>[]>()
+    const list = vi.fn()
+      .mockResolvedValueOnce([annotation('project-a')])
+      .mockReturnValueOnce(retry.promise)
+    const controller = new ProjectAnnotationsController(api({ list }))
+    await controller.setProject('project-a')
+    controller.setActiveDraft(annotation('project-a', 'draft'))
+
+    const refreshing = controller.retry()
+    expect(controller.getSnapshot()).toMatchObject({
+      loading: true,
+      stale: true,
+      error: null,
+      activeDraft: { id: 'draft' },
+    })
+    expect(controller.getSnapshot().annotations.map(({ id }) => id)).toEqual(['project-a-annotation'])
+
+    retry.reject(new Error('Failed to fetch'))
+    await refreshing
+    expect(controller.getSnapshot()).toMatchObject({
+      loading: false,
+      stale: true,
+      error: 'Failed to fetch',
+      activeDraft: { id: 'draft' },
+    })
+    expect(controller.getSnapshot().annotations.map(({ id }) => id)).toEqual(['project-a-annotation'])
+  })
+
+  it('replaces stale annotations after retry recovery', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce([annotation('project-a', 'old')])
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce([annotation('project-a', 'fresh')])
+    const controller = new ProjectAnnotationsController(api({ list }))
+    await controller.setProject('project-a')
+    await controller.retry()
+
+    expect(controller.getSnapshot()).toMatchObject({ stale: true, error: 'Failed to fetch' })
+    expect(controller.getSnapshot().annotations.map(({ id }) => id)).toEqual(['old'])
+
+    await controller.retry()
+    expect(controller.getSnapshot()).toMatchObject({ loading: false, stale: false, error: null })
+    expect(controller.getSnapshot().annotations.map(({ id }) => id)).toEqual(['fresh'])
+  })
+
+  it('shows only a target project cache while it refreshes after project switching', async () => {
+    const reloadA = deferred<ViewerAnnotation<Result>[]>()
+    const list = vi.fn()
+      .mockResolvedValueOnce([annotation('project-a', 'a')])
+      .mockResolvedValueOnce([annotation('project-b', 'b')])
+      .mockReturnValueOnce(reloadA.promise)
+    const controller = new ProjectAnnotationsController(api({ list }))
+    await controller.setProject('project-a')
+    await controller.setProject('project-b')
+
+    const loadingA = controller.setProject('project-a')
+    expect(controller.getSnapshot()).toMatchObject({ projectId: 'project-a', loading: true, stale: true })
+    expect(controller.getSnapshot().annotations.map(({ id }) => id)).toEqual(['a'])
+
+    reloadA.resolve([annotation('project-a', 'a-fresh')])
+    await loadingA
+    expect(controller.getSnapshot().annotations.map(({ id }) => id)).toEqual(['a-fresh'])
   })
 
   it('rolls back optimistic visibility and rename patches when persistence fails', async () => {

@@ -25,6 +25,7 @@ export interface ProjectAnnotationsSnapshot<TResult extends JsonValue = JsonValu
   readonly annotations: readonly ViewerAnnotation<TResult>[]
   readonly activeDraft: ViewerAnnotation<TResult> | null
   readonly loading: boolean
+  readonly stale: boolean
   readonly error: string | null
   readonly savingIds: readonly string[]
 }
@@ -84,6 +85,7 @@ export class ProjectAnnotationsController<TResult extends JsonValue = JsonValue>
       annotations: [],
       activeDraft: null,
       loading: false,
+      stale: false,
       error: null,
       savingIds: [],
     }
@@ -112,13 +114,20 @@ export class ProjectAnnotationsController<TResult extends JsonValue = JsonValue>
   async setProject(projectId: string): Promise<void> {
     const requestInFlight = this.request !== null && !this.request.signal.aborted
     if (projectId === this.snapshot.projectId
-      && (this.snapshot.annotations.length > 0 || (this.snapshot.loading && requestInFlight))) {
+      && ((this.snapshot.loading && requestInFlight)
+        || (this.snapshot.annotations.length > 0 && !this.snapshot.stale && !this.snapshot.error))) {
       return
     }
     this.request?.abort()
     this.mutationTokens.clear()
     const generation = ++this.generation
-    this.publish({ ...this.emptySnapshot(projectId), loading: Boolean(projectId) })
+    const cached = this.cache.get(projectId) ?? []
+    this.publish({
+      ...this.emptySnapshot(projectId),
+      annotations: cached,
+      loading: Boolean(projectId),
+      stale: cached.length > 0,
+    })
     if (!projectId) return
     await this.fetchProject(projectId, generation)
   }
@@ -128,7 +137,7 @@ export class ProjectAnnotationsController<TResult extends JsonValue = JsonValue>
     if (!projectId) return
     this.request?.abort()
     const generation = ++this.generation
-    this.update({ annotations: [], activeDraft: null, loading: true, error: null })
+    this.update({ loading: true, stale: this.snapshot.annotations.length > 0, error: null })
     await this.fetchProject(projectId, generation)
   }
 
@@ -143,10 +152,14 @@ export class ProjectAnnotationsController<TResult extends JsonValue = JsonValue>
       if (!this.isCurrent(projectId, generation)) return
       const scoped = annotations.filter((annotation) => annotation.projectId === projectId)
       this.cache.set(projectId, scoped)
-      this.update({ annotations: scoped, loading: false, error: null })
+      this.update({ annotations: scoped, loading: false, stale: false, error: null })
     } catch (error) {
       if (aborted(error) || !this.isCurrent(projectId, generation)) return
-      this.update({ annotations: [], loading: false, error: messageFrom(error) })
+      this.update({
+        loading: false,
+        stale: this.snapshot.annotations.length > 0,
+        error: messageFrom(error),
+      })
     } finally {
       if (this.request === request) this.request = null
     }
@@ -307,6 +320,7 @@ export function useProjectAnnotations<TResult extends JsonValue = JsonValue>(
         annotations: [],
         activeDraft: null,
         loading: Boolean(projectId),
+        stale: false,
         error: null,
         savingIds: [],
       }

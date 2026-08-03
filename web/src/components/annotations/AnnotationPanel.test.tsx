@@ -26,6 +26,7 @@ function model(overrides: Record<string, unknown> = {}) {
   return {
     annotations: [annotation()],
     loading: false,
+    stale: false,
     error: null,
     savingIds: [],
     retry: vi.fn(async () => undefined),
@@ -58,7 +59,7 @@ describe('AnnotationPanel', () => {
 
   it('renders loading, retryable error and empty states', () => {
     expect(renderToStaticMarkup(
-      <AnnotationPanel model={model({ loading: true })} onFocus={vi.fn()} />,
+      <AnnotationPanel model={model({ annotations: [], loading: true })} onFocus={vi.fn()} />,
     )).toContain('Loading annotations')
 
     const empty = renderToStaticMarkup(<AnnotationPanel
@@ -68,6 +69,24 @@ describe('AnnotationPanel', () => {
     expect(empty).toContain('role="alert"')
     expect(empty).toContain('aria-label="Retry loading project annotations"')
     expect(empty).toContain('No annotations in this project.')
+  })
+
+  it('keeps stale annotations visible while refresh or recovery fails', () => {
+    const refreshing = renderToStaticMarkup(<AnnotationPanel
+      model={model({ loading: true, stale: true })}
+      onFocus={vi.fn()}
+    />)
+    expect(refreshing).toContain('Wing span')
+    expect(refreshing).toContain('1 / 1')
+    expect(refreshing).toContain('Refreshing annotations from the local server')
+
+    const failed = renderToStaticMarkup(<AnnotationPanel
+      model={model({ stale: true, error: 'Failed to fetch' })}
+      onFocus={vi.fn()}
+    />)
+    expect(failed).toContain('Wing span')
+    expect(failed).toContain('1 / 1')
+    expect(failed).toContain('Showing the last data loaded from the local server.')
   })
 
   it('keeps summaries compact', () => {
