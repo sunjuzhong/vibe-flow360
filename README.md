@@ -41,6 +41,8 @@ command.
 The repository now contains a working local Web prototype:
 
 - React/Vite simulation workspace with a persistent **Chat with AI** panel;
+- homepage **AI Create** flow that turns a cylinder-flow requirement into generated
+  geometry, a Flow360 Project, and a preloaded Case plan;
 - Go HTTP backend modeled after Tongstock's server architecture;
 - SSE streaming chat responses;
 - OpenAI-compatible model support with a resilient local CFD planning fallback;

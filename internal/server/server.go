@@ -266,6 +266,7 @@ func (s *Server) routes() {
 		api.POST("/imports/:import_id/approve", s.approveImport)
 		api.POST("/imports/:import_id/run", s.runImport)
 		api.DELETE("/imports/:import_id", s.abortImport)
+		api.POST("/ai-create", s.aiCreateProject)
 		api.GET("/agent/state", func(c *gin.Context) {
 			c.JSON(http.StatusOK, s.agent.State())
 		})

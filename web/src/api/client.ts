@@ -25,6 +25,23 @@ export type AgentState = {
   execution: boolean
 }
 
+export type AICreateResult = {
+  project_id: string
+  root_resource_id: string
+  root_resource_type: string
+  blueprint: {
+    template: string
+    project_name: string
+    summary: string
+    geometry: { kind: string; diameter_m: number; span_m: number; segments: number }
+    simulation_params: Record<string, unknown>
+    assumptions: string[]
+    target: string
+  }
+  plan: SimulationPlan
+  stages: string[]
+}
+
 export type AgentProposalField = {
   key: string
   value: unknown
@@ -762,6 +779,8 @@ export const api = {
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run`),
+  aiCreate: (intent: string, folderId: string) =>
+    mutate<AICreateResult>('/api/ai-create', { intent, folder_id: folderId }),
   abortImport: async (id: string) => {
     const response = await fetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' })
     const body = await response.json().catch(() => ({}))

@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Box,
   ChevronRight,
-  MessageSquareText,
   RefreshCw,
   Search,
   FileUp,
@@ -16,7 +15,7 @@ import {
   type FolderNode,
   type ProjectRecord,
 } from '../api/client'
-import CopilotPanel from '../components/CopilotPanel'
+import AICreateCard from '../components/AICreateCard'
 import FolderTree from '../components/FolderTree'
 import ImportPanel from '../components/ImportPanel'
 import TopBar from '../components/TopBar'
@@ -40,7 +39,6 @@ export default function WorkspacePage() {
   const [projectsDataSource, setProjectsDataSource] = useState<'live' | 'cache'>('live')
   const [projectsCachedAt, setProjectsCachedAt] = useState('')
   const [query, setQuery] = useState('')
-  const [chatOpen, setChatOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
   const loadStatus = () => {
@@ -151,7 +149,7 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div className={`product-page ${chatOpen ? 'chat-visible' : ''}`}>
+    <div className="product-page">
       <TopBar status={flowStatus} />
       <aside className="workspace-sidebar">
         <div className="sidebar-heading">
@@ -197,12 +195,13 @@ export default function WorkspacePage() {
                 : 'Flow360 projects are organized by workspace folder.'}
             </p>
           </div>
-          <button className="ai-action" onClick={() => setChatOpen(true)}>
-            <MessageSquareText size={16} />
-            Ask AI
-          </button>
           {selectedFolder && <button className="ai-action" onClick={() => setImportOpen(true)}><FileUp size={16}/> New project</button>}
         </div>
+
+        <AICreateCard
+          folder={selectedFolder}
+          onCreated={(result) => navigate(`/projects/${encodeURIComponent(result.project_id)}`)}
+        />
 
         {selectedFolder && (
           <div className="project-toolbar">
@@ -293,14 +292,6 @@ export default function WorkspacePage() {
         </div>
       </main>
 
-      <CopilotPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        contextLabel={selectedFolder ? `Folder · ${selectedFolder.name}` : 'Flow360 workspace'}
-        context={selectedFolder
-          ? `The user is browsing Flow360 folder ${selectedFolder.name} (${selectedFolder.id}) with ${projects.length} loaded projects.`
-          : 'The user is at the Flow360 workspace home and has not selected a folder.'}
-      />
       {selectedFolder && importOpen && <ImportPanel folder={selectedFolder} onClose={() => setImportOpen(false)} onCreated={(plan) => {
   setImportOpen(false)
   void loadProjects(selectedFolder)
