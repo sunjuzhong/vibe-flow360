@@ -35,6 +35,28 @@ func TestBuildChatPromptInjectsUserMessageAndContext(t *testing.T) {
 	}
 }
 
+func TestBuildChatPromptKeepsTypicalCaseSimulationParams(t *testing.T) {
+	largeValue := strings.Repeat("case-parameter-", 1200)
+	contextJSON, err := json.Marshal(ChatContextPayload{
+		ProjectID:        "prj-1",
+		SourceID:         "case-1",
+		SourceType:       "Case",
+		Target:           "case",
+		SimulationParams: json.RawMessage(`{"models":{"snapshot":"` + largeValue + `"}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, payload := BuildChatPrompt(ChatRequest{Message: "make this case runnable", Context: string(contextJSON)})
+	if strings.Contains(string(payload.SimulationParams), "truncated") {
+		t.Fatal("a typical Case SimulationParams snapshot should not be truncated")
+	}
+	if !strings.Contains(string(payload.SimulationParams), largeValue) {
+		t.Fatal("the complete Case SimulationParams snapshot was not preserved")
+	}
+}
+
 func TestBuildChatPromptTruncatesLongMessages(t *testing.T) {
 	longMsg := strings.Repeat("x", 8000)
 	req := ChatRequest{Message: longMsg}

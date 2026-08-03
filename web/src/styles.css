@@ -1825,7 +1825,10 @@ button { color: inherit; }
 .plan-stage-schema-editor > .schema-object { margin: 0; }
 .plan-stage-schema-editor > small { display: block; margin-top: 7px; color: #868d81; font-size: 7px; line-height: 1.45; }
 .plan-advanced-editor { margin-top: 9px; overflow: hidden; border: 1px solid #d5d8cf; border-radius: 8px; }
-.plan-form-actions { display: flex; justify-content: flex-end; gap: 7px; padding-top: 8px; }
+.plan-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; padding-top: 8px; }
+.plan-compile-readiness { display: inline-flex; align-items: flex-start; gap: 5px; max-width: 430px; margin-right: auto; color: #8b6818; font-size: 7px; line-height: 1.45; }
+.plan-compile-readiness svg { flex: 0 0 auto; margin-top: 1px; }
+.plan-compile-readiness.ready { color: #557317; }
 .plan-form-actions button,.approval-card button,.execution-card button { display: inline-flex; min-height: 35px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid #ced1c7; border-radius: 7px; color: #656b60; background: #fff; font-size: 8px; cursor: pointer; }
 .plan-form-actions button.primary,.approval-card button.primary { color: #202719; border-color: #a6c047; background: #b7d74f; font-weight: 700; }
 .plan-form-actions button:disabled,.approval-card button:disabled,.execution-card button:disabled { cursor: not-allowed; opacity: .45; }

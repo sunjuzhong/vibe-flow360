@@ -10,7 +10,11 @@ import (
 
 const (
 	maxProjectContextBytes   = 4000
-	maxSimulationParamsBytes = 6000
+	// Case SimulationParams commonly exceed a few kilobytes once models,
+	// boundaries, outputs, and time stepping are present. Keep enough of the
+	// source snapshot for plan composition so the Agent does not ask users for
+	// values that are already available on the resource.
+	maxSimulationParamsBytes = 48000
 	maxSchemaBytes           = 24000
 	maxEvidenceBytes         = 4000
 	maxUserFeedbackBytes     = 2000

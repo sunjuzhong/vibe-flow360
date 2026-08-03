@@ -1,5 +1,24 @@
 export type SimulationStage = 'SurfaceMesh' | 'VolumeMesh' | 'Case'
 
+export function planCompileBlockers({
+  schemaLoading,
+  hasSchema,
+  name,
+  intent,
+}: {
+  schemaLoading: boolean
+  hasSchema: boolean
+  name: string
+  intent: string
+}) {
+  const blockers: string[] = []
+  if (schemaLoading) blockers.push('Flow360 parameter schema is still loading.')
+  else if (!hasSchema) blockers.push('Flow360 parameter schema is unavailable.')
+  if (!name.trim()) blockers.push('Add a plan / run name.')
+  if (!intent.trim()) blockers.push('Add an engineering intent, or use AI form fill to derive it from your prompt.')
+  return blockers
+}
+
 export type StageParameterGroup = {
   label: string
   description: string

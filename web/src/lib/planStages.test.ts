@@ -4,6 +4,7 @@ import {
   hasPath,
   mergeStagePatches,
   partitionPatchByStages,
+  planCompileBlockers,
   stageForPath,
   unwrapSimulationParams,
 } from './planStages'
@@ -78,5 +79,29 @@ describe('stage-aware simulation planning', () => {
     expect(stageForPath('meshing.defaults.surface_max_edge_length')).toBe('SurfaceMesh')
     expect(stageForPath('meshing.defaults.boundary_layer_growth_rate')).toBe('VolumeMesh')
     expect(stageForPath('models.0.type')).toBe('Case')
+  })
+
+  it('explains every prerequisite that keeps plan compilation disabled', () => {
+    expect(planCompileBlockers({
+      schemaLoading: false,
+      hasSchema: true,
+      name: 'Case variation',
+      intent: '',
+    })).toEqual(['Add an engineering intent, or use AI form fill to derive it from your prompt.'])
+    expect(planCompileBlockers({
+      schemaLoading: true,
+      hasSchema: false,
+      name: '',
+      intent: 'Run the existing case',
+    })).toEqual([
+      'Flow360 parameter schema is still loading.',
+      'Add a plan / run name.',
+    ])
+    expect(planCompileBlockers({
+      schemaLoading: false,
+      hasSchema: true,
+      name: 'Case variation',
+      intent: 'Run the existing case',
+    })).toEqual([])
   })
 })

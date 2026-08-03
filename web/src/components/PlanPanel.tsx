@@ -24,6 +24,7 @@ import {
   hasPath,
   mergeStagePatches,
   partitionPatchByStages,
+  planCompileBlockers,
   stageDefinitions,
   stageForPath,
   unwrapSimulationParams,
@@ -226,6 +227,12 @@ export default function PlanPanel({
     () => unwrapSimulationParams(detail?.simulation_params),
     [detail?.simulation_params],
   )
+  const compileBlockers = useMemo(() => planCompileBlockers({
+    schemaLoading,
+    hasSchema: Boolean(formSchema),
+    name,
+    intent,
+  }), [formSchema, intent, name, schemaLoading])
 
   useEffect(() => {
     if (!open || !showForm || !activeStages.length) return
@@ -309,6 +316,8 @@ export default function PlanPanel({
 
   const fillWithAI = async () => {
     if (assistLoading || schemaLoading || !formSchema || !assistPrompt.trim()) return
+    const effectiveIntent = intent.trim() || assistPrompt.trim()
+    if (!intent.trim()) setIntent(effectiveIntent)
     setAssistLoading(true)
     setAssistAction(null)
     setAssistPreflight(null)
@@ -322,7 +331,7 @@ export default function PlanPanel({
         source_type: resource.type,
         source_name: resource.name,
         target,
-        intent,
+        intent: effectiveIntent,
         prompt: assistPrompt,
         patch: currentPatch,
       })
@@ -331,6 +340,7 @@ export default function PlanPanel({
       if (response.proposal) {
         setStageValues(partitionPatchByStages(response.proposal.patch, activeStages))
         if (response.proposal.name.trim()) setName(response.proposal.name)
+        if (response.proposal.intent.trim()) setIntent(response.proposal.intent)
       }
     } catch (cause) {
       setError(`AI form fill failed: ${errorMessage(cause)}`)
@@ -544,6 +554,11 @@ export default function PlanPanel({
                       {assistAction.assumptions?.map((item) => <span key={item}>Assumption · {item}</span>)}
                       {assistAction.questions?.map((item) => <span key={item.field}>Needs input · {item.message}</span>)}
                       {assistAction.warnings?.map((item) => <span key={item}>Warning · {item}</span>)}
+                      {assistAction.kind === 'request-missing-input' && Boolean(assistAction.questions?.length) && (
+                        <em className="needs-input">
+                          Add the requested values to the prompt above and choose Fill active stages again. You can also compile the current values to inspect the complete Flow360 preflight.
+                        </em>
+                      )}
                       {assistPreflight && (
                         <em className={assistPreflight.valid ? 'ready' : 'needs-input'}>
                           {assistPreflight.valid
@@ -656,10 +671,16 @@ export default function PlanPanel({
                 </div>
                 {error && <div className="plan-error"><AlertCircle size={14} />{error}</div>}
                 <div className="plan-form-actions">
+                  <small className={compileBlockers.length ? 'plan-compile-readiness blocked' : 'plan-compile-readiness ready'} aria-live="polite">
+                    {compileBlockers.length
+                      ? <><AlertCircle size={13} /> Cannot compile yet · {compileBlockers.join(' ')}</>
+                      : <><CheckCircle2 size={13} /> Ready to compile current values for local validation.</>}
+                  </small>
                   <button type="button" onClick={onClose} disabled={loading || !!submittingAction}>Cancel</button>
                   <button
                     className="primary"
-                    disabled={loading || schemaLoading || !formSchema || !!submittingAction || !name.trim() || !intent.trim()}
+                    disabled={loading || !!submittingAction || compileBlockers.length > 0}
+                    title={compileBlockers.join(' ')}
                     type="submit"
                   >
                     {loading && submittingAction === 'compile'
