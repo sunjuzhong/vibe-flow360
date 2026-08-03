@@ -218,9 +218,12 @@ import json
 import re
 import sys
 import warnings
+from typing import get_args
 
+from pydantic import BaseModel, BeforeValidator
 from flow360.component.simulation import services
 from flow360_schema import __version__ as schema_version
+from flow360_schema.framework.physical_dimensions.dimension_meta import PhysicalDimensionMeta
 from flow360_schema.models.simulation.simulation_params import SimulationParams
 from unyt import Unit
 
@@ -260,6 +263,74 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     full_schema = SimulationParams.model_json_schema()
 
+# The Flow360 25.10 wire schema intentionally represents every physical
+# quantity as {value, units}, but the generated JSON schema does not repeat the
+# physical dimension on the free-form units string. Recover that authoritative
+# dimension from the public Pydantic model annotations and attach it to the
+# matching $defs property before projecting the editor schema. This remains
+# generic across all quantity fields; no CFD parameter names are hard-coded.
+def model_subclasses(root):
+    result = []
+    seen = set()
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        for child in current.__subclasses__():
+            if child in seen:
+                continue
+            seen.add(child)
+            result.append(child)
+            pending.append(child)
+    return result
+
+def annotation_unit(annotation):
+    for item in getattr(annotation, "__metadata__", ()):
+        if not isinstance(item, BeforeValidator):
+            continue
+        for cell in getattr(item.func, "__closure__", ()) or ():
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                continue
+            if isinstance(value, PhysicalDimensionMeta):
+                return value.si_unit
+    for child in get_args(annotation):
+        if child is type(None):
+            continue
+        unit = annotation_unit(child)
+        if unit:
+            return unit
+    return None
+
+models_by_name = {}
+units_by_field_name = {}
+for model in [BaseModel, *model_subclasses(BaseModel)]:
+    models_by_name.setdefault(model.__name__, []).append(model)
+    for field_name, field in getattr(model, "model_fields", {}).items():
+        unit = annotation_unit(field.annotation)
+        if unit:
+            units_by_field_name.setdefault(field_name, set()).add(unit)
+for definition_name, definition in full_schema.get("$defs", {}).items():
+    models = models_by_name.get(definition_name, [])
+    if not models or not isinstance(definition, dict):
+        continue
+    properties = definition.get("properties", {})
+    for field_name, property_schema in properties.items():
+        if not isinstance(property_schema, dict):
+            continue
+        for model in models:
+            field = getattr(model, "model_fields", {}).get(field_name)
+            if field is None:
+                continue
+            unit = annotation_unit(field.annotation)
+            if unit:
+                property_schema["$units"] = unit
+                break
+        if "$units" not in property_schema:
+            candidate_units = units_by_field_name.get(field_name, set())
+            if len(candidate_units) == 1:
+                property_schema["$units"] = next(iter(candidate_units))
+
 def dereference(node):
     seen = set()
     while isinstance(node, dict) and "$ref" in node:
@@ -283,7 +354,7 @@ def metadata(node):
 
 COMMON_UNITS = (
     "meter", "mm", "cm", "km", "inch", "ft",
-    "meter/second", "km/hr", "mph", "knot",
+    "meter/second", "cm/second", "ft/second", "km/hr", "mph", "knot",
     "second", "minute", "hr",
     "Pa", "kPa", "MPa", "bar", "psi",
     "K", "degC", "degF",
@@ -299,7 +370,7 @@ COMMON_UNITS = (
 def compatible_units(unit):
     result = [unit]
     try:
-        base = Unit(unit)
+        base = Unit(unit.replace("^", "**"))
     except Exception:
         return result
     for candidate in COMMON_UNITS:
@@ -376,26 +447,28 @@ def external_numeric(ref):
         result["minimum"] = 0
     return result
 
-def normalize(node):
+def normalize(node, inherited_unit=None):
     if not isinstance(node, dict):
         return {"type": "json"}
+    unit = node.get("$units", inherited_unit)
     outer = metadata(node)
     if "$ref" in node and not node["$ref"].startswith("#/"):
         outer.update(external_numeric(node["$ref"]))
-        if "$units" in node:
-            outer["unit"] = node["$units"]
+        if unit:
+            outer["unit"] = unit
         return outer
     node = dereference(node)
+    unit = node.get("$units", unit)
     base = metadata(node)
     base.update({key: value for key, value in outer.items() if key not in base})
     choice_key, choices = alternatives(node)
     if choices:
         if len(choices) == 1:
-            resolved = normalize(choices[0])
+            resolved = normalize(choices[0], unit)
             resolved.update({key: value for key, value in base.items() if key not in resolved})
             resolved["nullable"] = any(item.get("type") == "null" for item in node[choice_key])
             return resolved
-        variants = [normalize(choice) for choice in choices]
+        variants = [normalize(choice, unit) for choice in choices]
         priority = {"quantity": 0, "number": 1, "integer": 2, "string": 3, "boolean": 4}
         variants.sort(key=lambda item: priority.get(item.get("type"), 10))
         return {
@@ -411,13 +484,14 @@ def normalize(node):
     if node_type == "object":
         properties = node.get("properties", {})
         value_schema = properties.get("value")
-        if isinstance(value_schema, dict) and "$units" in value_schema:
+        quantity_unit = value_schema.get("$units", unit) if isinstance(value_schema, dict) else unit
+        if isinstance(value_schema, dict) and "units" in properties and quantity_unit:
             numeric = normalize(value_schema)
             return {
                 **base,
                 "type": "quantity",
-                "unit": value_schema["$units"],
-                "unit_options": compatible_units(value_schema["$units"]),
+                "unit": quantity_unit,
+                "unit_options": compatible_units(quantity_unit),
                 "value_schema": numeric,
             }
         required = set(node.get("required", []))

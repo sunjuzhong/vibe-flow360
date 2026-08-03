@@ -118,6 +118,72 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 			t.Fatalf("%s editor schema exposed private Flow360 attributes", stage)
 		}
 	}
+	var volumeSchema map[string]any
+	if err := json.Unmarshal(result.EditorSchemas["VolumeMesh"], &volumeSchema); err != nil {
+		t.Fatal(err)
+	}
+	length := findSchemaByTitle(volumeSchema, "Boundary Layer First Layer Thickness")
+	if length == nil || length["type"] != "quantity" || length["unit"] != "meter" {
+		t.Fatalf("expected a selectable length quantity, got %#v", length)
+	}
+	if options, _ := length["unit_options"].([]any); len(options) < 2 {
+		t.Fatalf("expected multiple length units, got %#v", length)
+	}
+	var caseSchema map[string]any
+	if err := json.Unmarshal(result.EditorSchemas["Case"], &caseSchema); err != nil {
+		t.Fatal(err)
+	}
+	velocity := findQuantitySchema(findSchemaByTitle(caseSchema, "Velocity Magnitude"))
+	if velocity == nil || velocity["type"] != "quantity" || velocity["unit"] != "meter/second" {
+		t.Fatalf("expected a selectable velocity quantity, got %#v", velocity)
+	}
+	if options, _ := velocity["unit_options"].([]any); len(options) < 2 {
+		t.Fatalf("expected multiple velocity units, got %#v", velocity)
+	}
+}
+
+func findQuantitySchema(node map[string]any) map[string]any {
+	if node == nil || node["type"] == "quantity" {
+		return node
+	}
+	if variants, ok := node["variants"].([]any); ok {
+		for _, child := range variants {
+			if object, ok := child.(map[string]any); ok {
+				if found := findQuantitySchema(object); found != nil {
+					return found
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func findSchemaByTitle(node map[string]any, title string) map[string]any {
+	if node["title"] == title {
+		return node
+	}
+	if properties, ok := node["properties"].(map[string]any); ok {
+		for _, child := range properties {
+			if object, ok := child.(map[string]any); ok {
+				if found := findSchemaByTitle(object, title); found != nil {
+					return found
+				}
+			}
+		}
+	}
+	if variants, ok := node["variants"].([]any); ok {
+		for _, child := range variants {
+			if object, ok := child.(map[string]any); ok {
+				if found := findSchemaByTitle(object, title); found != nil {
+					return found
+				}
+			}
+		}
+	}
+	if items, ok := node["items"].(map[string]any); ok {
+		return findSchemaByTitle(items, title)
+	}
+	return nil
 }
 
 func TestPreflightSimulationParamsWithPlanFixture(t *testing.T) {
