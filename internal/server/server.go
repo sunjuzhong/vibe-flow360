@@ -334,6 +334,10 @@ func (s *Server) stageImport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported source type"})
 		return
 	}
+	if !importplans.IsSupportedLengthUnit(unit) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported length unit; choose m, mm, cm, or inch"})
+		return
+	}
 
 	var tags []string
 	if rawTags != "" {
@@ -346,10 +350,13 @@ func (s *Server) stageImport(c *gin.Context) {
 	}
 
 	plan := importplans.Plan{
-		Name:          name,
-		SourceType:    sourceType,
-		Unit:          unit,
-		UnitConfirmed: sourceType != "geometry",
+		Name:       name,
+		SourceType: sourceType,
+		Unit:       unit,
+		// A canonical value from the controlled unit selector is the confirmation.
+		// Keep this field true for persisted-plan compatibility without requiring a
+		// second checkbox from the user.
+		UnitConfirmed: true,
 		Workflow:      workflow,
 		SolverVersion: solverVersion,
 		FolderID:      folderID,
@@ -507,9 +514,10 @@ func (s *Server) approveImport(c *gin.Context) {
 		if plan.Status != "draft" {
 			return fmt.Errorf("only a draft import can be approved")
 		}
-		if plan.SourceType == "geometry" && !plan.UnitConfirmed {
-			return fmt.Errorf("geometry imports require unit confirmation before approval")
+		if !importplans.IsSupportedLengthUnit(plan.Unit) {
+			return fmt.Errorf("import has an unsupported length unit")
 		}
+		plan.UnitConfirmed = true
 		plan.Status = "approved"
 		return nil
 	})

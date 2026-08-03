@@ -8,6 +8,19 @@ import (
 	"time"
 )
 
+func TestIsSupportedLengthUnit(t *testing.T) {
+	for _, unit := range []string{"m", "mm", "cm", "inch"} {
+		if !IsSupportedLengthUnit(unit) {
+			t.Fatalf("expected canonical unit %q to be supported", unit)
+		}
+	}
+	for _, unit := range []string{"", "meter", "meters", "M", "ft"} {
+		if IsSupportedLengthUnit(unit) {
+			t.Fatalf("expected non-canonical unit %q to be rejected", unit)
+		}
+	}
+}
+
 func TestStore_CreateAndGet(t *testing.T) {
 	dir := t.TempDir()
 	store, err := New(dir)

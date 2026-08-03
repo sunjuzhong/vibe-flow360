@@ -23,6 +23,20 @@ const (
 	DefaultCleanupAge   time.Duration = 24 * time.Hour
 )
 
+var supportedLengthUnits = map[string]struct{}{
+	"m":    {},
+	"mm":   {},
+	"cm":   {},
+	"inch": {},
+}
+
+// IsSupportedLengthUnit reports whether unit is a canonical Flow360 import
+// token. Import callers should never persist arbitrary user-entered units.
+func IsSupportedLengthUnit(unit string) bool {
+	_, ok := supportedLengthUnits[unit]
+	return ok
+}
+
 type FileInfo struct {
 	Name      string `json:"name"`
 	SizeBytes int64  `json:"size_bytes"`
@@ -278,8 +292,8 @@ func (s *Store) Start(id string) (Plan, *Plan, error) {
 	if plan.Status != "approved" && plan.Status != "failed" {
 		return Plan{}, nil, errors.New("import must be approved before execution")
 	}
-	if plan.SourceType == "geometry" && !plan.UnitConfirmed {
-		return Plan{}, nil, errors.New("geometry imports require unit confirmation before execution")
+	if !IsSupportedLengthUnit(plan.Unit) {
+		return Plan{}, nil, errors.New("import has an unsupported length unit")
 	}
 
 	entries, err := os.ReadDir(s.dir)

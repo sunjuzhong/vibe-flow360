@@ -38,7 +38,6 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
   const [name, setName] = useState('')
   const [sourceType, setSourceType] = useState('geometry')
   const [unit, setUnit] = useState('m')
-  const [unitConfirmed, setUnitConfirmed] = useState(false)
   const [workflow, setWorkflow] = useState('standard')
   const [solverVersion, setSolverVersion] = useState('')
   const [tags, setTags] = useState('')
@@ -66,7 +65,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
 
   const resumeDraft = async (draft: ImportPlan) => {
     setPlan(draft)
-    setConfirmed(draft.unit_confirmed || draft.source_type !== 'geometry')
+    setConfirmed(false)
     setExecuteConfirmationOpen(false)
     setError('')
   }
@@ -76,7 +75,6 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
     if (!files?.length || busy || submittingAction) return
     const validationError = validateFileNames(Array.from(files, (file) => file.name), sourceType)
     if (validationError) { setError(validationError); return }
-    if (sourceType === 'geometry' && !unitConfirmed) { setError('Please confirm the length unit before staging a Geometry import.'); return }
     setBusy(true); setSubmittingAction('stage'); setError('')
     const form = new FormData()
     form.set('name', name)
@@ -92,7 +90,6 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
 
   const requestExecute = () => {
     if (!plan || !confirmed || busy || submittingAction) return
-    if (plan.source_type === 'geometry' && !plan.unit_confirmed) { setError('Geometry imports require unit confirmation before execution.'); return }
     setExecuteConfirmationOpen(true)
   }
 
@@ -122,9 +119,6 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
       setExistingDrafts((prev) => prev.filter((d) => d.id !== plan.id))
     } catch (cause) { setError(String(cause).replace('Error: ', '')) } finally { setBusy(false); setSubmittingAction(null) }
   }
-
-  const hasGeometryUnitGate = sourceType === 'geometry' && !unitConfirmed
-  const unitGateDisabled = sourceType === 'geometry' && !unitConfirmed
 
   return <div className="import-overlay" role="presentation">
     <section
@@ -164,14 +158,14 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
         <label>Project name<input value={name} onChange={e => setName(e.target.value)} required /></label>
         <div className="import-row">
           <label>Source type
-            <select value={sourceType} onChange={e => { setSourceType(e.target.value); setWorkflow('standard'); setFiles(null); setUnitConfirmed(false) }}>
+            <select value={sourceType} onChange={e => { setSourceType(e.target.value); setWorkflow('standard'); setFiles(null) }}>
               <option value="geometry">{SOURCE_LABELS.geometry}</option>
               <option value="surface-mesh">{SOURCE_LABELS['surface-mesh']}</option>
               <option value="volume-mesh">{SOURCE_LABELS['volume-mesh']}</option>
             </select>
           </label>
           <label>Length unit
-            <select value={unit} onChange={e => { setUnit(e.target.value); setUnitConfirmed(false) }}>
+            <select value={unit} onChange={e => setUnit(e.target.value)}>
               <option value="m">m</option>
               <option value="mm">mm</option>
               <option value="cm">cm</option>
@@ -179,21 +173,6 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
             </select>
           </label>
         </div>
-
-        {sourceType === 'geometry' && (
-          <div className="import-unit-gate">
-            <label>
-              <input
-                type="checkbox"
-                checked={unitConfirmed}
-                onChange={e => setUnitConfirmed(e.target.checked)}
-                disabled={busy}
-              />
-              I confirm that "{unit}" is the correct length unit for this geometry.
-              Importing with the wrong unit will produce incorrect simulation results.
-            </label>
-          </div>
-        )}
 
         <label className="import-drop">
           <FileUp size={20} />
@@ -219,7 +198,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
         {error && <div className="plan-error"><AlertCircle size={14}/>{error}</div>}
         <button
           className="import-primary"
-          disabled={busy || !!submittingAction || !name || !files?.length || unitGateDisabled}
+          disabled={busy || !!submittingAction || !name || !files?.length}
           type="submit"
         >
           {busy && submittingAction === 'stage'
@@ -268,7 +247,7 @@ export default function ImportPanel({ folder, onClose, onCreated }: { folder: Fo
               <button
                 className="import-execute"
                 onClick={requestExecute}
-                disabled={!confirmed || busy || !!submittingAction || (plan.source_type === 'geometry' && !plan.unit_confirmed)}
+                disabled={!confirmed || busy || !!submittingAction}
               >
                 {busy && submittingAction === 'execute'
                   ? <RefreshCw className="spin" size={14}/>
