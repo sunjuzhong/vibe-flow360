@@ -93,11 +93,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare the plan context"})
 		return
 	}
-	message := fmt.Sprintf(`Fill the active Flow360 plan form from the user's engineering intent.
-Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them. Put uncertain engineering decisions in request-missing-input instead of guessing.
-
-Plan intent: %s
-User form instruction: %s`, composer.Request.SourceType, composer.Request.Target, composer.Request.Intent, composer.Request.Prompt)
+	message := planAssistPrompt(composer.Request)
 	_, action, err := s.agent.ChatWithValidation(c.Request.Context(), agent.ChatRequest{
 		Message: message, Context: string(contextPayload), Session: "web:plan-composer",
 	})
@@ -161,6 +157,18 @@ User form instruction: %s`, composer.Request.SourceType, composer.Request.Target
 	preflight.EditorSchemas = nil
 	action.Proposals[0] = proposal
 	c.JSON(http.StatusOK, planAssistResponse{Action: *action, Proposal: &proposal, Preflight: &preflight})
+}
+
+func planAssistPrompt(request planComposerRequest) string {
+	return fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
+This is parameter assistance, not geometry generation. Never claim CAD dimensions, format, topology, or provenance unless they are explicitly present in the supplied context. Refer to it as the existing %s resource when evidence is absent.
+
+Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
+
+When the user asks for a basic, baseline, demonstration, or first-pass simulation, choose defensible reviewable defaults for missing operating, meshing, physical-model, and steady/unsteady settings when the active schemas support them. Put every inferred value in assumptions and explain the engineering consequence in the message. For external-flow baselines, answer explicitly whether the existing automated farfield/domain treatment is sufficient; do not ask for a physical wind tunnel unless the user requests wall-bounded tunnel effects. Ask a focused question only when the choice would materially change geometry, make the setup invalid, or has no defensible baseline. Do not turn every unspecified preference into a blocking question.
+
+Plan intent: %s
+User form instruction: %s`, request.SourceType, request.SourceType, request.SourceType, request.Target, request.Intent, request.Prompt)
 }
 
 func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {

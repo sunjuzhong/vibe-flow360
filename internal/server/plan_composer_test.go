@@ -2,11 +2,31 @@ package server
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
+
+func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing.T) {
+	prompt := planAssistPrompt(planComposerRequest{
+		SourceType: "Geometry", Target: "case",
+		Intent: "Create the most basic cylinder-flow test. Do I need a wind tunnel?",
+		Prompt: "Fill the parameters for me.",
+	})
+	for _, expected := range []string{
+		"parameter assistance, not geometry generation",
+		"Never claim CAD dimensions",
+		"choose defensible reviewable defaults",
+		"do not ask for a physical wind tunnel",
+		"Do not turn every unspecified preference into a blocking question",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("plan assist prompt is missing %q: %s", expected, prompt)
+		}
+	}
+}
 
 func TestCombinedPlanFormSchemaPreservesOverlappingStageObjects(t *testing.T) {
 	form := flow360.PlanFormSchema{

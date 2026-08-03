@@ -525,8 +525,8 @@ export default function PlanPanel({
                 </label>
                 <section className="plan-ai-form-fill">
                   <div>
-                    <span><Sparkles size={15} /> What do you want to simulate?</span>
-                    <small>This description becomes the Plan intent. You can compile it as-is or ask the Agent to fill parameters allowed by the active Flow360 stage schemas.</small>
+                    <span><Sparkles size={15} /> Complete this existing {resource.type.replace('Mesh', ' Mesh')} setup</span>
+                    <small>The selected resource already exists. Describe the simulation goal and the Agent will fill only the downstream parameters allowed by the active Flow360 schemas; it will not regenerate the CAD here.</small>
                   </div>
                   <div className="plan-ai-form-row">
                     <textarea
@@ -537,7 +537,7 @@ export default function PlanPanel({
                     />
                     <button type="button" onClick={() => void fillWithAI()} disabled={assistLoading || schemaLoading || !formSchema || !intent.trim()}>
                       {assistLoading ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
-                      {assistLoading ? 'Filling…' : 'Fill parameters with AI'}
+                      {assistLoading ? 'Filling…' : 'Fill plan parameters with AI'}
                     </button>
                   </div>
                   {assistAction && (

@@ -1959,14 +1959,14 @@ button { color: inherit; }
 .plan-form > label > small { display: block; margin-top: 5px; color: #999e94; font-size: 7px; line-height: 1.5; }
 .plan-ai-form-fill { margin: 4px 0 16px; padding: 13px; border: 1px solid #c8d99a; border-radius: 9px; background: linear-gradient(135deg,#f5f8e9,#edf4d7); }
 .plan-ai-form-fill > div:first-child > span { display: flex; align-items: center; gap: 6px; color: #516d11; font-size: 9px; font-weight: 700; }
-.plan-ai-form-fill > div:first-child > small { display: block; margin-top: 4px; color: #7f8874; font-size: 7px; line-height: 1.45; }
+.plan-ai-form-fill > div:first-child > small { display: block; margin-top: 5px; color: #6f7866; font-size: 8px; line-height: 1.55; }
 .plan-ai-form-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 8px; margin-top: 10px; }
 .plan-ai-form-row textarea { min-height: 68px; background: rgba(255,255,255,.86); }
-.plan-ai-form-row button { display: inline-flex; min-width: 126px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid #9fb64c; border-radius: 7px; color: #293712; background: #b9d758; font-size: 8px; font-weight: 700; cursor: pointer; }
+.plan-ai-form-row button { display: inline-flex; min-width: 150px; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; border: 1px solid #9fb64c; border-radius: 7px; color: #293712; background: #b9d758; font-size: 9px; font-weight: 700; cursor: pointer; }
 .plan-ai-form-row button:disabled { cursor: not-allowed; opacity: .5; }
-.plan-ai-form-result { display: grid; gap: 4px; margin-top: 9px; padding: 9px; border-radius: 7px; color: #68705f; background: rgba(255,255,255,.66); font-size: 7px; line-height: 1.45; }
-.plan-ai-form-result strong { color: #4d5c36; }
-.plan-ai-form-result em { padding-top: 4px; color: #8b6818; font-style: normal; }
+.plan-ai-form-result { display: grid; gap: 6px; margin-top: 10px; padding: 12px; border-radius: 7px; color: #5f6757; background: rgba(255,255,255,.76); font-size: 9px; line-height: 1.6; }
+.plan-ai-form-result strong { color: #43522e; font-size: 10px; line-height: 1.55; }
+.plan-ai-form-result em { padding-top: 5px; color: #805c0e; font-size: 9px; line-height: 1.6; font-style: normal; }
 .plan-ai-form-result em.ready { color: #557317; }
 .plan-stage-workflow { margin: 4px 0 17px; }
 .plan-stage-workflow-heading { margin-bottom: 9px; }
