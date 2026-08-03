@@ -1,7 +1,8 @@
 .annotation-panel {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 9px;
+  padding: 11px;
+  font-size: 11px;
 }
 
 .annotation-panel > header,
@@ -15,12 +16,13 @@
 
 .annotation-panel h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 .annotation-panel ul {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -28,22 +30,77 @@
 
 .annotation-panel__item {
   display: grid;
-  gap: 9px;
-  padding: 11px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid var(--border-subtle, #d8dee4);
-  border-radius: 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised, #fff) 96%, transparent);
+  transition: border-color 120ms ease, opacity 120ms ease;
+}
+
+.annotation-panel__item.is-hidden {
+  opacity: 0.72;
+  border-style: dashed;
+}
+
+.annotation-panel__title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.annotation-panel__title strong {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-panel__tool {
+  color: var(--text-muted, #66727d);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.annotation-panel__status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--text-muted, #66727d);
+  background: var(--surface-subtle, #eef1f3);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.annotation-panel__status.is-visible {
+  color: var(--success-text, #246b45);
+  background: var(--success-subtle, #e6f4ec);
+}
+
+.annotation-panel__status svg,
+.annotation-panel__visibility svg {
+  width: 12px;
+  height: 12px;
 }
 
 .annotation-panel__item dl {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   margin: 0;
 }
 
 .annotation-panel__item dl div {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 6px;
+  line-height: 1.3;
 }
 
 .annotation-panel__item dt {
@@ -58,10 +115,90 @@
 
 .annotation-panel__item form {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .annotation-panel__actions {
   justify-content: flex-start;
   flex-wrap: wrap;
+}
+
+.annotation-panel__actions button {
+  min-height: 25px;
+  padding: 3px 7px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.annotation-panel__visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.annotation-panel__filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.8fr);
+  gap: 6px;
+}
+
+.annotation-panel__visibility-filter {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--surface-subtle, #eef1f3);
+}
+
+.annotation-panel__visibility-filter button {
+  min-height: 25px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted, #66727d);
+  font-size: 10px;
+}
+
+.annotation-panel__visibility-filter button.is-active {
+  background: var(--surface-raised, #fff);
+  color: var(--text-primary, #20252a);
+  box-shadow: 0 1px 3px rgb(23 30 38 / 12%);
+  font-weight: 650;
+}
+
+.annotation-panel__filters label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-muted, #66727d);
+  font-size: 9px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.annotation-panel__filters select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 3px 22px 3px 7px;
+  border: 1px solid var(--border-subtle, #d8dee4);
+  border-radius: 5px;
+  background: var(--surface-raised, #fff);
+  color: var(--text-primary, #20252a);
+  font: inherit;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.annotation-panel__empty {
+  margin: 4px 0;
+  padding: 14px 8px;
+  border: 1px dashed var(--border-subtle, #d8dee4);
+  border-radius: 7px;
+  color: var(--text-muted, #66727d);
+  text-align: center;
 }

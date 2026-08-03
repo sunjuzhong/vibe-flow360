@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
+import { useMemo, useState, type FormEvent } from 'react'
 import type { ProjectAnnotationsModel } from '../../hooks/useProjectAnnotations'
 import type { JsonValue, ViewerAnnotation } from '../../lib/viewer-tools/types'
 import './AnnotationPanel.css'
@@ -21,6 +22,35 @@ export interface AnnotationPanelProps<TResult extends JsonValue = JsonValue> {
 
 function annotationLabel(annotation: ViewerAnnotation): string {
   return annotation.name?.trim() || `${annotation.toolId} annotation`
+}
+
+export type AnnotationVisibilityFilter = 'all' | 'visible' | 'hidden'
+
+function resourceKey(annotation: ViewerAnnotation): string {
+  return JSON.stringify([annotation.resourceRef.type, annotation.resourceRef.id])
+}
+
+function toolLabel(toolId: string): string {
+  return toolId
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ')
+}
+
+export function filterAnnotations<TResult extends JsonValue>(
+  annotations: readonly ViewerAnnotation<TResult>[],
+  visibility: AnnotationVisibilityFilter,
+  toolId: string,
+  resource: string,
+): readonly ViewerAnnotation<TResult>[] {
+  return annotations.filter((annotation) => {
+    if (visibility === 'visible' && !annotation.visible) return false
+    if (visibility === 'hidden' && annotation.visible) return false
+    if (toolId && annotation.toolId !== toolId) return false
+    if (resource && resourceKey(annotation) !== resource) return false
+    return true
+  })
 }
 
 export function annotationSummary(result: JsonValue): string {
@@ -63,10 +93,19 @@ function AnnotationRow<TResult extends JsonValue>({
   }
 
   return (
-    <li className="annotation-panel__item" aria-busy={saving}>
+    <li
+      className={`annotation-panel__item ${annotation.visible ? 'is-visible' : 'is-hidden'}`}
+      aria-busy={saving}
+    >
       <header>
-        <strong>{label}</strong>
-        <span>{annotation.toolId}</span>
+        <div className="annotation-panel__title">
+          <strong>{label}</strong>
+          <span className="annotation-panel__tool">{toolLabel(annotation.toolId)}</span>
+        </div>
+        <span className={`annotation-panel__status ${annotation.visible ? 'is-visible' : 'is-hidden'}`}>
+          {annotation.visible ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />}
+          {annotation.visible ? 'Visible' : 'Hidden'}
+        </span>
       </header>
       <dl>
         <div>
@@ -76,10 +115,6 @@ function AnnotationRow<TResult extends JsonValue>({
         <div>
           <dt>Summary</dt>
           <dd>{annotationSummary(annotation.result)}</dd>
-        </div>
-        <div>
-          <dt>Visible</dt>
-          <dd>{annotation.visible ? 'Shown' : 'Hidden'}</dd>
         </div>
         <div>
           <dt>Updated</dt>
@@ -112,10 +147,13 @@ function AnnotationRow<TResult extends JsonValue>({
         </button>
         <button
           type="button"
+          className="annotation-panel__visibility"
           onClick={() => void onVisibility(!annotation.visible)}
           disabled={saving}
           aria-label={`${annotation.visible ? 'Hide' : 'Show'} ${label}`}
+          aria-pressed={annotation.visible}
         >
+          {annotation.visible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
           {annotation.visible ? 'Hide' : 'Show'}
         </button>
         <button type="button" onClick={() => setEditing(true)} disabled={saving} aria-label={`Rename ${label}`}>
@@ -134,6 +172,28 @@ export function AnnotationPanel<TResult extends JsonValue = JsonValue>({
   onFocus,
   confirmDelete = (message) => window.confirm(message),
 }: AnnotationPanelProps<TResult>) {
+  const [visibility, setVisibility] = useState<AnnotationVisibilityFilter>('all')
+  const [toolId, setToolId] = useState('')
+  const [resource, setResource] = useState('')
+
+  const toolIds = useMemo(
+    () => [...new Set(model.annotations.map((annotation) => annotation.toolId))].sort(),
+    [model.annotations],
+  )
+  const resources = useMemo(() => {
+    const unique = new Map<string, ViewerAnnotation['resourceRef']>()
+    model.annotations.forEach((annotation) => unique.set(resourceKey(annotation), annotation.resourceRef))
+    return [...unique.entries()].sort((left, right) => {
+      const leftLabel = `${left[1].type} ${left[1].id}`
+      const rightLabel = `${right[1].type} ${right[1].id}`
+      return leftLabel.localeCompare(rightLabel)
+    })
+  }, [model.annotations])
+  const filteredAnnotations = useMemo(
+    () => filterAnnotations(model.annotations, visibility, toolId, resource),
+    [model.annotations, resource, toolId, visibility],
+  )
+
   if (model.loading) {
     return <section className="annotation-panel" aria-label="Project annotations" aria-busy="true">Loading annotations…</section>
   }
@@ -142,7 +202,9 @@ export function AnnotationPanel<TResult extends JsonValue = JsonValue>({
     <section className="annotation-panel" aria-label="Project annotations">
       <header>
         <h2>Annotations</h2>
-        <span>{model.annotations.length}</span>
+        <span aria-label={`${filteredAnnotations.length} of ${model.annotations.length} annotations`}>
+          {filteredAnnotations.length} / {model.annotations.length}
+        </span>
       </header>
       {model.error ? (
         <div role="alert">
@@ -152,11 +214,46 @@ export function AnnotationPanel<TResult extends JsonValue = JsonValue>({
           </button>
         </div>
       ) : null}
+      {model.annotations.length > 0 ? (
+        <div className="annotation-panel__filters" aria-label="Annotation filters">
+          <div className="annotation-panel__visibility-filter" role="group" aria-label="Filter by visibility">
+            {(['all', 'visible', 'hidden'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={visibility === option ? 'is-active' : undefined}
+                aria-pressed={visibility === option}
+                onClick={() => setVisibility(option)}
+              >
+                {toolLabel(option)}
+              </button>
+            ))}
+          </div>
+          <label>
+            <span>Tool</span>
+            <select value={toolId} onChange={(event) => setToolId(event.target.value)}>
+              <option value="">All tools</option>
+              {toolIds.map((value) => <option key={value} value={value}>{toolLabel(value)}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Resource</span>
+            <select value={resource} onChange={(event) => setResource(event.target.value)}>
+              <option value="">All resources</option>
+              {resources.map(([key, resourceRef]) => (
+                <option key={key} value={key}>{resourceRef.type} · {resourceRef.id}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
       {model.annotations.length === 0 ? (
         <p>No annotations in this project.</p>
+      ) : filteredAnnotations.length === 0 ? (
+        <p className="annotation-panel__empty">No annotations match the selected filters.</p>
       ) : (
         <ul>
-          {model.annotations.map((annotation) => {
+          {filteredAnnotations.map((annotation) => {
             const label = annotationLabel(annotation)
             return (
               <AnnotationRow

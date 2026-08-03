@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { VIEWER_ANNOTATION_SCHEMA_VERSION, type ViewerAnnotation } from '../../lib/viewer-tools/types'
-import { AnnotationPanel, annotationSummary } from './AnnotationPanel'
+import { AnnotationPanel, annotationSummary, filterAnnotations } from './AnnotationPanel'
 
 function annotation(): ViewerAnnotation<{ distance: number }> {
   const resourceRef = { id: 'mesh-1', type: 'surface-mesh' }
@@ -44,12 +44,16 @@ describe('AnnotationPanel', () => {
     expect(html).toContain('distance')
     expect(html).toContain('surface-mesh: mesh-1')
     expect(html).toContain('{&quot;distance&quot;:12.5}')
-    expect(html).toContain('Shown')
+    expect(html).toContain('Visible')
     expect(html).toContain('dateTime="2026-08-03T01:00:00Z"')
     expect(html).toContain('aria-label="Focus Wing span"')
     expect(html).toContain('aria-label="Hide Wing span"')
     expect(html).toContain('aria-label="Rename Wing span"')
     expect(html).toContain('aria-label="Delete Wing span"')
+    expect(html).toContain('aria-pressed="true"')
+    expect(html).toContain('aria-label="Annotation filters"')
+    expect(html).toContain('All tools')
+    expect(html).toContain('All resources')
   })
 
   it('renders loading, retryable error and empty states', () => {
@@ -68,5 +72,36 @@ describe('AnnotationPanel', () => {
 
   it('keeps summaries compact', () => {
     expect(annotationSummary({ value: 'x'.repeat(200) }).length).toBeLessThanOrEqual(120)
+  })
+
+  it('combines visibility, tool and resource filters', () => {
+    const distance = annotation()
+    const point: ViewerAnnotation<{ distance: number }> = {
+      ...annotation(),
+      id: 'ann-2',
+      toolId: 'point-marker',
+      visible: false,
+      resourceRef: { id: 'case-1', type: 'case' },
+    }
+    const annotations = [distance, point]
+
+    expect(filterAnnotations(annotations, 'visible', '', '')).toEqual([distance])
+    expect(filterAnnotations(annotations, 'hidden', 'point-marker', '')).toEqual([point])
+    expect(filterAnnotations(
+      annotations,
+      'all',
+      '',
+      JSON.stringify(['case', 'case-1']),
+    )).toEqual([point])
+    expect(filterAnnotations(
+      annotations,
+      'visible',
+      'point-marker',
+      JSON.stringify(['case', 'case-1']),
+    )).toEqual([])
+  })
+
+  it('renders an explicit no-match state when a non-empty filtered set is empty', () => {
+    expect(filterAnnotations([annotation()], 'hidden', '', '')).toEqual([])
   })
 })
