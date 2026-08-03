@@ -22,6 +22,7 @@ func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
 	fakeFlow360 := filepath.Join(root, "flow360")
+	fakePython := filepath.Join(root, "python")
 	script := `#!/bin/sh
 case " $* " in
   *" project create "*)
@@ -32,10 +33,22 @@ case " $* " in
   *" project items project-ai-1 "*)
     printf '%s' '{"items":[{"id":"geometry-ai-1","name":"Cylinder","parent_id":null,"type":"Geometry"}]}'
     ;;
+  *" geometry simulation-params get geometry-ai-1 "*)
+    printf '%s' '{"simulation_params":{"version":"25.10.17","unit_system":{"name":"SI"},"meshing":{"defaults":{}},"models":[{"type":"Wall","entities":{"stored_entities":[{"name":"*"}]}},{"type":"Freestream"},{"type":"Fluid"}],"private_attribute_asset_cache":{"project_entity_info":{"face_group_tag":"faceId","grouped_faces":[[{"name":"cylinder-side","private_attribute_id":"face-1","private_attribute_tag_key":"faceId","private_attribute_entity_type_name":"Surface","private_attribute_sub_components":["face-1"]}]]}}}}'
+    ;;
+  *" geometry info geometry-ai-1 "*|*" geometry state geometry-ai-1 "*|*" geometry summary geometry-ai-1 "*)
+    printf '%s' '{}'
+    ;;
   *) exit 8 ;;
 esac
 `
 	if err := os.WriteFile(fakeFlow360, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	preflightScript := `#!/bin/sh
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{}},"VolumeMesh":{"type":"object","properties":{}},"Case":{"type":"object","properties":{}}}}'
+`
+	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	planStore, err := plans.NewStore(filepath.Join(root, "plans"))
@@ -67,6 +80,19 @@ esac
 	}
 	if response.Plan.Target != "case" || response.Plan.ProjectID != response.ProjectID || len(response.Plan.Patch) == 0 {
 		t.Fatalf("expected preloaded Case plan: %#v", response.Plan)
+	}
+	if response.Plan.Preflight == nil || !response.Plan.Preflight.Valid {
+		t.Fatalf("expected schema-valid generated parameters: %#v", response.Plan.Preflight)
+	}
+	var patch map[string]any
+	if err := json.Unmarshal(response.Plan.Patch, &patch); err != nil {
+		t.Fatal(err)
+	}
+	models := patch["models"].([]any)
+	wall := models[0].(map[string]any)
+	entities := wall["entities"].(map[string]any)["stored_entities"].([]any)
+	if len(entities) != 1 || entities[0].(map[string]any)["name"] != "cylinder-side" {
+		t.Fatalf("expected concrete CAD Wall assignment: %#v", entities)
 	}
 	if _, err := os.Stat(filepath.Join(root, "ai-create")); err != nil {
 		t.Fatalf("expected durable staging root: %v", err)
@@ -118,6 +144,16 @@ func TestAICreateProjectRequiresFolder(t *testing.T) {
 	(&Server{}).aiCreateProject(context)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got %d", recorder.Code)
+	}
+}
+
+func TestAICreateSimulationParamsReadyRejectsAsyncPlaceholder(t *testing.T) {
+	if aiCreateSimulationParamsReady(json.RawMessage(`{}`)) {
+		t.Fatal("empty asynchronous placeholder was treated as ready")
+	}
+	ready := json.RawMessage(`{"simulation_params":{"version":"25.10.17","models":[{"type":"Wall"}],"private_attribute_asset_cache":{"project_entity_info":{}}}}`)
+	if !aiCreateSimulationParamsReady(ready) {
+		t.Fatal("complete Geometry baseline was not treated as ready")
 	}
 }
 

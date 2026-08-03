@@ -64,10 +64,11 @@ func FromIntent(intent string) (Blueprint, error) {
 		return Blueprint{}, errors.New("the built-in exact CAD cylinder is 1 m in diameter and span; upload a STEP, IGES, or BREP file for other dimensions")
 	}
 	maxEdge := diameter / 30
+	firstLayerThickness := 2.5e-5
 	return Blueprint{
-		Template:    "cylinder-flow-v2",
+		Template:    "cylinder-flow-v3",
 		ProjectName: "AI Create · Cylinder Flow (Exact CAD)",
-		Summary:     "External incompressible flow around an analytic B-rep circular cylinder, prepared through Case setup.",
+		Summary:     "Low-speed external flow around an analytic B-rep circular cylinder, prepared through Case setup.",
 		Geometry: Geometry{
 			Kind: "cylinder", DiameterM: diameter, SpanM: span,
 			Representation: "analytic-brep", Format: "brep",
@@ -76,7 +77,8 @@ func FromIntent(intent string) (Blueprint, error) {
 		},
 		SimulationParams: map[string]any{
 			"meshing": map[string]any{"defaults": map[string]any{
-				"surface_max_edge_length": map[string]any{"value": maxEdge, "units": "m"},
+				"surface_max_edge_length":              map[string]any{"value": maxEdge, "units": "m"},
+				"boundary_layer_first_layer_thickness": map[string]any{"value": firstLayerThickness, "units": "m"},
 			}},
 			"operating_condition": map[string]any{
 				"velocity_magnitude": map[string]any{"value": 10.0, "units": "m/s"},
@@ -88,6 +90,9 @@ func FromIntent(intent string) (Blueprint, error) {
 			"The built-in exact CAD template is a 1 m diameter × 1 m span analytic B-rep cylinder.",
 			"Freestream velocity is 10 m/s at zero angle of attack.",
 			"A medium surface resolution of diameter / 30 is used.",
+			"A 25 micrometre first boundary-layer cell is used as a reviewable wall-resolved starting point.",
+			"The generated CAD faces are assigned explicitly to the Wall boundary condition.",
+			"Flow360's Geometry baseline supplies the schema version, SI unit system, automated farfield, air model, solver defaults, and surface outputs.",
 			"Remote meshing and Case execution still require the normal review and approval gate.",
 		},
 		Target: "case",

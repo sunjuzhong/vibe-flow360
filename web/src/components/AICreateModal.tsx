@@ -7,7 +7,8 @@ const progressStages = [
   'Understanding the engineering goal',
   'Generating geometry and boundary intent',
   'Creating the Flow360 Project',
-  'Loading mesh and Case parameters',
+  'Loading complete mesh and Case parameters',
+  'Validating all parameters against Flow360',
 ]
 
 export default function AICreateModal({

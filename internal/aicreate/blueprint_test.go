@@ -11,7 +11,7 @@ func TestFromIntentBuildsCylinderBlueprint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if blueprint.Template != "cylinder-flow-v2" || blueprint.Geometry.DiameterM != 1 || blueprint.Target != "case" {
+	if blueprint.Template != "cylinder-flow-v3" || blueprint.Geometry.DiameterM != 1 || blueprint.Target != "case" {
 		t.Fatalf("unexpected blueprint: %#v", blueprint)
 	}
 	if blueprint.Geometry.Representation != "analytic-brep" || blueprint.Geometry.Format != "brep" || !blueprint.Geometry.Validated {
@@ -19,6 +19,10 @@ func TestFromIntentBuildsCylinderBlueprint(t *testing.T) {
 	}
 	if len(blueprint.SimulationParams) == 0 || len(blueprint.Assumptions) == 0 {
 		t.Fatal("expected preloaded parameters and explicit assumptions")
+	}
+	defaults := blueprint.SimulationParams["meshing"].(map[string]any)["defaults"].(map[string]any)
+	if defaults["boundary_layer_first_layer_thickness"] == nil {
+		t.Fatal("expected a complete Volume Mesh boundary-layer default")
 	}
 }
 

@@ -117,6 +117,22 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not read the AI-created project result"})
 		return
 	}
+	baseline, err := s.waitForAICreateSimulationParams(c.Request.Context(), remote.RootResourceID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":      "Project was created, but Flow360 did not finish preparing its simulation parameters",
+			"project_id": remote.ProjectID,
+		})
+		return
+	}
+	completePatch, err := aicreate.CompleteSimulationPatch(baseline, blueprint.SimulationParams)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error": err.Error(), "project_id": remote.ProjectID,
+		})
+		return
+	}
+	blueprint.SimulationParams = completePatch
 	patch, err := json.Marshal(blueprint.SimulationParams)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not serialize generated parameters"})
@@ -125,25 +141,84 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	evidence := []plans.Evidence{
 		{Key: "geometry.template", Value: blueprint.Template, Provenance: "derived", Description: "Procedural geometry selected from the user intent."},
 		{Key: "geometry.diameter", Value: blueprint.Geometry.DiameterM, Provenance: "inferred", Description: "Cylinder diameter in metres."},
+		{Key: "meshing.defaults.boundary_layer_first_layer_thickness", Value: 2.5e-5, Provenance: "derived", Description: "Wall-resolved cylinder-flow starting point in metres."},
+		{Key: "models.Wall.entities", Value: "Geometry face groups", Provenance: "derived", Description: "Resolved from the imported CAD entity cache."},
 		{Key: "operating_condition.velocity_magnitude", Value: 10, Provenance: "defaulted", Description: "Reviewable cylinder-flow template default."},
 	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: remote.ProjectID, ProjectName: blueprint.ProjectName,
 		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: "cylinder.brep",
 		Target: blueprint.Target, Name: "AI Create · Cylinder flow baseline", Intent: request.Intent,
-		Patch: patch, Evidence: evidence, ValidationHints: blueprint.Assumptions,
+		Patch: patch, Baseline: baseline, Evidence: evidence, ValidationHints: blueprint.Assumptions,
 		IdempotencyKey: "ai-create:" + remote.ProjectID,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "project was created, but its simulation plan could not be saved", "project_id": remote.ProjectID})
 		return
 	}
+	plan = s.runPlanPreflight(c.Request.Context(), plan)
+	if plan.Preflight == nil || !plan.Preflight.Valid {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":      "Project was created, but its generated parameters did not pass Flow360 schema preflight",
+			"project_id": remote.ProjectID, "plan_id": plan.ID, "preflight": plan.Preflight,
+		})
+		return
+	}
 
 	c.JSON(http.StatusCreated, aiCreateResponse{
 		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
-		Stages: []string{"Interpreted requirement", "Generated cylinder geometry", "Created Flow360 Project", "Loaded simulation plan"},
+		Stages: []string{"Interpreted requirement", "Generated exact CAD", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters", "Passed Flow360 schema preflight"},
 	})
+}
+
+const (
+	aiCreateParamsLookupAttempts = 20
+	aiCreateParamsLookupDelay    = 500 * time.Millisecond
+)
+
+func (s *Server) waitForAICreateSimulationParams(ctx context.Context, geometryID string) (json.RawMessage, error) {
+	var lastErr error
+	for attempt := 0; attempt < aiCreateParamsLookupAttempts; attempt++ {
+		detail, err := s.flow360.ResourceDetail(ctx, "Geometry", geometryID)
+		if err == nil && aiCreateSimulationParamsReady(detail.SimulationParams) {
+			return detail.SimulationParams, nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = errors.New("Geometry SimulationParams are not available yet")
+		}
+		if attempt == aiCreateParamsLookupAttempts-1 {
+			break
+		}
+		timer := time.NewTimer(aiCreateParamsLookupDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func aiCreateSimulationParamsReady(raw json.RawMessage) bool {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return false
+	}
+	var document map[string]any
+	if json.Unmarshal(raw, &document) != nil {
+		return false
+	}
+	if wrapped, ok := document["simulation_params"].(map[string]any); ok {
+		document = wrapped
+	}
+	_, hasVersion := document["version"].(string)
+	models, hasModels := document["models"].([]any)
+	cache, hasCache := document["private_attribute_asset_cache"].(map[string]any)
+	_, hasEntityInfo := cache["project_entity_info"].(map[string]any)
+	return hasVersion && hasModels && len(models) > 0 && hasCache && hasEntityInfo
 }
 
 func validateAICreateAsset(path, sourceType string) error {
