@@ -143,6 +143,23 @@ func TestNormalizeAICreateResultRecoversRootFromTypedProjectResponse(t *testing.
 	}
 }
 
+func TestNormalizeAICreateResultRecoversProjectIDFromCLIText(t *testing.T) {
+	lookup := func(_ context.Context, projectID string) (json.RawMessage, error) {
+		if projectID != "prj-ecdc6647-9f07-4674-aa50-fa0181b129d9" {
+			t.Fatalf("unexpected Project ID %q", projectID)
+		}
+		return json.RawMessage(`{"items":[{"id":"geo-from-project-items","type":"Geometry"}]}`), nil
+	}
+	raw := json.RawMessage(`{"result":{"id":"geo-uploaded","type":"Geometry"},"output":"Geometry id = geo-uploaded project id = prj-ecdc6647-9f07-4674-aa50-fa0181b129d9"}`)
+	normalized, err := normalizeAICreateResultWithLookup(context.Background(), raw, "geometry", lookup, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(normalized, []byte(`"root_resource_id":"geo-from-project-items"`)) {
+		t.Fatalf("CLI text Project ID was not reconciled: %s", normalized)
+	}
+}
+
 func TestNormalizeAICreateResultReportsCreatedProjectWhenRootNeverAppears(t *testing.T) {
 	lookup := func(context.Context, string) (json.RawMessage, error) {
 		return nil, errors.New("not ready")

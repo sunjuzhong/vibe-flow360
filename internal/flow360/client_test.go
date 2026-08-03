@@ -102,6 +102,14 @@ func TestExtractJSONAllowsFlow360LogPrefix(t *testing.T) {
 	}
 }
 
+func TestCompactProjectOutputPreservesIDsOutsideFirstJSONValue(t *testing.T) {
+	output := []byte("{\"id\":\"geo-one\",\"type\":\"Geometry\"}\nproject id = prj-later-in-output\n")
+	compact := compactProjectOutput(output)
+	if !strings.Contains(compact, "geo-one") || !strings.Contains(compact, "prj-later-in-output") {
+		t.Fatalf("project creation output lost resource IDs: %q", compact)
+	}
+}
+
 func TestResourceCommandNormalizesTypes(t *testing.T) {
 	tests := map[string]string{
 		"Geometry":    "geometry",

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 )
 
 const maxAICreateIntentBytes = 4000
+
+var flow360ProjectIDPattern = regexp.MustCompile(`\bprj-[A-Za-z0-9][A-Za-z0-9-]{7,}\b`)
 
 type aiCreateRequest struct {
 	Intent   string `json:"intent"`
@@ -342,7 +345,30 @@ func findProjectIDFromRaw(raw json.RawMessage) string {
 	if projectID := findStringField(data, map[string]bool{"project_id": true, "projectid": true}); projectID != "" {
 		return projectID
 	}
-	return findTypedResourceID(data, "project")
+	if projectID := findTypedResourceID(data, "project"); projectID != "" {
+		return projectID
+	}
+	return findProjectIDInText(data)
+}
+
+func findProjectIDInText(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return flow360ProjectIDPattern.FindString(typed)
+	case map[string]any:
+		for _, child := range typed {
+			if projectID := findProjectIDInText(child); projectID != "" {
+				return projectID
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if projectID := findProjectIDInText(child); projectID != "" {
+				return projectID
+			}
+		}
+	}
+	return ""
 }
 
 func findTypedResourceIDFromRaw(raw json.RawMessage, expectedType string) string {

@@ -581,11 +581,24 @@ func (c *Client) createProject(ctx context.Context, files []string, sourceType, 
 	if err != nil {
 		return nil, err
 	}
+	result := map[string]any{"output": compactProjectOutput(output)}
 	raw, err := extractJSON(output)
 	if err == nil {
-		return raw, nil
+		var parsed any
+		if json.Unmarshal(raw, &parsed) == nil {
+			result["result"] = parsed
+		}
 	}
-	return json.Marshal(map[string]string{"output": compactOutput(output)})
+	return json.Marshal(result)
+}
+
+func compactProjectOutput(data []byte) string {
+	const limit = 16 * 1024
+	value := strings.Join(strings.Fields(string(data)), " ")
+	if len(value) > limit {
+		return value[:limit] + "…"
+	}
+	return value
 }
 
 func resourceCommand(resourceType string) (command, normalizedType string, err error) {
