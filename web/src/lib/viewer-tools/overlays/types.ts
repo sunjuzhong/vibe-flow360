@@ -28,6 +28,7 @@ export interface ViewerOverlayLayerOptions {
   /** Three.js layer reserved for overlays. Picking raycasters should not enable it. */
   readonly layer?: number
   readonly renderOrder?: number
+  /** Whether spatial geometry (polylines and spheres) is occluded by scene depth. */
   readonly depthTest?: boolean
   readonly pointSize?: number
   readonly labelFontSize?: number

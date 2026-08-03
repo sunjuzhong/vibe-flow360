@@ -51,16 +51,46 @@ describe('ViewerOverlayLayer', () => {
     const point = layer.getObject('all', 'point') as THREE.Points
     expect((point.material as THREE.PointsMaterial).sizeAttenuation).toBe(false)
     expect((point.material as THREE.PointsMaterial).size).toBe(11)
+    expect((point.material as THREE.PointsMaterial).depthTest).toBe(false)
+    expect((point.material as THREE.PointsMaterial).depthWrite).toBe(false)
+    const line = layer.getObject('all', 'line-2') as THREE.Line
+    expect((line.material as THREE.LineBasicMaterial).depthTest).toBe(true)
+    expect((line.material as THREE.LineBasicMaterial).depthWrite).toBe(false)
     const sphere = layer.getObject('all', 'sphere') as THREE.Mesh
     expect(sphere.position.toArray()).toEqual([3, 2, 1])
     expect(sphere.scale.toArray()).toEqual([2, 2, 2])
     expect((sphere.material as THREE.MeshBasicMaterial).opacity).toBe(0.4)
+    expect((sphere.material as THREE.MeshBasicMaterial).depthTest).toBe(true)
+    expect((sphere.material as THREE.MeshBasicMaterial).depthWrite).toBe(false)
     const label = layer.getObject('all', 'label') as THREE.Sprite
     expect(label.position.toArray()).toEqual([2, 3, 4])
     expect((label.material as THREE.SpriteMaterial).sizeAttenuation).toBe(false)
+    expect((label.material as THREE.SpriteMaterial).depthTest).toBe(false)
+    expect((label.material as THREE.SpriteMaterial).depthWrite).toBe(false)
     for (const primitiveKey of ['point', 'line-2', 'line-n', 'sphere', 'label']) {
       expect(layer.getObject('all', primitiveKey)?.frustumCulled).toBe(false)
     }
+  })
+
+  it('preserves spatial depth testing when a polyline switches material type', () => {
+    const layer = new ViewerOverlayLayer(new THREE.Scene())
+    layer.update({
+      resourceRef: resource,
+      draft: [annotation('line', [{
+        kind: 'polyline', key: 'path', points: [[0, 0, 0], [1, 0, 0]], dashed: false,
+      }])],
+    })
+    layer.update({
+      resourceRef: resource,
+      draft: [annotation('line', [{
+        kind: 'polyline', key: 'path', points: [[0, 0, 0], [1, 1, 0]], dashed: true,
+      }])],
+    })
+
+    const line = layer.getObject('line', 'path') as THREE.Line
+    expect(line.material).toBeInstanceOf(THREE.LineDashedMaterial)
+    expect((line.material as THREE.LineDashedMaterial).depthTest).toBe(true)
+    expect((line.material as THREE.LineDashedMaterial).depthWrite).toBe(false)
   })
 
   it('renders saved, draft and hover sources together with independent state', () => {

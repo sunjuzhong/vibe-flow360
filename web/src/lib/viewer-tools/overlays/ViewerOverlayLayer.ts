@@ -106,7 +106,7 @@ export class ViewerOverlayLayer {
     this.options = {
       layer: options.layer ?? DEFAULT_LAYER,
       renderOrder: options.renderOrder ?? DEFAULT_RENDER_ORDER,
-      depthTest: options.depthTest ?? false,
+      depthTest: options.depthTest ?? true,
       pointSize: options.pointSize ?? DEFAULT_POINT_SIZE,
       labelFontSize: options.labelFontSize ?? DEFAULT_LABEL_FONT_SIZE,
       labelPixelRatio:
@@ -243,7 +243,7 @@ export class ViewerOverlayLayer {
           color,
           size: primitive.size ?? this.options.pointSize,
           sizeAttenuation: false,
-          depthTest: this.options.depthTest,
+          depthTest: false,
           depthWrite: false,
           transparent: true,
         }),
@@ -279,7 +279,7 @@ export class ViewerOverlayLayer {
         new THREE.SpriteMaterial({
           map: label.texture,
           transparent: true,
-          depthTest: this.options.depthTest,
+          depthTest: false,
           depthWrite: false,
           sizeAttenuation: false,
         }),
