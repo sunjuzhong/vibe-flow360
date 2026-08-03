@@ -40,9 +40,12 @@ type CoordinateFrame struct {
 }
 
 type Snap struct {
-	Type       string   `json:"type"`
-	Distance   *float64 `json:"distance,omitempty"`
-	Confidence *float64 `json:"confidence,omitempty"`
+	Type           string   `json:"type"`
+	Distance       *float64 `json:"distance,omitempty"`
+	Confidence     *float64 `json:"confidence,omitempty"`
+	Method         string   `json:"method,omitempty"`
+	StableID       string   `json:"stableId,omitempty"`
+	Classification string   `json:"classification,omitempty"`
 }
 
 type PickResult struct {
@@ -362,10 +365,6 @@ func validateAnnotation(annotation Annotation) error {
 	if err := validateCoordinateFrame(annotation.CoordinateFrame); err != nil {
 		return err
 	}
-	if annotation.CoordinateFrame.ResourceRef != nil &&
-		!sameResourceRef(annotation.ResourceRef, *annotation.CoordinateFrame.ResourceRef) {
-		return validationError("coordinateFrame.resourceRef does not match annotation resourceRef")
-	}
 	if annotation.ToolID == "" || len(annotation.ToolID) > 120 || !utf8.ValidString(annotation.ToolID) {
 		return validationError("toolId is invalid")
 	}
@@ -379,8 +378,9 @@ func validateAnnotation(annotation Annotation) error {
 		if point.ProjectID != annotation.ProjectID {
 			return validationError(fmt.Sprintf("points[%d].projectId does not match project", i))
 		}
-		if !sameResourceRef(point.ResourceRef, annotation.ResourceRef) {
-			return validationError(fmt.Sprintf("points[%d].resourceRef does not match annotation", i))
+		if annotation.CoordinateFrame.ResourceRef != nil &&
+			!sameResourceRef(point.ResourceRef, *annotation.CoordinateFrame.ResourceRef) {
+			return validationError(fmt.Sprintf("points[%d].resourceRef does not match annotation coordinate frame", i))
 		}
 		if err := validatePick(point); err != nil {
 			return validationError(fmt.Sprintf("points[%d]: %v", i, err))
@@ -440,6 +440,17 @@ func validatePick(point PickResult) error {
 	}
 	if point.Snap.Confidence != nil && !finite(*point.Snap.Confidence) {
 		return validationError("snap.confidence must be finite")
+	}
+	if point.Snap.Method != "" && !oneOf(point.Snap.Method,
+		"surface-intersection", "mesh-triangle-vertex", "cad-topology",
+		"mesh-angle-deficit", "mesh-dihedral") {
+		return validationError("snap.method is invalid")
+	}
+	if len(point.Snap.StableID) > 240 || !utf8.ValidString(point.Snap.StableID) {
+		return validationError("snap.stableId is invalid")
+	}
+	if point.Snap.Classification != "" && !oneOf(point.Snap.Classification, "convex", "concave", "sharp") {
+		return validationError("snap.classification is invalid")
 	}
 	return nil
 }
@@ -538,6 +549,15 @@ func validationError(message string) error {
 }
 
 func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
+
+func oneOf(value string, allowed ...string) bool {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
 
 func newID() (string, error) {
 	var bytes [16]byte

@@ -138,6 +138,28 @@ func TestStoreEnforcesProjectIsolation(t *testing.T) {
 	}
 }
 
+func TestStoreAllowsOwningResourceToUseFallbackAssetFrame(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := validInput("project-a")
+	geometryRef := input.ResourceRef
+	input.ResourceRef = ResourceRef{ID: "case-1", Type: "Case"}
+	input.CoordinateFrame = CoordinateFrame{Kind: "asset-local", ResourceRef: &geometryRef}
+	input.Points[0].Snap = Snap{
+		Type: "cad-vertex", Method: "cad-topology", StableID: "body:vertex:1",
+	}
+	created, err := store.Create("project-a", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ResourceRef.ID != "case-1" || created.CoordinateFrame.ResourceRef == nil ||
+		created.CoordinateFrame.ResourceRef.ID != geometryRef.ID {
+		t.Fatalf("fallback ownership/frame was not preserved: %#v", created)
+	}
+}
+
 func TestStoreRejectsTraversalInvalidSchemaAndNonFiniteCoordinates(t *testing.T) {
 	store, err := NewStore(t.TempDir())
 	if err != nil {

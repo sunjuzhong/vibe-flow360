@@ -135,6 +135,7 @@ export function useDistanceTool({
   }, [active])
 
   const toolInput = useMemo<ToolInputConsumer>(() => ({
+    pickPolicy: distanceToolDefinition.pickPolicy,
     isActive: () => capturing,
     onPick: (pick) => {
       if (!pick || pick.projectId !== projectId

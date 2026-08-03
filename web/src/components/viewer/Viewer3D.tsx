@@ -13,10 +13,24 @@ import {
   VIEWER_OVERLAY_LAYER,
   ViewerInputController,
   ViewerOverlayLayer,
+  DefaultSnapResolver,
+  applySnapCandidate,
   buildPointerRay,
+  createSnapCycleState,
+  cycleSnapCandidate,
   pickScene,
+  replaceSnapCandidates,
   resolvePickCandidate,
+  selectedSnapCandidate,
+  setSnapBypassed,
+  snapPolicyFromPickPolicy,
+  snapStatusModel,
+  type CadTopologyProvider,
+  type CadTopologyCandidates,
+  type OverlayAnnotation,
   type ResourceRef,
+  type SnapCycleState,
+  type SnapStatusModel,
   type ToolInputConsumer,
   type ViewerOverlayFrame,
   type ViewerPointerEvent,
@@ -160,8 +174,12 @@ export function Viewer3D({
   const uvfAssetRef = useRef<UVFAsset | null>(null)
   const annotationOverlayRef = useRef<ViewerOverlayLayer | null>(null)
   const inputControllerRef = useRef<ViewerInputController | null>(null)
+  const snapResolverRef = useRef(new DefaultSnapResolver())
+  const snapCycleRef = useRef<SnapCycleState>(createSnapCycleState())
+  const cadTopologyRef = useRef<{ asset: THREE.Object3D; provider: CadTopologyProvider } | null>(null)
   const normalsOverlayRef = useRef<THREE.Group | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
+  const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number; triangles: number } | null>(null)
   const [precision, setPrecision] = useState<{ assetURL: string | null; selection: ViewerPrecisionSelection }>({
@@ -200,6 +218,19 @@ export function Viewer3D({
     if (!manifest?.asset_url) return null
     return { id: manifest.asset_url, type: manifest.format || 'viewer-asset' }
   }, [manifest?.asset_url, manifest?.format, resourceRef])
+  const snapIndicatorAnnotations = useMemo<readonly OverlayAnnotation[]>(() => {
+    const indicator = snapStatus?.indicator
+    if (!indicator || snapStatus.mode === 'surface' || snapStatus.mode === 'unavailable') return []
+    return [{
+      annotationId: '__snap_candidate__',
+      coordinateFrame: { kind: 'world' },
+      state: 'hover',
+      primitives: [
+        { kind: 'point', key: 'snap-point', position: indicator.position, color: '#22d3ee', size: 0.016 },
+        { kind: 'label', key: 'snap-label', position: indicator.position, text: indicator.label, color: '#67e8f9' },
+      ],
+    }]
+  }, [snapStatus])
   const manifestEntityVisibility = useMemo(() => [
     ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
     ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
@@ -606,10 +637,10 @@ export function Viewer3D({
       assetWorldMatrix: asset.matrixWorld,
       saved: overlays?.saved,
       draft: overlays?.draft,
-      hover: overlays?.hover,
+      hover: [...(overlays?.hover ?? []), ...snapIndicatorAnnotations],
       visible: overlays?.visible,
     })
-  }, [activeResourceRef, assetState.status, overlays])
+  }, [activeResourceRef, assetState.status, overlays, snapIndicatorAnnotations])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -671,10 +702,45 @@ export function Viewer3D({
     if (!container || !camera || !asset || !activeResourceRef) return null
     const rect = container.getBoundingClientRect()
     const raycaster = buildPointerRay(event, camera, rect)
-    return resolvePickCandidate(pickScene(raycaster, [asset]), {
+    const intersection = pickScene(raycaster, [asset])
+    const basePick = resolvePickCandidate(intersection, {
       projectId: projectId ?? 'viewer-local',
       resourceRef: activeResourceRef,
       assetRoot: asset,
+    })
+    const snapActive = Boolean(toolInput) && (toolInput?.isActive?.() ?? true)
+    if (!intersection || !basePick || !snapActive) {
+      if (snapStatus) setSnapStatus(null)
+      snapCycleRef.current = createSnapCycleState()
+      return basePick
+    }
+    if (cadTopologyRef.current?.asset !== asset) {
+      cadTopologyRef.current = { asset, provider: createCadTopologyProvider(asset) }
+    }
+    const resolution = snapResolverRef.current.resolve({
+      intersection,
+      camera,
+      screenPosition: { x: event.clientX, y: event.clientY },
+      viewport: rect,
+      context: {
+        cadTopology: cadTopologyRef.current.provider,
+        isObjectEligible: (object) => object.visible && object.layers.test(raycaster.layers),
+        isTopologyEntityVisible: (entityId) => effectiveGroupVisibility[entityId] !== false,
+      },
+      toolPolicy: toolInput?.pickPolicy ? snapPolicyFromPickPolicy(toolInput.pickPolicy) : undefined,
+      altKey: event.altKey,
+    })
+    let cycle = replaceSnapCandidates(snapCycleRef.current, resolution.candidates)
+    cycle = setSnapBypassed(cycle, Boolean(event.altKey))
+    snapCycleRef.current = cycle
+    const status = snapStatusModel(cycle)
+    setSnapStatus((current) => sameSnapStatus(current, status) ? current : status)
+    const selected = selectedSnapCandidate(cycle)
+    if (!selected) return basePick
+    return applySnapCandidate(basePick, selected, (worldPosition) => {
+      asset.updateWorldMatrix(true, false)
+      const local = asset.worldToLocal(worldPosition)
+      return [local.x, local.y, local.z]
     })
   }
 
@@ -748,7 +814,20 @@ export function Viewer3D({
     ctrlKey: event.ctrlKey,
     metaKey: event.metaKey,
     shiftKey: event.shiftKey,
+    altKey: event.altKey,
   })
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !(toolInput?.isActive?.() ?? false)) return
+      if (snapCycleRef.current.candidates.length < 2) return
+      event.preventDefault()
+      snapCycleRef.current = cycleSnapCandidate(snapCycleRef.current, event.shiftKey ? -1 : 1)
+      setSnapStatus(snapStatusModel(snapCycleRef.current))
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toolInput])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const controller = createInputController()
@@ -884,6 +963,14 @@ export function Viewer3D({
       {toolbar && visibleState.status === 'ready' && (
         <div className="viewer-toolbar-slot">{toolbar}</div>
       )}
+      {snapStatus && visibleState.status === 'ready' && (
+        <div className={`viewer-snap-status viewer-snap-status-${snapStatus.mode}`} role="status" aria-live="polite">
+          <strong>{snapStatus.label}</strong>
+          {snapStatus.candidateCount > 1 && (
+            <span>{snapStatus.candidateIndex + 1}/{snapStatus.candidateCount} · Tab cycles · Alt bypasses</span>
+          )}
+        </div>
+      )}
       {showFieldPanel && displayedFields.length > 0 && visibleState.status === 'ready' && (
         <div className="viewer-field-panel">
           <label className="viewer-field-label">
@@ -1015,4 +1102,66 @@ function buildGradientCSS(name: ColormapName): string {
     return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`
   })
   return `linear-gradient(to right, ${stops.map((s, i) => `${colors[i]} ${s * 100}%`).join(', ')})`
+}
+
+function sameSnapStatus(left: SnapStatusModel | null, right: SnapStatusModel): boolean {
+  return left?.mode === right.mode
+    && left.label === right.label
+    && left.candidateIndex === right.candidateIndex
+    && left.candidateCount === right.candidateCount
+    && left.confidence === right.confidence
+    && left.indicator?.position.join(',') === right.indicator?.position.join(',')
+}
+
+function createCadTopologyProvider(asset: THREE.Object3D): CadTopologyProvider {
+  let cache: CadTopologyCandidates | null = null
+  return {
+    candidatesForIntersection: () => {
+      if (cache) return cache
+      asset.updateWorldMatrix(true, true)
+      const vertices: NonNullable<CadTopologyCandidates['vertices']>[number][] = []
+      const edges: NonNullable<CadTopologyCandidates['edges']>[number][] = []
+      const features: NonNullable<CadTopologyCandidates['features']>[number][] = []
+      asset.traverse((object) => {
+        const entityId = topologyEntityId(object)
+        if (!entityId || object.userData.viewerOverlay === true) return
+        if (object instanceof THREE.Points) {
+          const position = object.geometry.getAttribute('position')
+          for (let index = 0; index < position.count; index += 1) {
+            vertices.push({
+              id: `${entityId}:vertex:${index}`,
+              worldPosition: new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(object.matrixWorld),
+              object,
+              visible: object.visible,
+            })
+          }
+        }
+        if (object instanceof THREE.Line) {
+          const position = object.geometry.getAttribute('position')
+          const worldPoints = Array.from({ length: position.count }, (_, index) =>
+            new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(object.matrixWorld))
+          if (worldPoints.length > 1) edges.push({ id: entityId, worldPoints, object, visible: object.visible })
+        }
+        const classification = object.userData.featureClassification
+        const confidence = Number(object.userData.featureConfidence)
+        if (classification === 'convex' || classification === 'concave' || classification === 'sharp') {
+          features.push({
+            id: entityId,
+            worldPosition: object.getWorldPosition(new THREE.Vector3()),
+            classification,
+            confidence: Number.isFinite(confidence) ? confidence : 1,
+            object,
+            visible: object.visible,
+          })
+        }
+      })
+      cache = { vertices, edges, features }
+      return cache
+    },
+  }
+}
+
+function topologyEntityId(object: THREE.Object3D): string {
+  const id = object.userData.entityId ?? object.userData.groupId ?? object.userData.topologyId
+  return id === undefined || id === null ? '' : String(id)
 }

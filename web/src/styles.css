@@ -1482,6 +1482,27 @@ button { color: inherit; }
   color: #fff;
   border-color: #789521;
 }
+.viewer-snap-status {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: 48px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  transform: translateX(-50%);
+  border: 1px solid rgb(34 211 238 / 45%);
+  border-radius: 999px;
+  color: #164e63;
+  background: rgb(236 254 255 / 92%);
+  box-shadow: 0 2px 8px rgb(8 47 73 / 12%);
+  font-family: 'DM Mono';
+  font-size: 7px;
+  pointer-events: none;
+}
+.viewer-snap-status > span { color: #52727c; }
+.viewer-snap-status-bypassed { border-color: #d5d7ce; color: #62675d; background: rgb(247 247 243 / 92%); }
 .viewer-spinner {
   width: 24px;
   height: 24px;

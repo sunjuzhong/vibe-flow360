@@ -128,7 +128,10 @@ export const distanceToolDefinition = createFixedPointTool<DistanceResult>({
   id: DISTANCE_TOOL_ID,
   label: 'Distance',
   pointCount: 2,
-  pickPolicy: { targets: ['surface'], snapTypes: ['surface'] },
+  pickPolicy: {
+    targets: ['surface'],
+    snapTypes: ['surface', 'mesh-vertex', 'cad-edge', 'cad-vertex', 'feature'],
+  },
   computeResult: computeDistanceResult,
   createOverlays: createDistanceOverlays,
   inspector: {

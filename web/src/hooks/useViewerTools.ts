@@ -195,6 +195,7 @@ export function useViewerTools({
   const result = sessionResult(session)
 
   const toolInput = useMemo<ToolInputConsumer>(() => ({
+    pickPolicy: definition.pickPolicy,
     isActive: () => capturing,
     onPick: (pick) => {
       if (!pick || pick.projectId !== projectId || pick.resourceRef.id !== resourceRef.id
@@ -204,7 +205,7 @@ export function useViewerTools({
       return true
     },
     onHover: (pick) => apply({ type: 'hover', pick }),
-  }), [apply, capturing, projectId, resourceRef.id, resourceRef.type])
+  }), [apply, capturing, definition.pickPolicy, projectId, resourceRef.id, resourceRef.type])
 
   const compatibleAnnotations = useMemo(() => resolveCompatibleAnnotations(
     annotationsModel.annotations,

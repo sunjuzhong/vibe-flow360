@@ -1,4 +1,4 @@
-import type { PickResult } from '../types'
+import type { PickPolicy, PickResult } from '../types'
 
 export interface ViewerPointerEvent {
   readonly clientX: number
@@ -7,6 +7,7 @@ export interface ViewerPointerEvent {
   readonly ctrlKey?: boolean
   readonly metaKey?: boolean
   readonly shiftKey?: boolean
+  readonly altKey?: boolean
 }
 
 export interface InputConsumer {
@@ -18,6 +19,7 @@ export interface InputConsumer {
 
 export interface ToolInputConsumer extends InputConsumer {
   readonly onHover?: (pick: PickResult | null) => void
+  readonly pickPolicy?: PickPolicy
 }
 
 export interface ViewerInputControllerOptions {
