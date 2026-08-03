@@ -1,6 +1,21 @@
 import { ChevronDown, Folder, FolderOpen, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FolderNode } from '../api/client'
+
+function folderPath(nodes: FolderNode[], selectedId: string): string[] | null {
+  for (const node of nodes) {
+    if (node.id === selectedId) return [node.id]
+    const childPath = folderPath(node.subfolders ?? [], selectedId)
+    if (childPath) {
+      return [node.id, ...childPath]
+    }
+  }
+  return null
+}
+
+export function folderAncestorIds(nodes: FolderNode[], selectedId: string): string[] {
+  return folderPath(nodes, selectedId)?.slice(0, -1) ?? []
+}
 
 function hasMatchingDescendant(node: FolderNode, query: string): boolean {
   if (!query) return true
@@ -83,6 +98,22 @@ export default function FolderTree({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
 
+  useEffect(() => {
+    if (!selected) return
+    const ancestors = folderAncestorIds(folders, selected)
+    if (!ancestors.length) return
+    setExpanded((current) => {
+      const next = new Set(current)
+      let changed = false
+      ancestors.forEach((id) => {
+        if (next.has(id)) return
+        next.add(id)
+        changed = true
+      })
+      return changed ? next : current
+    })
+  }, [folders, selected])
+
   const toggle = (id: string) => {
     setExpanded((current) => {
       const next = new Set(current)
@@ -130,4 +161,3 @@ export default function FolderTree({
     </div>
   )
 }
-

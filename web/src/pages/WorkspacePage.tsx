@@ -11,7 +11,7 @@ import {
   List,
   Sparkles,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   api,
@@ -26,6 +26,35 @@ import TopBar from '../components/TopBar'
 
 function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
+}
+
+export const workspaceSelectedFolderStorageKey = 'vibesim.workspace.selected-folder'
+
+type FolderSelectionStorage = Pick<Storage, 'getItem' | 'setItem'>
+
+export function findFolderById(folders: FolderNode[], id: string): FolderNode | null {
+  for (const folder of folders) {
+    if (folder.id === id) return folder
+    const match = findFolderById(folder.subfolders ?? [], id)
+    if (match) return match
+  }
+  return null
+}
+
+export function readWorkspaceSelectedFolder(storage: Pick<FolderSelectionStorage, 'getItem'>) {
+  try {
+    return storage.getItem(workspaceSelectedFolderStorageKey)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function writeWorkspaceSelectedFolder(storage: Pick<FolderSelectionStorage, 'setItem'>, folderId: string) {
+  try {
+    storage.setItem(workspaceSelectedFolderStorageKey, folderId)
+  } catch {
+    // Selection persistence is an enhancement; navigation still works without storage.
+  }
 }
 
 export function formatProjectCreatedAt(value?: string) {
@@ -43,6 +72,7 @@ export function formatProjectCreatedAt(value?: string) {
 
 export default function WorkspacePage() {
   const navigate = useNavigate()
+  const restoredFolderSelection = useRef(false)
   const [flowStatus, setFlowStatus] = useState<Flow360Status | null>(null)
   const [folderRoot, setFolderRoot] = useState<FolderNode | null>(null)
   const [foldersLoading, setFoldersLoading] = useState(true)
@@ -99,6 +129,8 @@ export default function WorkspacePage() {
   }, [])
 
   const loadProjects = async (folder: FolderNode) => {
+    restoredFolderSelection.current = true
+    writeWorkspaceSelectedFolder(window.sessionStorage, folder.id)
     setSelectedFolder(folder)
     setProjectsLoading(true)
     setProjectsMessage('')
@@ -131,6 +163,17 @@ export default function WorkspacePage() {
       setProjectsLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!folderRoot || restoredFolderSelection.current) return
+    const folderId = readWorkspaceSelectedFolder(window.sessionStorage)
+    if (!folderId) {
+      restoredFolderSelection.current = true
+      return
+    }
+    const folder = findFolderById(folderRoot.subfolders, folderId)
+    if (folder) void loadProjects(folder)
+  }, [folderRoot])
 
   const [sortBy, setSortBy] = useState<'name' | 'created' | 'type' | 'solver'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
