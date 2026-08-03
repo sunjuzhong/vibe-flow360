@@ -64,6 +64,18 @@ describe('annotation API client', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/api/projects/project%2Fa/annotations/ann%2F1')
   })
 
+  it('passes an AbortSignal through list requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ annotations: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    await listAnnotations('project-a', { signal: controller.signal })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/project-a/annotations', {
+      signal: controller.signal,
+    })
+  })
+
   it('creates and patches with typed JSON requests', async () => {
     const created = annotation('project-a')
     const fetchMock = vi.fn()

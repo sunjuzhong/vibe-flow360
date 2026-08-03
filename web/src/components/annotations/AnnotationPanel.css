@@ -1,0 +1,67 @@
+.annotation-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.annotation-panel > header,
+.annotation-panel__item > header,
+.annotation-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.annotation-panel h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.annotation-panel ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.annotation-panel__item {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--border-subtle, #d8dee4);
+  border-radius: 8px;
+}
+
+.annotation-panel__item dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.annotation-panel__item dl div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.annotation-panel__item dt {
+  color: var(--text-muted, #66727d);
+}
+
+.annotation-panel__item dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.annotation-panel__item form {
+  display: grid;
+  gap: 6px;
+}
+
+.annotation-panel__actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}

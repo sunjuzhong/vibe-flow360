@@ -89,8 +89,9 @@ function jsonRequest(method: 'POST' | 'PATCH', body: unknown): RequestInit {
 
 export async function listAnnotations<TResult extends JsonValue = JsonValue>(
   projectId: string,
+  options: { readonly signal?: AbortSignal } = {},
 ): Promise<ViewerAnnotation<TResult>[]> {
-  const payload = await request(projectPath(projectId))
+  const payload = await request(projectPath(projectId), { signal: options.signal })
   if (typeof payload !== 'object' || payload === null ||
     !Array.isArray((payload as { annotations?: unknown }).annotations)) {
     throw new AnnotationApiError('Annotation list response is invalid', 200, 'invalid_response')

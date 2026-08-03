@@ -12,6 +12,7 @@ import {
   PanelRightOpen,
   RefreshCw,
   Sparkles,
+  Tags,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -40,6 +41,8 @@ import ResourceTree, { ResourceIcon } from '../components/ResourceTree'
 import SurfaceMeshWorkspace from '../components/SurfaceMeshWorkspace'
 import VolumeMeshWorkspace from '../components/VolumeMeshWorkspace'
 import CaseWorkspace from '../components/CaseWorkspace'
+import { AnnotationPanel } from '../components/annotations'
+import { useProjectAnnotations } from '../hooks/useProjectAnnotations'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import {
   remediationAgentAction,
@@ -132,7 +135,7 @@ export default function ProjectPage() {
   const [initialPlanId, setInitialPlanId] = useState('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
-  const [activePanel, setActivePanel] = useState<'resources' | 'details' | null>(null)
+  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | null>(null)
   const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -143,6 +146,7 @@ export default function ProjectPage() {
   const [syncing, setSyncing] = useState(true)
   const [syncError, setSyncError] = useState('')
   const [syncNonce, setSyncNonce] = useState(0)
+  const annotations = useProjectAnnotations(projectId)
   const closePanel = useCallback(() => setActivePanel(null), [])
   const panelRef = useFocusTrap<HTMLElement>(
     activePanel !== null,
@@ -428,6 +432,13 @@ export default function ProjectPage() {
               setActivePanel((panel) => panel === 'details' ? null : 'details')
             }}
             aria-expanded={activePanel === 'details'}
+          />
+          <ProjectShellAction
+            label="Annotations"
+            icon={<Tags size={15} />}
+            className={activePanel === 'annotations' ? 'active' : ''}
+            onClick={() => setActivePanel((panel) => panel === 'annotations' ? null : 'annotations')}
+            aria-expanded={activePanel === 'annotations'}
           />
           <ProjectShellAction
             label="Sync"
@@ -733,6 +744,25 @@ export default function ProjectPage() {
               dataSource={detailDataSource}
               cachedAt={detailCachedAt}
               initialTab={detailTab}
+            />
+          </aside>
+          )}
+
+          {activePanel === 'annotations' && (
+          <aside ref={panelRef} className="resource-inspector project-drawer project-drawer-right" role="dialog" aria-modal="true" aria-label="Project annotations" tabIndex={-1}>
+            <div className="workbench-panel-title">
+              <Tags size={15} /><span>Project annotations</span>
+              <button onClick={closePanel} aria-label="Close annotations"><X size={15} /></button>
+            </div>
+            <AnnotationPanel
+              model={annotations}
+              onFocus={(annotation) => {
+                const source = items.find((item) => item.id === annotation.resourceRef.id)
+                if (source) {
+                  selectResource(source)
+                  closePanel()
+                }
+              }}
             />
           </aside>
           )}
