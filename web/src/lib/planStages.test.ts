@@ -87,7 +87,7 @@ describe('stage-aware simulation planning', () => {
       hasSchema: true,
       name: 'Case variation',
       intent: '',
-    })).toEqual(['Add an engineering intent, or use AI form fill to derive it from your prompt.'])
+    })).toEqual(['Describe what you want this run to do.'])
     expect(planCompileBlockers({
       schemaLoading: true,
       hasSchema: false,

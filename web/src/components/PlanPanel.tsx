@@ -135,7 +135,6 @@ export default function PlanPanel({
   const [formSchema, setFormSchema] = useState<PlanFormSchemaResponse | null>(null)
   const [schemaLoading, setSchemaLoading] = useState(false)
   const [schemaError, setSchemaError] = useState('')
-  const [assistPrompt, setAssistPrompt] = useState('')
   const [assistLoading, setAssistLoading] = useState(false)
   const [assistAction, setAssistAction] = useState<AgentAction | null>(null)
   const [assistPreflight, setAssistPreflight] = useState<{ valid: boolean; issues: Array<{ message: string; path?: string }> } | null>(null)
@@ -171,7 +170,6 @@ export default function PlanPanel({
     setAdvancedPatch('{}')
     setFormSchema(null)
     setSchemaError('')
-    setAssistPrompt('')
     setAssistAction(null)
     setAssistPreflight(null)
     setReviewed(false)
@@ -315,9 +313,7 @@ export default function PlanPanel({
   }
 
   const fillWithAI = async () => {
-    if (assistLoading || schemaLoading || !formSchema || !assistPrompt.trim()) return
-    const effectiveIntent = intent.trim() || assistPrompt.trim()
-    if (!intent.trim()) setIntent(effectiveIntent)
+    if (assistLoading || schemaLoading || !formSchema || !intent.trim()) return
     setAssistLoading(true)
     setAssistAction(null)
     setAssistPreflight(null)
@@ -331,8 +327,8 @@ export default function PlanPanel({
         source_type: resource.type,
         source_name: resource.name,
         target,
-        intent: effectiveIntent,
-        prompt: assistPrompt,
+        intent,
+        prompt: intent,
         patch: currentPatch,
       })
       setAssistAction(response.action)
@@ -340,7 +336,6 @@ export default function PlanPanel({
       if (response.proposal) {
         setStageValues(partitionPatchByStages(response.proposal.patch, activeStages))
         if (response.proposal.name.trim()) setName(response.proposal.name)
-        if (response.proposal.intent.trim()) setIntent(response.proposal.intent)
       }
     } catch (cause) {
       setError(`AI form fill failed: ${errorMessage(cause)}`)
@@ -528,24 +523,21 @@ export default function PlanPanel({
                     {options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
                   </select>
                 </label>
-                <label>
-                  <span>Engineering intent</span>
-                  <textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="What decision should this run support?" required />
-                </label>
                 <section className="plan-ai-form-fill">
                   <div>
-                    <span><Sparkles size={15} /> AI form fill</span>
-                    <small>Describe the CFD setup in your own words. The Agent will fill only fields allowed by the active Flow360 stage schemas.</small>
+                    <span><Sparkles size={15} /> What do you want to simulate?</span>
+                    <small>This description becomes the Plan intent. You can compile it as-is or ask the Agent to fill parameters allowed by the active Flow360 stage schemas.</small>
                   </div>
                   <div className="plan-ai-form-row">
                     <textarea
-                      value={assistPrompt}
-                      onChange={(event) => setAssistPrompt(event.target.value)}
+                      value={intent}
+                      onChange={(event) => setIntent(event.target.value)}
                       placeholder="例如：外流场，Mach 0.8，攻角 3°，先用稳态 RANS，关注升阻力；网格优先控制成本。"
+                      required
                     />
-                    <button type="button" onClick={() => void fillWithAI()} disabled={assistLoading || schemaLoading || !formSchema || !assistPrompt.trim()}>
+                    <button type="button" onClick={() => void fillWithAI()} disabled={assistLoading || schemaLoading || !formSchema || !intent.trim()}>
                       {assistLoading ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
-                      {assistLoading ? 'Filling…' : 'Fill active stages'}
+                      {assistLoading ? 'Filling…' : 'Fill parameters with AI'}
                     </button>
                   </div>
                   {assistAction && (
@@ -556,7 +548,7 @@ export default function PlanPanel({
                       {assistAction.warnings?.map((item) => <span key={item}>Warning · {item}</span>)}
                       {assistAction.kind === 'request-missing-input' && Boolean(assistAction.questions?.length) && (
                         <em className="needs-input">
-                          Add the requested values to the prompt above and choose Fill active stages again. You can also compile the current values to inspect the complete Flow360 preflight.
+                          Add the requested values to the description above and choose Fill parameters with AI again. You can also compile the current values to inspect the complete Flow360 preflight.
                         </em>
                       )}
                       {assistPreflight && (
