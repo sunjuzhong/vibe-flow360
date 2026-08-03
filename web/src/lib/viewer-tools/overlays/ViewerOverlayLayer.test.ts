@@ -58,6 +58,9 @@ describe('ViewerOverlayLayer', () => {
     const label = layer.getObject('all', 'label') as THREE.Sprite
     expect(label.position.toArray()).toEqual([2, 3, 4])
     expect((label.material as THREE.SpriteMaterial).sizeAttenuation).toBe(false)
+    for (const primitiveKey of ['point', 'line-2', 'line-n', 'sphere', 'label']) {
+      expect(layer.getObject('all', primitiveKey)?.frustumCulled).toBe(false)
+    }
   })
 
   it('renders saved, draft and hover sources together with independent state', () => {

@@ -65,6 +65,10 @@ function stateRenderOffset(state: OverlayState): number {
 
 function makeNonPickable(object: OverlayRenderable, layer: number): void {
   object.layers.set(layer)
+  // Overlay geometry is updated interactively. Opt out of object-level frustum
+  // culling so a stale Three.js bounding volume cannot hide an otherwise
+  // visible measurement primitive after a camera move or zoom.
+  object.frustumCulled = false
   object.raycast = () => undefined
 }
 
