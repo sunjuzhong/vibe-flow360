@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Eye, EyeOff, Focus, RotateCcw, Search } from 'lucide-react'
+import { Eye, EyeOff, Focus, Search } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 
 export type SurfaceBoundaryFilter = 'all' | SurfaceBoundaryRow['status']
@@ -53,6 +53,7 @@ export function SurfaceBoundaryInspector({
     [filter, inventory, query],
   )
   const displayed = filtered.slice(0, visibleCount)
+  const allFacesVisible = inventory.every((row) => visibility[row.id] !== false)
   const counts = useMemo(() => ({
     assigned: inventory.filter((row) => row.status === 'assigned').length,
     unassigned: inventory.filter((row) => row.status === 'unassigned').length,
@@ -95,17 +96,25 @@ export function SurfaceBoundaryInspector({
           <span>{displayed.length} of {filtered.length} matching faces</span>
         </div>
       )}
+      {inventory.length > 0 && (
+        <div className="geometry-selection-tools surface-boundary-selection-tools">
+          <strong>{selectedBoundary ? '1 face selected' : '0 faces selected'}</strong>
+          <button type="button" disabled={allFacesVisible} onClick={onShowAll}>
+            Show all faces
+          </button>
+        </div>
+      )}
       <div className="surface-boundary-list">
         {displayed.length > 0 ? displayed.map((row) => {
           const visible = visibility[row.id] !== false
           return (
           <div
             key={row.id}
-            className={`surface-boundary-row ${row.status} ${selectedId === row.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+            className={`geometry-entity-row surface-boundary-row ${row.status} ${selectedId === row.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
           >
             <button
               type="button"
-              className="surface-boundary-select"
+              className="geometry-entity-select surface-boundary-select"
               onClick={() => onSelect(row.id)}
             >
               <span>{row.name}</span>
@@ -150,18 +159,8 @@ export function SurfaceBoundaryInspector({
           Show {Math.min(initialVisibleCount, filtered.length - visibleCount)} more faces
         </button>
       )}
-      {selectedBoundary && (
-        <p className="surface-selected-detail">
-          Selected: {selectedBoundary.name} · {selectedBoundary.triangles?.toLocaleString() ?? '—'} triangles
-        </p>
-      )}
       {conflictCount > 0 && filter !== 'conflict' && (
         <p className="surface-review-warning">{conflictCount} face group(s) have multiple model assignments.</p>
-      )}
-      {inventory.length > 0 && (
-        <button type="button" className="surface-show-all" onClick={onShowAll}>
-          <RotateCcw size={10} /> Show all faces
-        </button>
       )}
     </div>
   )
