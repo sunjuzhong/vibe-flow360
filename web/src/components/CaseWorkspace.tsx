@@ -16,6 +16,7 @@ import {
   TrendingDown,
   BarChart3,
   ScanLine,
+  Ruler,
 } from 'lucide-react'
 import { useState, useCallback, useMemo } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
@@ -274,11 +275,16 @@ export default function CaseWorkspace({
           toolInput={distance.toolInput}
           overlays={distance.overlays}
           toolbar={
-            caseFields.length > 0 ? (
-              <span className="viewer-toolbar-field-hint">
-                {caseFields.length} field{caseFields.length !== 1 ? 's' : ''} available — use the field panel to color the mesh
-              </span>
-            ) : undefined
+            <>
+              {caseFields.length > 0 && (
+                <span className="viewer-toolbar-field-hint">
+                  {caseFields.length} field{caseFields.length !== 1 ? 's' : ''} available — use the field panel to color the mesh
+                </span>
+              )}
+              <button type="button" className={distance.active ? 'active' : ''} aria-pressed={distance.active} onClick={distance.toggle}>
+                <Ruler size={10} /> Measure
+              </button>
+            </>
           }
         />
         <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">

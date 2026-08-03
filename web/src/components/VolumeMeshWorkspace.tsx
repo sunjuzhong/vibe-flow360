@@ -223,8 +223,9 @@ export default function VolumeMeshWorkspace({
           toolInput={distance.toolInput}
           overlays={distance.overlays}
           toolbar={
-            volumeFields.length > 0 ? (
-              <>
+            <>
+              {volumeFields.length > 0 && (
+                <>
                 <button
                   className={!activeSlice ? 'active' : ''}
                   onClick={() => setActiveSlice(null)}
@@ -241,8 +242,12 @@ export default function VolumeMeshWorkspace({
                     {name}
                   </button>
                 ))}
-              </>
-            ) : undefined
+                </>
+              )}
+              <button type="button" className={distance.active ? 'active' : ''} aria-pressed={distance.active} onClick={distance.toggle}>
+                <Ruler size={10} /> Measure
+              </button>
+            </>
           }
         />
         <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
