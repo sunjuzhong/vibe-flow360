@@ -103,6 +103,7 @@ type Props = {
   resourceRef?: ResourceRef
   toolInput?: ToolInputConsumer
   overlays?: ViewerOverlayContent | null
+  onDoubleClick?: React.MouseEventHandler<HTMLDivElement>
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
@@ -136,6 +137,7 @@ export function Viewer3D({
   resourceRef,
   toolInput,
   overlays,
+  onDoubleClick,
   captureRequest = 0,
   onCapture,
   showFieldPanel = true,
@@ -836,6 +838,7 @@ export function Viewer3D({
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
+        onDoubleClick={onDoubleClick}
         onPointerCancel={() => {
           inputControllerRef.current?.cancelPointer()
           inputControllerRef.current = null

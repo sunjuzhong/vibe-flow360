@@ -62,12 +62,15 @@ import {
   LazyViewer3D,
   type ViewerCameraCommand,
   type ViewerClipPlane,
+  type ViewerOverlayContent,
   type ViewerSelection,
 } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useDistanceTool } from '../hooks/useDistanceTool'
 import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import { useViewerTools } from '../hooks/useViewerTools'
+import { BasicToolsPanel, type BasicToolId } from '../lib/viewer-tools/basic-tools'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 
 const readinessCopy = {
@@ -163,6 +166,20 @@ export default function GeometryWorkspace({
     annotationsModel,
     unit: review.unit,
   })
+  const basicTools = useViewerTools({ projectId, resourceRef, annotationsModel })
+  const viewerOverlays = useMemo<ViewerOverlayContent>(() => {
+    const active = basicTools.active ? basicTools.overlays : distance.overlays
+    return {
+      saved: [...(distance.overlays.saved ?? []), ...(basicTools.overlays.saved ?? [])],
+      draft: active.draft,
+      hover: active.hover,
+      visible: active.visible,
+    }
+  }, [basicTools.active, basicTools.overlays, distance.overlays])
+  const toggleBasicTool = (toolId: BasicToolId) => {
+    distance.discard()
+    basicTools.toggle(toolId)
+  }
   const selectedGroup = manifest?.groups.find((group) => group.id === viewerSelection.groupId) ?? null
   const selectedEdge = manifest?.edges?.find((edge) => edge.id === viewerSelection.groupId) ?? null
   const selectedGroupIds = viewerSelection.groupIds?.length
@@ -634,8 +651,9 @@ export default function GeometryWorkspace({
           clipPlane={clipPlane}
           projectId={projectId}
           resourceRef={resourceRef}
-          toolInput={distance.toolInput}
-          overlays={distance.overlays}
+          toolInput={basicTools.active ? basicTools.toolInput : distance.toolInput}
+          overlays={viewerOverlays}
+          onDoubleClick={basicTools.onDoubleClick}
           captureRequest={captureRequest}
           onCapture={(dataUrl) => downloadDataUrl(
             dataUrl,
@@ -670,7 +688,10 @@ export default function GeometryWorkspace({
               <button
                 className={distance.active ? 'active' : ''}
                 aria-pressed={distance.active}
-                onClick={distance.toggle}
+                onClick={() => {
+                  basicTools.cancel()
+                  distance.toggle()
+                }}
                 title="Measure between two picked points"
               ><Ruler size={13} /> Measure</button>
               <button
@@ -749,6 +770,7 @@ export default function GeometryWorkspace({
         )}
 
         <DistanceToolPanel model={distance} />
+        <BasicToolsPanel model={basicTools} onToggle={toggleBasicTool} />
 
         <section className="geometry-selection-card">
           <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
