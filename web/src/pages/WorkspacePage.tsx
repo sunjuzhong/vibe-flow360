@@ -3,9 +3,12 @@ import {
   ArrowRight,
   Box,
   ChevronRight,
+  Clock3,
   RefreshCw,
   Search,
   FileUp,
+  LayoutGrid,
+  List,
   Sparkles,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -25,6 +28,19 @@ function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
 }
 
+export function formatProjectCreatedAt(value?: string) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export default function WorkspacePage() {
   const navigate = useNavigate()
   const [flowStatus, setFlowStatus] = useState<Flow360Status | null>(null)
@@ -40,6 +56,7 @@ export default function WorkspacePage() {
   const [projectsDataSource, setProjectsDataSource] = useState<'live' | 'cache'>('live')
   const [projectsCachedAt, setProjectsCachedAt] = useState('')
   const [query, setQuery] = useState('')
+  const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
   const [importOpen, setImportOpen] = useState(false)
   const [aiCreateOpen, setAICreateOpen] = useState(false)
 
@@ -115,7 +132,7 @@ export default function WorkspacePage() {
     }
   }
 
-  const [sortBy, setSortBy] = useState<'name' | 'updated' | 'type' | 'solver'>('name')
+  const [sortBy, setSortBy] = useState<'name' | 'created' | 'type' | 'solver'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterType, setFilterType] = useState('all')
 
@@ -136,7 +153,7 @@ export default function WorkspacePage() {
       let cmp = 0
       switch (sortBy) {
         case 'name': cmp = a.name.localeCompare(b.name); break
-        case 'updated': cmp = (b.created_at || '').localeCompare(a.created_at || ''); break
+        case 'created': cmp = (a.created_at || '').localeCompare(b.created_at || ''); break
         case 'type': cmp = a.root_item_type.localeCompare(b.root_item_type); break
         case 'solver': cmp = a.solver_version.localeCompare(b.solver_version); break
       }
@@ -225,7 +242,7 @@ export default function WorkspacePage() {
               Sort:
               <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
                 <option value="name">Name</option>
-                <option value="updated">Created</option>
+                <option value="created">Created</option>
                 <option value="type">Type</option>
                 <option value="solver">Solver</option>
               </select>
@@ -234,6 +251,26 @@ export default function WorkspacePage() {
               {sortDir === 'asc' ? '↑' : '↓'}
             </button>
             <span>{filteredProjects.length} projects</span>
+            <div className="project-view-mode" role="group" aria-label="Project view mode">
+              <button
+                className={viewMode === 'list' ? 'active' : ''}
+                onClick={() => setViewMode('list')}
+                aria-label="List view"
+                aria-pressed={viewMode === 'list'}
+                title="List view"
+              >
+                <List size={14} />
+              </button>
+              <button
+                className={viewMode === 'card' ? 'active' : ''}
+                onClick={() => setViewMode('card')}
+                aria-label="Card view"
+                aria-pressed={viewMode === 'card'}
+                title="Card view"
+              >
+                <LayoutGrid size={14} />
+              </button>
+            </div>
             <button
               className="toolbar-refresh"
               onClick={() => void loadProjects(selectedFolder)}
@@ -255,28 +292,62 @@ export default function WorkspacePage() {
             </div>
           )}
           {!projectsLoading && filteredProjects.length > 0 && (
-            <div className="project-table">
-              <div className="project-table-head">
-                <span>Project</span><span>Workflow</span><span>Resources</span><span>Solver</span><span />
+            viewMode === 'list' ? (
+              <div className="project-table">
+                <div className="project-table-head">
+                  <span>Project</span><span>Workflow</span><span>Resources</span><span>Created</span><span>Solver</span><span />
+                </div>
+                {filteredProjects.map((project) => (
+                  <Link className="project-table-row" key={project.id} to={`/projects/${project.id}`}>
+                    <span className="project-primary">
+                      <span className="project-type-mark"><Box size={16} /></span>
+                      <span><strong>{project.name}</strong><small>{project.id}</small></span>
+                    </span>
+                    <span><span className="type-badge">{project.root_item_type}</span></span>
+                    <span className="resource-counts">
+                      <small>G {projectCount(project, 'geometry')}</small>
+                      <small>SM {projectCount(project, 'surface_mesh')}</small>
+                      <small>VM {projectCount(project, 'volume_mesh')}</small>
+                      <small>C {projectCount(project, 'case')}</small>
+                    </span>
+                    <time className="project-created" dateTime={project.created_at}>{formatProjectCreatedAt(project.created_at)}</time>
+                    <span className="solver-label">{project.solver_version}</span>
+                    <span className="row-arrow"><ChevronRight size={16} /></span>
+                  </Link>
+                ))}
               </div>
-              {filteredProjects.map((project) => (
-                <Link className="project-table-row" key={project.id} to={`/projects/${project.id}`}>
-                  <span className="project-primary">
-                    <span className="project-type-mark"><Box size={16} /></span>
-                    <span><strong>{project.name}</strong><small>{project.id}</small></span>
-                  </span>
-                  <span><span className="type-badge">{project.root_item_type}</span></span>
-                  <span className="resource-counts">
-                    <small>G {projectCount(project, 'geometry')}</small>
-                    <small>SM {projectCount(project, 'surface_mesh')}</small>
-                    <small>VM {projectCount(project, 'volume_mesh')}</small>
-                    <small>C {projectCount(project, 'case')}</small>
-                  </span>
-                  <span className="solver-label">{project.solver_version}</span>
-                  <span className="row-arrow"><ChevronRight size={16} /></span>
-                </Link>
-              ))}
-            </div>
+            ) : (
+              <div className="project-card-grid">
+                {filteredProjects.map((project) => (
+                  <Link className="project-card" key={project.id} to={`/projects/${project.id}`}>
+                    <div className={`project-card-visual type-${project.root_item_type.toLowerCase()}`} aria-hidden="true">
+                      <Box size={31} strokeWidth={1.25} />
+                      <span>{project.root_item_type}</span>
+                    </div>
+                    <div className="project-card-body">
+                      <div className="project-card-heading">
+                        <div><strong>{project.name}</strong><small>{project.id}</small></div>
+                        <ChevronRight size={16} />
+                      </div>
+                      {project.description && <p>{project.description}</p>}
+                      <div className="project-card-meta">
+                        <span className="type-badge">{project.root_item_type}</span>
+                        <span className="solver-label">{project.solver_version}</span>
+                      </div>
+                      <div className="resource-counts">
+                        <small>G {projectCount(project, 'geometry')}</small>
+                        <small>SM {projectCount(project, 'surface_mesh')}</small>
+                        <small>VM {projectCount(project, 'volume_mesh')}</small>
+                        <small>C {projectCount(project, 'case')}</small>
+                      </div>
+                      <time className="project-card-created" dateTime={project.created_at}>
+                        <Clock3 size={12} /> Created {formatProjectCreatedAt(project.created_at)}
+                      </time>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )
           )}
           {!projectsLoading && projects.length > 0 && !filteredProjects.length && (
             <div className="panel-state"><Search size={20} /><strong>No projects match “{query}”</strong></div>

@@ -859,6 +859,7 @@ button { color: inherit; }
 .project-toolbar {
   display: flex;
   max-width: 1180px;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin: 0 auto 11px;
@@ -908,6 +909,31 @@ button { color: inherit; }
 
 .toolbar-refresh:hover { background: #e9eae3; }
 .toolbar-refresh:disabled { opacity: .45; }
+
+.project-view-mode {
+  display: inline-flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid #d5d7ce;
+  border-radius: 7px;
+  background: #fafaf7;
+}
+
+.project-view-mode button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 0;
+  border-right: 1px solid #d5d7ce;
+  color: #858a80;
+  background: transparent;
+  cursor: pointer;
+}
+
+.project-view-mode button:last-child { border-right: 0; }
+.project-view-mode button:hover { color: #536813; background: #f0f4e5; }
+.project-view-mode button.active { color: #4f6810; background: #e8efd2; }
 
 .project-list-panel {
   max-width: 1180px;
@@ -973,7 +999,7 @@ button { color: inherit; }
 .project-table-head,
 .project-table-row {
   display: grid;
-  grid-template-columns: minmax(240px, 2fr) 110px minmax(190px, 1fr) 120px 30px;
+  grid-template-columns: minmax(210px, 2fr) 100px minmax(175px, 1fr) minmax(145px, .8fr) 110px 30px;
   align-items: center;
   column-gap: 12px;
 }
@@ -1030,7 +1056,69 @@ button { color: inherit; }
 .resource-counts { display: flex; flex-wrap: wrap; gap: 4px; }
 .resource-counts small { padding: 3px 5px; border: 1px solid #dfe1d9; border-radius: 4px; color: #7e8379; font-family: 'DM Mono'; font-size: 7px; }
 .solver-label { color: #767b71; font-family: 'DM Mono'; font-size: 8px; }
+.project-created { color: #777c72; font-family: 'DM Mono'; font-size: 8px; }
 .row-arrow { display: grid; place-items: center; color: #9da198; transition: transform .15s ease; }
+
+.project-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  gap: 14px;
+  padding: 16px;
+}
+
+.project-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dcddd6;
+  border-radius: 10px;
+  color: #3e433a;
+  background: #fff;
+  text-decoration: none;
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.project-card:hover {
+  transform: translateY(-2px);
+  border-color: #b8c596;
+  box-shadow: 0 10px 24px rgba(38,41,34,.08);
+}
+
+.project-card-visual {
+  position: relative;
+  display: flex;
+  height: 104px;
+  align-items: center;
+  justify-content: center;
+  color: #627c15;
+  background:
+    radial-gradient(circle at 65% 38%, rgba(189,232,54,.38), transparent 30%),
+    linear-gradient(145deg, #edf2df, #dce7bf);
+}
+
+.project-card-visual::after {
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(83,104,19,.12);
+  border-radius: 50%;
+  content: '';
+}
+
+.project-card-visual.type-surfacemesh { color: #347080; background: linear-gradient(145deg, #e7f0f1, #cfe2e5); }
+.project-card-visual.type-volumemesh { color: #785a1d; background: linear-gradient(145deg, #f5edde, #e7d7b9); }
+.project-card-visual > span { position: absolute; right: 11px; bottom: 9px; font-family: 'DM Mono'; font-size: 7px; letter-spacing: .06em; text-transform: uppercase; }
+
+.project-card-body { padding: 13px; }
+.project-card-heading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.project-card-heading > div { min-width: 0; }
+.project-card-heading strong,.project-card-heading small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-heading strong { font-size: 11px; }
+.project-card-heading small { margin-top: 4px; color: #9a9e95; font-family: 'DM Mono'; font-size: 7px; }
+.project-card-heading svg { flex: 0 0 auto; color: #9da198; transition: transform .15s ease; }
+.project-card:hover .project-card-heading svg { transform: translateX(2px); color: #617c11; }
+.project-card-body > p { display: -webkit-box; min-height: 28px; margin: 10px 0 0; overflow: hidden; color: #7c8177; font-size: 8px; line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.project-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.project-card .resource-counts { margin-top: 10px; }
+.project-card-created { display: flex; align-items: center; gap: 5px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #ebebe6; color: #83887e; font-family: 'DM Mono'; font-size: 7px; }
 
 .home-guidance {
   display: flex;
@@ -2210,7 +2298,7 @@ button { color: inherit; }
 @media (max-width: 1180px) {
   .project-workbench { grid-template-columns: 250px minmax(390px,1fr); }
   .resource-inspector { display: none; }
-  .project-table-head,.project-table-row { grid-template-columns: minmax(220px,2fr) 100px 180px 100px 25px; }
+  .project-table-head,.project-table-row { grid-template-columns: minmax(210px,2fr) 95px 165px 140px 95px 25px; }
 }
 
 @media (max-width: 900px) {
@@ -2219,8 +2307,8 @@ button { color: inherit; }
   .chat-visible .workspace-home,.chat-visible .project-header,.chat-visible .project-workbench { margin-right: 0; }
   .copilot-panel { width: min(380px,100vw); }
   .project-table-head { display: none; }
-  .project-table-row { grid-template-columns: minmax(220px,1fr) 100px 25px; }
-  .project-table-row > span:nth-child(3),.project-table-row > span:nth-child(4){display:none}
+  .project-table-row { grid-template-columns: minmax(200px,1fr) 100px minmax(135px,.7fr) 25px; }
+  .project-table-row > span:nth-child(3),.project-table-row > span:nth-child(5){display:none}
   .project-workbench { grid-template-columns: 230px minmax(0,1fr); }
 }
 
@@ -2234,7 +2322,7 @@ button { color: inherit; }
   .workspace-home-actions { width: 100%; }
   .workspace-home-actions .ai-action { flex: 1; }
   .home-guidance { display: none; }
-  .project-table-row { grid-template-columns: minmax(0,1fr) 25px; }
+  .project-table-row { grid-template-columns: minmax(0,1fr) minmax(120px,.7fr) 25px; }
   .project-table-row > span:nth-child(2){display:none}
   .project-header { padding: 16px 14px; }
   .project-header-main { align-items: flex-start; }
