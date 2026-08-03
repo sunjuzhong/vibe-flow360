@@ -13,7 +13,7 @@ describe('resolveViewerMaterialStyle', () => {
 
   it('restores the manifest defaults after an assignment is removed', () => {
     expect(resolveViewerMaterialStyle('#6f8790', undefined, false, true)).toMatchObject({
-      color: '#6f8790', opacity: 0.9, emissive: '#000000',
+      color: '#6f8790', opacity: 1, emissive: '#000000',
     })
   })
 

@@ -322,8 +322,8 @@ export function Viewer3D({
         previous.forEach((material) => material.dispose())
         object.material = new THREE.MeshPhongMaterial({
           color: new THREE.Color(group.color),
-          transparent: true,
-          opacity: group.visible ? 0.9 : 0.12,
+          transparent: false,
+          opacity: 1,
           side: THREE.DoubleSide,
         })
       }
@@ -497,6 +497,8 @@ export function Viewer3D({
       )
       mat.color.set(style.color)
       mat.opacity = style.opacity
+      mat.transparent = style.opacity < 1
+      mat.depthWrite = style.opacity >= 1
       mat.emissive.set(style.emissive)
       mat.emissiveIntensity = style.emissiveIntensity
       mat.needsUpdate = true

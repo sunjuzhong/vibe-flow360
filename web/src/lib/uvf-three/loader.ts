@@ -212,11 +212,12 @@ export function buildUVFAsset(
       const faceTriangles = faceIndices
         ? Math.floor(faceIndices.length / 3)
         : ranges.reduce((count, range) => count + Math.floor((range.endIndex - range.startIndex) / 9), 0)
+      const opacity = face.properties?.alpha ?? 1
       const material = new THREE.MeshPhongMaterial({
         color: new THREE.Color(faceColor(face.properties?.color, faces)),
         side: THREE.DoubleSide,
-        transparent: true,
-        opacity: face.properties?.alpha ?? 0.92,
+        transparent: opacity < 1,
+        opacity,
         shininess: 35,
         vertexColors: false,
       })
@@ -524,13 +525,64 @@ export function findFieldExtrema(asset: UVFAsset, fieldName: string): UVFFieldEx
 }
 
 export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
+  const faces: THREE.Mesh[] = []
   asset.object.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return
-    if (object.userData.uvfType !== 'Face') return
-    const material = object.material as THREE.MeshPhongMaterial
-    material.wireframe = visible
-    material.needsUpdate = true
+    if (object instanceof THREE.Mesh && object.userData.uvfType === 'Face') faces.push(object)
   })
+
+  for (const face of faces) {
+    const existing = face.children.find((child) => child.userData.uvfWireframeOverlay === true)
+    const materials = Array.isArray(face.material) ? face.material : [face.material]
+    if (visible) {
+      if (existing) continue
+      const overlay = new THREE.LineSegments(
+        new THREE.WireframeGeometry(face.geometry),
+        new THREE.LineBasicMaterial({
+          color: 0x30352d,
+          transparent: true,
+          opacity: 0.72,
+          depthWrite: false,
+        }),
+      )
+      overlay.name = `${face.name || face.uuid} wire overlay`
+      overlay.userData.uvfWireframeOverlay = true
+      overlay.userData.uvfType = 'WireframeOverlay'
+      overlay.renderOrder = face.renderOrder + 1
+      face.add(overlay)
+      for (const material of materials) {
+        material.userData.uvfWirePolygonOffset = {
+          enabled: material.polygonOffset,
+          factor: material.polygonOffsetFactor,
+          units: material.polygonOffsetUnits,
+        }
+        material.polygonOffset = true
+        material.polygonOffsetFactor = 1
+        material.polygonOffsetUnits = 1
+        material.needsUpdate = true
+      }
+      continue
+    }
+
+    if (existing instanceof THREE.LineSegments) {
+      face.remove(existing)
+      existing.geometry.dispose()
+      const overlayMaterials = Array.isArray(existing.material) ? existing.material : [existing.material]
+      overlayMaterials.forEach((material) => material.dispose())
+    }
+    for (const material of materials) {
+      const previous = material.userData.uvfWirePolygonOffset as {
+        enabled: boolean
+        factor: number
+        units: number
+      } | undefined
+      if (!previous) continue
+      material.polygonOffset = previous.enabled
+      material.polygonOffsetFactor = previous.factor
+      material.polygonOffsetUnits = previous.units
+      delete material.userData.uvfWirePolygonOffset
+      material.needsUpdate = true
+    }
+  }
 }
 
 export function setEntityVisibility(asset: UVFAsset, entityId: string, visible: boolean): void {

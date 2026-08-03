@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay } from '.'
 
@@ -258,6 +258,10 @@ describe('Flow360 UVF Three.js library', () => {
     expect(asset.fields[0]).toMatchObject({ name: 'pressure', min: 0, max: 1, dimension: 1 })
     const face = asset.getEntityObject('face-1')!
     expect(face).toHaveProperty('geometry')
+    expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material).toMatchObject({
+      opacity: 1,
+      transparent: false,
+    })
     expect((face as import('three').Mesh).geometry.getAttribute('pressure').count).toBe(3)
     // Apply field coloring
     applyFieldColoring(asset, 'pressure', 'grayscale')
@@ -295,8 +299,22 @@ describe('Flow360 UVF Three.js library', () => {
     })
     setWireframeOverlay(asset, true)
     applyFieldColoring(asset, 'pressure', 'viridis')
-    expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material.wireframe).toBe(true)
-    expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material.vertexColors).toBe(true)
+    const faceMesh = face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>
+    expect(faceMesh.material.wireframe).toBe(false)
+    expect(faceMesh.material.vertexColors).toBe(true)
+    expect(faceMesh.material.polygonOffset).toBe(true)
+    expect(faceMesh.children.filter((child) => child.userData.uvfWireframeOverlay)).toHaveLength(1)
+    const wireOverlay = faceMesh.children.find((child) => child.userData.uvfWireframeOverlay) as THREE.LineSegments
+    expect(wireOverlay).toBeInstanceOf(THREE.LineSegments)
+    const disposeWireGeometry = vi.spyOn(wireOverlay.geometry, 'dispose')
+    const disposeWireMaterial = vi.spyOn(wireOverlay.material as THREE.Material, 'dispose')
+    setWireframeOverlay(asset, true)
+    expect(faceMesh.children.filter((child) => child.userData.uvfWireframeOverlay)).toHaveLength(1)
+    setWireframeOverlay(asset, false)
+    expect(faceMesh.children.filter((child) => child.userData.uvfWireframeOverlay)).toHaveLength(0)
+    expect(faceMesh.material.polygonOffset).toBe(false)
+    expect(disposeWireGeometry).toHaveBeenCalledOnce()
+    expect(disposeWireMaterial).toHaveBeenCalledOnce()
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
     asset.dispose()

@@ -8,7 +8,7 @@ export function resolveViewerMaterialStyle(
 ) {
   return {
     color: appearance?.color ?? defaultColor,
-    opacity: visible ? (appearance?.opacity ?? 0.9) : 0.15,
+    opacity: visible ? (appearance?.opacity ?? 1) : 0.15,
     emissive: selected ? '#d59a2d' : '#000000',
     emissiveIntensity: selected ? 0.16 : 0,
   }

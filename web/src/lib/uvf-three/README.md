@@ -26,6 +26,10 @@ precision selector must only expose the intersection supported by all
 multi-level solid entities; single-buffer entities remain unchanged at every
 selection.
 
+Wire display is implemented as disposable `LineSegments` layered over each
+face. It never switches the fill material into Three.js `wireframe` mode, so
+entity color or field coloring remains visible underneath.
+
 ## Consumer responsibilities
 
 Consumers decide what an entity or field means. For example, the Surface Mesh
