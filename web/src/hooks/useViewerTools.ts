@@ -14,6 +14,7 @@ import {
   type BasicToolResult,
 } from '../lib/viewer-tools/basic-tools'
 import { resolveCompatibleAnnotations } from '../lib/viewer-tools/compatibility'
+import { areCoordinateFramesCompatible } from '../lib/viewer-tools/compatibility'
 import type { ToolInputConsumer } from '../lib/viewer-tools/picking/controller'
 import { reduceToolSession } from '../lib/viewer-tools/reducer'
 import type {
@@ -95,10 +96,16 @@ export interface ViewerToolsModel {
 export function useViewerTools({
   projectId,
   resourceRef,
+  assetRef = resourceRef,
+  coordinateFrame: suppliedCoordinateFrame,
   annotationsModel,
 }: {
   projectId: string
+  /** Project resource that owns the saved annotation. */
   resourceRef: ResourceRef
+  /** Resource whose geometry is rendered and picked. */
+  assetRef?: ResourceRef
+  coordinateFrame?: CoordinateFrame
   annotationsModel: ProjectAnnotationsModel<JsonValue>
 }): ViewerToolsModel {
   const [definition, setDefinition] = useState<ToolDefinition<BasicToolResult>>(
@@ -107,8 +114,8 @@ export function useViewerTools({
   const [session, setSession] = useState<ToolSession<BasicToolResult>>({ status: 'idle' })
   const [notice, setNotice] = useState<string | null>(null)
   const coordinateFrame = useMemo<CoordinateFrame>(
-    () => ({ kind: 'asset-local', resourceRef }),
-    [resourceRef.id, resourceRef.type, resourceRef.version],
+    () => suppliedCoordinateFrame ?? { kind: 'asset-local', resourceRef: assetRef },
+    [assetRef.id, assetRef.type, assetRef.version, suppliedCoordinateFrame],
   )
 
   const apply = useCallback((action: ToolAction<BasicToolResult>) => {
@@ -167,7 +174,7 @@ export function useViewerTools({
   useEffect(() => {
     setNotice(null)
     setSession({ status: 'idle' })
-  }, [projectId, resourceRef.id, resourceRef.type, resourceRef.version])
+  }, [assetRef.id, assetRef.type, assetRef.version, projectId, resourceRef.id, resourceRef.type, resourceRef.version])
 
   useEffect(() => {
     if (!isCapturing(session)) return
@@ -198,19 +205,26 @@ export function useViewerTools({
     pickPolicy: definition.pickPolicy,
     isActive: () => capturing,
     onPick: (pick) => {
-      if (!pick || pick.projectId !== projectId || pick.resourceRef.id !== resourceRef.id
-        || pick.resourceRef.type !== resourceRef.type) return false
+      if (!pick || pick.projectId !== projectId || pick.resourceRef.id !== assetRef.id
+        || pick.resourceRef.type !== assetRef.type) return false
       setNotice(null)
       apply({ type: 'pick', pick })
       return true
     },
     onHover: (pick) => apply({ type: 'hover', pick }),
-  }), [apply, capturing, definition.pickPolicy, projectId, resourceRef.id, resourceRef.type])
+  }), [apply, assetRef.id, assetRef.type, capturing, definition.pickPolicy, projectId])
 
-  const compatibleAnnotations = useMemo(() => resolveCompatibleAnnotations(
-    annotationsModel.annotations,
-    { projectId, resourceRef, coordinateFrame },
-  ), [annotationsModel.annotations, coordinateFrame, projectId, resourceRef])
+  const compatibleAnnotations = useMemo(() => {
+    const usesExplicitAssetFrame = assetRef !== resourceRef || suppliedCoordinateFrame !== undefined
+    return usesExplicitAssetFrame
+      ? annotationsModel.annotations.filter((annotation) => annotation.visible
+        && annotation.projectId === projectId
+        && areCoordinateFramesCompatible(annotation.coordinateFrame, coordinateFrame))
+      : resolveCompatibleAnnotations(
+        annotationsModel.annotations,
+        { projectId, resourceRef, coordinateFrame },
+      )
+  }, [annotationsModel.annotations, assetRef, coordinateFrame, projectId, resourceRef, suppliedCoordinateFrame])
   const savedAnnotations = useMemo(() => compatibleAnnotations.flatMap((annotation) => {
     const basic = asBasicToolAnnotation(annotation)
     return basic ? [basic] : []

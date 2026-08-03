@@ -19,8 +19,8 @@ import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
-import { useDistanceTool } from '../hooks/useDistanceTool'
-import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
+import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import {
   createViewerContext,
   findLengthUnit,
@@ -164,7 +164,7 @@ export default function VolumeMeshWorkspace({
     unit,
     capabilities: ['distance', 'surface-picking', 'field-probe'],
   }), [geometryResourceId, previewSource, projectId, resourceRef, unit])
-  const distance = useDistanceTool({
+  const tools = useWorkspaceViewerTools({
     projectId,
     resourceRef: viewerContext.resourceRef,
     assetRef: viewerContext.assetRef,
@@ -211,7 +211,7 @@ export default function VolumeMeshWorkspace({
 
   return (
     <section className="volume-mesh-workspace cfd-stage-workspace">
-      <div className="viewer-section cfd-stage-viewer">
+      <div className={`viewer-section cfd-stage-viewer ${tools.panelOpen ? 'tool-panel-open' : ''}`}>
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
@@ -220,8 +220,9 @@ export default function VolumeMeshWorkspace({
           onFieldsDiscovered={handleFieldsDiscovered}
           projectId={projectId}
           resourceRef={viewerContext.assetRef}
-          toolInput={distance.toolInput}
-          overlays={distance.overlays}
+          toolInput={tools.toolInput}
+          overlays={tools.overlays}
+          onDoubleClick={tools.onDoubleClick}
           toolbar={
             <>
               {volumeFields.length > 0 && (
@@ -244,12 +245,11 @@ export default function VolumeMeshWorkspace({
                 ))}
                 </>
               )}
-              <button type="button" className={distance.active ? 'active' : ''} aria-pressed={distance.active} onClick={distance.toggle}>
-                <Ruler size={10} /> Measure
-              </button>
+              <ViewerToolsDock model={tools} />
             </>
           }
         />
+        <ViewerToolPanel model={tools} />
         <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
           <ScanLine size={13} />
           <div>
@@ -302,7 +302,6 @@ export default function VolumeMeshWorkspace({
               </div>
             ))}
           </div>
-          <DistanceToolPanel model={distance} />
           <div className="geometry-plan-action-stack">
             <button
               className="geometry-plan-action"

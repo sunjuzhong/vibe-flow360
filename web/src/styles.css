@@ -1482,6 +1482,116 @@ button { color: inherit; }
   color: #fff;
   border-color: #789521;
 }
+.viewer-tools-dock { position: relative; display: inline-flex; }
+.viewer-toolbar-slot .viewer-tools-launcher {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-color: #cbd0c3;
+  color: #353d30;
+  background: rgba(255, 255, 255, .96);
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+.viewer-tools-launcher > svg:last-child { transition: transform .16s ease; }
+.viewer-tools-dock.open .viewer-tools-launcher > svg:last-child { transform: rotate(180deg); }
+.viewer-toolbar-slot .viewer-tools-launcher.active {
+  border-color: #94ad43;
+  color: #2d3b19;
+  background: #eef5dc;
+}
+.viewer-tools-menu {
+  position: absolute;
+  z-index: 15;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  display: flex;
+  gap: 5px;
+  width: max-content;
+  padding: 6px;
+  border: 1px solid rgba(196, 202, 188, .92);
+  border-radius: 10px;
+  background: rgba(250, 251, 247, .96);
+  box-shadow: 0 14px 34px rgba(31, 39, 25, .18);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+}
+.viewer-toolbar-slot .viewer-tools-menu button {
+  display: flex;
+  min-width: 58px;
+  min-height: 46px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #62695c;
+  background: transparent;
+  font-size: 7px;
+  white-space: nowrap;
+}
+.viewer-toolbar-slot .viewer-tools-menu button:hover { border-color: #d9decf; background: #f0f2eb; }
+.viewer-toolbar-slot .viewer-tools-menu button.active {
+  border-color: #a9bd69;
+  color: #304016;
+  background: #e7f0ce;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5);
+}
+.viewer-tool-panel {
+  position: absolute;
+  z-index: 14;
+  top: 16px;
+  right: 16px;
+  width: min(320px, calc(100% - 32px));
+  overflow: hidden;
+  border: 1px solid rgba(198, 204, 190, .9);
+  border-radius: 12px;
+  color: #343a30;
+  background: rgba(250, 251, 247, .96);
+  box-shadow: 0 18px 48px rgba(28, 35, 23, .18);
+  backdrop-filter: blur(18px);
+}
+.viewer-tool-panel > header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto 26px;
+  align-items: center;
+  gap: 9px;
+  min-height: 55px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #e1e4da;
+  background: linear-gradient(135deg, rgba(238, 244, 222, .88), rgba(250, 251, 247, .96));
+}
+.viewer-tool-panel-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; color: #3e511e; background: #dfeabf; }
+.viewer-tool-panel header small,.viewer-tool-panel header strong { display: block; }
+.viewer-tool-panel header small { color: #899078; font: 6px 'DM Mono'; letter-spacing: .12em; }
+.viewer-tool-panel header strong { margin-top: 2px; font-size: 12px; }
+.viewer-tool-point-count { padding: 3px 6px; border-radius: 999px; color: #747c6b; background: rgba(255,255,255,.75); font: 7px 'DM Mono'; }
+.viewer-tool-panel header > button { display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 0; border-radius: 6px; color: #747b6d; background: transparent; cursor: pointer; }
+.viewer-tool-panel header > button:hover { color: #32392e; background: rgba(214, 220, 205, .72); }
+.viewer-tool-panel-body { padding: 13px; }
+.viewer-tool-instruction,.viewer-tool-notice,.viewer-tool-error,.viewer-tool-muted { margin: 0; font-size: 9px; line-height: 1.5; }
+.viewer-tool-instruction { color: #555e4f; }
+.viewer-tool-instruction span { display: block; margin-top: 4px; color: #91978a; font: 7px 'DM Mono'; }
+.viewer-tool-notice { color: #77651c; }
+.viewer-tool-error { color: #9d4539; }
+.viewer-tool-muted { color: #80877a; }
+.viewer-tool-result { margin-top: 10px; padding: 11px; border: 1px solid #dfe3d7; border-radius: 9px; background: #f5f7f0; }
+.viewer-tool-result > small { display: block; color: #899178; font: 6px 'DM Mono'; letter-spacing: .1em; }
+.viewer-tool-result > strong { display: block; margin-top: 5px; color: #2f382a; font-size: 15px; font-weight: 650; line-height: 1.35; }
+.viewer-tool-result > strong span { color: #737b6c; font-size: 8px; font-weight: 500; }
+.viewer-tool-result dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 10px 0 0; }
+.viewer-tool-result dl > div { min-width: 0; padding: 6px; border-radius: 6px; background: #fff; }
+.viewer-tool-result dt { color: #909788; font: 6px 'DM Mono'; }
+.viewer-tool-result dd { overflow: hidden; margin: 3px 0 0; color: #4f5749; font: 7px 'DM Mono'; text-overflow: ellipsis; }
+.viewer-tool-actions { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+.viewer-tool-actions > span { flex: 1; color: #71804e; font-size: 8px; }
+.viewer-tool-actions button { min-height: 29px; padding: 0 10px; border: 1px solid #cfd4c6; border-radius: 7px; color: #555d4f; background: #fff; font-size: 8px; cursor: pointer; }
+.viewer-tool-actions button:hover { border-color: #adb79c; background: #f4f6ef; }
+.viewer-tool-actions button.primary { border-color: #9eb455; color: #293716; background: #bad858; font-weight: 700; }
 .viewer-snap-status {
   position: absolute;
   z-index: 8;
@@ -3392,6 +3502,9 @@ button { color: inherit; }
   bottom: 48px;
   left: calc((100% - 528px) / 2);
 }
+.cfd-stage-viewer .viewer-tool-panel { right: 178px; }
+.cfd-stage-viewer .cfd-decision-panel { transition: opacity .16s ease, transform .16s ease; }
+.cfd-stage-viewer.tool-panel-open .cfd-decision-panel { opacity: 0; pointer-events: none; transform: translateX(10px); }
 .surface-mode-plain .cfd-decision-panel,
 .surface-mode-quality .cfd-decision-panel { right: 18px; }
 
@@ -3997,6 +4110,7 @@ button { color: inherit; }
     bottom: 48px;
     left: 50%;
   }
+  .cfd-stage-viewer .viewer-tool-panel { right: 10px; }
   .cfd-quality-strip > div:nth-child(n+3) { display: none; }
   .case-analysis-heading { align-items: flex-start; flex-direction: column; gap: 5px; padding: 14px 12px 0; }
   .case-analysis-heading > small { text-align: left; }
@@ -4036,6 +4150,9 @@ button { color: inherit; }
     bottom: 5px;
     left: 5px;
   }
+  .viewer-tools-menu { max-width: calc(100vw - 10px); overflow-x: auto; justify-content: flex-start; }
+  .viewer-toolbar-slot .viewer-tools-menu button { min-width: 52px; }
+  .viewer-tool-panel,.cfd-stage-viewer .viewer-tool-panel { top: 54px; right: 5px; left: 5px; width: auto; }
   .viewer-legend {
     display: none;
   }

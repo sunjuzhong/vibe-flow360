@@ -15,8 +15,8 @@ import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
 import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
-import { useDistanceTool } from '../hooks/useDistanceTool'
-import { DistanceToolPanel } from '../lib/viewer-tools/distance/DistanceToolPanel'
+import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
+import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspector'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
@@ -109,7 +109,7 @@ export default function SurfaceMeshWorkspace({
     currentDetail: detail,
     selectedField: review.selectedField,
   })
-  const distance = useDistanceTool({ projectId, resourceRef, annotationsModel })
+  const tools = useWorkspaceViewerTools({ projectId, resourceRef, annotationsModel })
   const metricSources = [detail?.summary, detail?.state, detail?.simulation_params]
   const status = resourceStatus(detail)
   const metrics = [
@@ -184,6 +184,7 @@ export default function SurfaceMeshWorkspace({
         </>
       )}
       viewer={(
+        <>
         <LazyViewer3D
           manifest={manifest}
           state={viewerState}
@@ -203,8 +204,9 @@ export default function SurfaceMeshWorkspace({
           clipPlane={advanced.clipPlane}
           projectId={projectId}
           resourceRef={resourceRef}
-          toolInput={distance.toolInput}
-          overlays={distance.overlays}
+          toolInput={tools.toolInput}
+          overlays={tools.overlays}
+          onDoubleClick={tools.onDoubleClick}
           captureRequest={advanced.captureRequest}
           onCapture={(dataUrl) => downloadDataUrl(
             dataUrl,
@@ -217,14 +219,15 @@ export default function SurfaceMeshWorkspace({
               <SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />
               <SurfaceAdvancedToolbar
                 clipping={advanced.clipEnabled}
-                measuring={distance.active}
                 onToggleClipping={() => advanced.setClipEnabled(!advanced.clipEnabled)}
-                onToggleMeasuring={distance.toggle}
                 onCapture={advanced.requestCapture}
               />
+              <ViewerToolsDock model={tools} />
             </div>
           )}
         />
+        <ViewerToolPanel model={tools} />
+        </>
       )}
       inspector={(
         <>
@@ -338,7 +341,6 @@ export default function SurfaceMeshWorkspace({
               void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
             }}
           />
-          <DistanceToolPanel model={distance} />
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
             Plan Volume Mesh

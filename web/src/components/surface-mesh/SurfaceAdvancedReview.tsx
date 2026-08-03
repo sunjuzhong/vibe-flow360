@@ -1,4 +1,4 @@
-import { Camera, GitCompare, Ruler, Scissors, Sparkles } from 'lucide-react'
+import { Camera, GitCompare, Scissors, Sparkles } from 'lucide-react'
 import type { ProjectItem } from '../../api/client'
 import type { UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 import type {
@@ -8,15 +8,11 @@ import type {
 
 export function SurfaceAdvancedToolbar({
   clipping,
-  measuring,
   onToggleClipping,
-  onToggleMeasuring,
   onCapture,
 }: {
   clipping: boolean
-  measuring: boolean
   onToggleClipping: () => void
-  onToggleMeasuring: () => void
   onCapture: () => void
 }) {
   return (
@@ -28,14 +24,6 @@ export function SurfaceAdvancedToolbar({
         onClick={onToggleClipping}
       >
         <Scissors size={11} /> Clip
-      </button>
-      <button
-        type="button"
-        className={measuring ? 'active' : ''}
-        aria-pressed={measuring}
-        onClick={onToggleMeasuring}
-      >
-        <Ruler size={11} /> Measure
       </button>
       <button type="button" onClick={onCapture}>
         <Camera size={11} /> Export PNG
@@ -91,7 +79,7 @@ export function SurfaceAdvancedReview({
 }) {
   return (
     <details className="surface-advanced-review">
-      <summary><span><GitCompare size={14} /> Advanced review</span><small>Compare · Clip · Measure · AI patch</small></summary>
+      <summary><span><GitCompare size={14} /> Advanced review</span><small>Compare · Clip · Export · AI patch</small></summary>
       <div className="surface-advanced-content">
         <label className="surface-compare-select">
           Compare with
