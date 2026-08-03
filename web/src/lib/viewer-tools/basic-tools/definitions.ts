@@ -2,12 +2,18 @@ import { createFixedPointTool, createOpenPointTool } from '../factories'
 import type { OverlayPrimitive, PickResult, ToolDefinition, Vector3Tuple } from '../types'
 import {
   ANGLE_TOOL_ID,
+  AREA_TOOL_ID,
+  BOX_TOOL_ID,
+  CIRCLE_TOOL_ID,
   LINE_TOOL_ID,
   POINT_TOOL_ID,
   POLYLINE_TOOL_ID,
   SPHERE_TOOL_ID,
   basicToolResultSummary,
   computeAngleResult,
+  computeAreaResult,
+  computeBoxResult,
+  computeCircleResult,
   computeLineResult,
   computePointResult,
   computePolylineResult,
@@ -16,6 +22,8 @@ import {
   midpoint,
   type BasicToolId,
   type BasicToolResult,
+  type BoxResult,
+  type CircleResult,
 } from './geometry'
 
 const COLORS: Record<BasicToolId, string> = {
@@ -24,6 +32,9 @@ const COLORS: Record<BasicToolId, string> = {
   sphere: '#34d399',
   polyline: '#fb7185',
   angle: '#facc15',
+  circle: '#22d3ee',
+  area: '#f97316',
+  box: '#60a5fa',
 }
 
 function points(points: readonly PickResult[], color: string): OverlayPrimitive[] {
@@ -32,7 +43,7 @@ function points(points: readonly PickResult[], color: string): OverlayPrimitive[
     key: `point-${index}`,
     position: pick.localPosition,
     color,
-    size: 0.018,
+    size: 9,
   }))
 }
 
@@ -55,7 +66,7 @@ function rubberBand(
     key: 'hover-point',
     position: hover.localPosition,
     color,
-    size: 0.014,
+    size: 7,
   }]
 }
 
@@ -66,6 +77,47 @@ function polylineMidpoint(pointsValue: readonly PickResult[]): Vector3Tuple {
 
 const commonPolicy = { targets: ['surface', 'line', 'point'] as const }
 
+function circlePoints(result: CircleResult, segments = 64): Vector3Tuple[] {
+  const radial: Vector3Tuple = [
+    result.points[0].position[0] - result.center[0],
+    result.points[0].position[1] - result.center[1],
+    result.points[0].position[2] - result.center[2],
+  ]
+  const radialLength = Math.hypot(...radial)
+  const firstAxis: Vector3Tuple = [
+    radial[0] / radialLength,
+    radial[1] / radialLength,
+    radial[2] / radialLength,
+  ]
+  const secondAxis: Vector3Tuple = [
+    result.normal[1] * firstAxis[2] - result.normal[2] * firstAxis[1],
+    result.normal[2] * firstAxis[0] - result.normal[0] * firstAxis[2],
+    result.normal[0] * firstAxis[1] - result.normal[1] * firstAxis[0],
+  ]
+  return Array.from({ length: segments + 1 }, (_, index) => {
+    const angle = 2 * Math.PI * index / segments
+    return [
+      result.center[0] + result.radius * (Math.cos(angle) * firstAxis[0] + Math.sin(angle) * secondAxis[0]),
+      result.center[1] + result.radius * (Math.cos(angle) * firstAxis[1] + Math.sin(angle) * secondAxis[1]),
+      result.center[2] + result.radius * (Math.cos(angle) * firstAxis[2] + Math.sin(angle) * secondAxis[2]),
+    ]
+  })
+}
+
+function boxEdges(result: BoxResult): readonly [Vector3Tuple, Vector3Tuple][] {
+  const [x0, y0, z0] = result.min
+  const [x1, y1, z1] = result.max
+  const corners: Vector3Tuple[] = [
+    [x0, y0, z0], [x1, y0, z0], [x0, y1, z0], [x1, y1, z0],
+    [x0, y0, z1], [x1, y0, z1], [x0, y1, z1], [x1, y1, z1],
+  ]
+  return [
+    [corners[0], corners[1]], [corners[0], corners[2]], [corners[1], corners[3]], [corners[2], corners[3]],
+    [corners[4], corners[5]], [corners[4], corners[6]], [corners[5], corners[7]], [corners[6], corners[7]],
+    [corners[0], corners[4]], [corners[1], corners[5]], [corners[2], corners[6]], [corners[3], corners[7]],
+  ]
+}
+
 export const pointToolDefinition = createFixedPointTool<BasicToolResult>({
   id: POINT_TOOL_ID,
   label: 'Point Marker',
@@ -74,7 +126,7 @@ export const pointToolDefinition = createFixedPointTool<BasicToolResult>({
   computeResult: computePointResult,
   createOverlays: ({ points: pointsValue, hover }) => {
     if (pointsValue.length) return points(pointsValue, COLORS.point)
-    return hover ? [{ kind: 'point', key: 'hover-point', position: hover.localPosition, color: COLORS.point, size: 0.014 }] : []
+    return hover ? [{ kind: 'point', key: 'hover-point', position: hover.localPosition, color: COLORS.point, size: 7 }] : []
   },
   inspector: {
     title: 'Point marker',
@@ -201,12 +253,101 @@ export const angleToolDefinition = createFixedPointTool<BasicToolResult>({
   },
 })
 
+export const circleToolDefinition = createFixedPointTool<BasicToolResult>({
+  id: CIRCLE_TOOL_ID,
+  label: 'Circle',
+  pointCount: 3,
+  pickPolicy: commonPolicy,
+  computeResult: computeCircleResult,
+  createOverlays: ({ points: pointsValue, hover, result }) => {
+    const primitives = points(pointsValue, COLORS.circle)
+    if (result?.kind === 'circle') {
+      primitives.push({ kind: 'polyline', key: 'circle', points: circlePoints(result), color: COLORS.circle, width: 2 })
+      primitives.push({ kind: 'label', key: 'circle-radius', position: result.points[0].position, text: `r ${formatNumber(result.radius)} ${result.unit}`, color: COLORS.circle })
+    }
+    return [...primitives, ...rubberBand(pointsValue, hover, COLORS.circle)]
+  },
+  inspector: {
+    title: 'Circle',
+    fields: [
+      { key: 'radius', label: 'Radius', valuePath: 'radius', format: 'distance' },
+      { key: 'circumference', label: 'Circumference', valuePath: 'circumference', format: 'distance' },
+      { key: 'center', label: 'Center', valuePath: 'center', format: 'vector' },
+    ],
+  },
+})
+
+export const areaToolDefinition = createOpenPointTool<BasicToolResult>({
+  id: AREA_TOOL_ID,
+  label: 'Area',
+  minPoints: 3,
+  pickPolicy: commonPolicy,
+  computeResult: computeAreaResult,
+  createOverlays: ({ points: pointsValue, hover, result }) => {
+    const primitives = points(pointsValue, COLORS.area)
+    if (pointsValue.length >= 2) {
+      const positions = pointsValue.map(({ localPosition }) => localPosition)
+      primitives.push({
+        kind: 'polyline',
+        key: 'area-outline',
+        points: result?.kind === 'area' ? [...positions, positions[0]] : positions,
+        color: COLORS.area,
+        width: 2,
+      })
+    }
+    if (result?.kind === 'area') primitives.push({
+      kind: 'label', key: 'area-label', position: result.centroid,
+      text: `${formatNumber(result.area)} ${result.unit}`, color: COLORS.area,
+    })
+    return [...primitives, ...rubberBand(pointsValue, hover, COLORS.area)]
+  },
+  inspector: {
+    title: 'Area',
+    fields: [
+      { key: 'area', label: 'Area', valuePath: 'area', format: 'number', unit: 'model units²' },
+      { key: 'centroid', label: 'Centroid', valuePath: 'centroid', format: 'vector' },
+    ],
+  },
+})
+
+export const boxToolDefinition = createFixedPointTool<BasicToolResult>({
+  id: BOX_TOOL_ID,
+  label: 'Box',
+  pointCount: 2,
+  pickPolicy: commonPolicy,
+  computeResult: computeBoxResult,
+  createOverlays: ({ points: pointsValue, hover, result }) => {
+    const primitives = points(pointsValue, COLORS.box)
+    if (result?.kind === 'box') {
+      boxEdges(result).forEach((edge, index) => primitives.push({
+        kind: 'polyline', key: `box-edge-${index}`, points: edge, color: COLORS.box, width: 2,
+      }))
+      primitives.push({
+        kind: 'label', key: 'box-label', position: result.center,
+        text: `${formatNumber(result.volume)} ${result.unit}³`, color: COLORS.box,
+      })
+    }
+    return [...primitives, ...rubberBand(pointsValue, hover, COLORS.box)]
+  },
+  inspector: {
+    title: 'Box',
+    fields: [
+      { key: 'dimensions', label: 'Dimensions', valuePath: 'dimensions', format: 'vector' },
+      { key: 'volume', label: 'Volume', valuePath: 'volume', format: 'number', unit: 'model units³' },
+      { key: 'center', label: 'Center', valuePath: 'center', format: 'vector' },
+    ],
+  },
+})
+
 export const BASIC_TOOL_DEFINITIONS: Readonly<Record<BasicToolId, ToolDefinition<BasicToolResult>>> = {
   point: pointToolDefinition,
   line: lineToolDefinition,
   sphere: sphereToolDefinition,
   polyline: polylineToolDefinition,
   angle: angleToolDefinition,
+  circle: circleToolDefinition,
+  area: areaToolDefinition,
+  box: boxToolDefinition,
 }
 
 export const BASIC_TOOLS = Object.values(BASIC_TOOL_DEFINITIONS)

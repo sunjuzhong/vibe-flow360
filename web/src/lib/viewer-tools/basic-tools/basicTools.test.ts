@@ -4,14 +4,21 @@ import type { PickResult, ViewerAnnotation } from '../types'
 import {
   BASIC_TOOL_DEFINITIONS,
   angleToolDefinition,
+  areaToolDefinition,
   asBasicToolAnnotation,
   basicToolAnnotationOverlay,
   basicToolResultSummary,
   computeAngleResult,
+  computeAreaResult,
+  computeBoxResult,
+  computeCircleResult,
   computeLineResult,
   computePointResult,
   computePolylineResult,
   computeSphereResult,
+  boxToolDefinition,
+  circleToolDefinition,
+  isBasicToolResult,
   lineToolDefinition,
   pointToolDefinition,
   polylineToolDefinition,
@@ -67,6 +74,9 @@ describe('basic viewer tool calculations', () => {
     expect(sphereToolDefinition.completion).toEqual({ kind: 'fixed', pointCount: 2 })
     expect(angleToolDefinition.completion).toEqual({ kind: 'fixed', pointCount: 3 })
     expect(polylineToolDefinition.completion).toEqual({ kind: 'open', minPoints: 2 })
+    expect(circleToolDefinition.completion).toEqual({ kind: 'fixed', pointCount: 3 })
+    expect(areaToolDefinition.completion).toEqual({ kind: 'open', minPoints: 3 })
+    expect(boxToolDefinition.completion).toEqual({ kind: 'fixed', pointCount: 2 })
   })
 
   it('computes and serializes Point, Line, and Sphere results', () => {
@@ -111,6 +121,47 @@ describe('basic viewer tool calculations', () => {
     ])).toMatchObject({ degrees: null, radians: null })
   })
 
+  it('computes a 3D circle from three points and rejects collinear input', () => {
+    const result = computeCircleResult([
+      pick([1, 0, 2]), pick([0, 1, 2]), pick([-1, 0, 2]),
+    ])
+    expect(result.kind).toBe('circle')
+    expect(result.center[0]).toBeCloseTo(0)
+    expect(result.center[1]).toBeCloseTo(0)
+    expect(result.center[2]).toBeCloseTo(2)
+    expect(result.normal).toEqual([0, 0, 1])
+    expect(result.radius).toBeCloseTo(1)
+    expect(result.circumference).toBeCloseTo(2 * Math.PI)
+    expect(() => computeCircleResult([
+      pick([0, 0, 0]), pick([1, 0, 0]), pick([2, 0, 0]),
+    ])).toThrow('non-collinear')
+  })
+
+  it('computes closed polygon area and an axis-aligned box', () => {
+    const area = computeAreaResult([
+      pick([0, 0, 1]), pick([4, 0, 1]), pick([4, 3, 1]), pick([0, 3, 1]),
+    ])
+    expect(area).toMatchObject({ kind: 'area', area: 12, centroid: [2, 1.5, 1] })
+
+    const box = computeBoxResult([pick([4, -1, 5]), pick([1, 3, -1])])
+    expect(box).toMatchObject({
+      kind: 'box', min: [1, -1, -1], max: [4, 3, 5], center: [2.5, 1, 2],
+      dimensions: [3, 4, 6], volume: 72,
+    })
+  })
+
+  it('validates persisted Circle, Area, and Box results', () => {
+    const circle = computeCircleResult([pick([1, 0, 0]), pick([0, 1, 0]), pick([-1, 0, 0])])
+    const area = computeAreaResult([pick([0, 0, 0]), pick([1, 0, 0]), pick([0, 1, 0])])
+    const box = computeBoxResult([pick([0, 0, 0]), pick([1, 2, 3])])
+    expect(isBasicToolResult(circle)).toBe(true)
+    expect(isBasicToolResult(area)).toBe(true)
+    expect(isBasicToolResult(box)).toBe(true)
+    expect(isBasicToolResult({ ...circle, center: [Number.NaN, 0, 0] })).toBe(false)
+    expect(isBasicToolResult({ ...area, points: [] })).toBe(false)
+    expect(isBasicToolResult({ ...box, dimensions: [1, Number.POSITIVE_INFINITY, 3] })).toBe(false)
+  })
+
   it('rejects non-finite local, world, and snap values instead of serializing NaN', () => {
     expect(() => computePointResult([{ ...pick([0, 0, 0]), localPosition: [NaN, 0, 0] }]))
       .toThrow('non-finite local position')
@@ -143,6 +194,9 @@ describe('basic viewer tool runtime and overlays', () => {
       { definition: sphereToolDefinition, points: [pick([0, 0, 0]), pick([1, 0, 0])], result: computeSphereResult([pick([0, 0, 0]), pick([1, 0, 0])]) },
       { definition: polylineToolDefinition, points: [pick([0, 0, 0]), pick([1, 0, 0]), pick([1, 1, 0])], result: computePolylineResult([pick([0, 0, 0]), pick([1, 0, 0]), pick([1, 1, 0])]) },
       { definition: angleToolDefinition, points: [pick([1, 0, 0]), pick([0, 0, 0]), pick([0, 1, 0])], result: computeAngleResult([pick([1, 0, 0]), pick([0, 0, 0]), pick([0, 1, 0])]) },
+      { definition: circleToolDefinition, points: [pick([1, 0, 0]), pick([0, 1, 0]), pick([-1, 0, 0])], result: computeCircleResult([pick([1, 0, 0]), pick([0, 1, 0]), pick([-1, 0, 0])]) },
+      { definition: areaToolDefinition, points: [pick([0, 0, 0]), pick([1, 0, 0]), pick([0, 1, 0])], result: computeAreaResult([pick([0, 0, 0]), pick([1, 0, 0]), pick([0, 1, 0])]) },
+      { definition: boxToolDefinition, points: [pick([0, 0, 0]), pick([1, 2, 3])], result: computeBoxResult([pick([0, 0, 0]), pick([1, 2, 3])]) },
     ] as const
 
     cases.forEach(({ definition, points, result }) => {

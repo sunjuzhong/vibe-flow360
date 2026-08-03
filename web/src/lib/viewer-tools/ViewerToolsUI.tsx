@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, Circle, MapPin, Minus, Route, Ruler, Triangle, Wrench, X } from 'lucide-react'
+import { Box, ChevronDown, Circle, CircleDot, LandPlot, MapPin, Minus, Route, Ruler, Triangle, Wrench, X } from 'lucide-react'
 import type { WorkspaceViewerToolsModel } from '../../hooks/useWorkspaceViewerTools'
 import type { BasicToolId } from './basic-tools'
 import { formatDistance } from './distance'
@@ -11,6 +11,9 @@ const toolIcons = {
   sphere: Circle,
   polyline: Route,
   angle: Triangle,
+  circle: CircleDot,
+  area: LandPlot,
+  box: Box,
 } as const
 
 export function ViewerToolsDock({

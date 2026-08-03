@@ -38,7 +38,9 @@ describe('ViewerToolsUI', () => {
   it('opens one compact launcher containing every registered tool', () => {
     const html = renderToStaticMarkup(<ViewerToolsDock model={model()} initiallyOpen />)
     expect(html).toContain('aria-expanded="true"')
-    for (const label of ['Tools', 'Distance', 'Point Marker', 'Line', 'Sphere', 'Polyline', 'Angle']) {
+    for (const label of [
+      'Tools', 'Distance', 'Point Marker', 'Line', 'Sphere', 'Polyline', 'Angle', 'Circle', 'Area', 'Box',
+    ]) {
       expect(html).toContain(label)
     }
   })

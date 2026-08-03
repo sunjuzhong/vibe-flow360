@@ -5,6 +5,9 @@ export const LINE_TOOL_ID = 'line'
 export const SPHERE_TOOL_ID = 'sphere'
 export const POLYLINE_TOOL_ID = 'polyline'
 export const ANGLE_TOOL_ID = 'angle'
+export const CIRCLE_TOOL_ID = 'circle'
+export const AREA_TOOL_ID = 'area'
+export const BOX_TOOL_ID = 'box'
 
 export type BasicToolId =
   | typeof POINT_TOOL_ID
@@ -12,6 +15,9 @@ export type BasicToolId =
   | typeof SPHERE_TOOL_ID
   | typeof POLYLINE_TOOL_ID
   | typeof ANGLE_TOOL_ID
+  | typeof CIRCLE_TOOL_ID
+  | typeof AREA_TOOL_ID
+  | typeof BOX_TOOL_ID
 
 export type SerializedPick = {
   readonly position: Vector3Tuple
@@ -63,12 +69,44 @@ export type AngleResult = {
   readonly points: readonly [SerializedPick, SerializedPick, SerializedPick]
 }
 
+export type CircleResult = {
+  readonly kind: 'circle'
+  readonly center: Vector3Tuple
+  readonly normal: Vector3Tuple
+  readonly radius: number
+  readonly circumference: number
+  readonly points: readonly [SerializedPick, SerializedPick, SerializedPick]
+  readonly unit: string
+}
+
+export type AreaResult = {
+  readonly kind: 'area'
+  readonly area: number
+  readonly centroid: Vector3Tuple
+  readonly points: readonly SerializedPick[]
+  readonly unit: string
+}
+
+export type BoxResult = {
+  readonly kind: 'box'
+  readonly min: Vector3Tuple
+  readonly max: Vector3Tuple
+  readonly center: Vector3Tuple
+  readonly dimensions: Vector3Tuple
+  readonly volume: number
+  readonly endpoints: readonly [SerializedPick, SerializedPick]
+  readonly unit: string
+}
+
 export type BasicToolResult =
   | PointResult
   | LineResult
   | SphereResult
   | PolylineResult
   | AngleResult
+  | CircleResult
+  | AreaResult
+  | BoxResult
 
 function requirePointCount(points: readonly PickResult[], expected: number, label: string): void {
   if (points.length !== expected) throw new Error(`${label} requires exactly ${expected} point${expected === 1 ? '' : 's'}`)
@@ -114,6 +152,22 @@ export function subtract(a: Vector3Tuple, b: Vector3Tuple): Vector3Tuple {
 
 export function vectorLength(vector: Vector3Tuple): number {
   return Math.hypot(vector[0], vector[1], vector[2])
+}
+
+function cross(a: Vector3Tuple, b: Vector3Tuple): Vector3Tuple {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ]
+}
+
+function scale(vector: Vector3Tuple, factor: number): Vector3Tuple {
+  return [vector[0] * factor, vector[1] * factor, vector[2] * factor]
+}
+
+function add(a: Vector3Tuple, b: Vector3Tuple): Vector3Tuple {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
 
 export function distanceBetween(a: Vector3Tuple, b: Vector3Tuple): number {
@@ -190,6 +244,86 @@ export function computeAngleResult(points: readonly PickResult[]): AngleResult {
   }
 }
 
+export function computeCircleResult(points: readonly PickResult[]): CircleResult {
+  requirePointCount(points, 3, 'Circle')
+  points.forEach(finitePosition)
+  const origin = points[0].localPosition
+  const first = subtract(points[1].localPosition, origin)
+  const second = subtract(points[2].localPosition, origin)
+  const planeNormal = cross(first, second)
+  const normalLength = vectorLength(planeNormal)
+  if (normalLength <= Number.EPSILON) {
+    throw new Error('Circle requires three non-collinear points')
+  }
+  const denominator = 2 * normalLength * normalLength
+  const firstSquared = vectorLength(first) ** 2
+  const secondSquared = vectorLength(second) ** 2
+  const offset = scale(add(
+    scale(cross(second, planeNormal), firstSquared),
+    scale(cross(planeNormal, first), secondSquared),
+  ), 1 / denominator)
+  const center = add(origin, offset)
+  const radius = vectorLength(offset)
+  return {
+    kind: 'circle',
+    center,
+    normal: scale(planeNormal, 1 / normalLength),
+    radius,
+    circumference: 2 * Math.PI * radius,
+    points: [serializePick(points[0], 0), serializePick(points[1], 1), serializePick(points[2], 2)],
+    unit: 'model units',
+  }
+}
+
+export function computeAreaResult(points: readonly PickResult[]): AreaResult {
+  if (points.length < 3) throw new Error('Area requires at least three points')
+  points.forEach(finitePosition)
+  let areaVector: Vector3Tuple = [0, 0, 0]
+  let centroid: Vector3Tuple = [0, 0, 0]
+  points.forEach((pick, index) => {
+    areaVector = add(areaVector, cross(
+      pick.localPosition,
+      points[(index + 1) % points.length].localPosition,
+    ))
+    centroid = add(centroid, pick.localPosition)
+  })
+  centroid = scale(centroid, 1 / points.length)
+  return {
+    kind: 'area',
+    area: vectorLength(areaVector) / 2,
+    centroid,
+    points: points.map(serializePick),
+    unit: 'model units²',
+  }
+}
+
+export function computeBoxResult(points: readonly PickResult[]): BoxResult {
+  requirePointCount(points, 2, 'Box')
+  const first = finitePosition(points[0], 0)
+  const second = finitePosition(points[1], 1)
+  const min: Vector3Tuple = [
+    Math.min(first[0], second[0]),
+    Math.min(first[1], second[1]),
+    Math.min(first[2], second[2]),
+  ]
+  const max: Vector3Tuple = [
+    Math.max(first[0], second[0]),
+    Math.max(first[1], second[1]),
+    Math.max(first[2], second[2]),
+  ]
+  const dimensions = subtract(max, min)
+  return {
+    kind: 'box',
+    min,
+    max,
+    center: midpoint(min, max),
+    dimensions,
+    volume: dimensions[0] * dimensions[1] * dimensions[2],
+    endpoints: [serializePick(points[0], 0), serializePick(points[1], 1)],
+    unit: 'model units',
+  }
+}
+
 function finiteNumber(value: JsonValue): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
@@ -212,6 +346,26 @@ export function isBasicToolResult(value: JsonValue): value is BasicToolResult {
       return (candidate.degrees === null || finiteNumber(candidate.degrees))
         && (candidate.radians === null || finiteNumber(candidate.radians))
         && Array.isArray(candidate.points) && candidate.points.length === 3
+    case 'circle':
+      return finiteNumber(candidate.radius) && finiteNumber(candidate.circumference)
+        && Array.isArray(candidate.center) && candidate.center.length === 3
+        && candidate.center.every(finiteNumber)
+        && Array.isArray(candidate.normal) && candidate.normal.length === 3
+        && candidate.normal.every(finiteNumber)
+        && Array.isArray(candidate.points) && candidate.points.length === 3
+    case 'area':
+      return finiteNumber(candidate.area)
+        && Array.isArray(candidate.centroid) && candidate.centroid.length === 3
+        && candidate.centroid.every(finiteNumber) && Array.isArray(candidate.points)
+        && candidate.points.length >= 3
+    case 'box':
+      return finiteNumber(candidate.volume)
+        && Array.isArray(candidate.min) && candidate.min.length === 3 && candidate.min.every(finiteNumber)
+        && Array.isArray(candidate.max) && candidate.max.length === 3 && candidate.max.every(finiteNumber)
+        && Array.isArray(candidate.center) && candidate.center.length === 3 && candidate.center.every(finiteNumber)
+        && Array.isArray(candidate.dimensions) && candidate.dimensions.length === 3
+        && candidate.dimensions.every(finiteNumber)
+        && Array.isArray(candidate.endpoints) && candidate.endpoints.length === 2
     default:
       return false
   }
@@ -224,6 +378,9 @@ export function basicToolResultSummary(result: BasicToolResult): string {
     case 'sphere': return `Sphere · radius ${formatNumber(result.radius)} ${result.unit}`
     case 'polyline': return `Polyline · ${result.segmentLengths.length} segments · ${formatNumber(result.length)} ${result.unit}`
     case 'angle': return `Angle · ${result.degrees === null ? 'undefined' : `${formatNumber(result.degrees)}°`}`
+    case 'circle': return `Circle · radius ${formatNumber(result.radius)} ${result.unit}`
+    case 'area': return `Area · ${formatNumber(result.area)} ${result.unit}`
+    case 'box': return `Box · ${formatNumber(result.dimensions[0])} × ${formatNumber(result.dimensions[1])} × ${formatNumber(result.dimensions[2])} ${result.unit}`
   }
 }
 
