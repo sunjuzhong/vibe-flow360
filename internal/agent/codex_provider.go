@@ -109,6 +109,8 @@ func (s *Service) chatWithCodex(
 }
 
 func codexPrompt(systemPrompt, userPrompt string) string {
+	systemPrompt = strings.ToValidUTF8(systemPrompt, "\uFFFD")
+	userPrompt = strings.ToValidUTF8(userPrompt, "\uFFFD")
 	return fmt.Sprintf(`%s
 
 External provider safety contract:

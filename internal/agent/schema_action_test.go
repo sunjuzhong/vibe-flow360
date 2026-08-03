@@ -47,6 +47,76 @@ func TestParseAcceptsCreatePlanAction(t *testing.T) {
 	}
 }
 
+func TestParseNormalizesSingletonObjectField(t *testing.T) {
+	raw := `{
+  "version":"v1","kind":"create-plan","message":"Plan",
+  "proposals":[{
+    "id":"p1","action":"Case","target":"case","name":"test","intent":"Run case",
+    "patch":{},"fields":{"key":"operating_condition.alpha","value":3,"provenance":"provided"}
+  }]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := action.Proposals[0].Fields
+	if len(fields) != 1 || fields[0].Key != "operating_condition.alpha" {
+		t.Fatalf("expected singleton field normalization, got %#v", fields)
+	}
+}
+
+func TestParseNormalizesPathKeyedFieldObject(t *testing.T) {
+	raw := `{
+  "version":"v1","kind":"create-plan","message":"Plan",
+  "proposals":[{
+    "id":"p1","action":"Case","target":"case","name":"test","intent":"Run case",
+    "patch":{},"fields":{
+      "time_stepping.max_steps":{"value":1000,"provenance":"inferred"},
+      "operating_condition.alpha":{"value":3,"provenance":"provided"}
+    }
+  }]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := action.Proposals[0].Fields
+	if len(fields) != 2 {
+		t.Fatalf("expected two normalized fields, got %#v", fields)
+	}
+	if fields[0].Key != "operating_condition.alpha" || fields[1].Key != "time_stepping.max_steps" {
+		t.Fatalf("expected deterministic path keys, got %#v", fields)
+	}
+}
+
+func TestParseRejectsPrimitiveFieldMap(t *testing.T) {
+	raw := `{
+  "version":"v1","kind":"create-plan","message":"Plan",
+  "proposals":[{
+    "id":"p1","action":"Case","target":"case","name":"test","intent":"Run case",
+    "patch":{},"fields":{"operating_condition.alpha":3}
+  }]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("expected malformed field map to enter repair, got %v", err)
+	}
+}
+
+func TestParseRejectsNonObjectPatch(t *testing.T) {
+	raw := `{
+  "version":"v1","kind":"create-plan","message":"Plan",
+  "proposals":[{
+    "id":"p1","action":"Case","target":"case","name":"test","intent":"Run case",
+    "patch":[],"fields":[]
+  }]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidPatch) {
+		t.Fatalf("expected ErrInvalidPatch, got %v", err)
+	}
+}
+
 func TestParseDefaultsVersion(t *testing.T) {
 	raw := `{
   "kind": "request-missing-input",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
@@ -55,7 +56,9 @@ When you determine the user's intent, you MUST respond with a valid JSON object 
    - intent: engineering objective
    - patch: valid JSON merge-patch for SimulationParams
    - branch_preview: short slug for the branch
-   - fields: key-value pairs with provenance (provided/derived/inferred/defaulted)
+   - fields: an ARRAY of objects. Every object must have exactly this shape:
+     {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional explanation"}
+     Never return fields as a JSON object or map. Use [] when there are no fields.
 
 2. **request-missing-input**: Use when critical information is missing. Ask specific questions:
    - field: the SimulationParams path that needs input
@@ -162,10 +165,22 @@ func parseContextPayload(contextStr string) ChatContextPayload {
 }
 
 func truncate(s string, maxBytes int) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if maxBytes <= 0 {
+		return ""
+	}
 	if len(s) <= maxBytes {
 		return s
 	}
-	return s[:maxBytes-len("...(truncated)")] + "...(truncated)"
+	const suffix = "...(truncated)"
+	if maxBytes <= len(suffix) {
+		return suffix[:maxBytes]
+	}
+	cut := maxBytes - len(suffix)
+	for cut > 0 && !utf8.ValidString(s[:cut]) {
+		cut--
+	}
+	return s[:cut] + suffix
 }
 
 func truncateRaw(raw json.RawMessage, maxBytes int) json.RawMessage {
@@ -229,9 +244,7 @@ func BuildRecoveryPrompt(input RecoveryPromptInput) (string, ChatContextPayload)
 	if len(input.FormSchema) > 0 && len(ctx.FormSchema) == 0 {
 		ctx.FormSchema = truncateRaw(input.FormSchema, maxSchemaBytes)
 	}
-	if len(input.UserHistoryFeedback) > maxUserFeedbackBytes {
-		input.UserHistoryFeedback = input.UserHistoryFeedback[:maxUserFeedbackBytes] + "...(truncated)"
-	}
+	input.UserHistoryFeedback = truncate(input.UserHistoryFeedback, maxUserFeedbackBytes)
 
 	evidenceSummary := summarizeEvidence(input.Intervention.Evidence)
 	diagnosisSummary := formatDiagnosisForPrompt(input.Intervention.Diagnosis)

@@ -200,7 +200,11 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
 - version: "v1"
 - kind: "create-plan" or "request-missing-input"
 - message: string (required)
-- proposals: array (for create-plan)
+- proposals: array (for create-plan). Every proposal must contain id, action, target, name,
+  intent, patch (a JSON object), branch_preview, and fields.
+- proposals[].fields: ARRAY of objects shaped exactly as
+  {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional"}.
+  Never emit fields as an object/map; use [] when empty.
 - questions: array (for request-missing-input)
 - warnings: array of strings
 - assumptions: array of strings

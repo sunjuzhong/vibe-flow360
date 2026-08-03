@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
@@ -51,6 +52,59 @@ type Proposal struct {
 	BranchPreview   string          `json:"branch_preview"`
 	Fields          []Field         `json:"fields"`
 	ValidationHints []string        `json:"validation_hints,omitempty"`
+}
+
+// UnmarshalJSON keeps the wire contract canonical (fields is an array), while
+// narrowly recovering the two object shapes commonly emitted by LLMs. Any
+// other shape remains an error so malformed actions still enter repair.
+func (p *Proposal) UnmarshalJSON(data []byte) error {
+	type proposalAlias Proposal
+	var wire struct {
+		proposalAlias
+		Fields json.RawMessage `json:"fields"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*p = Proposal(wire.proposalAlias)
+	if len(wire.Fields) == 0 || string(wire.Fields) == "null" {
+		return nil
+	}
+
+	if err := json.Unmarshal(wire.Fields, &p.Fields); err == nil {
+		return nil
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(wire.Fields, &object); err != nil {
+		return fmt.Errorf("fields must be an array of field objects: %w", err)
+	}
+	if _, singleton := object["key"]; singleton {
+		var field Field
+		if err := json.Unmarshal(wire.Fields, &field); err != nil {
+			return fmt.Errorf("invalid field object: %w", err)
+		}
+		p.Fields = []Field{field}
+		return nil
+	}
+
+	keys := make([]string, 0, len(object))
+	for key := range object {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	p.Fields = make([]Field, 0, len(keys))
+	for _, key := range keys {
+		var field Field
+		if err := json.Unmarshal(object[key], &field); err != nil {
+			return fmt.Errorf("field %q must be an object: %w", key, err)
+		}
+		if strings.TrimSpace(field.Key) == "" {
+			field.Key = key
+		}
+		p.Fields = append(p.Fields, field)
+	}
+	return nil
 }
 
 type Field struct {
@@ -208,7 +262,7 @@ func validateActionSelfConsistency(action Action) error {
 }
 
 func validateProposal(p Proposal) error {
-	if strings.TrimSpace(p.SourceType) == "" || strings.TrimSpace(p.Target) == "" || strings.TrimSpace(p.Name) == "" {
+	if strings.TrimSpace(p.ID) == "" || strings.TrimSpace(p.SourceType) == "" || strings.TrimSpace(p.Target) == "" || strings.TrimSpace(p.Name) == "" || strings.TrimSpace(p.Intent) == "" {
 		return ErrMissingFields
 	}
 	if allowed, ok := validTargets[p.SourceType]; ok {
@@ -217,12 +271,19 @@ func validateProposal(p Proposal) error {
 		}
 	}
 	for _, field := range p.Fields {
+		if strings.TrimSpace(field.Key) == "" {
+			return ErrMissingFields
+		}
 		if !validProvenance(field.Provenance) {
 			return fmt.Errorf("%w: %q", ErrInvalidProvenance, field.Provenance)
 		}
 	}
-	if len(p.Patch) > 0 && !json.Valid(p.Patch) {
+	if len(p.Patch) == 0 || !json.Valid(p.Patch) {
 		return fmt.Errorf("%w: proposal %s", ErrInvalidPatch, p.ID)
+	}
+	var patchObject map[string]json.RawMessage
+	if err := json.Unmarshal(p.Patch, &patchObject); err != nil || patchObject == nil {
+		return fmt.Errorf("%w: proposal %s must be a JSON object", ErrInvalidPatch, p.ID)
 	}
 	return nil
 }

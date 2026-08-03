@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestAgentSystemPromptDeclaresAgentActionV1(t *testing.T) {
@@ -211,6 +212,36 @@ func TestTruncateLongString(t *testing.T) {
 	}
 	if !strings.HasSuffix(result, "...(truncated)") {
 		t.Error("missing truncation marker")
+	}
+}
+
+func TestTruncatePreservesUTF8AtByteBoundary(t *testing.T) {
+	result := truncate(strings.Repeat("汉", 20), 20)
+	if !utf8.ValidString(result) {
+		t.Fatalf("truncate returned invalid UTF-8: %q", result)
+	}
+	if len(result) > 20 {
+		t.Fatalf("expected at most 20 bytes, got %d", len(result))
+	}
+	if !strings.HasSuffix(result, "...(truncated)") {
+		t.Fatalf("missing truncation marker: %q", result)
+	}
+}
+
+func TestTruncateRepairsInvalidUTF8(t *testing.T) {
+	result := truncate("有效"+string([]byte{0xff})+"内容", 100)
+	if !utf8.ValidString(result) {
+		t.Fatalf("truncate returned invalid UTF-8: %q", result)
+	}
+	if !strings.Contains(result, "�") {
+		t.Fatalf("expected invalid byte replacement, got %q", result)
+	}
+}
+
+func TestCodexPromptRepairsInvalidUTF8AtProviderBoundary(t *testing.T) {
+	result := codexPrompt("system"+string([]byte{0xff}), "用户"+string([]byte{0xfe}))
+	if !utf8.ValidString(result) {
+		t.Fatalf("Codex stdin prompt is not valid UTF-8: %q", result)
 	}
 }
 
