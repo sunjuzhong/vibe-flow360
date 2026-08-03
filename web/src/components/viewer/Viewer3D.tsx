@@ -9,6 +9,20 @@ import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFie
 import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
+import {
+  VIEWER_OVERLAY_LAYER,
+  ViewerInputController,
+  ViewerOverlayLayer,
+  buildPointerRay,
+  pickScene,
+  resolvePickCandidate,
+  type OverlayAnnotation,
+  type OverlayPrimitive,
+  type ResourceRef,
+  type ToolInputConsumer,
+  type ViewerOverlayFrame,
+  type ViewerPointerEvent,
+} from '../../lib/viewer-tools'
 import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSelection } from './ViewerPrecisionControl'
 
 export type MeshGroupData = {
@@ -60,6 +74,8 @@ export type ViewerCameraCommand = {
   nonce: number
 }
 
+export type ViewerOverlayContent = Omit<ViewerOverlayFrame, 'resourceRef' | 'assetWorldMatrix'>
+
 export type ViewerState =
   | { status: 'idle' }
   | { status: 'loading'; progress: number }
@@ -87,6 +103,10 @@ type Props = {
   clipPlane?: ViewerClipPlane | null
   measurementPoints?: Array<[number, number, number]>
   onPickPoint?: (point: [number, number, number]) => void
+  projectId?: string
+  resourceRef?: ResourceRef
+  toolInput?: ToolInputConsumer
+  overlays?: ViewerOverlayContent | null
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
@@ -118,6 +138,10 @@ export function Viewer3D({
   clipPlane,
   measurementPoints = [],
   onPickPoint,
+  projectId,
+  resourceRef,
+  toolInput,
+  overlays,
   captureRequest = 0,
   onCapture,
   showFieldPanel = true,
@@ -138,7 +162,8 @@ export function Viewer3D({
   const loadedAssetURLRef = useRef<string | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
-  const measurementOverlayRef = useRef<THREE.Group | null>(null)
+  const annotationOverlayRef = useRef<ViewerOverlayLayer | null>(null)
+  const inputControllerRef = useRef<ViewerInputController | null>(null)
   const normalsOverlayRef = useRef<THREE.Group | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
@@ -174,6 +199,35 @@ export function Viewer3D({
   const effectiveWireframe = wireframe ?? wireframeOn
   const precisionSelection = precision.assetURL === manifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
+  const activeResourceRef = useMemo<ResourceRef | null>(() => {
+    if (resourceRef) return resourceRef
+    if (!manifest?.asset_url) return null
+    return { id: manifest.asset_url, type: manifest.format || 'viewer-asset' }
+  }, [manifest?.asset_url, manifest?.format, resourceRef])
+  const legacyMeasurementAnnotations = useMemo<readonly OverlayAnnotation[]>(() => {
+    if (!activeResourceRef || measurementPoints.length === 0) return []
+    const primitives: OverlayPrimitive[] = measurementPoints.map((point, index) => ({
+      kind: 'point' as const,
+      key: `point-${index}`,
+      position: point,
+      color: '#e06b3c',
+      size: 8,
+    }))
+    if (measurementPoints.length > 1) {
+      primitives.push({
+        kind: 'polyline' as const,
+        key: 'line',
+        points: measurementPoints,
+        color: '#e06b3c',
+      })
+    }
+    return [{
+      annotationId: '__legacy_measurement__',
+      coordinateFrame: { kind: 'asset-local', resourceRef: activeResourceRef },
+      primitives,
+      state: 'draft',
+    }]
+  }, [activeResourceRef, measurementPoints])
   const manifestEntityVisibility = useMemo(() => [
     ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
     ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
@@ -220,6 +274,7 @@ export function Viewer3D({
     const width = container.clientWidth || 400
     const height = container.clientHeight || 300
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 10000)
+    camera.layers.enable(VIEWER_OVERLAY_LAYER)
     camera.position.set(3, 2.5, 4)
     camera.lookAt(0, 0, 0)
 
@@ -359,6 +414,8 @@ export function Viewer3D({
     if (!container) return
 
     const { renderer, scene } = createScene(container)
+    const annotationOverlay = new ViewerOverlayLayer(scene, { layer: VIEWER_OVERLAY_LAYER })
+    annotationOverlayRef.current = annotationOverlay
 
     let rafId: number
     const animate = () => {
@@ -375,6 +432,9 @@ export function Viewer3D({
 
     return () => {
       cancelAnimationFrame(rafId)
+      annotationOverlay.dispose()
+      if (annotationOverlayRef.current === annotationOverlay) annotationOverlayRef.current = null
+      inputControllerRef.current = null
       renderer.dispose()
       controlsRef.current?.dispose()
       assetDisposeRef.current?.()
@@ -561,45 +621,23 @@ export function Viewer3D({
   }, [assetState.status, clipPlane])
 
   useEffect(() => {
-    const scene = sceneRef.current
+    const layer = annotationOverlayRef.current
     const asset = assetRef.current
-    if (!scene) return
-    if (measurementOverlayRef.current) {
-      scene.remove(measurementOverlayRef.current)
-      disposeObject(measurementOverlayRef.current)
-      measurementOverlayRef.current = null
+    if (!layer) return
+    if (!asset || !activeResourceRef) {
+      layer.clear()
+      return
     }
-    if (!asset || measurementPoints.length === 0) return
     asset.updateMatrixWorld(true)
-    const overlay = new THREE.Group()
-    overlay.name = '__measurement__'
-    const points = measurementPoints.map((point) => asset.localToWorld(new THREE.Vector3(...point)))
-    points.forEach((point) => {
-      const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, 12, 8),
-        new THREE.MeshBasicMaterial({ color: 0xe06b3c, depthTest: false }),
-      )
-      marker.position.copy(point)
-      marker.renderOrder = 20
-      overlay.add(marker)
+    layer.update({
+      resourceRef: activeResourceRef,
+      assetWorldMatrix: asset.matrixWorld,
+      saved: overlays?.saved,
+      draft: [...(overlays?.draft ?? []), ...legacyMeasurementAnnotations],
+      hover: overlays?.hover,
+      visible: overlays?.visible,
     })
-    if (points.length === 2) {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points)
-      const line = new THREE.Line(
-        geometry,
-        new THREE.LineBasicMaterial({ color: 0xe06b3c, depthTest: false }),
-      )
-      line.renderOrder = 19
-      overlay.add(line)
-    }
-    scene.add(overlay)
-    measurementOverlayRef.current = overlay
-    return () => {
-      scene.remove(overlay)
-      disposeObject(overlay)
-      if (measurementOverlayRef.current === overlay) measurementOverlayRef.current = null
-    }
-  }, [assetState.status, measurementPoints])
+  }, [activeResourceRef, assetState.status, legacyMeasurementAnnotations, overlays])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -654,78 +692,122 @@ export function Viewer3D({
     }
   }
 
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const resolvePointerPick = (event: ViewerPointerEvent) => {
     const container = containerRef.current
-    if (!container || !manifest) return
-    const rect = container.getBoundingClientRect()
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    )
     const camera = cameraRef.current
-    const scene = sceneRef.current
-    if (!camera || !scene) return
-
-    const raycaster = new THREE.Raycaster()
-    raycaster.setFromCamera(mouse, camera)
-    const meshes = Array.from(meshesRef.current.values()).filter((mesh) => mesh.visible)
-    const intersects = raycaster.intersectObjects(meshes)
-    if (intersects.length > 0) {
-      const intersection = intersects[0]
-      const groupId = intersection.object.userData.groupId
-      if (groupId !== '__wireframe__') {
-        const current = selection?.groupIds?.length
-          ? selection.groupIds
-          : selection?.groupId ? [selection.groupId] : []
-        const additive = e.ctrlKey || e.metaKey || e.shiftKey
-        const groupIds = additive
-          ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
-          : [groupId]
-        onSelectionChange?.({ groupId: groupIds.at(-1) ?? null, groupIds })
-        setHoveredGroup(groupId)
-        if (selectedField && uvfAssetRef.current && intersection.object instanceof THREE.Mesh) {
-          onFieldProbe?.(probeFieldAtIntersection(
-            uvfAssetRef.current,
-            intersection.object,
-            selectedField,
-            intersection.faceIndex,
-            intersection.point,
-          ))
-        }
-        if (onPickPoint && assetRef.current) {
-          const point = assetRef.current.worldToLocal(intersection.point.clone())
-          onPickPoint([point.x, point.y, point.z])
-        }
-      }
-    } else {
-      onSelectionChange?.({ groupId: null })
-      onFieldProbe?.(null)
-      setHoveredGroup(null)
-    }
+    const asset = assetRef.current
+    if (!container || !camera || !asset || !activeResourceRef) return null
+    const rect = container.getBoundingClientRect()
+    const raycaster = buildPointerRay(event, camera, rect)
+    return resolvePickCandidate(pickScene(raycaster, [asset]), {
+      projectId: projectId ?? 'viewer-local',
+      resourceRef: activeResourceRef,
+      assetRoot: asset,
+    })
   }
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const container = containerRef.current
-    if (!container || !manifest) return
-    const rect = container.getBoundingClientRect()
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
+  const meshForEntity = (entityId: string | undefined) => {
+    if (!entityId) return undefined
+    return Array.from(meshesRef.current.values()).find((mesh) =>
+      String(mesh.userData.entityId ?? '') === entityId ||
+      String(mesh.userData.groupId ?? '') === entityId,
     )
-    const camera = cameraRef.current
-    const scene = sceneRef.current
-    if (!camera || !scene) return
+  }
 
-    const raycaster = new THREE.Raycaster()
-    raycaster.setFromCamera(mouse, camera)
-    const meshes = Array.from(meshesRef.current.values()).filter((mesh) => mesh.visible)
-    const intersects = raycaster.intersectObjects(meshes)
-    if (intersects.length > 0) {
-      const groupId = intersects[0].object.userData.groupId
-      if (groupId !== '__wireframe__') {
-        setHoveredGroup(groupId)
-      }
-    }
+  const createInputController = () => {
+    const legacyTool: ToolInputConsumer | undefined = onPickPoint
+      ? {
+          onPick: (pick) => {
+            if (!pick) return false
+            onPickPoint([...pick.localPosition])
+            return true
+          },
+        }
+      : undefined
+    return new ViewerInputController({
+      resolvePick: resolvePointerPick,
+      activeTool: toolInput ?? legacyTool,
+      fieldProbe: {
+        isActive: () => Boolean(selectedField && uvfAssetRef.current && onFieldProbe),
+        allowMiss: true,
+        onPick: (pick) => {
+          if (!pick) {
+            onFieldProbe?.(null)
+            return false
+          }
+          const mesh = meshForEntity(pick.entityId)
+          const asset = uvfAssetRef.current
+          if (!selectedField || !asset || !mesh) return false
+          onFieldProbe?.(probeFieldAtIntersection(
+            asset,
+            mesh,
+            selectedField,
+            pick.triangleIndex,
+            new THREE.Vector3(...pick.worldPosition),
+          ))
+          return true
+        },
+      },
+      selection: {
+        allowMiss: true,
+        onPick: (pick, event) => {
+          if (!pick) {
+            onSelectionChange?.({ groupId: null })
+            setHoveredGroup(null)
+            return true
+          }
+          const mesh = meshForEntity(pick.entityId)
+          const groupId = String(mesh?.userData.groupId ?? pick.entityId ?? '')
+          if (!groupId) return false
+          const current = selection?.groupIds?.length
+            ? selection.groupIds
+            : selection?.groupId ? [selection.groupId] : []
+          const additive = event.ctrlKey || event.metaKey || event.shiftKey
+          const groupIds = additive
+            ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
+            : [groupId]
+          onSelectionChange?.({ groupId: groupIds.at(-1) ?? null, groupIds })
+          setHoveredGroup(groupId)
+          return true
+        },
+      },
+      onHover: (pick) => {
+        const mesh = meshForEntity(pick?.entityId)
+        setHoveredGroup(mesh ? String(mesh.userData.groupId ?? '') || null : null)
+      },
+    })
+  }
+
+  const pointerEvent = (event: React.PointerEvent<HTMLDivElement>): ViewerPointerEvent => ({
+    clientX: event.clientX,
+    clientY: event.clientY,
+    pointerId: event.pointerId,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    shiftKey: event.shiftKey,
+  })
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const controller = createInputController()
+    inputControllerRef.current = controller
+    controller.onPointerDown(pointerEvent(event))
+  }
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    inputControllerRef.current?.onPointerUp(pointerEvent(event))
+    inputControllerRef.current = null
+  }
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const controller = inputControllerRef.current ?? createInputController()
+    inputControllerRef.current = controller
+    controller.onPointerMove(pointerEvent(event))
+  }
+
+  const handlePointerLeave = () => {
+    inputControllerRef.current?.onPointerLeave()
+    inputControllerRef.current = null
+    setHoveredGroup(null)
   }
 
   useEffect(() => {
@@ -789,9 +871,14 @@ export function Viewer3D({
       <div
         ref={containerRef}
         className="viewer-3d"
-        onClick={handleClick}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setHoveredGroup(null)}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={() => {
+          inputControllerRef.current?.cancelPointer()
+          inputControllerRef.current = null
+        }}
         role="img"
         aria-label="3D geometry viewer"
         tabIndex={0}

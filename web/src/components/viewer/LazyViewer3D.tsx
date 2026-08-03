@@ -12,6 +12,7 @@ export type {
   ViewerClipPlane,
   ViewerCameraCommand,
   ViewerManifest,
+  ViewerOverlayContent,
   ViewerSelection,
   ViewerState,
 } from './Viewer3D'
