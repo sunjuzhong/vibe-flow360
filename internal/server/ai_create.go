@@ -1,10 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,16 +74,20 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	defer os.RemoveAll(stagingDir)
-	geometryPath := filepath.Join(stagingDir, "cylinder.stl")
+	geometryPath := filepath.Join(stagingDir, "cylinder.brep")
 	geometryFile, err := os.OpenFile(geometryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create generated geometry"})
 		return
 	}
-	writeErr := aicreate.WriteCylinderSTL(geometryFile, blueprint.Geometry)
+	writeErr := aicreate.WriteCylinderBREP(geometryFile, blueprint.Geometry)
 	closeErr := geometryFile.Close()
 	if writeErr != nil || closeErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not write generated geometry"})
+		return
+	}
+	if err := validateAICreateAsset(geometryPath, "geometry"); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -123,7 +129,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: remote.ProjectID, ProjectName: blueprint.ProjectName,
-		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: "cylinder.stl",
+		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: "cylinder.brep",
 		Target: blueprint.Target, Name: "AI Create · Cylinder flow baseline", Intent: request.Intent,
 		Patch: patch, Evidence: evidence, ValidationHints: blueprint.Assumptions,
 		IdempotencyKey: "ai-create:" + remote.ProjectID,
@@ -138,6 +144,32 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: []string{"Interpreted requirement", "Generated cylinder geometry", "Created Flow360 Project", "Loaded simulation plan"},
 	})
+}
+
+func validateAICreateAsset(path, sourceType string) error {
+	extension := strings.ToLower(filepath.Ext(path))
+	if strings.EqualFold(sourceType, "geometry") {
+		switch extension {
+		case ".step", ".stp", ".igs", ".iges", ".brep", ".cax", ".catpart", ".catproduct":
+		default:
+			return fmt.Errorf("%s is a tessellated or unsupported asset; Flow360 Geometry requires STEP, IGES, BREP, CAX, or CATIA CAD", filepath.Base(path))
+		}
+		if extension == ".brep" {
+			file, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("read generated BREP: %w", err)
+			}
+			defer file.Close()
+			preview, err := io.ReadAll(io.LimitReader(file, 256<<10))
+			if err != nil {
+				return fmt.Errorf("read generated BREP: %w", err)
+			}
+			if !bytes.Contains(preview, []byte("CASCADE Topology")) || !bytes.Contains(preview, []byte("Surfaces")) || bytes.Contains(bytes.ToLower(preview), []byte("facet normal")) {
+				return fmt.Errorf("%s is not a validated analytic OpenCascade BREP", filepath.Base(path))
+			}
+		}
+	}
+	return nil
 }
 
 const (

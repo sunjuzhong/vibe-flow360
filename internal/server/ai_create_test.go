@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
@@ -25,6 +26,7 @@ func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 case " $* " in
   *" project create "*)
     case " $* " in *" --sync "*) ;; *) exit 9 ;; esac
+    case " $* " in *"/cylinder.brep "*) ;; *) exit 10 ;; esac
     printf '%s' '{"project_id":"project-ai-1"}'
     ;;
   *" project items project-ai-1 "*)
@@ -116,5 +118,37 @@ func TestAICreateProjectRequiresFolder(t *testing.T) {
 	(&Server{}).aiCreateProject(context)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got %d", recorder.Code)
+	}
+}
+
+func TestValidateAICreateAssetRejectsSTLAsGeometry(t *testing.T) {
+	root := t.TempDir()
+	stlPath := filepath.Join(root, "cylinder.stl")
+	if err := os.WriteFile(stlPath, []byte("solid cylinder\nfacet normal 0 0 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAICreateAsset(stlPath, "geometry"); err == nil {
+		t.Fatal("STL was accepted as CAD Geometry")
+	}
+	fakeBREP := filepath.Join(root, "renamed.brep")
+	if err := os.WriteFile(fakeBREP, []byte("solid cylinder\nfacet normal 0 0 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAICreateAsset(fakeBREP, "geometry"); err == nil {
+		t.Fatal("renamed STL was accepted as BREP Geometry")
+	}
+	brepPath := filepath.Join(root, "cylinder.brep")
+	file, err := os.Create(brepPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blueprint, _ := aicreate.FromIntent("cylinder flow")
+	writeErr := aicreate.WriteCylinderBREP(file, blueprint.Geometry)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		t.Fatalf("write BREP: %v / %v", writeErr, closeErr)
+	}
+	if err := validateAICreateAsset(brepPath, "geometry"); err != nil {
+		t.Fatalf("validated BREP was rejected: %v", err)
 	}
 }

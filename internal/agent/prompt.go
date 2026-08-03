@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	maxProjectContextBytes   = 4000
+	maxProjectContextBytes = 4000
 	// Case SimulationParams commonly exceed a few kilobytes once models,
 	// boundaries, outputs, and time stepping are present. Keep enough of the
 	// source snapshot for plan composition so the Agent does not ask users for
@@ -65,6 +65,9 @@ When you determine the user's intent, you MUST respond with a valid JSON object 
 
 ### Rules:
 - Always distinguish user-provided values from assumptions.
+- Treat STEP/STP, IGES, BREP, CAX, and CATIA as CAD/B-rep Geometry inputs. Treat STL/OBJ and other triangle meshes as tessellated assets, never as exact CAD Geometry.
+- Never rename or wrap a tessellated mesh as STEP/BREP. Only claim generated CAD when an audited CAD kernel produced and validated analytic topology; otherwise request a supported CAD upload.
+- Route a tessellated asset to a SurfaceMesh workflow only when its format, watertightness, boundary semantics, and Flow360 support have been verified.
 - Never claim that a simulation was submitted, run, converged, or completed unless tool evidence is present.
 - You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
 - If unsure, use request-missing-input rather than guessing.

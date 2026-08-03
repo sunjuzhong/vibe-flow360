@@ -8,6 +8,8 @@ import (
 )
 
 var numberPattern = regexp.MustCompile(`(?i)(?:diameter|直径)\s*(?:为|=|:)?\s*([0-9]+(?:\.[0-9]+)?)`)
+var radiusPattern = regexp.MustCompile(`(?i)(?:radius|半径)\s*(?:为|=|:)?\s*([0-9]+(?:\.[0-9]+)?)`)
+var spanPattern = regexp.MustCompile(`(?i)(?:span|length|高度|长度|展向)\s*(?:为|=|:)?\s*([0-9]+(?:\.[0-9]+)?)`)
 
 type Blueprint struct {
 	Template         string         `json:"template"`
@@ -20,10 +22,15 @@ type Blueprint struct {
 }
 
 type Geometry struct {
-	Kind      string  `json:"kind"`
-	DiameterM float64 `json:"diameter_m"`
-	SpanM     float64 `json:"span_m"`
-	Segments  int     `json:"segments"`
+	Kind             string  `json:"kind"`
+	DiameterM        float64 `json:"diameter_m"`
+	SpanM            float64 `json:"span_m"`
+	Representation   string  `json:"representation"`
+	Format           string  `json:"format"`
+	Generator        string  `json:"generator"`
+	GeneratorVersion string  `json:"generator_version"`
+	Validated        bool    `json:"validated"`
+	Validation       string  `json:"validation"`
 }
 
 func FromIntent(intent string) (Blueprint, error) {
@@ -42,12 +49,31 @@ func FromIntent(intent string) (Blueprint, error) {
 			diameter = parsed
 		}
 	}
+	if match := radiusPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+		if parsed, err := strconv.ParseFloat(match[1], 64); err == nil && parsed > 0 {
+			diameter = 2 * parsed
+		}
+	}
+	span := 1.0
+	if match := spanPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+		if parsed, err := strconv.ParseFloat(match[1], 64); err == nil && parsed > 0 {
+			span = parsed
+		}
+	}
+	if diameter != 1 || span != 1 {
+		return Blueprint{}, errors.New("the built-in exact CAD cylinder is 1 m in diameter and span; upload a STEP, IGES, or BREP file for other dimensions")
+	}
 	maxEdge := diameter / 30
 	return Blueprint{
-		Template:    "cylinder-flow-v1",
-		ProjectName: "AI Create · Cylinder Flow",
-		Summary:     "External incompressible flow around a circular cylinder, prepared through Case setup.",
-		Geometry:    Geometry{Kind: "cylinder", DiameterM: diameter, SpanM: diameter, Segments: 64},
+		Template:    "cylinder-flow-v2",
+		ProjectName: "AI Create · Cylinder Flow (Exact CAD)",
+		Summary:     "External incompressible flow around an analytic B-rep circular cylinder, prepared through Case setup.",
+		Geometry: Geometry{
+			Kind: "cylinder", DiameterM: diameter, SpanM: span,
+			Representation: "analytic-brep", Format: "brep",
+			Generator: "CadQuery/OpenCascade", GeneratorVersion: "CadQuery 2.6.1 / OpenCascade 7.8.1",
+			Validated: true, Validation: "Closed solid; 3 analytic faces; volume pi/4 m^3; no tessellation records.",
+		},
 		SimulationParams: map[string]any{
 			"meshing": map[string]any{"defaults": map[string]any{
 				"surface_max_edge_length": map[string]any{"value": maxEdge, "units": "m"},
@@ -59,7 +85,7 @@ func FromIntent(intent string) (Blueprint, error) {
 			"time_stepping": map[string]any{"max_steps": 10000},
 		},
 		Assumptions: []string{
-			"Cylinder dimensions are interpreted in metres.",
+			"The built-in exact CAD template is a 1 m diameter × 1 m span analytic B-rep cylinder.",
 			"Freestream velocity is 10 m/s at zero angle of attack.",
 			"A medium surface resolution of diameter / 30 is used.",
 			"Remote meshing and Case execution still require the normal review and approval gate.",

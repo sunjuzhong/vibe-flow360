@@ -33,7 +33,17 @@ export type AICreateResult = {
     template: string
     project_name: string
     summary: string
-    geometry: { kind: string; diameter_m: number; span_m: number; segments: number }
+    geometry: {
+      kind: string
+      diameter_m: number
+      span_m: number
+      representation: string
+      format: string
+      generator: string
+      generator_version: string
+      validated: boolean
+      validation: string
+    }
     simulation_params: Record<string, unknown>
     assumptions: string[]
     target: string
