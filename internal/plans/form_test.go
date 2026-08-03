@@ -40,6 +40,34 @@ func TestValidateFormValuesSupportsSchemaDrivenTypes(t *testing.T) {
 	}
 }
 
+func TestQuantityUnitsNormalizeOnlyDeclaredFlow360Aliases(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object","required":["length"],"properties":{
+			"length":{"type":"quantity","unit_options":["m","mm"],
+				"unit_aliases":{"meter":"m"},"value_schema":{"type":"number"}}
+		}
+	}`)
+	legacy := json.RawMessage(`{"length":{"value":1,"units":"meter"}}`)
+	if err := ValidateFormValues(schema, legacy); err != nil {
+		t.Fatalf("declared legacy alias was rejected: %v", err)
+	}
+	expanded, err := ExpandFormValues(schema, legacy, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(expanded) != `{"length":{"units":"m","value":1}}` {
+		t.Fatalf("expected canonical Flow360 wire token, got %s", expanded)
+	}
+	for _, invalid := range []json.RawMessage{
+		json.RawMessage(`{"length":{"value":1,"units":"centimeter"}}`),
+		json.RawMessage(`{"length":{"value":1}}`),
+	} {
+		if err := ValidateFormValues(schema, invalid); err == nil {
+			t.Fatalf("expected undeclared or missing unit to be rejected: %s", invalid)
+		}
+	}
+}
+
 func TestExpandFormValuesUpdatesExistingBoundaryModelFromServerChoices(t *testing.T) {
 	schema := json.RawMessage(`{
 		"type":"object","required":["models"],"properties":{"models":{

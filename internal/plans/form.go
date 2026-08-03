@@ -17,6 +17,7 @@ type formNode struct {
 	Variants         []formNode          `json:"variants,omitempty"`
 	Options          []any               `json:"options,omitempty"`
 	UnitOptions      []string            `json:"unit_options,omitempty"`
+	UnitAliases      map[string]string   `json:"unit_aliases,omitempty"`
 	ValueSchema      *formNode           `json:"value_schema,omitempty"`
 	ModelChoices     []formChoice        `json:"model_choices,omitempty"`
 	EntityChoices    []formChoice        `json:"entity_choices,omitempty"`
@@ -121,14 +122,17 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 		if err := validateFormValue(*valueSchema, number, path+".value", depth+1); err != nil {
 			return err
 		}
-		if units, exists := object["units"]; exists {
-			unit, ok := units.(string)
-			if !ok {
-				return fmt.Errorf("%s.units must be a string", label)
-			}
-			if len(schema.UnitOptions) > 0 && !containsString(schema.UnitOptions, unit) {
-				return fmt.Errorf("%s.units is not supported by the active Flow360 schema", label)
-			}
+		units, exists := object["units"]
+		if !exists {
+			return fmt.Errorf("%s.units is required", label)
+		}
+		unit, ok := units.(string)
+		if !ok {
+			return fmt.Errorf("%s.units must be a string", label)
+		}
+		canonical := canonicalFormUnit(schema, unit)
+		if len(schema.UnitOptions) > 0 && !containsString(schema.UnitOptions, canonical) {
+			return fmt.Errorf("%s.units is not supported by the active Flow360 schema", label)
 		}
 	case "entity_assignment":
 		object, ok := value.(map[string]any)
@@ -260,6 +264,20 @@ func expandFormValue(schema formNode, value, current any, depth int) (any, error
 		}
 		return result, nil
 	}
+	if schema.Type == "quantity" {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return value, nil
+		}
+		result := make(map[string]any, len(object))
+		for key, item := range object {
+			result[key] = item
+		}
+		if unit, ok := result["units"].(string); ok {
+			result["units"] = canonicalFormUnit(schema, unit)
+		}
+		return result, nil
+	}
 	if schema.Type != "entity_assignment" {
 		return value, nil
 	}
@@ -304,6 +322,13 @@ func expandFormValue(schema formNode, value, current any, depth int) (any, error
 		models[*selected.Index] = model
 	}
 	return models, nil
+}
+
+func canonicalFormUnit(schema formNode, unit string) string {
+	if canonical, ok := schema.UnitAliases[unit]; ok {
+		return canonical
+	}
+	return unit
 }
 
 func findFormChoice(choices []formChoice, value string) *formChoice {

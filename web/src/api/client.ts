@@ -351,6 +351,7 @@ export type DynamicFormSchema = {
   options?: unknown[]
   unit?: string
   unit_options?: string[]
+  unit_aliases?: Record<string, string>
   value_schema?: DynamicFormSchema
   model_choices?: DynamicFormChoice[]
   entity_choices?: DynamicFormChoice[]

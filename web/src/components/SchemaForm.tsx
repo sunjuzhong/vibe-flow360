@@ -184,6 +184,9 @@ function SchemaField({
   if (schema.type === 'quantity') {
     const object = isRecord(value) ? value : {}
     const unitOptions = schema.unit_options?.length ? schema.unit_options : [schema.unit ?? '']
+    const storedUnit = String(object.units ?? schema.unit ?? '')
+    const selectedUnit = canonicalQuantityUnit(schema, storedUnit)
+    const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
     return (
       <label className="schema-field" htmlFor={fieldID}>
         <FieldLabel schema={schema} title={title} path={path} />
@@ -200,10 +203,11 @@ function SchemaField({
           />
           <select
             aria-label={`${title} unit`}
-            value={String(object.units ?? schema.unit ?? '')}
+            value={selectedUnit}
             onChange={(event) => onChange({ ...object, units: event.target.value })}
             required
           >
+            {unsupportedUnit && <option value={selectedUnit} disabled>Unsupported: {selectedUnit}</option>}
             {unitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
           </select>
         </span>
@@ -475,8 +479,11 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       const object = isRecord(value) ? value : {}
       const numeric = Number(object.value)
       if (!Number.isFinite(numeric)) throw new Error(`${schema.title || schema.path || 'Quantity'} requires a numeric value.`)
-      const units = String(object.units ?? schema.unit ?? '').trim()
+      const units = canonicalQuantityUnit(schema, String(object.units ?? schema.unit ?? '').trim())
       if (!units) throw new Error(`${schema.title || schema.path || 'Quantity'} requires a unit.`)
+      if (schema.unit_options?.length && !schema.unit_options.includes(units)) {
+        throw new Error(`${schema.title || schema.path || 'Quantity'} has an unsupported stored unit.`)
+      }
       return { value: numeric, units }
     }
     case 'entity_assignment': {
@@ -506,6 +513,10 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
     default:
       return value
   }
+}
+
+function canonicalQuantityUnit(schema: DynamicFormSchema, unit: string) {
+  return schema.unit_aliases?.[unit] ?? unit
 }
 
 function numberConstraint(schema: DynamicFormSchema | undefined, key: 'minimum' | 'maximum') {

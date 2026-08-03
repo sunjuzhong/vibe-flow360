@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -123,22 +124,28 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	length := findSchemaByTitle(volumeSchema, "Boundary Layer First Layer Thickness")
-	if length == nil || length["type"] != "quantity" || length["unit"] != "meter" {
+	if length == nil || length["type"] != "quantity" || length["unit"] != "m" {
 		t.Fatalf("expected a selectable length quantity, got %#v", length)
 	}
-	if options, _ := length["unit_options"].([]any); len(options) < 2 {
+	if options, _ := length["unit_options"].([]any); len(options) < 2 || options[0] != "m" || slices.Contains(options, any("meter")) {
 		t.Fatalf("expected multiple length units, got %#v", length)
+	}
+	if aliases, _ := length["unit_aliases"].(map[string]any); aliases["meter"] != "m" {
+		t.Fatalf("expected legacy length alias normalization, got %#v", length)
 	}
 	var caseSchema map[string]any
 	if err := json.Unmarshal(result.EditorSchemas["Case"], &caseSchema); err != nil {
 		t.Fatal(err)
 	}
 	velocity := findQuantitySchema(findSchemaByTitle(caseSchema, "Velocity Magnitude"))
-	if velocity == nil || velocity["type"] != "quantity" || velocity["unit"] != "meter/second" {
+	if velocity == nil || velocity["type"] != "quantity" || velocity["unit"] != "m/s" {
 		t.Fatalf("expected a selectable velocity quantity, got %#v", velocity)
 	}
-	if options, _ := velocity["unit_options"].([]any); len(options) < 2 {
+	if options, _ := velocity["unit_options"].([]any); len(options) < 2 || options[0] != "m/s" || slices.Contains(options, any("meter/second")) {
 		t.Fatalf("expected multiple velocity units, got %#v", velocity)
+	}
+	if aliases, _ := velocity["unit_aliases"].(map[string]any); aliases["meter/second"] != "m/s" {
+		t.Fatalf("expected legacy velocity alias normalization, got %#v", velocity)
 	}
 }
 

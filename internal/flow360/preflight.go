@@ -368,18 +368,26 @@ COMMON_UNITS = (
 )
 
 def compatible_units(unit):
-    result = [unit]
+    result = []
+    aliases = {}
     try:
         base = Unit(unit.replace("^", "**"))
     except Exception:
-        return result
-    for candidate in COMMON_UNITS:
+        return [unit], {unit: unit}
+    for candidate in (unit, *COMMON_UNITS):
         try:
-            if candidate not in result and base.same_dimensions_as(Unit(candidate)):
-                result.append(candidate)
+            parsed = Unit(candidate.replace("^", "**"))
+            if not base.same_dimensions_as(parsed):
+                continue
+            # Flow360's active {value, units} wire serializer emits the unyt
+            # expression, not the long dimension name (m, m/s, m**2, Pa...).
+            canonical = str(parsed.expr)
+            aliases[candidate] = canonical
+            if canonical not in result:
+                result.append(canonical)
         except Exception:
             continue
-    return result
+    return result, aliases
 
 def alternatives(node):
     for key in ("anyOf", "oneOf"):
@@ -487,11 +495,13 @@ def normalize(node, inherited_unit=None):
         quantity_unit = value_schema.get("$units", unit) if isinstance(value_schema, dict) else unit
         if isinstance(value_schema, dict) and "units" in properties and quantity_unit:
             numeric = normalize(value_schema)
+            unit_options, unit_aliases = compatible_units(quantity_unit)
             return {
                 **base,
                 "type": "quantity",
-                "unit": quantity_unit,
-                "unit_options": compatible_units(quantity_unit),
+                "unit": unit_options[0],
+                "unit_options": unit_options,
+                "unit_aliases": unit_aliases,
                 "value_schema": numeric,
             }
         required = set(node.get("required", []))

@@ -57,6 +57,20 @@ describe('schema-driven Flow360 form', () => {
     })).toEqual({ value: 30, units: 'm/s' })
   })
 
+  it('normalizes declared legacy unit names to Flow360 wire tokens', () => {
+    const schema: DynamicFormSchema = {
+      type: 'quantity',
+      title: 'Length',
+      unit: 'm',
+      unit_options: ['m', 'mm'],
+      unit_aliases: { meter: 'm' },
+      value_schema: { type: 'number' },
+    }
+    expect(initialValue(schema)).toEqual({ value: '', units: 'm' })
+    expect(serializeValue(schema, { value: '1', units: 'meter' })).toEqual({ value: 1, units: 'm' })
+    expect(() => serializeValue(schema, { value: '1', units: 'parsec' })).toThrow('unsupported stored unit')
+  })
+
   it('serializes a schema-provided entity assignment', () => {
     const schema: DynamicFormSchema = {
       type: 'entity_assignment',
