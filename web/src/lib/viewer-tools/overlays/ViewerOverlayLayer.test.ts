@@ -175,6 +175,33 @@ describe('ViewerOverlayLayer', () => {
     expect(scene.children).not.toContain(layer.group)
   })
 
+  it('keeps GPU-backed overlay objects bounded across repeated resource switches', () => {
+    const layer = new ViewerOverlayLayer(new THREE.Scene())
+    let geometryDisposals = 0
+    let materialDisposals = 0
+
+    for (let index = 0; index < 100; index += 1) {
+      const currentResource = { id: `asset-${index}`, type: 'Geometry' }
+      layer.update({
+        resourceRef: currentResource,
+        saved: [annotation(`annotation-${index}`, [
+          { kind: 'point', key: 'point', position: [index, 0, 0] },
+        ], { kind: 'asset-local', resourceRef: currentResource })],
+      })
+
+      expect(layer.size).toBe(1)
+      const object = layer.getObject(`annotation-${index}`, 'point') as THREE.Points
+      object.geometry.addEventListener('dispose', () => { geometryDisposals += 1 })
+      ;(object.material as THREE.Material).addEventListener('dispose', () => { materialDisposals += 1 })
+    }
+
+    expect(geometryDisposals).toBe(99)
+    expect(materialDisposals).toBe(99)
+    layer.dispose()
+    expect(geometryDisposals).toBe(100)
+    expect(materialDisposals).toBe(100)
+  })
+
   it('never participates in raycaster picking, even when its layer is enabled', () => {
     const layer = new ViewerOverlayLayer(new THREE.Scene(), { layer: 29 })
     layer.update({
