@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Search,
   FileUp,
+  Sparkles,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -15,7 +16,7 @@ import {
   type FolderNode,
   type ProjectRecord,
 } from '../api/client'
-import AICreateCard from '../components/AICreateCard'
+import AICreateModal from '../components/AICreateModal'
 import FolderTree from '../components/FolderTree'
 import ImportPanel from '../components/ImportPanel'
 import TopBar from '../components/TopBar'
@@ -40,6 +41,7 @@ export default function WorkspacePage() {
   const [projectsCachedAt, setProjectsCachedAt] = useState('')
   const [query, setQuery] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  const [aiCreateOpen, setAICreateOpen] = useState(false)
 
   const loadStatus = () => {
     api.flow360Status().then(setFlowStatus).catch((error) => {
@@ -195,13 +197,11 @@ export default function WorkspacePage() {
                 : 'Flow360 projects are organized by workspace folder.'}
             </p>
           </div>
-          {selectedFolder && <button className="ai-action" onClick={() => setImportOpen(true)}><FileUp size={16}/> New project</button>}
+          {selectedFolder && <div className="workspace-home-actions">
+            <button className="ai-action" onClick={() => setImportOpen(true)}><FileUp size={16}/> New project</button>
+            <button className="ai-action" onClick={() => setAICreateOpen(true)}><Sparkles size={16}/> AI Create</button>
+          </div>}
         </div>
-
-        <AICreateCard
-          folder={selectedFolder}
-          onCreated={(result) => navigate(`/projects/${encodeURIComponent(result.project_id)}`)}
-        />
 
         {selectedFolder && (
           <div className="project-toolbar">
@@ -301,6 +301,11 @@ export default function WorkspacePage() {
     navigate(`/projects/${encodeURIComponent(projectId)}`)
   }
 }} />}
+      {selectedFolder && aiCreateOpen && <AICreateModal
+        folder={selectedFolder}
+        onClose={() => setAICreateOpen(false)}
+        onCreated={(result) => navigate(`/projects/${encodeURIComponent(result.project_id)}`)}
+      />}
     </div>
   )
 }

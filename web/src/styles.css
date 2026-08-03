@@ -722,12 +722,25 @@ button { color: inherit; }
 
 .workspace-home-header > div > p:last-child { margin: 0; color: #797e73; font-size: 12px; }
 
-.ai-create-card {
+.workspace-home-actions { display: flex; align-items: center; gap: 8px; }
+
+.ai-create-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(28,31,25,.55);
+  backdrop-filter: blur(5px);
+}
+
+.ai-create-modal {
   position: relative;
-  max-width: 1180px;
-  margin: 0 auto 22px;
+  width: min(660px, 94vw);
+  max-height: 90vh;
   padding: 22px;
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid #cbd3b2;
   border-radius: 14px;
   background:
@@ -735,8 +748,10 @@ button { color: inherit; }
     #f8f9f2;
   box-shadow: 0 15px 45px rgba(60,73,30,.07);
 }
+.ai-create-close { position: absolute; top: 12px; right: 12px; z-index: 1; }
+.ai-create-close:disabled { opacity: .35; cursor: not-allowed; }
 
-.ai-create-copy { display: flex; align-items: flex-start; gap: 12px; }
+.ai-create-copy { display: flex; align-items: flex-start; gap: 12px; padding-right: 32px; }
 .ai-create-icon {
   display: grid;
   width: 38px;
@@ -749,7 +764,7 @@ button { color: inherit; }
 }
 .ai-create-copy h2 { margin: 4px 0 4px; font-size: 19px; letter-spacing: -.025em; }
 .ai-create-copy > div > p:last-child { max-width: 680px; margin: 0; color: #73796a; font-size: 10px; line-height: 1.55; }
-.ai-create-card form {
+.ai-create-modal form {
   margin-top: 16px;
   overflow: hidden;
   border: 1px solid #c9ccc0;
@@ -757,7 +772,7 @@ button { color: inherit; }
   background: white;
   box-shadow: 0 6px 20px rgba(39,44,30,.05);
 }
-.ai-create-card textarea {
+.ai-create-modal textarea {
   display: block;
   width: 100%;
   min-height: 82px;
@@ -2215,7 +2230,9 @@ button { color: inherit; }
   .workspace-sidebar { position: static; width: auto; height: 245px; border-right: 0; border-bottom: 1px solid #d8d9d2; }
   .workspace-folder-tree { padding-bottom: 8px; }
   .workspace-home { margin-left: 0; padding: 24px 14px 40px; }
-  .workspace-home-header { align-items: flex-start; }
+  .workspace-home-header { flex-direction: column; align-items: flex-start; }
+  .workspace-home-actions { width: 100%; }
+  .workspace-home-actions .ai-action { flex: 1; }
   .home-guidance { display: none; }
   .project-table-row { grid-template-columns: minmax(0,1fr) 25px; }
   .project-table-row > span:nth-child(2){display:none}

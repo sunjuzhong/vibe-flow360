@@ -1,6 +1,7 @@
-import { ArrowRight, CheckCircle2, Loader2, Sparkles, WandSparkles } from 'lucide-react'
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { ArrowRight, CheckCircle2, Loader2, Sparkles, WandSparkles, X } from 'lucide-react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { api, type AICreateResult, type FolderNode } from '../api/client'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 const progressStages = [
   'Understanding the engineering goal',
@@ -9,11 +10,13 @@ const progressStages = [
   'Loading mesh and Case parameters',
 ]
 
-export default function AICreateCard({
+export default function AICreateModal({
   folder,
+  onClose,
   onCreated,
 }: {
   folder: FolderNode | null
+  onClose: () => void
   onCreated: (result: AICreateResult) => void
 }) {
   const [intent, setIntent] = useState('')
@@ -21,6 +24,8 @@ export default function AICreateCard({
   const [error, setError] = useState('')
   const [progress, setProgress] = useState(0)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const closeWhenIdle = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
+  const modalRef = useFocusTrap<HTMLDivElement>(true, closeWhenIdle, 'textarea')
 
   useEffect(() => {
     if (!busy) return
@@ -46,7 +51,22 @@ export default function AICreateCard({
   }
 
   return (
-    <section className="ai-create-card" aria-labelledby="ai-create-title">
+    <div
+      className="ai-create-overlay"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) closeWhenIdle() }}
+    >
+      <div
+        ref={modalRef}
+        className="ai-create-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-create-title"
+        tabIndex={-1}
+      >
+      <button className="icon-button ai-create-close" type="button" onClick={closeWhenIdle} disabled={busy} aria-label="Close AI Create dialog">
+        <X size={18} />
+      </button>
       <div className="ai-create-copy">
         <span className="ai-create-icon"><WandSparkles size={19} /></span>
         <div>
@@ -60,7 +80,7 @@ export default function AICreateCard({
           ref={inputRef}
           value={intent}
           onChange={(event) => setIntent(event.target.value)}
-          placeholder="例如：帮我实现一个圆柱扰流的仿真试验"
+          placeholder="For example: Set up an external-flow simulation around a circular cylinder."
           rows={3}
           disabled={busy}
           aria-label="Simulation requirement"
@@ -75,8 +95,8 @@ export default function AICreateCard({
         </div>
       </form>
       {!busy && !intent && (
-        <button className="ai-create-example" type="button" onClick={() => { setIntent('帮我实现一个圆柱扰流的仿真试验'); inputRef.current?.focus() }}>
-          Try “圆柱扰流仿真”
+        <button className="ai-create-example" type="button" onClick={() => { setIntent('Set up an external-flow simulation around a circular cylinder.'); inputRef.current?.focus() }}>
+          Try “cylinder flow simulation”
         </button>
       )}
       {busy && (
@@ -90,6 +110,7 @@ export default function AICreateCard({
       )}
       {error && <div className="ai-create-error">{error}</div>}
       <p className="ai-create-safety">Generated setup is saved as a reviewable draft. Paid remote meshing and solving still require approval.</p>
-    </section>
+      </div>
+    </div>
   )
 }
