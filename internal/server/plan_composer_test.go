@@ -5,9 +5,77 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
+
+func TestPlanAssistRepairPromptIncludesExactIssuesAndRemovalSemantics(t *testing.T) {
+	prompt := planAssistRepairPrompt(
+		planComposerRequest{SourceType: "Geometry", Target: "case", Intent: "basic cylinder flow"},
+		agent.Proposal{Patch: json.RawMessage(`{"time_stepping":{"type_name":"Unsteady"}}`)},
+		flow360.PreflightResult{Issues: []flow360.PreflightIssue{
+			{Level: "error", Code: "missing", Path: "time_stepping.steps", Message: "Field required"},
+			{Level: "error", Code: "extra_forbidden", Path: "time_stepping.max_steps", Message: "Extra inputs are not permitted"},
+		}},
+		1,
+	)
+	for _, expected := range []string{
+		"time_stepping.steps", "time_stepping.max_steps", "set an obsolete inherited field to null",
+		"Resolve every listed issue", "COMPLETE corrected patch",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("repair prompt is missing %q: %s", expected, prompt)
+		}
+	}
+}
+
+func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"},"step_size":{"type":"quantity","unit":"s","value_schema":{"type":"number"}},"max_steps":{"type":"json"}}}}}`)
+	composer := planComposerContext{
+		Request: planComposerRequest{ProjectID: "prj", ProjectName: "Project", SourceID: "geo", SourceType: "Geometry", Target: "case", Intent: "baseline"},
+		Name:    "Geometry",
+	}
+	action := agent.Action{Proposals: []agent.Proposal{{
+		SourceType: "Geometry", Target: "case", Name: "Baseline", Intent: "baseline",
+		Patch: json.RawMessage(`{"time_stepping":{"steps":2000,"step_size":{"value":0.005,"units":"s"},"max_steps":null}}`),
+	}}}
+	proposal, err := preparePlanAssistProposal(action, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(proposal.Patch), `"max_steps":null`) {
+		t.Fatalf("merge-patch removal was lost: %s", proposal.Patch)
+	}
+}
+
+func TestRecommendedPlanAssistPatchExpandsHighConfidenceBoundaryAssignment(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"models":{"type":"entity_assignment","model_choices":[{"value":"existing:0","model_type":"Wall","entity_property":"surfaces","index":0}],"entity_choices":[{"value":"face-1","payload":{"name":"face-1","private_attribute_id":"face-1"}},{"value":"face-2","payload":{"name":"face-2","private_attribute_id":"face-2"}}],"default_model":"existing:0","default_entities":["face-1","face-2"],"recommendation":{"confidence":"high"}}},"required":["models"]}`)
+	current := json.RawMessage(`{"models":[{"type":"Wall","name":"Wall","entities":{"stored_entities":[{"name":"*"}]}}],"time_stepping":{"type_name":"Steady","max_steps":2000}}`)
+	patch, applied, err := recommendedPlanAssistPatch(schema, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !applied {
+		t.Fatal("high-confidence Flow360 boundary recommendation was not applied")
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(patch, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	models := decoded["models"].([]any)
+	wall := models[0].(map[string]any)
+	entities := wall["surfaces"].(map[string]any)["stored_entities"].([]any)
+	if len(entities) != 2 || entities[0].(map[string]any)["name"] != "face-1" {
+		t.Fatalf("recommended concrete surfaces were not expanded: %#v", decoded)
+	}
+	merged, err := mergePlanAssistPatches(
+		json.RawMessage(`{"time_stepping":{"type_name":"Steady","max_steps":2000}}`), patch,
+	)
+	if err != nil || !strings.Contains(string(merged), `"time_stepping"`) || !strings.Contains(string(merged), `"models"`) {
+		t.Fatalf("recommendation did not merge with the candidate patch: %s / %v", merged, err)
+	}
+}
 
 func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing.T) {
 	prompt := planAssistPrompt(planComposerRequest{

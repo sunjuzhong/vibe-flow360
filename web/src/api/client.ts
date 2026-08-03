@@ -399,6 +399,8 @@ export type PlanAssistResponse = {
   action: AgentAction
   proposal?: AgentProposal
   preflight?: Omit<PlanPreflight, 'validated_revision' | 'validated_at'>
+  repair_attempts?: number
+  auto_repaired?: boolean
 }
 
 export type SimulationPlan = {

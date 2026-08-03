@@ -1968,6 +1968,10 @@ button { color: inherit; }
 .plan-ai-form-result strong { color: #43522e; font-size: 10px; line-height: 1.55; }
 .plan-ai-form-result em { padding-top: 5px; color: #805c0e; font-size: 9px; line-height: 1.6; font-style: normal; }
 .plan-ai-form-result em.ready { color: #557317; }
+.plan-ai-form-issues { display: grid; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.plan-ai-form-issues li { display: grid; grid-template-columns: minmax(150px,.45fr) minmax(0,1fr); gap: 8px; align-items: baseline; padding: 7px 8px; border: 1px solid #e3cda2; border-radius: 6px; color: #72561e; background: #fff9eb; }
+.plan-ai-form-issues code { overflow-wrap: anywhere; color: #674b14; font: 8px/1.5 'DM Mono'; }
+.plan-ai-form-issues span { font-size: 9px; line-height: 1.5; }
 .plan-stage-workflow { margin: 4px 0 17px; }
 .plan-stage-workflow-heading { margin-bottom: 9px; }
 .plan-stage-workflow-heading > span,.plan-stage-workflow-heading > small { display: block; }

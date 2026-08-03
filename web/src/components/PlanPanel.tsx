@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type AgentAction, type PlanFormSchemaResponse, type ProjectInfo, type ResourceDetail, type ResourceNode, type SimulationPlan } from '../api/client'
+import { api, type AgentAction, type PlanAssistResponse, type PlanFormSchemaResponse, type ProjectInfo, type ResourceDetail, type ResourceNode, type SimulationPlan } from '../api/client'
 import {
   compactParameterValue,
   downstreamStages,
@@ -137,7 +137,8 @@ export default function PlanPanel({
   const [schemaError, setSchemaError] = useState('')
   const [assistLoading, setAssistLoading] = useState(false)
   const [assistAction, setAssistAction] = useState<AgentAction | null>(null)
-  const [assistPreflight, setAssistPreflight] = useState<{ valid: boolean; issues: Array<{ message: string; path?: string }> } | null>(null)
+  const [assistPreflight, setAssistPreflight] = useState<PlanAssistResponse['preflight'] | null>(null)
+  const [assistRepair, setAssistRepair] = useState<{ attempts: number; repaired: boolean } | null>(null)
   const [reviewed, setReviewed] = useState(false)
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -172,6 +173,7 @@ export default function PlanPanel({
     setSchemaError('')
     setAssistAction(null)
     setAssistPreflight(null)
+    setAssistRepair(null)
     setReviewed(false)
     setExecuteConfirmed(false)
     setSchemaFormOpen(false)
@@ -317,6 +319,7 @@ export default function PlanPanel({
     setAssistLoading(true)
     setAssistAction(null)
     setAssistPreflight(null)
+    setAssistRepair(null)
     setError('')
     try {
       const currentPatch = mergeStagePatches(activeStages, structuredStagePatches(), parsePatch('Advanced', advancedPatch))
@@ -333,6 +336,7 @@ export default function PlanPanel({
       })
       setAssistAction(response.action)
       setAssistPreflight(response.preflight ?? null)
+      setAssistRepair({ attempts: response.repair_attempts ?? 0, repaired: response.auto_repaired ?? false })
       if (response.proposal) {
         setStageValues(partitionPatchByStages(response.proposal.patch, activeStages))
         if (response.proposal.name.trim()) setName(response.proposal.name)
@@ -519,6 +523,7 @@ export default function PlanPanel({
                     setFormSchema(null)
                     setAssistAction(null)
                     setAssistPreflight(null)
+                    setAssistRepair(null)
                   }}>
                     {options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
                   </select>
@@ -554,9 +559,21 @@ export default function PlanPanel({
                       {assistPreflight && (
                         <em className={assistPreflight.valid ? 'ready' : 'needs-input'}>
                           {assistPreflight.valid
-                            ? 'AI values pass Flow360 preflight.'
-                            : `${assistPreflight.issues.length} Flow360 issue${assistPreflight.issues.length === 1 ? '' : 's'} remain; review the highlighted inputs before compiling.`}
+                            ? assistRepair?.repaired
+                              ? `AI repaired the candidate parameters in ${assistRepair.attempts} validation pass${assistRepair.attempts === 1 ? '' : 'es'}; all values now pass Flow360 preflight.`
+                              : 'AI values pass Flow360 preflight.'
+                            : `${assistPreflight.issues.filter((issue) => issue.level === 'error').length} Flow360 validation issue${assistPreflight.issues.filter((issue) => issue.level === 'error').length === 1 ? '' : 's'} remain after ${assistRepair?.attempts ?? 0} automatic repair attempt${assistRepair?.attempts === 1 ? '' : 's'}.`}
                         </em>
+                      )}
+                      {assistPreflight && !assistPreflight.valid && (
+                        <ul className="plan-ai-form-issues">
+                          {assistPreflight.issues.filter((issue) => issue.level === 'error').map((issue) => (
+                            <li key={`${issue.path ?? 'root'}-${issue.code}`}>
+                              <code>{issue.path || 'SimulationParams'}</code>
+                              <span>{issue.message}</span>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
                   )}
