@@ -170,6 +170,10 @@ func DesignConversation(ctx context.Context, model Completer, intent string, his
 	if err != nil {
 		return Blueprint{}, fmt.Errorf("geometry agent failed: %w", err)
 	}
+	return designFromAgentResponse(ctx, model, userPrompt, raw, true)
+}
+
+func designFromAgentResponse(ctx context.Context, model Completer, userPrompt, raw string, allowRepair bool) (Blueprint, error) {
 	var response designResponse
 	if err := json.Unmarshal(extractJSONObject(raw), &response); err != nil {
 		return Blueprint{}, fmt.Errorf("geometry agent returned invalid JSON: %w", err)
@@ -191,7 +195,17 @@ func DesignConversation(ctx context.Context, model Completer, intent string, his
 	if response.Decision != "generate" {
 		return Blueprint{}, fmt.Errorf("geometry agent returned invalid decision %q", response.Decision)
 	}
+	normalizeGeometryIdentifiers(&response.Geometry, response.ProjectName)
 	if err := validateGeometry(response.Geometry); err != nil {
+		if allowRepair {
+			repairPrompt := userPrompt + "\n\nThe previous CAD plan failed deterministic validation: " + err.Error() +
+				"\nReturn a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Preserve the user's intent and answers. Do not explain the correction.\nPrevious response:\n" + raw
+			repaired, repairErr := model.Complete(ctx, geometrySystemPrompt, repairPrompt, "")
+			if repairErr != nil {
+				return Blueprint{}, fmt.Errorf("geometry agent repair failed: %w", repairErr)
+			}
+			return designFromAgentResponse(ctx, model, userPrompt, repaired, false)
+		}
 		return Blueprint{}, fmt.Errorf("geometry agent produced an unsafe or incomplete CAD plan: %w", err)
 	}
 	if strings.TrimSpace(response.ProjectName) == "" || strings.TrimSpace(response.Summary) == "" {
@@ -221,6 +235,74 @@ func DesignConversation(ctx context.Context, model Completer, intent string, his
 	}, nil
 }
 
+var unsafeIdentifierCharacters = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+func normalizeGeometryIdentifiers(geometry *Geometry, projectName string) {
+	geometry.Name = normalizedIdentifier(geometry.Name, normalizedIdentifier(projectName, "agent-geometry", nil), nil)
+	operationNames := map[string]string{}
+	usedOperations := map[string]bool{}
+	for index := range geometry.Operations {
+		operation := &geometry.Operations[index]
+		originalID := operation.ID
+		for _, key := range []string{"source", "left", "right"} {
+			if reference, ok := operation.Params[key].(string); ok {
+				if normalized, exists := operationNames[reference]; exists {
+					operation.Params[key] = normalized
+				}
+			}
+		}
+		operation.ID = normalizedIdentifier(originalID, fmt.Sprintf("operation-%d", index+1), usedOperations)
+		if _, duplicate := operationNames[originalID]; !duplicate {
+			operationNames[originalID] = operation.ID
+		}
+		operation.Op = strings.ToLower(strings.TrimSpace(operation.Op))
+	}
+	if normalized, exists := operationNames[geometry.Result]; exists {
+		geometry.Result = normalized
+	}
+	usedResults := map[string]bool{}
+	for resultIndex := range geometry.Results {
+		result := &geometry.Results[resultIndex]
+		if normalized, exists := operationNames[result.Source]; exists {
+			result.Source = normalized
+		}
+		result.Name = normalizedIdentifier(result.Name, fmt.Sprintf("body-%d", resultIndex+1), usedResults)
+		usedFaces := map[string]bool{}
+		for faceIndex := range result.Faces {
+			face := &result.Faces[faceIndex]
+			face.Name = normalizedIdentifier(face.Name, fmt.Sprintf("face-%d", faceIndex+1), usedFaces)
+			face.Selector = strings.ToUpper(strings.TrimSpace(face.Selector))
+		}
+	}
+}
+
+func normalizedIdentifier(value, fallback string, used map[string]bool) string {
+	value = strings.Trim(unsafeIdentifierCharacters.ReplaceAllString(strings.TrimSpace(value), "-"), "-_")
+	if value == "" {
+		value = strings.Trim(unsafeIdentifierCharacters.ReplaceAllString(strings.TrimSpace(fallback), "-"), "-_")
+	}
+	if value == "" {
+		value = "item"
+	}
+	if value[0] < 'A' || value[0] > 'Z' && value[0] < 'a' || value[0] > 'z' {
+		value = "item-" + value
+	}
+	if len(value) > 64 {
+		value = strings.TrimRight(value[:64], "-_")
+	}
+	if used == nil {
+		return value
+	}
+	base := value
+	for suffix := 2; used[value]; suffix++ {
+		ending := fmt.Sprintf("-%d", suffix)
+		limit := 64 - len(ending)
+		value = strings.TrimRight(base[:min(len(base), limit)], "-_") + ending
+	}
+	used[value] = true
+	return value
+}
+
 func parseClarificationFields(raw json.RawMessage) ([]ClarificationField, error) {
 	if len(raw) == 0 || string(raw) == "null" || string(raw) == "[]" {
 		return []ClarificationField{{
@@ -247,13 +329,12 @@ func parseClarificationFields(raw json.RawMessage) ([]ClarificationField, error)
 	seen := map[string]bool{}
 	for index := range fields {
 		field := &fields[index]
-		field.ID = strings.TrimSpace(field.ID)
+		field.ID = normalizedIdentifier(field.ID, fmt.Sprintf("clarification-%d", index+1), seen)
 		field.Label = strings.TrimSpace(field.Label)
 		field.Type = strings.ToLower(strings.TrimSpace(field.Type))
-		if !identifierPattern.MatchString(field.ID) || seen[field.ID] || field.Label == "" || len(field.Label) > 240 {
+		if !identifierPattern.MatchString(field.ID) || field.Label == "" || len(field.Label) > 240 {
 			return nil, fmt.Errorf("invalid or duplicate clarification field %q", field.ID)
 		}
-		seen[field.ID] = true
 		switch field.Type {
 		case "text", "number", "boolean":
 		case "select":

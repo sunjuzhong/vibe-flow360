@@ -17,6 +17,20 @@ type recordingCompleter struct {
 	userPrompt string
 }
 
+type sequenceCompleter struct {
+	responses []string
+	calls     int
+}
+
+func (s *sequenceCompleter) Complete(context.Context, string, string, string) (string, error) {
+	index := s.calls
+	s.calls++
+	if index >= len(s.responses) {
+		index = len(s.responses) - 1
+	}
+	return s.responses[index], nil
+}
+
 func (r *recordingCompleter) Complete(_ context.Context, _ string, userPrompt string, _ string) (string, error) {
 	r.userPrompt = userPrompt
 	return r.raw, nil
@@ -91,6 +105,43 @@ func TestDesignConversationIncludesAuthoritativePriorAnswers(t *testing.T) {
 	}
 	if !strings.Contains(model.userPrompt, "authoritative user answers") || !strings.Contains(model.userPrompt, `"diameter_m":0.5`) {
 		t.Fatalf("clarification history missing from agent prompt: %s", model.userPrompt)
+	}
+}
+
+func TestDesignNormalizesLocalizedCADIdentifiersAndReferences(t *testing.T) {
+	raw := `{
+  "version":"v1","decision":"generate","project_name":"三维圆柱绕流","summary":"三维圆柱绕流基础算例。",
+  "geometry":{"name":"三维 圆柱绕流","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[
+    {"id":"圆柱 主体","op":"Cylinder","params":{"radius":0.5,"height":1,"axis":"z"}},
+    {"id":"移动 圆柱","op":"translate","params":{"source":"圆柱 主体","vector":[0,0,0]}}
+  ],"results":[{"source":"移动 圆柱","name":"最终 实体","faces":[{"name":"圆柱 壁面","selector":"%cylinder"}]}]},
+  "simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.02,"first_layer_thickness_m":0.00002,"max_steps":1000},"assumptions":[],"questions":[]
+}`
+	blueprint, err := Design(context.Background(), staticCompleter(raw), "创建三维圆柱绕流")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blueprint.Geometry.Name != "agent-geometry" || blueprint.Geometry.Operations[0].ID != "operation-1" {
+		t.Fatalf("localized identifiers were not normalized: %#v", blueprint.Geometry)
+	}
+	if source := blueprint.Geometry.Operations[1].Params["source"]; source != blueprint.Geometry.Operations[0].ID {
+		t.Fatalf("operation reference was not updated: %#v", blueprint.Geometry.Operations)
+	}
+	if blueprint.Geometry.Results[0].Source != blueprint.Geometry.Operations[1].ID || blueprint.Geometry.Results[0].Faces[0].Selector != "%CYLINDER" {
+		t.Fatalf("result topology was not normalized consistently: %#v", blueprint.Geometry.Results)
+	}
+}
+
+func TestDesignAutomaticallyRetriesInvalidCADPlan(t *testing.T) {
+	invalid := `{"version":"v1","decision":"generate","project_name":"Cylinder","summary":"Cylinder flow.","geometry":{"name":"cylinder","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"unsupported-shape","params":{}}],"result":"body"},"simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.02,"first_layer_thickness_m":0.00002,"max_steps":1000},"assumptions":[],"questions":[]}`
+	corrected := `{"version":"v1","decision":"generate","project_name":"Cylinder","summary":"Cylinder flow.","geometry":{"name":"cylinder","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"cylinder","params":{"radius":0.5,"height":1,"axis":"z"}}],"result":"body"},"simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.02,"first_layer_thickness_m":0.00002,"max_steps":1000},"assumptions":[],"questions":[]}`
+	model := &sequenceCompleter{responses: []string{invalid, corrected}}
+	blueprint, err := Design(context.Background(), model, "Create cylinder flow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.calls != 2 || blueprint.Geometry.Operations[0].Op != "cylinder" {
+		t.Fatalf("expected one automatic repair attempt, got %d calls and %#v", model.calls, blueprint.Geometry)
 	}
 }
 

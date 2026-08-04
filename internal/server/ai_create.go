@@ -96,7 +96,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateDesignError(err)})
 		return
 	}
 
@@ -422,6 +422,14 @@ func humanizeAICreateProjectError(err error) string {
 	default:
 		return "Flow360 could not create the AI-generated Project. Check the service connection and try again."
 	}
+}
+
+func humanizeAICreateDesignError(err error) string {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "unavailable") {
+		return "The AI Create Agent is unavailable. Check the Agent configuration and try again."
+	}
+	return "The Agent could not produce a valid CAD plan after an automatic repair attempt. Refine the geometry description and try again."
 }
 
 const (

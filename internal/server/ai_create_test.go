@@ -321,3 +321,10 @@ func TestHumanizeAICreateProjectError(t *testing.T) {
 		t.Fatalf("unexpected CAD error: %q", got)
 	}
 }
+
+func TestHumanizeAICreateDesignErrorDoesNotExposeContractDetails(t *testing.T) {
+	got := humanizeAICreateDesignError(errors.New("geometry name must be a safe non-empty identifier"))
+	if strings.Contains(got, "identifier") || !strings.Contains(got, "automatic repair") {
+		t.Fatalf("unexpected design error: %q", got)
+	}
+}
