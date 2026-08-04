@@ -1816,9 +1816,11 @@ button { color: inherit; }
   z-index: 15;
   bottom: calc(100% + 10px);
   left: 50%;
-  display: flex;
+  display: grid;
+  width: min(350px, calc(100vw - 20px));
+  max-width: calc(100vw - 20px);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 5px;
-  width: max-content;
   padding: 6px;
   border: 1px solid rgba(196, 202, 188, .92);
   border-radius: 10px;
@@ -1829,7 +1831,8 @@ button { color: inherit; }
 }
 .viewer-toolbar-slot .viewer-tools-menu button {
   display: flex;
-  min-width: 58px;
+  width: 100%;
+  min-width: 0;
   min-height: 46px;
   flex-direction: column;
   align-items: center;
@@ -4584,8 +4587,11 @@ button { color: inherit; }
     bottom: 5px;
     left: 5px;
   }
-  .viewer-tools-menu { max-width: calc(100vw - 10px); overflow-x: auto; justify-content: flex-start; }
-  .viewer-toolbar-slot .viewer-tools-menu button { min-width: 52px; }
+  .viewer-tools-menu {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .viewer-tool-panel,.cfd-stage-viewer .viewer-tool-panel { top: 54px; right: 5px; left: 5px; width: auto; }
   .viewer-legend {
     display: none;
