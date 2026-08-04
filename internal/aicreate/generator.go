@@ -24,6 +24,8 @@ type GeometryValidation struct {
 	Volume     float64   `json:"volume"`
 	Bounds     []float64 `json:"bounds"`
 	Kernel     string    `json:"kernel"`
+	BodyNames  []string  `json:"body_names,omitempty"`
+	FaceNames  []string  `json:"face_names,omitempty"`
 }
 
 type Generator interface {
@@ -119,7 +121,7 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	if err := json.Unmarshal(stdout.Bytes(), &validation); err != nil {
 		return validation, fmt.Errorf("CAD generator returned invalid validation data: %w: %s", err, truncateOutput(stdout.Bytes(), 600))
 	}
-	if validation.SolidCount != 1 || validation.FaceCount < 1 || validation.Volume <= 0 {
+	if validation.SolidCount < 1 || validation.FaceCount < 1 || validation.Volume <= 0 {
 		return validation, fmt.Errorf("CAD topology validation failed: solids=%d faces=%d volume=%g", validation.SolidCount, validation.FaceCount, validation.Volume)
 	}
 	return validation, nil

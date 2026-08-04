@@ -28,15 +28,27 @@ type Blueprint struct {
 }
 
 type Geometry struct {
-	Name           string      `json:"name"`
-	Unit           string      `json:"unit"`
-	Representation string      `json:"representation"`
-	Format         string      `json:"format"`
-	Generator      string      `json:"generator"`
-	Operations     []Operation `json:"operations"`
-	Result         string      `json:"result"`
-	Validated      bool        `json:"validated"`
-	Validation     string      `json:"validation,omitempty"`
+	Name           string           `json:"name"`
+	Unit           string           `json:"unit"`
+	Representation string           `json:"representation"`
+	Format         string           `json:"format"`
+	Generator      string           `json:"generator"`
+	Operations     []Operation      `json:"operations"`
+	Result         string           `json:"result,omitempty"`
+	Results        []GeometryResult `json:"results,omitempty"`
+	Validated      bool             `json:"validated"`
+	Validation     string           `json:"validation,omitempty"`
+}
+
+type GeometryResult struct {
+	Source string      `json:"source"`
+	Name   string      `json:"name"`
+	Faces  []FaceLabel `json:"faces,omitempty"`
+}
+
+type FaceLabel struct {
+	Name     string `json:"name"`
+	Selector string `json:"selector"`
 }
 
 type Operation struct {
@@ -83,8 +95,9 @@ Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - decision: "generate" or "request-input"
 - project_name: concise English name
 - summary: concise English engineering summary
-- geometry: {name, unit:"m", representation:"analytic-brep", format:"step", generator:"cadquery-dsl-v1", operations, result}
+- geometry: {name, unit:"m", representation:"analytic-brep", format:"step", generator:"cadquery-dsl-v1", operations, results}
 - operations: ordered array of {id, op, params}. IDs must be unique.
+- results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is an optional array of {name, selector}.
 - simulation: {velocity_m_s, alpha_deg, surface_edge_length_m, first_layer_thickness_m, max_steps}
 - assumptions: English string array
 - questions: English string array
@@ -94,14 +107,18 @@ The deterministic CAD DSL supports:
 - cylinder params: radius, height, axis ("x", "y", or "z")
 - sphere params: radius
 - cone params: radius1, radius2, height, axis
-- extrude params: profile ([[x,y], ...]), distance, axis
-- revolve params: profile ([[radius, axial], ...]), angle, axis
+- extrude params: profile ([[x,y], ...]), profile_type (optional "polyline" or "spline"), distance, axis
+- revolve params: profile ([[radius, axial], ...]), profile_type (optional "polyline" or "spline"), angle, axis
+- loft params: sections ([{offset, profile:[[x,y], ...], profile_type:optional}], ...]), axis
+- sweep params: profile ([[x,y], ...]), profile_type (optional "polyline" or "spline"), path ([[x,y,z], ...]), profile_plane ("XY", "XZ", or "YZ")
 - translate params: source, vector ([x,y,z])
 - rotate params: source, axis_start, axis_end, angle
 - union/cut/intersect params: left, right
 - fillet params: source, radius
 
-All dimensions are finite metres and all angles are degrees. Use multiple operations and booleans when the requested geometry requires them. The final result must be one closed solid suitable for exact STEP export. Do not emit Python, file paths, shell commands, STL, meshes, external URLs, or unsupported operations.
+Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, and %TORUS. Give every result a descriptive body name and label engineering-relevant faces such as inlet, outlet, wall, symmetry, blade, or farfield. A selector may match multiple faces; they are exported with deterministic numeric suffixes.
+
+All dimensions are finite metres and all angles are degrees. Use multiple operations, bodies, and booleans when the requested geometry requires them. Every result must contain one or more closed solids suitable for exact STEP export. Do not emit Python, file paths, shell commands, STL, meshes, external URLs, or unsupported operations.
 
 Use decision "request-input" when the requested shape cannot be represented faithfully by this DSL or when missing dimensions would materially change the geometry. In that case provide focused questions and leave geometry.operations empty. Reasonable CFD operating and meshing values may be explicit assumptions; do not invent defining geometry features.`
 
@@ -185,8 +202,35 @@ func validateGeometry(geometry Geometry) error {
 			return fmt.Errorf("operation %s: %w", operation.ID, err)
 		}
 	}
-	if !seen[geometry.Result] {
-		return errors.New("geometry result does not reference an operation")
+	if strings.TrimSpace(geometry.Result) != "" && len(geometry.Results) != 0 {
+		return errors.New("geometry must use either legacy result or named results, not both")
+	}
+	if len(geometry.Results) == 0 {
+		if !seen[geometry.Result] {
+			return errors.New("geometry result does not reference an operation")
+		}
+		return nil
+	}
+	resultSources := map[string]bool{}
+	resultNames := map[string]bool{}
+	for _, result := range geometry.Results {
+		if !seen[result.Source] || resultSources[result.Source] {
+			return fmt.Errorf("geometry result source %q must reference a distinct operation", result.Source)
+		}
+		if !identifierPattern.MatchString(result.Name) || resultNames[result.Name] {
+			return fmt.Errorf("invalid or duplicate result name %q", result.Name)
+		}
+		resultSources[result.Source], resultNames[result.Name] = true, true
+		faceNames := map[string]bool{}
+		for _, face := range result.Faces {
+			if !identifierPattern.MatchString(face.Name) || faceNames[face.Name] {
+				return fmt.Errorf("invalid or duplicate face label %q in result %s", face.Name, result.Name)
+			}
+			if !validFaceSelector(face.Selector) {
+				return fmt.Errorf("unsupported face selector %q in result %s", face.Selector, result.Name)
+			}
+			faceNames[face.Name] = true
+		}
 	}
 	return nil
 }
@@ -208,7 +252,7 @@ func validateOperation(operation Operation, available map[string]bool) error {
 				return fmt.Errorf("%s must be a positive finite number", key)
 			}
 		}
-	} else if _, ok := referenceKeys[operation.Op]; !ok && operation.Op != "translate" && operation.Op != "rotate" {
+	} else if _, ok := referenceKeys[operation.Op]; !ok && operation.Op != "translate" && operation.Op != "rotate" && operation.Op != "loft" && operation.Op != "sweep" {
 		return fmt.Errorf("unsupported operation %q", operation.Op)
 	}
 	for _, key := range referenceKeys[operation.Op] {
@@ -219,6 +263,21 @@ func validateOperation(operation Operation, available map[string]bool) error {
 	}
 	if (operation.Op == "extrude" || operation.Op == "revolve") && !validProfile(operation.Params["profile"]) {
 		return errors.New("profile must contain 3 to 128 finite two-dimensional points")
+	}
+	if profileType, present := operation.Params["profile_type"]; present && !validProfileType(profileType) {
+		return errors.New("profile_type must be polyline or spline")
+	}
+	if operation.Op == "loft" && !validLoftSections(operation.Params["sections"]) {
+		return errors.New("loft sections must contain 2 to 32 ordered {offset, profile} entries")
+	}
+	if operation.Op == "sweep" {
+		if !validProfile(operation.Params["profile"]) || !validPath(operation.Params["path"]) {
+			return errors.New("sweep requires a valid profile and 2 to 128 finite three-dimensional path points")
+		}
+		plane, _ := operation.Params["profile_plane"].(string)
+		if plane != "XY" && plane != "XZ" && plane != "YZ" {
+			return errors.New("sweep profile_plane must be XY, XZ, or YZ")
+		}
 	}
 	if operation.Op == "translate" && !validVector(operation.Params["vector"]) {
 		return errors.New("vector must contain three finite numbers")
@@ -248,6 +307,54 @@ func validateOperation(operation Operation, available map[string]bool) error {
 		}
 	}
 	return nil
+}
+
+func validLoftSections(value any) bool {
+	sections, ok := value.([]any)
+	if !ok || len(sections) < 2 || len(sections) > 32 {
+		return false
+	}
+	lastOffset := -1e308
+	for _, item := range sections {
+		section, ok := item.(map[string]any)
+		offset, numberOK := number(section["offset"])
+		if !ok || !numberOK || offset <= lastOffset || !validProfile(section["profile"]) {
+			return false
+		}
+		if profileType, present := section["profile_type"]; present && !validProfileType(profileType) {
+			return false
+		}
+		lastOffset = offset
+	}
+	return true
+}
+
+func validProfileType(value any) bool {
+	profileType, ok := value.(string)
+	return ok && (profileType == "polyline" || profileType == "spline")
+}
+
+func validPath(value any) bool {
+	items, ok := value.([]any)
+	if !ok || len(items) < 2 || len(items) > 128 {
+		return false
+	}
+	for _, item := range items {
+		if !validVector(item) {
+			return false
+		}
+	}
+	return true
+}
+
+func validFaceSelector(selector string) bool {
+	switch selector {
+	case ">X", "<X", ">Y", "<Y", ">Z", "<Z", "|X", "|Y", "|Z",
+		"%PLANE", "%CYLINDER", "%CONE", "%SPHERE", "%TORUS":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateSimulation(spec simulationSpec) error {

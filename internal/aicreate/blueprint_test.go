@@ -53,3 +53,35 @@ func TestDesignRejectsForwardReferencesAndUnsupportedCode(t *testing.T) {
 		t.Fatalf("unsafe operation was not rejected: %v", err)
 	}
 }
+
+func TestDesignAcceptsNamedMultiBodyLoftAndSweep(t *testing.T) {
+	raw := `{
+  "version":"v1","decision":"generate","project_name":"Named Assembly","summary":"Two exact named flow bodies.",
+  "geometry":{"name":"named-assembly","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[
+    {"id":"wing","op":"loft","params":{"axis":"z","sections":[
+      {"offset":0,"profile":[[-1,-0.1],[1,-0.1],[1,0.1],[-1,0.1]]},
+      {"offset":2,"profile":[[-0.5,-0.05],[0.5,-0.05],[0.5,0.05],[-0.5,0.05]]}
+    ]}},
+    {"id":"pipe","op":"sweep","params":{"profile_plane":"YZ","profile":[[-0.1,-0.1],[0.1,-0.1],[0.1,0.1],[-0.1,0.1]],"path":[[0,0,0],[1,0,0],[2,1,0]]}}
+  ],"results":[
+    {"source":"wing","name":"wing-body","faces":[{"name":"tip","selector":">Z"}]},
+    {"source":"pipe","name":"flow-pipe","faces":[{"name":"wall","selector":"%PLANE"}]}
+  ]},
+  "simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.02,"first_layer_thickness_m":0.00002,"max_steps":1000},
+  "assumptions":[],"questions":[]
+}`
+	blueprint, err := Design(context.Background(), staticCompleter(raw), "Create two named bodies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blueprint.Geometry.Results) != 2 || blueprint.Geometry.Results[0].Faces[0].Name != "tip" {
+		t.Fatalf("named topology was not preserved: %#v", blueprint.Geometry.Results)
+	}
+}
+
+func TestDesignRejectsUnknownFaceSelector(t *testing.T) {
+	raw := `{"version":"v1","decision":"generate","project_name":"Bad Selector","summary":"bad","geometry":{"name":"bad-selector","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"box","params":{"length":1,"width":1,"height":1}}],"results":[{"source":"body","name":"body","faces":[{"name":"wall","selector":"python()"}]}]},"simulation":{"velocity_m_s":1,"alpha_deg":0,"surface_edge_length_m":0.1,"first_layer_thickness_m":0.001,"max_steps":10},"assumptions":[],"questions":[]}`
+	if _, err := Design(context.Background(), staticCompleter(raw), "anything"); err == nil || !strings.Contains(err.Error(), "unsupported face selector") {
+		t.Fatalf("unsafe selector was not rejected: %v", err)
+	}
+}

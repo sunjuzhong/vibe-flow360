@@ -94,7 +94,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	blueprint.Geometry.Validated = true
-	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP validation passed: %d solid, %d faces, volume %.8g m^3 (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, validation.Kernel)
+	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP validation passed: %d solids, %d faces, volume %.8g m^3, %d named bodies and %d named faces (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, len(validation.BodyNames), len(validation.FaceNames), validation.Kernel)
 	if err := validateAICreateAsset(geometryPath, "geometry"); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return

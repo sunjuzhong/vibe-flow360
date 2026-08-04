@@ -41,7 +41,12 @@ export type AICreateResult = {
       format: string
       generator: string
       operations: Array<{ id: string; op: string; params: Record<string, unknown> }>
-      result: string
+      result?: string
+      results?: Array<{
+        source: string
+        name: string
+        faces?: Array<{ name: string; selector: string }>
+      }>
       validated: boolean
       validation: string
     }
