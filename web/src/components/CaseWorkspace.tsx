@@ -12,11 +12,9 @@ import {
   Thermometer,
   Wind,
   FileOutput,
-  TrendingUp,
-  TrendingDown,
   BarChart3,
   ScanLine,
-  Ruler,
+  Layers,
 } from 'lucide-react'
 import { useState, useCallback, useMemo } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
@@ -28,6 +26,7 @@ import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
+import { ResourceReviewLayout } from './ResourceReviewLayout'
 import {
   createViewerContext,
   findLengthUnit,
@@ -217,6 +216,7 @@ export default function CaseWorkspace({
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [caseFields, setCaseFields] = useState<string[]>([])
+  const [activeField, setActiveField] = useState<string | null>(null)
   const viewModel = normalizeCase(detail)
   const terminal = isTerminal(viewModel.status)
   const resultCount = detail?.results?.records?.length ?? 0
@@ -261,59 +261,143 @@ export default function CaseWorkspace({
     setCaseFields(fields.map((f) => f.name))
   }, [])
 
+  const resultRecords = detail?.results?.records ?? []
+  const reviewLevel = viewModel.status === 'failed'
+    ? 'blocked'
+    : viewModel.status === 'completed' && convResult?.status === 'converged'
+      ? 'ready'
+      : 'warning'
+  const reviewLabel = viewModel.status === 'completed'
+    ? convResult?.status === 'converged' ? 'Results ready for engineering use' : 'Review result confidence'
+    : viewModel.status === 'failed'
+      ? 'Resolve solver failure'
+      : viewModel.status === 'running'
+        ? 'Solution is progressing'
+        : viewModel.status === 'unknown'
+          ? 'Case state unavailable'
+          : `${statusLabel(viewModel.status)} Case`
+  const reviewDetail = terminal
+    ? 'Judge convergence and physical outputs before using this Case or creating a variation.'
+    : 'Monitor residuals, forces, CFL, and solution bounds while the solver advances.'
+
   return (
-    <section className="case-workspace cfd-stage-workspace">
-      <div className={`viewer-section cfd-stage-viewer case-stage-viewer ${tools.panelOpen ? 'tool-panel-open' : ''}`}>
-        <LazyViewer3D
-          manifest={manifest}
-          state={viewerState}
-          selection={viewerSelection}
-          onSelectionChange={setViewerSelection}
-          onFieldsDiscovered={handleFieldsDiscovered}
-          projectId={projectId}
-          resourceRef={viewerContext.assetRef}
-          toolInput={tools.toolInput}
-          overlays={tools.overlays}
-          onDoubleClick={tools.onDoubleClick}
-          toolbar={
-            <>
-              {caseFields.length > 0 && (
-                <span className="viewer-toolbar-field-hint">
-                  {caseFields.length} field{caseFields.length !== 1 ? 's' : ''} available — use the field panel to color the mesh
-                </span>
-              )}
-              <ViewerToolsDock model={tools} />
-            </>
-          }
-        />
-        <ViewerToolPanel model={tools} />
-        <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
-          <ScanLine size={13} />
-          <div>
-            <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Solution field'}</strong>
-            <span aria-label="case field description">
-              {previewSource === 'fallback'
-                ? 'Case field data is not exposed as a browser asset; this Geometry anchors the result evidence.'
-                : 'Inspect Cp, y+, velocity, slices, streamlines, and vortical structures.'}
-            </span>
-          </div>
-        </div>
-        <aside className="cfd-decision-panel case-decision-panel">
-          <div className="case-workspace-heading">
+    <ResourceReviewLayout
+      className="case-workspace case-review-workspace"
+      inventoryLabel="Case solution inventory"
+      inspectorLabel="Case engineering review"
+      inventory={(
+        <>
+          <div className="geometry-panel-heading">
             <div>
-              <span>CASE DECISION</span>
-              <strong>
-                {viewModel.status === 'completed' && 'Can these results be trusted?'}
-                {viewModel.status === 'running' && 'Is the solution progressing safely?'}
-                {viewModel.status === 'preprocessing' && 'Preparing solver inputs'}
-                {viewModel.status === 'queued' && 'Waiting for execution slot'}
-                {viewModel.status === 'failed' && 'Why did this simulation fail?'}
-                {viewModel.status === 'unknown' && 'Simulation state is unknown'}
-              </strong>
-              <small>{terminal ? 'Judge convergence and physical outputs before using this Case.' : 'Monitor residuals, forces, CFL, and solution bounds.'}</small>
+              <span>{previewSource === 'fallback' ? 'CONTEXT' : 'SOLUTION'}</span>
+              <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Result fields'}</strong>
             </div>
-            <StatusBadge status={viewModel.status} />
+            <span className="geometry-count-badge">{caseFields.length}</span>
           </div>
+          <div className="case-field-inventory">
+            <div className="geometry-tree-root">
+              <ScanLine size={13} />
+              <strong>Field visualization</strong>
+              <span>{caseFields.length}</span>
+            </div>
+            <button
+              type="button"
+              className={`case-field-row ${activeField === null ? 'selected' : ''}`}
+              onClick={() => setActiveField(null)}
+            >
+              <Layers size={12} />
+              <span>Surface / mesh</span>
+              <small>base</small>
+            </button>
+            {caseFields.map((field) => (
+              <button
+                type="button"
+                className={`case-field-row ${activeField === field ? 'selected' : ''}`}
+                onClick={() => setActiveField(field)}
+                key={field}
+              >
+                <span className="case-field-swatch" />
+                <span>{field}</span>
+                <small>field</small>
+              </button>
+            ))}
+            {caseFields.length === 0 && (
+              <div className="geometry-empty-list">
+                {previewSource === 'fallback'
+                  ? 'No browser-ready Case fields; parent Geometry is shown for spatial context.'
+                  : 'No solution fields were reported by the visualization asset.'}
+              </div>
+            )}
+          </div>
+          <div className="case-result-inventory">
+            <div className="geometry-tree-root">
+              <FileOutput size={13} />
+              <strong>Result artifacts</strong>
+              <span>{resultRecords.length}</span>
+            </div>
+            {resultRecords.slice(0, 8).map((result, index) => (
+              <div className="case-result-row" key={result.path ?? result.name ?? index}>
+                <FileOutput size={11} />
+                <span title={result.path ?? result.name}>{result.name ?? result.path ?? `Result ${index + 1}`}</span>
+                <small>{result.file_type ?? 'file'}</small>
+              </div>
+            ))}
+            {resultRecords.length === 0 && <div className="geometry-empty-list">No result artifacts reported.</div>}
+          </div>
+        </>
+      )}
+      viewer={(
+        <>
+          <LazyViewer3D
+            manifest={manifest}
+            state={viewerState}
+            selection={viewerSelection}
+            onSelectionChange={setViewerSelection}
+            selectedField={activeField}
+            showEntityLegend={false}
+            onFieldsDiscovered={handleFieldsDiscovered}
+            projectId={projectId}
+            resourceRef={viewerContext.assetRef}
+            toolInput={tools.toolInput}
+            overlays={tools.overlays}
+            onDoubleClick={tools.onDoubleClick}
+            toolbar={
+              <>
+                {activeField && <span className="viewer-toolbar-field-hint">Field · {activeField}</span>}
+                <ViewerToolsDock model={tools} />
+              </>
+            }
+          />
+          <ViewerToolPanel model={tools} />
+          <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
+            <ScanLine size={13} />
+            <div>
+              <strong>{previewSource === 'fallback' ? 'Geometry context' : activeField ?? 'Solution field'}</strong>
+              <span aria-label="case field description">
+                {previewSource === 'fallback'
+                  ? 'Case field data is unavailable; parent Geometry anchors the solver and result context.'
+                  : activeField
+                    ? 'The selected result field is mapped onto the current Case asset.'
+                    : 'Choose a result field from the solution inventory to inspect the flow solution.'}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+      inspector={(
+        <>
+          <div className={`geometry-readiness-card ${reviewLevel}`}>
+            <div className="geometry-panel-heading case-review-heading">
+              <div><span>CASE REVIEW</span><strong>{reviewLabel}</strong></div>
+              <StatusBadge status={viewModel.status} />
+            </div>
+            <p>{reviewDetail}</p>
+            <div className="geometry-readiness-counts">
+              <span className={reviewLevel === 'blocked' ? 'blocked' : 'warning'}>Status · {statusLabel(viewModel.status)}</span>
+              {convResult && <span className={convResult.status === 'converged' ? 'ready' : 'warning'}>Convergence · {convResult.status}</span>}
+            </div>
+          </div>
+
           {convResult && (
             <div className={`convergence-banner compact convergence-${convResult.status}`}>
               {convResult.status === 'converged' ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
@@ -323,177 +407,105 @@ export default function CaseWorkspace({
               </div>
             </div>
           )}
-          <div className="case-decision-facts">
-            <div><span>Operating point</span><strong>{metricText(velocity)}</strong></div>
-            <div><span>Result evidence</span><strong>{viewModel.resultCount} artifacts</strong></div>
-          </div>
-          <div className="case-decision-actions">
-            <button className="toolbar-refresh" onClick={onRefresh} aria-label="Refresh case state">
-              <Activity size={13} /> Refresh
-            </button>
-            <button className="geometry-plan-action" onClick={onPlanCase} disabled={viewModel.status === 'failed'}>
-              <GitPullRequestDraft size={14} /> Plan variation
-            </button>
-          </div>
-          {primaryError && previewSource === 'fallback' && (
-            <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
-          )}
-        </aside>
-      </div>
 
-      <div className="case-analysis-heading">
-        <div><span>CASE EVIDENCE</span><strong>Convergence, forces, and physical setup</strong></div>
-        <small>Cross-check residual decay with force stability and physically reasonable solution bounds.</small>
-      </div>
-
-      {convResult && (
-        <div className="case-convergence-section">
-          <div className="convergence-header">
-            <h3><BarChart3 size={15} /> Convergence Assessment</h3>
-            <button
-              className="toolbar-refresh"
-              onClick={refetchConvergence}
-              disabled={convergenceLoading}
-              aria-label="Refresh convergence"
-            >
-              <RotateCw size={13} /> Refresh
-            </button>
+          <div className="geometry-summary-grid case-summary-grid">
+            <div><span><Clock size={12} /> Elapsed</span><strong>{viewModel.runTime}</strong></div>
+            <div><span><Gauge size={12} /> Operating point</span><strong>{metricText(velocity)}</strong></div>
+            <div><span><FileOutput size={12} /> Results</span><strong>{viewModel.resultCount}</strong></div>
+            <div><span><Wind size={12} /> Turbulence</span><strong>{viewModel.turbulenceModel}</strong></div>
           </div>
-          <div className={`convergence-banner convergence-${convResult.status}`}>
-            {convResult.status === 'converged' && <CheckCircle2 size={18} />}
-            {convResult.status === 'not-converged' && <AlertCircle size={18} />}
-            {convResult.status === 'insufficient-data' && <CircleDashed size={18} />}
-            <div>
-              <strong>{formatConvergenceStatus(convResult.status)}</strong>
-              <p>{convResult.reason}</p>
+
+          {hasErrors && (
+            <div className="case-warning-banner">
+              <AlertCircle size={14} />
+              <span>Some Flow360 reads are incomplete; this review may be partial.</span>
             </div>
-          </div>
-          {Object.entries(convResult.assessments).map(([key, assessment]: [string, ConvergenceAssessment]) => (
-            <div key={key} className="convergence-metrics">
-              <h4>{formatAssessmentKey(key)}</h4>
-              <div className="convergence-metrics-grid">
-                {Object.entries(assessment.metrics).map(([name, metric]: [string, ConvergenceMetric]) => (
-                  <div key={name} className={`metric-card metric-${metric.stable ? 'stable' : 'unstable'}`}>
-                    <div className="metric-header">
-                      <span className="metric-name">{name}</span>
-                      {metric.trend === 'decreasing' && <TrendingDown size={14} className="trend-down" />}
-                      {metric.trend === 'increasing' && <TrendingUp size={14} className="trend-up" />}
-                      {metric.trend === 'stable' && <span className="trend-stable">•</span>}
-                    </div>
-                    <div className="metric-values">
-                      <div>Final: <strong>{formatNumber(metric.final)}</strong></div>
-                      <div>Range: {formatNumber(metric.min)} – {formatNumber(metric.max)}</div>
-                      <div>Mean: {formatNumber(metric.mean)}</div>
-                      <div className={metric.stable ? 'stable-text' : 'unstable-text'}>
-                        {metric.stable ? 'Stable' : 'Unstable'} {metric.oscillating && '(oscillating)'}
+          )}
+
+          <section className="geometry-selection-card case-lifecycle-card">
+            <div className="geometry-section-title"><Activity size={13} /> Solver lifecycle</div>
+            <dl>
+              <div><dt>Started</dt><dd>{viewModel.startTime}</dd></div>
+              <div><dt>Finished</dt><dd>{viewModel.endTime}</dd></div>
+              <div><dt>Artifacts</dt><dd>{resultCount}</dd></div>
+              <div><dt>Selected field</dt><dd>{activeField ?? 'Base mesh'}</dd></div>
+            </dl>
+          </section>
+
+          <details className="case-review-details" open>
+            <summary><Gauge size={13} /> Physical setup</summary>
+            <div className="case-review-detail-block">
+              <strong>Operating conditions</strong>
+              <dl className="case-detail-list">
+                {Object.keys(viewModel.operatingPoint).length ? Object.entries(viewModel.operatingPoint).map(([key, value]) => (
+                  <div key={key}><dt>{key}</dt><dd>{metricText(value)}</dd></div>
+                )) : <div className="case-empty">Not reported by Flow360 snapshot.</div>}
+              </dl>
+              <strong>Reference quantities</strong>
+              <dl className="case-detail-list">
+                {Object.keys(viewModel.referenceQuantities).length ? Object.entries(viewModel.referenceQuantities).map(([key, value]) => (
+                  <div key={key}><dt>{key}</dt><dd>{metricText(value)}</dd></div>
+                )) : <div className="case-empty">Not reported by Flow360 snapshot.</div>}
+              </dl>
+            </div>
+          </details>
+
+          <details className="case-review-details">
+            <summary><Thermometer size={13} /> Solver settings</summary>
+            <div className="case-review-detail-block">
+              <dl className="case-detail-list">
+                {Object.keys(viewModel.solverSettings).length ? Object.entries(viewModel.solverSettings).slice(0, 8).map(([key, value]) => (
+                  <div key={key}><dt>{key}</dt><dd>{metricText(value)}</dd></div>
+                )) : <div className="case-empty">Not reported by Flow360 snapshot.</div>}
+              </dl>
+            </div>
+          </details>
+
+          {convResult && (
+            <details className="case-review-details">
+              <summary><BarChart3 size={13} /> Convergence evidence</summary>
+              <div className="case-review-detail-block">
+                {Object.entries(convResult.assessments).map(([key, assessment]: [string, ConvergenceAssessment]) => (
+                  <div className="case-assessment-compact" key={key}>
+                    <strong>{formatAssessmentKey(key)}</strong>
+                    {Object.entries(assessment.metrics).map(([name, metric]: [string, ConvergenceMetric]) => (
+                      <div className={metric.stable ? 'stable' : 'unstable'} key={name}>
+                        <span>{name}</span>
+                        <small>{formatNumber(metric.final)} · {metric.stable ? 'stable' : metric.trend}</small>
                       </div>
-                    </div>
+                    ))}
                   </div>
                 ))}
               </div>
-              {assessment.warnings && assessment.warnings.length > 0 && (
-                <div className="convergence-warnings">
-                  {assessment.warnings.map((w: string, i: number) => (
-                    <p key={i} className="warning-text">{w}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-          {convResult.files.length === 0 && (
-            <p className="convergence-empty">No result files found for convergence assessment.</p>
+            </details>
           )}
-        </div>
+
+          {previewSource === 'fallback' && (
+            <div className="volume-source-warning" role="status">
+              <AlertCircle size={14} />
+              <span><strong>Geometry context shown</strong>Case result fields are unavailable as a browser asset.</span>
+            </div>
+          )}
+
+          <div className="case-review-actions">
+            <button className="toolbar-refresh" onClick={() => { onRefresh(); refetchConvergence() }} disabled={convergenceLoading} aria-label="Refresh case state">
+              <RotateCw size={13} /> Refresh
+            </button>
+            <button
+              className="geometry-plan-action"
+              onClick={onPlanCase}
+              disabled={viewModel.status === 'failed'}
+              title={viewModel.status === 'failed' ? 'Cannot plan a variation from a failed Case' : 'Plan a Case variation'}
+            >
+              <GitPullRequestDraft size={14} /> Plan variation
+            </button>
+          </div>
+          <small className="readiness-summary">Variations are staged as auditable plans before Flow360 submission.</small>
+          {primaryError && previewSource === 'fallback' && (
+            <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
+          )}
+        </>
       )}
-
-      <div className="case-overview-grid">
-        <div className="case-metric-card">
-          <Clock size={15} />
-          <span>Elapsed wall time</span>
-          <strong>{viewModel.runTime}</strong>
-        </div>
-        <div className="case-metric-card">
-          <Clock size={15} />
-          <span>Started</span>
-          <strong>{viewModel.startTime}</strong>
-        </div>
-        <div className="case-metric-card">
-          <Clock size={15} />
-          <span>Finished</span>
-          <strong>{viewModel.endTime}</strong>
-        </div>
-        <div className="case-metric-card">
-          <FileOutput size={15} />
-          <span>Result artifacts</span>
-          <strong>{resultCount}</strong>
-        </div>
-      </div>
-
-      {hasErrors && (
-        <div className="case-warning-banner">
-          <AlertCircle size={15} />
-          <span>
-            Some Flow360 fields for this Case are incomplete. The displayed summary may be partial.
-          </span>
-        </div>
-      )}
-
-      <div className="case-detail-grid">
-        <section className="case-detail-section">
-          <h3><Gauge size={15} /> Operating conditions</h3>
-          <dl className="case-detail-list">
-            {Object.keys(viewModel.operatingPoint).length ? (
-              Object.entries(viewModel.operatingPoint).map(([k, v]) => (
-                <div key={k}><dt>{k}</dt><dd>{metricText(v)}</dd></div>
-              ))
-            ) : (
-              <div className="case-empty">Not reported by Flow360 snapshot.</div>
-            )}
-          </dl>
-        </section>
-
-        <section className="case-detail-section">
-          <h3><Thermometer size={15} /> Solver settings</h3>
-          <dl className="case-detail-list">
-            {Object.keys(viewModel.solverSettings).length ? (
-              Object.entries(viewModel.solverSettings).slice(0, 8).map(([k, v]) => (
-                <div key={k}><dt>{k}</dt><dd>{metricText(v)}</dd></div>
-              ))
-            ) : (
-              <div className="case-empty">Not reported by Flow360 snapshot.</div>
-            )}
-          </dl>
-          <p className="case-subitem"><Wind size={12} /> Turbulence: {viewModel.turbulenceModel}</p>
-        </section>
-
-        <section className="case-detail-section">
-          <h3><Wind size={15} /> Reference quantities</h3>
-          <dl className="case-detail-list">
-            {Object.keys(viewModel.referenceQuantities).length ? (
-              Object.entries(viewModel.referenceQuantities).map(([k, v]) => (
-                <div key={k}><dt>{k}</dt><dd>{metricText(v)}</dd></div>
-              ))
-            ) : (
-              <div className="case-empty">Not reported by Flow360 snapshot.</div>
-            )}
-          </dl>
-        </section>
-      </div>
-
-      <div className="case-actions-row">
-        <button
-          className="geometry-plan-action"
-          onClick={onPlanCase}
-          disabled={viewModel.status === 'failed'}
-          title={viewModel.status === 'failed' ? 'Cannot plan a variation from a failed Case' : 'Plan a Case variation'}
-        >
-          <GitPullRequestDraft size={15} />
-          Plan Case Variation
-        </button>
-        <small className="readiness-summary">
-          Case variation creation is staged as an auditable plan — it does not submit to Flow360 directly.
-        </small>
-      </div>
-    </section>
+    />
   )
 }

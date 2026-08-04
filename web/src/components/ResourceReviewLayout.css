@@ -235,6 +235,158 @@
   line-height: 1.4;
 }
 
+.case-review-workspace .resource-review-inventory > .geometry-panel-heading {
+  padding: 14px 13px 10px;
+}
+
+.case-review-workspace .resource-review-viewer {
+  position: relative;
+}
+
+.case-review-workspace .cfd-viewer-source {
+  max-width: min(360px, calc(100% - 32px));
+}
+
+.case-field-inventory,
+.case-result-inventory {
+  min-height: 0;
+  padding: 0 7px 8px;
+}
+
+.case-field-inventory {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.case-result-inventory {
+  max-height: 38%;
+  overflow-y: auto;
+  border-top: 1px solid #e3e4dd;
+  padding-top: 8px;
+}
+
+.case-field-row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: #5f685d;
+  background: transparent;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.case-field-row:hover { background: #f0f2eb; }
+.case-field-row.selected { color: #315c68; background: #e3edef; }
+.case-field-row > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-field-row small { color: #92978e; font: 7px 'DM Mono'; text-transform: uppercase; }
+
+.case-field-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #3c81a0 0%, #7aa442 52%, #d49a44 100%);
+}
+
+.case-result-row {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 8px;
+  color: #697167;
+  font-size: 9px;
+}
+
+.case-result-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-result-row small { color: #969b93; font: 7px 'DM Mono'; text-transform: uppercase; }
+
+.case-review-workspace .case-review-heading { align-items: flex-start; }
+.case-review-heading .hero-status { flex: 0 0 auto; margin: 0; }
+
+.case-review-workspace .convergence-banner.compact {
+  margin-top: 8px;
+  padding: 9px;
+}
+
+.case-review-workspace .convergence-banner.compact p {
+  display: -webkit-box;
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 8px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.case-review-workspace .case-summary-grid {
+  margin-top: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.case-review-workspace .case-warning-banner {
+  margin-top: 8px;
+  padding: 8px 9px;
+}
+
+.case-lifecycle-card dl { margin: 7px 0 0; }
+
+.case-review-details {
+  margin-top: 8px;
+  border: 1px solid #dfe2d9;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .7);
+}
+
+.case-review-details summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  color: #4c574b;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.case-review-details summary::-webkit-details-marker { display: none; }
+.case-review-details[open] summary { border-bottom: 1px solid #e5e7e0; }
+.case-review-detail-block { display: grid; gap: 8px; padding: 9px; }
+.case-review-detail-block > strong { color: #788076; font: 8px 'DM Mono'; letter-spacing: .04em; text-transform: uppercase; }
+.case-review-detail-block .case-detail-list { grid-template-columns: minmax(0, 1fr) minmax(80px, auto); }
+.case-review-detail-block .case-detail-list dd { overflow-wrap: anywhere; text-align: right; }
+
+.case-assessment-compact { display: grid; gap: 4px; }
+.case-assessment-compact + .case-assessment-compact { padding-top: 8px; border-top: 1px solid #e7e8e2; }
+.case-assessment-compact > strong { color: #566052; font-size: 9px; }
+.case-assessment-compact > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding: 4px 6px; border-radius: 4px; font-size: 8px; }
+.case-assessment-compact > div.stable { color: #5c721f; background: #f1f5e6; }
+.case-assessment-compact > div.unstable { color: #995345; background: #f8e9e5; }
+.case-assessment-compact small { font: 7px 'DM Mono'; }
+
+.case-review-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.case-review-actions .toolbar-refresh,
+.case-review-actions .geometry-plan-action {
+  min-height: 35px;
+  margin: 0;
+}
+
+.case-review-workspace .readiness-summary { display: block; margin-top: 7px; }
+
 @media (max-width: 1100px) {
   .project-canvas > .resource-review-workspace {
     grid-template-columns: 185px minmax(0, 1fr) 265px;
