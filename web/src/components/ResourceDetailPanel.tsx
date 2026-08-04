@@ -81,7 +81,7 @@ function JsonView({ value, empty }: { value: unknown; empty: string }) {
 }
 
 export function resourceStatus(detail: ResourceDetail | null) {
-  const stateStatus = detail?.state?.status
+  const stateStatus = detail?.state?.status ?? detail?.state?.state
   const infoStatus = detail?.info?.status
   return typeof stateStatus === 'string'
     ? stateStatus
@@ -127,7 +127,7 @@ export default function ResourceDetailPanel({
       next.push({ id: 'convergence', label: 'Convergence', icon: BarChart3 })
       next.push({ id: 'compare', label: 'Compare', icon: GitCompare })
     }
-    next.push({ id: 'logs', label: 'Logs', icon: ScrollText })
+    if (resourceType !== 'Draft') next.push({ id: 'logs', label: 'Logs', icon: ScrollText })
     return next
   }, [resourceType])
 

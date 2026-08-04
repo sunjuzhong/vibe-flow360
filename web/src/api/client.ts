@@ -176,6 +176,26 @@ export type ProjectItemsResponse = {
   items: ProjectItem[]
 }
 
+export type DraftRecord = {
+  id: string
+  name: string
+  project_id?: string
+  source_id?: string
+  source_type?: string
+  status?: string
+  state?: string
+  created_at?: string
+  updated_at?: string
+  case_id?: string
+  [key: string]: unknown
+}
+
+export type ProjectDraftsResponse = {
+  records?: DraftRecord[]
+  drafts?: DraftRecord[]
+  items?: DraftRecord[]
+}
+
 export type ProjectSyncResource = {
   id: string
   type: string
@@ -661,6 +681,8 @@ export const api = {
     flow360JSON<ProjectTreeResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/tree${cacheOnly ? '?cache=only' : ''}`),
   projectItems: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
+  projectDrafts: (projectId: string, cacheOnly = false) =>
+    flow360JSON<ProjectDraftsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts${cacheOnly ? '?cache=only' : ''}`),
   startProjectSync: (projectId: string, force = false) =>
     mutate<ProjectSyncManifest>(
       `/api/flow360/projects/${encodeURIComponent(projectId)}/sync${force ? '?force=true' : ''}`,

@@ -133,6 +133,8 @@ func TestCacheableSnapshotRejectsEmptyWorkspaceResponses(t *testing.T) {
 		{"folder-tree", json.RawMessage(`{"root":{}}`), false},
 		{"project-list", json.RawMessage(`{"records":[{"id":"prj-1"}]}`), true},
 		{"project-list", json.RawMessage(`{"records":[]}`), false},
+		{"draft-list", json.RawMessage(`{"records":[]}`), true},
+		{"draft-list", json.RawMessage(`{"records":[{"id":"draft-1"}]}`), true},
 		{"resource-detail", json.RawMessage(`{"id":"case-1","type":"Case"}`), true},
 		{"resource-detail", json.RawMessage(`{"type":"Case"}`), false},
 	}

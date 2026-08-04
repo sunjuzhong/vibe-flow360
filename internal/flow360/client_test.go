@@ -116,6 +116,7 @@ func TestResourceCommandNormalizesTypes(t *testing.T) {
 		"SurfaceMesh": "surface-mesh",
 		"volume-mesh": "volume-mesh",
 		"Case":        "case",
+		"Draft":       "draft",
 	}
 	for input, expected := range tests {
 		command, _, err := resourceCommand(input)
@@ -125,6 +126,67 @@ func TestResourceCommandNormalizesTypes(t *testing.T) {
 		if command != expected {
 			t.Fatalf("%s: got %q, want %q", input, command, expected)
 		}
+	}
+}
+
+func TestProjectDraftsUsesProjectScopedDraftList(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > %q
+printf '{"records":[{"id":"draft-1","name":"Baseline"}]}'
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	raw, err := client.ProjectDrafts(context.Background(), "prj-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "draft-1") {
+		t.Fatalf("unexpected Draft list: %s", raw)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(args); !strings.Contains(got, "draft\nlist\n--project-id\nprj-1\n") {
+		t.Fatalf("unexpected Draft list arguments: %q", got)
+	}
+}
+
+func TestDraftDetailOmitsUnsupportedSummaryCall(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s ' "$@" >> %q
+printf '\n' >> %q
+case "$*" in
+  *"simulation-params get"*) printf '{"version":"test"}' ;;
+  *"state"*) printf '{"status":"draft"}' ;;
+  *) printf '{"id":"draft-1","name":"Baseline","project_id":"prj-1"}' ;;
+esac
+`, argsPath, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	detail, err := client.ResourceDetail(context.Background(), "Draft", "draft-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Errors) != 0 || detail.Type != "Draft" || len(detail.SimulationParams) == 0 {
+		t.Fatalf("unexpected Draft detail: %#v", detail)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(args), "summary") {
+		t.Fatalf("Draft detail called unsupported summary command: %q", args)
 	}
 }
 

@@ -165,6 +165,13 @@ func (c *Client) ProjectItems(ctx context.Context, projectID string) (json.RawMe
 	return c.jsonCommand(ctx, "project", "items", projectID)
 }
 
+// ProjectDrafts lists the editable Flow360 Draft configurations associated
+// with a Project. Drafts are intentionally separate from the immutable CFD
+// resource tree returned by ProjectItems.
+func (c *Client) ProjectDrafts(ctx context.Context, projectID string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "draft", "list", "--project-id", projectID)
+}
+
 func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID string) (ResourceDetail, error) {
 	command, normalizedType, err := resourceCommand(resourceType)
 	if err != nil {
@@ -184,12 +191,17 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 	operations := []operation{
 		{name: "info", args: []string{command, "info", resourceID}, set: func(raw json.RawMessage) { detail.Info = raw }},
 		{name: "state", args: []string{command, "state", resourceID}, set: func(raw json.RawMessage) { detail.State = raw }},
-		{name: "summary", args: []string{command, "summary", resourceID}, set: func(raw json.RawMessage) { detail.Summary = raw }},
 		{
 			name: "simulation_params",
 			args: []string{command, "simulation-params", "get", resourceID},
 			set:  func(raw json.RawMessage) { detail.SimulationParams = raw },
 		},
+	}
+	if command != "draft" {
+		operations = append(operations, operation{
+			name: "summary", args: []string{command, "summary", resourceID},
+			set: func(raw json.RawMessage) { detail.Summary = raw },
+		})
 	}
 	if command == "case" {
 		operations = append(operations, operation{
@@ -611,6 +623,8 @@ func resourceCommand(resourceType string) (command, normalizedType string, err e
 		return "volume-mesh", "VolumeMesh", nil
 	case "case":
 		return "case", "Case", nil
+	case "draft":
+		return "draft", "Draft", nil
 	default:
 		return "", "", fmt.Errorf("unsupported resource type %q", resourceType)
 	}

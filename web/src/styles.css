@@ -3539,6 +3539,120 @@ button { color: inherit; }
   background: #ecece8;
 }
 
+.project-draft-bar {
+  position: relative;
+  z-index: 6;
+  display: grid;
+  min-height: 62px;
+  flex: 0 0 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 13px;
+  border-bottom: 1px solid #ced6b5;
+  background: linear-gradient(90deg, #f6f8ed 0%, #eef4da 52%, #f7f8f2 100%);
+}
+
+.project-draft-heading {
+  display: flex;
+  min-width: 112px;
+  align-items: center;
+  gap: 9px;
+}
+.project-draft-heading > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #afc66b;
+  border-radius: 9px;
+  color: #465f0f;
+  background: #c4e35b;
+}
+.project-draft-heading strong,
+.project-draft-heading small { display: block; }
+.project-draft-heading strong { color: #34421e; font-size: 12px; }
+.project-draft-heading small { margin-top: 2px; color: #7c8572; font-size: 9px; }
+
+.project-draft-list {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.project-draft-list > button {
+  display: flex;
+  min-width: 138px;
+  max-width: 220px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #d1d7c3;
+  border-radius: 8px;
+  color: #5d6654;
+  background: rgba(255, 255, 255, .72);
+  text-align: left;
+  cursor: pointer;
+}
+.project-draft-list > button:hover { border-color: #9db354; background: #fff; }
+.project-draft-list > button.active {
+  border-color: #91aa3d;
+  color: #33450d;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(145, 170, 61, .2);
+}
+.project-draft-list > button > span:last-child { min-width: 0; }
+.project-draft-list strong,
+.project-draft-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-draft-list strong { font-size: 11px; }
+.project-draft-list small { margin-top: 2px; color: #89907f; font: 9px 'DM Mono'; text-transform: capitalize; }
+.draft-state-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #9ba095; }
+.draft-state-dot.status-draft { background: #9ab735; }
+.draft-state-dot.status-submitted,
+.draft-state-dot.status-running { background: #37849a; }
+.draft-state-dot.status-failed,
+.draft-state-dot.status-error { background: #b45c4a; }
+.draft-state-dot.status-completed,
+.draft-state-dot.status-success { background: #4e9463; }
+.project-draft-empty {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  color: #777f70;
+  font-size: 10px;
+}
+
+.project-draft-actions { display: flex; align-items: center; gap: 6px; }
+.project-draft-actions > button {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #bdc8a0;
+  border-radius: 8px;
+  color: #475532;
+  background: rgba(255,255,255,.85);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.project-draft-actions > button:last-child { width: 34px; padding: 0; }
+.project-draft-actions > button:disabled { opacity: .45; cursor: not-allowed; }
+.draft-review-note {
+  margin: 12px 0 0;
+  padding: 10px;
+  border: 1px solid #d9dfc7;
+  border-radius: 7px;
+  color: #697260;
+  background: #f5f8eb;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .project-canvas-toolbar {
   position: relative;
   z-index: 5;
@@ -4277,6 +4391,7 @@ button { color: inherit; }
   .project-shell-actions > button span { display: none; }
   .project-shell-actions > button { width: 34px; padding: 0; }
   .project-canvas-toolbar { grid-template-columns: minmax(130px, 1fr) minmax(260px, 1.4fr) auto; }
+  .project-draft-heading small { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -4292,6 +4407,13 @@ button { color: inherit; }
   .project-shell-actions > button:nth-of-type(5) { display: none; }
   .project-connection { display: none; }
   .project-workbench { height: calc(100vh - 58px); min-height: 0; }
+  .project-draft-bar { min-height: 55px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; padding: 7px 9px; }
+  .project-draft-heading { min-width: 0; }
+  .project-draft-heading > div { display: none; }
+  .project-draft-heading > span { width: 31px; height: 31px; }
+  .project-draft-list > button { min-width: 120px; padding: 6px 8px; }
+  .project-draft-actions > button:first-child span { display: none; }
+  .project-draft-actions > button:first-child { width: 34px; padding: 0; }
   .project-canvas-toolbar { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; padding: 0 9px; }
   .canvas-resource-title small { max-width: 180px; }
   .canvas-stage-strip { display: none; }
@@ -4310,7 +4432,7 @@ button { color: inherit; }
   .project-canvas > .cfd-stage-workspace > .cfd-stage-viewer,
   .project-canvas > .cfd-stage-workspace > .cfd-stage-viewer .viewer-3d-container,
   .project-canvas > .cfd-stage-workspace > .cfd-stage-viewer .viewer-3d {
-    height: calc(100dvh - 106px);
+    height: calc(100dvh - 161px);
     min-height: 620px;
   }
   .cfd-stage-viewer .viewer-legend { display: none; }

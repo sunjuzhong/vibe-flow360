@@ -232,6 +232,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id", s.flow360ProjectInfo)
 		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
+		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
 		api.GET("/flow360/projects/:project_id/sync", s.projectSyncStatus)
 		api.POST("/flow360/projects/:project_id/sync", s.startProjectSync)
 		api.GET("/flow360/resources/:resource_type/:resource_id", s.flow360ResourceDetail)
@@ -2091,6 +2092,10 @@ func (s *Server) flow360ProjectItems(c *gin.Context) {
 	s.flow360ProjectJSON(c, "project-items", s.flow360.ProjectItems)
 }
 
+func (s *Server) flow360ProjectDrafts(c *gin.Context) {
+	s.flow360ProjectJSON(c, "draft-list", s.flow360.ProjectDrafts)
+}
+
 func (s *Server) flow360ProjectJSON(
 	c *gin.Context,
 	kind string,
@@ -2151,6 +2156,13 @@ func cacheableSnapshot(kind string, raw json.RawMessage) bool {
 	case "project-items":
 		_, ok := payload["items"].([]any)
 		return ok
+	case "draft-list":
+		for _, key := range []string{"records", "drafts", "items"} {
+			if _, ok := payload[key].([]any); ok {
+				return true
+			}
+		}
+		return false
 	case "project-info", "resource-detail":
 		id, ok := payload["id"].(string)
 		return ok && strings.TrimSpace(id) != ""

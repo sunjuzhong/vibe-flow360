@@ -20,6 +20,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   api,
   type Flow360Status,
+  type DraftRecord,
   type GeometryComparison,
   type GeometryDiagnosticReport,
   type ProjectInfo,
@@ -33,6 +34,7 @@ import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
 import PlanPanel from '../components/PlanPanel'
 import { ProjectShellAction } from '../components/ProjectShellAction'
+import ProjectDraftBar, { draftRecords } from '../components/ProjectDraftBar'
 import ResourceDetailPanel, {
   resourceStatus,
   type ResourceDetailTab,
@@ -130,12 +132,21 @@ export default function ProjectPage() {
   const [detail, setDetail] = useState<ResourceDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
+  const [drafts, setDrafts] = useState<DraftRecord[]>([])
+  const [draftsLoading, setDraftsLoading] = useState(true)
+  const [draftsError, setDraftsError] = useState('')
+  const [activeDraftId, setActiveDraftId] = useState('')
+  const [draftDetail, setDraftDetail] = useState<ResourceDetail | null>(null)
+  const [draftDetailLoading, setDraftDetailLoading] = useState(false)
+  const [draftDetailError, setDraftDetailError] = useState('')
+  const [draftDataSource, setDraftDataSource] = useState<'live' | 'cache'>('live')
+  const [draftCachedAt, setDraftCachedAt] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [initialPlanId, setInitialPlanId] = useState('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
-  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | null>(null)
+  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'draft' | null>(null)
   const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -242,6 +253,27 @@ export default function ProjectPage() {
     api.flow360Status().then(setFlowStatus).catch(() => setFlowStatus({ available: false }))
   }, [])
 
+  const loadDrafts = useCallback(async () => {
+    setDraftsLoading(true)
+    setDraftsError('')
+    try {
+      const response = await api.projectDrafts(projectId)
+      const next = draftRecords(response.data)
+      setDrafts(next)
+      setActiveDraftId((current) => (
+        next.some((draft) => draft.id === current) ? current : next[0]?.id ?? ''
+      ))
+    } catch (cause) {
+      setDraftsError(String(cause).replace('Error: ', ''))
+    } finally {
+      setDraftsLoading(false)
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    void loadDrafts()
+  }, [loadDrafts])
+
   useEffect(() => {
     const handleOpenIntervention = (event: Event) => {
       const detail = (event as CustomEvent<{ planId?: string }>).detail
@@ -310,6 +342,36 @@ export default function ProjectPage() {
     if (!root) return null
     return findNode(root, resourceId) ?? root
   }, [root, resourceId])
+
+  const activeDraft = useMemo(
+    () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
+    [activeDraftId, drafts],
+  )
+
+  const loadDraftDetail = useCallback(async () => {
+    if (!activeDraftId) {
+      setDraftDetail(null)
+      setDraftDetailError('')
+      return
+    }
+    setDraftDetailLoading(true)
+    setDraftDetailError('')
+    try {
+      const response = await api.resourceDetail('Draft', activeDraftId)
+      setDraftDetail(response.data)
+      setDraftDataSource(response.source)
+      setDraftCachedAt(response.cachedAt || '')
+    } catch (cause) {
+      setDraftDetail(null)
+      setDraftDetailError(String(cause).replace('Error: ', ''))
+    } finally {
+      setDraftDetailLoading(false)
+    }
+  }, [activeDraftId])
+
+  useEffect(() => {
+    void loadDraftDetail()
+  }, [loadDraftDetail])
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selected?.id) ?? null,
@@ -551,6 +613,17 @@ export default function ProjectPage() {
           )}
 
           <main className="resource-workspace project-canvas">
+            <ProjectDraftBar
+              drafts={drafts}
+              selectedId={activeDraftId}
+              selectedDetail={draftDetail}
+              loading={draftsLoading}
+              detailLoading={draftDetailLoading}
+              error={draftsError}
+              onSelect={setActiveDraftId}
+              onInspect={() => setActivePanel('draft')}
+              onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
+            />
             <div className="project-canvas-toolbar">
               <div className="canvas-resource-title">
                 <span className={`resource-type-icon type-${selected.type.toLowerCase()}`}>
@@ -782,6 +855,36 @@ export default function ProjectPage() {
             />
           </aside>
           )}
+
+          {activePanel === 'draft' && activeDraft && (
+          <aside ref={panelRef} className="resource-inspector project-drawer project-drawer-right" role="dialog" aria-modal="true" aria-label="Draft parameters" tabIndex={-1}>
+            <div className="workbench-panel-title">
+              <GitPullRequestDraft size={15} /><span>Draft configuration</span>
+              <button onClick={closePanel} aria-label="Close Draft parameters"><X size={15} /></button>
+            </div>
+            <div className="inspector-section draft-inspector-summary">
+              <p className="eyebrow">ACTIVE DRAFT</p>
+              <dl>
+                <div><dt>Name</dt><dd>{activeDraft.name || 'Untitled Draft'}</dd></div>
+                <div><dt>ID</dt><dd className="mono-value">{activeDraft.id}</dd></div>
+                <div><dt>Source</dt><dd>{String(activeDraft.source_type || draftDetail?.info?.source_type || 'Project resource')}</dd></div>
+                <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(draftDetail).toLowerCase()}`}>{resourceStatus(draftDetail)}</span></dd></div>
+              </dl>
+              <p className="draft-review-note">This Draft is editable configuration context. Meshing or solving still requires an approved run.</p>
+            </div>
+            <ResourceDetailPanel
+              detail={draftDetail}
+              loading={draftDetailLoading}
+              error={draftDetailError}
+              resourceType="Draft"
+              resourceId={activeDraft.id}
+              onRetry={() => void loadDraftDetail()}
+              dataSource={draftDataSource}
+              cachedAt={draftCachedAt}
+              initialTab="parameters"
+            />
+          </aside>
+          )}
         </div>
       )}
 
@@ -790,7 +893,7 @@ export default function ProjectPage() {
         onClose={() => setChatOpen(false)}
         contextLabel={selected ? `${selected.type} · ${selected.name}` : `Project · ${project?.name || projectId}`}
         context={selected && project
-          ? `The user is viewing Flow360 project ${project.name} (${project.id}), solver ${project.solver_version}. Selected ${selected.type} ${selected.name} (${selected.id}), status ${resourceStatus(detail)}. The Project has ${items.length} resources; this branch has ${descendants(selected) + 1}. Flow360 summary: ${JSON.stringify(detail?.summary ?? {})}. Case result artifact count: ${detail?.results?.records?.length ?? 0}. Partial read errors: ${JSON.stringify(detail?.errors ?? {})}. This is a read-only workbench; propose plans and validation but do not claim execution.`
+          ? `The user is viewing Flow360 project ${project.name} (${project.id}), solver ${project.solver_version}. Selected ${selected.type} ${selected.name} (${selected.id}), status ${resourceStatus(detail)}. Active Draft: ${activeDraft?.name ?? 'none'} (${activeDraft?.id ?? 'none'}), Draft status ${resourceStatus(draftDetail)}, Draft SimulationParams: ${JSON.stringify(draftDetail?.simulation_params ?? {})}. The Project has ${items.length} resources and ${drafts.length} Drafts; this branch has ${descendants(selected) + 1}. Flow360 summary: ${JSON.stringify(detail?.summary ?? {})}. Case result artifact count: ${detail?.results?.records?.length ?? 0}. Partial read errors: ${JSON.stringify(detail?.errors ?? {})}. This is a read-only workbench; propose plans and validation but do not claim execution.`
           : `The user is opening Flow360 project ${projectId}.`}
         suggestions={selected ? resourceSuggestions[selected.type] ?? [] : []}
       />
