@@ -237,8 +237,7 @@ export default function PlanPanel({
     schemaLoading,
     hasSchema: Boolean(formSchema),
     name,
-    intent,
-  }), [formSchema, intent, name, schemaLoading])
+  }), [formSchema, name, schemaLoading])
 
   useEffect(() => {
     if (!open || !showForm || !activeStages.length) return
@@ -536,17 +535,22 @@ export default function PlanPanel({
                 </label>
                 <section className="plan-ai-form-fill">
                   <div>
-                    <span><Sparkles size={15} /> Complete this existing {resource.type.replace('Mesh', ' Mesh')} setup</span>
-                    <small>The selected resource already exists. Describe the simulation goal and the Agent will fill only the downstream parameters allowed by the active Flow360 schemas; it will not regenerate the CAD here.</small>
+                    <span><Sparkles size={15} /> Optional · ask AI to complete this existing {resource.type.replace('Mesh', ' Mesh')} setup</span>
+                    <small>This description is needed only when you want the Agent to fill downstream parameters. Leave it empty to configure the forms yourself and continue with Compile &amp; validate.</small>
                   </div>
                   <div className="plan-ai-form-row">
                     <textarea
                       value={intent}
                       onChange={(event) => setIntent(event.target.value)}
                       placeholder="例如：外流场，Mach 0.8，攻角 3°，先用稳态 RANS，关注升阻力；网格优先控制成本。"
-                      required
+                      aria-label="Optional simulation goal for AI parameter fill"
                     />
-                    <button type="button" onClick={() => void fillWithAI()} disabled={assistLoading || schemaLoading || !formSchema || !intent.trim()}>
+                    <button
+                      type="button"
+                      onClick={() => void fillWithAI()}
+                      disabled={assistLoading || schemaLoading || !formSchema || !intent.trim()}
+                      title={!intent.trim() ? 'Describe the simulation goal to use AI parameter fill.' : undefined}
+                    >
                       {assistLoading ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
                       {assistLoading ? 'Filling…' : 'Fill plan parameters with AI'}
                     </button>

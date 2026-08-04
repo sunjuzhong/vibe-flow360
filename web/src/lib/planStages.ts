@@ -4,18 +4,15 @@ export function planCompileBlockers({
   schemaLoading,
   hasSchema,
   name,
-  intent,
 }: {
   schemaLoading: boolean
   hasSchema: boolean
   name: string
-  intent: string
 }) {
   const blockers: string[] = []
   if (schemaLoading) blockers.push('Flow360 parameter schema is still loading.')
   else if (!hasSchema) blockers.push('Flow360 parameter schema is unavailable.')
   if (!name.trim()) blockers.push('Add a plan / run name.')
-  if (!intent.trim()) blockers.push('Describe what you want this run to do.')
   return blockers
 }
 

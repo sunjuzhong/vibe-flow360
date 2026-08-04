@@ -32,6 +32,19 @@ func TestCompileBuildsSemanticDiff(t *testing.T) {
 	}
 }
 
+func TestCompileDerivesAuditIntentWhenAIGuidanceIsOmitted(t *testing.T) {
+	plan, err := Compile(CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "surface-mesh", Name: "manual mesh", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Intent != "Compile and validate reviewed parameters for Geometry → SurfaceMesh." {
+		t.Fatalf("unexpected derived audit intent %q", plan.Intent)
+	}
+}
+
 func TestCompilePreservesEngineeringEvidence(t *testing.T) {
 	plan, err := Compile(CreateInput{
 		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",

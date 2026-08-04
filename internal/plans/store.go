@@ -242,11 +242,15 @@ func Compile(input CreateInput) (Plan, error) {
 	if len(input.Name) > 120 {
 		return Plan{}, errors.New("plan name must be 120 characters or fewer")
 	}
-	if input.Intent == "" {
-		return Plan{}, errors.New("engineering intent is required")
-	}
 	if !validTarget(input.SourceType, input.Target) {
 		return Plan{}, fmt.Errorf("%s cannot run up to %s", input.SourceType, input.Target)
+	}
+	if input.Intent == "" {
+		input.Intent = fmt.Sprintf(
+			"Compile and validate reviewed parameters for %s → %s.",
+			input.SourceType,
+			normalizeType(input.Target),
+		)
 	}
 	if len(input.Patch) == 0 {
 		input.Patch = json.RawMessage(`{}`)

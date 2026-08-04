@@ -86,13 +86,11 @@ describe('stage-aware simulation planning', () => {
       schemaLoading: false,
       hasSchema: true,
       name: 'Case variation',
-      intent: '',
-    })).toEqual(['Describe what you want this run to do.'])
+    })).toEqual([])
     expect(planCompileBlockers({
       schemaLoading: true,
       hasSchema: false,
       name: '',
-      intent: 'Run the existing case',
     })).toEqual([
       'Flow360 parameter schema is still loading.',
       'Add a plan / run name.',
@@ -101,7 +99,6 @@ describe('stage-aware simulation planning', () => {
       schemaLoading: false,
       hasSchema: true,
       name: 'Case variation',
-      intent: 'Run the existing case',
     })).toEqual([])
   })
 })
