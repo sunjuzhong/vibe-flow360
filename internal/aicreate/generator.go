@@ -32,6 +32,30 @@ type Generator interface {
 	Generate(context.Context, Geometry, string) (GeometryValidation, error)
 }
 
+type GenerationFailureKind string
+
+const (
+	GenerationRuntimeFailure   GenerationFailureKind = "runtime"
+	GenerationTemporaryFailure GenerationFailureKind = "temporary"
+	GenerationGeometryFailure  GenerationFailureKind = "geometry"
+)
+
+type GenerationError struct {
+	Kind GenerationFailureKind
+	Err  error
+}
+
+func (e *GenerationError) Error() string { return e.Err.Error() }
+func (e *GenerationError) Unwrap() error { return e.Err }
+
+func GenerationFailure(err error) GenerationFailureKind {
+	var generationError *GenerationError
+	if errors.As(err, &generationError) {
+		return generationError.Kind
+	}
+	return GenerationGeometryFailure
+}
+
 type CadQueryGenerator struct {
 	UVBinary string
 	CacheDir string
@@ -68,12 +92,23 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	if strings.ToLower(filepath.Ext(outputPath)) != ".step" {
 		return validation, errors.New("CAD output path must use the .step extension")
 	}
-	if _, err := exec.LookPath(g.UVBinary); err != nil {
-		return validation, fmt.Errorf("CAD runtime %q was not found; install uv or configure VIBESIM_UV_BINARY", g.UVBinary)
-	}
-	directory, err := os.MkdirTemp(filepath.Dir(outputPath), ".cad-runtime-")
+	absoluteOutputPath, err := filepath.Abs(outputPath)
 	if err != nil {
-		return validation, fmt.Errorf("prepare CAD runtime: %w", err)
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("resolve CAD output path: %w", err)}
+	}
+	outputPath = filepath.Clean(absoluteOutputPath)
+	uvBinary, err := exec.LookPath(g.UVBinary)
+	if err != nil {
+		return validation, &GenerationError{Kind: GenerationRuntimeFailure, Err: fmt.Errorf("CAD runtime %q was not found; install uv or configure VIBESIM_UV_BINARY", g.UVBinary)}
+	}
+	if strings.ContainsRune(uvBinary, filepath.Separator) {
+		if absoluteUV, absoluteErr := filepath.Abs(uvBinary); absoluteErr == nil {
+			uvBinary = absoluteUV
+		}
+	}
+	directory, err := os.MkdirTemp("", "vibesim-cad-runtime-")
+	if err != nil {
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("prepare CAD runtime: %w", err)}
 	}
 	defer os.RemoveAll(directory)
 	recipePath := filepath.Join(directory, "recipe.json")
@@ -83,10 +118,10 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 		return validation, err
 	}
 	if err := os.WriteFile(recipePath, recipe, 0o600); err != nil {
-		return validation, fmt.Errorf("write CAD recipe: %w", err)
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("write CAD recipe: %w", err)}
 	}
 	if err := os.WriteFile(scriptPath, cadGeneratorScript, 0o500); err != nil {
-		return validation, fmt.Errorf("write CAD generator: %w", err)
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("write CAD generator: %w", err)}
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, g.Timeout)
@@ -96,7 +131,7 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 		args = append(args, "--offline")
 	}
 	args = append(args, "--with", "cadquery==2.6.1", "python", scriptPath, recipePath, outputPath)
-	command := exec.CommandContext(runCtx, g.UVBinary, args...)
+	command := exec.CommandContext(runCtx, uvBinary, args...)
 	command.Dir = directory
 	command.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
@@ -114,17 +149,31 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	err = command.Run()
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return validation, fmt.Errorf("CAD generation timed out after %s", g.Timeout)
+			return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("CAD generation timed out after %s", g.Timeout)}
 		}
-		return validation, fmt.Errorf("CAD generation failed: %s", truncateOutput(stderr.Bytes(), 1200))
+		return validation, &GenerationError{Kind: classifyCADExecutionFailure(stderr.String()), Err: fmt.Errorf("CAD generation failed: %s", truncateOutput(stderr.Bytes(), 1200))}
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &validation); err != nil {
-		return validation, fmt.Errorf("CAD generator returned invalid validation data: %w: %s", err, truncateOutput(stdout.Bytes(), 600))
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("CAD generator returned invalid validation data: %w: %s", err, truncateOutput(stdout.Bytes(), 600))}
 	}
 	if validation.SolidCount < 1 || validation.FaceCount < 1 || validation.Volume <= 0 {
-		return validation, fmt.Errorf("CAD topology validation failed: solids=%d faces=%d volume=%g", validation.SolidCount, validation.FaceCount, validation.Volume)
+		return validation, &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("CAD topology validation failed: solids=%d faces=%d volume=%g", validation.SolidCount, validation.FaceCount, validation.Volume)}
 	}
 	return validation, nil
+}
+
+func classifyCADExecutionFailure(stderr string) GenerationFailureKind {
+	message := strings.ToLower(stderr)
+	switch {
+	case strings.Contains(message, "generate_cad.py") && (strings.Contains(message, "no such file") || strings.Contains(message, "can't open file")):
+		return GenerationTemporaryFailure
+	case strings.Contains(message, "failed to download"), strings.Contains(message, "name resolution"), strings.Contains(message, "connection reset"), strings.Contains(message, "timed out"):
+		return GenerationTemporaryFailure
+	case strings.Contains(message, "no module named") && strings.Contains(message, "cadquery"):
+		return GenerationRuntimeFailure
+	default:
+		return GenerationGeometryFailure
+	}
 }
 
 func firstNonEmpty(values ...string) string {

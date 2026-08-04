@@ -173,6 +173,32 @@ func DesignConversation(ctx context.Context, model Completer, intent string, his
 	return designFromAgentResponse(ctx, model, userPrompt, raw, true)
 }
 
+func RepairAfterGenerationFailure(ctx context.Context, model Completer, intent string, history []ClarificationRound, current Blueprint, diagnostic string) (Blueprint, error) {
+	if model == nil {
+		return Blueprint{}, errors.New("AI Create geometry agent is unavailable")
+	}
+	currentJSON, err := json.Marshal(current)
+	if err != nil {
+		return Blueprint{}, fmt.Errorf("encode failed CAD plan: %w", err)
+	}
+	historyJSON, err := json.Marshal(history)
+	if err != nil {
+		return Blueprint{}, fmt.Errorf("encode clarification history: %w", err)
+	}
+	if len(diagnostic) > 2000 {
+		diagnostic = diagnostic[:2000]
+	}
+	userPrompt := "User simulation request:\n" + strings.TrimSpace(intent) +
+		"\n\nClarification history (authoritative user answers):\n" + string(historyJSON) +
+		"\n\nThe deterministic CadQuery/OpenCascade execution of the previous plan failed. Diagnose the CAD construction, then return a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Preserve the user's intent and confirmed answers. If a defining engineering choice is truly missing, return request-input fields instead. Do not explain the correction outside JSON." +
+		"\nExecution diagnostic:\n" + diagnostic + "\nPrevious blueprint:\n" + string(currentJSON)
+	repaired, err := model.Complete(ctx, geometrySystemPrompt, userPrompt, "")
+	if err != nil {
+		return Blueprint{}, fmt.Errorf("geometry self-repair failed: %w", err)
+	}
+	return designFromAgentResponse(ctx, model, userPrompt, repaired, false)
+}
+
 func designFromAgentResponse(ctx context.Context, model Completer, userPrompt, raw string, allowRepair bool) (Blueprint, error) {
 	var response designResponse
 	if err := json.Unmarshal(extractJSONObject(raw), &response); err != nil {

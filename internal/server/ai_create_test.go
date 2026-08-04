@@ -31,6 +31,20 @@ func (fakeCADGenerator) Generate(_ context.Context, _ aicreate.Geometry, outputP
 	return aicreate.GeometryValidation{SolidCount: 1, FaceCount: 6, Volume: 1, Kernel: "test kernel"}, nil
 }
 
+type sequenceCADGenerator struct {
+	errors []error
+	calls  int
+}
+
+func (g *sequenceCADGenerator) Generate(_ context.Context, _ aicreate.Geometry, _ string) (aicreate.GeometryValidation, error) {
+	index := g.calls
+	g.calls++
+	if index < len(g.errors) && g.errors[index] != nil {
+		return aicreate.GeometryValidation{}, g.errors[index]
+	}
+	return aicreate.GeometryValidation{SolidCount: 1, FaceCount: 3, Volume: 1, Kernel: "test"}, nil
+}
+
 func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
@@ -119,6 +133,17 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	}
 }
 
+func TestAICreateCompletionStagesKeepCreatedProjectInAgentRecovery(t *testing.T) {
+	stages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: false}})
+	if stages[len(stages)-1] != "Opened Agent Recovery for remaining Flow360 parameter issues" {
+		t.Fatalf("created Project did not continue into Agent Recovery: %#v", stages)
+	}
+	validStages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: true}})
+	if validStages[len(validStages)-1] != "Passed Flow360 schema preflight" {
+		t.Fatalf("valid Project did not report completed preflight: %#v", validStages)
+	}
+}
+
 func TestNormalizeAICreateResultRetriesUntilAsyncRootAppears(t *testing.T) {
 	lookups := 0
 	lookup := func(_ context.Context, projectID string) (json.RawMessage, error) {
@@ -200,6 +225,36 @@ func TestAICreateProjectRequiresFolder(t *testing.T) {
 	(&Server{}).aiCreateProject(context)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got %d", recorder.Code)
+	}
+}
+
+func TestGenerateAICreateCADRetriesTemporaryRuntimeFailure(t *testing.T) {
+	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("temporary runtime failure")}}}
+	blueprint := aicreate.Blueprint{Geometry: aicreate.Geometry{Name: "body"}}
+	result, validation, err := (&Server{}).generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "test"}, blueprint, filepath.Join(t.TempDir(), "body.step"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generator.calls != 2 || result.Geometry.Name != "body" || validation.SolidCount != 1 {
+		t.Fatalf("temporary CAD failure did not recover: calls=%d result=%#v validation=%#v", generator.calls, result, validation)
+	}
+}
+
+func TestGenerateAICreateCADLetsAgentRepairGeometryFailure(t *testing.T) {
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Repaired Cylinder\",\"summary\":\"Repaired exact cylinder.\",\"geometry\":{\"name\":\"repaired-cylinder\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"cylinder\",\"params\":{\"radius\":0.5,\"height\":1,\"axis\":\"z\"}}],\"result\":\"body\"},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.02,\"first_layer_thickness_m\":0.00002,\"max_steps\":1000},\"assumptions\":[],\"questions\":[]}"}}]}`))
+	}))
+	defer agentServer.Close()
+	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationGeometryFailure, Err: errors.New("boolean produced an empty solid")}}}
+	app := &Server{agent: &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: agentServer.URL, Model: "test", Client: agentServer.Client()}}
+	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
+	repaired, validation, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generator.calls != 2 || repaired.ProjectName != "Repaired Cylinder" || validation.SolidCount != 1 {
+		t.Fatalf("Agent CAD repair did not complete: calls=%d result=%#v", generator.calls, repaired)
 	}
 }
 
@@ -326,5 +381,13 @@ func TestHumanizeAICreateDesignErrorDoesNotExposeContractDetails(t *testing.T) {
 	got := humanizeAICreateDesignError(errors.New("geometry name must be a safe non-empty identifier"))
 	if strings.Contains(got, "identifier") || !strings.Contains(got, "automatic repair") {
 		t.Fatalf("unexpected design error: %q", got)
+	}
+}
+
+func TestHumanizeAICreateGenerationErrorDoesNotExposeRuntimePaths(t *testing.T) {
+	err := &aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("can't open /private/runtime/generate_cad.py")}
+	got := humanizeAICreateGenerationError(err)
+	if strings.Contains(got, "/private/") || !strings.Contains(got, "retrying") {
+		t.Fatalf("unexpected generation error: %q", got)
 	}
 }

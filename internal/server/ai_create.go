@@ -117,9 +117,19 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	if generator == nil {
 		generator = aicreate.NewCadQueryGenerator()
 	}
-	validation, err := generator.Generate(c.Request.Context(), blueprint.Geometry, geometryPath)
+	blueprint, validation, err := s.generateAICreateCAD(c.Request.Context(), generator, session, blueprint, geometryPath)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "The agent designed the geometry, but exact CAD generation failed: " + err.Error()})
+		var missing *aicreate.MissingInputError
+		if errors.As(err, &missing) {
+			s.setAICreateSessionPending(session.ID, missing.Fields)
+			c.JSON(http.StatusOK, aiCreateClarificationResponse{
+				Status: "needs_input", SessionID: session.ID,
+				Message: "The Agent found a CAD construction issue and needs an engineering decision to continue self-repair.",
+				Round:   len(session.Rounds) + 1, Fields: missing.Fields,
+			})
+			return
+		}
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeAICreateGenerationError(err)})
 		return
 	}
 	blueprint.Geometry.Validated = true
@@ -195,20 +205,47 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	plan = s.runPlanPreflight(c.Request.Context(), plan)
-	if plan.Preflight == nil || !plan.Preflight.Valid {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"error":      "Project was created, but its generated parameters did not pass Flow360 schema preflight",
-			"project_id": remote.ProjectID, "plan_id": plan.ID, "preflight": plan.Preflight,
-		})
-		return
-	}
+	stages := aiCreateCompletionStages(plan)
 	s.completeAICreateSession(session.ID)
 
 	c.JSON(http.StatusCreated, aiCreateResponse{
 		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
-		Stages: []string{"Agent interpreted requirement", "Agent authored a constrained CAD program", "Generated and validated exact STEP", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters", "Passed Flow360 schema preflight"},
+		Stages: stages,
 	})
+}
+
+func aiCreateCompletionStages(plan plans.Plan) []string {
+	stages := []string{"Agent interpreted requirement", "Agent authored a constrained CAD program", "Generated and validated exact STEP", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters"}
+	if plan.Preflight != nil && plan.Preflight.Valid {
+		return append(stages, "Passed Flow360 schema preflight")
+	}
+	return append(stages, "Opened Agent Recovery for remaining Flow360 parameter issues")
+}
+
+func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Generator, session aiCreateSession, blueprint aicreate.Blueprint, outputPath string) (aicreate.Blueprint, aicreate.GeometryValidation, error) {
+	validation, err := generator.Generate(ctx, blueprint.Geometry, outputPath)
+	if err == nil {
+		return blueprint, validation, nil
+	}
+	if aicreate.GenerationFailure(err) == aicreate.GenerationTemporaryFailure {
+		validation, err = generator.Generate(ctx, blueprint.Geometry, outputPath)
+		if err == nil {
+			return blueprint, validation, nil
+		}
+	}
+	if aicreate.GenerationFailure(err) != aicreate.GenerationGeometryFailure {
+		return blueprint, validation, err
+	}
+	repaired, repairErr := aicreate.RepairAfterGenerationFailure(ctx, s.agent, session.Intent, session.Rounds, blueprint, err.Error())
+	if repairErr != nil {
+		return blueprint, validation, repairErr
+	}
+	validation, err = generator.Generate(ctx, repaired.Geometry, outputPath)
+	if err != nil {
+		return repaired, validation, fmt.Errorf("CAD self-repair was exhausted: %w", err)
+	}
+	return repaired, validation, nil
 }
 
 func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSession, error) {
@@ -430,6 +467,17 @@ func humanizeAICreateDesignError(err error) string {
 		return "The AI Create Agent is unavailable. Check the Agent configuration and try again."
 	}
 	return "The Agent could not produce a valid CAD plan after an automatic repair attempt. Refine the geometry description and try again."
+}
+
+func humanizeAICreateGenerationError(err error) string {
+	switch aicreate.GenerationFailure(err) {
+	case aicreate.GenerationRuntimeFailure:
+		return "The exact CAD runtime is unavailable. Check the local CAD runtime configuration and try again."
+	case aicreate.GenerationTemporaryFailure:
+		return "The local CAD runtime encountered a temporary problem and could not recover after retrying. Try again shortly."
+	default:
+		return "The Agent could not produce valid exact CAD after self-repair. Add the defining geometry dimensions or attach exact CAD and try again."
+	}
 }
 
 const (
