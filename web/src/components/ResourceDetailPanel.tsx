@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import DraftParameterEditor from './DraftParameterEditor'
 
 export type ResourceDetailTab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
 
@@ -279,7 +280,11 @@ export default function ResourceDetailPanel({
         )}
 
         {tab === 'parameters' && (
-          <JsonView value={detail.simulation_params} empty="Flow360 did not return simulation parameters." />
+          resourceType === 'Draft'
+            ? detail.simulation_params
+              ? <DraftParameterEditor draftId={resourceId} parameters={detail.simulation_params} onSaved={onRetry} />
+              : <div className="detail-empty">Flow360 did not return simulation parameters.</div>
+            : <JsonView value={detail.simulation_params} empty="Flow360 did not return simulation parameters." />
         )}
 
         {tab === 'results' && (

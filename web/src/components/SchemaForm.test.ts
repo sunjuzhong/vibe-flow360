@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { initialValue, SchemaFormFields, serializeValue } from './SchemaForm'
+import { hydrateSchemaValue, initialValue, SchemaFormFields, serializeValue } from './SchemaForm'
 
 describe('schema-driven Flow360 form', () => {
   it('creates and serializes nested values without field-specific code', () => {
@@ -57,6 +57,20 @@ describe('schema-driven Flow360 form', () => {
       variant: 1,
       value: { value: '30', units: 'm/s' },
     })).toEqual({ value: 30, units: 'm/s' })
+  })
+
+  it('hydrates an existing union value into the matching editor variant', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      variants: [
+        { type: 'string' },
+        { type: 'quantity', unit: 'm/s', value_schema: { type: 'number' } },
+      ],
+    }
+    expect(hydrateSchemaValue(schema, { value: 30, units: 'm/s' }, true)).toEqual({
+      variant: 1,
+      value: { value: 30, units: 'm/s' },
+    })
   })
 
   it('normalizes declared legacy unit names to Flow360 wire tokens', () => {

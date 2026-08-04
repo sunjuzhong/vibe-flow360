@@ -190,6 +190,49 @@ esac
 	}
 }
 
+func TestSetDraftSimulationParamsUsesPrivateFileAndReadsCanonicalValue(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	paramsPath := filepath.Join(dir, "params.json")
+	modePath := filepath.Join(dir, "mode.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > %q
+if [ "$3" = "set" ]; then
+  cp "$5" %q
+  stat -f '%%Lp' "$5" > %q
+  printf '{"status":"updated"}'
+else
+  printf '{"version":"canonical","meshing":{"defaults":{"target_surface_node_count":1000000}}}'
+fi
+`, argsPath, paramsPath, modePath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	raw, err := client.SetDraftSimulationParams(context.Background(), "draft-1", json.RawMessage(`{"version":"draft"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"version":"canonical"`) {
+		t.Fatalf("unexpected canonical SimulationParams: %s", raw)
+	}
+	written, err := os.ReadFile(paramsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(written) != `{"version":"draft"}` {
+		t.Fatalf("unexpected SimulationParams file: %s", written)
+	}
+	mode, err := os.ReadFile(modePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(mode)) != "600" {
+		t.Fatalf("temporary SimulationParams file mode = %q, want 600", strings.TrimSpace(string(mode)))
+	}
+}
+
 func TestResourceResultUsesCaseResultsGetAndReadsOutputFile(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")

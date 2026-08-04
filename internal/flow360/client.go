@@ -172,6 +172,40 @@ func (c *Client) ProjectDrafts(ctx context.Context, projectID string) (json.RawM
 	return c.jsonCommand(ctx, "draft", "list", "--project-id", projectID)
 }
 
+// SetDraftSimulationParams replaces the editable SimulationParams stored on a
+// Draft, then reads the canonical representation back from Flow360. Using a
+// private temporary file keeps large parameter trees out of process arguments
+// and mirrors the flow360 CLI contract.
+func (c *Client) SetDraftSimulationParams(ctx context.Context, draftID string, params json.RawMessage) (json.RawMessage, error) {
+	if strings.TrimSpace(draftID) == "" {
+		return nil, errors.New("draft ID is required")
+	}
+	if !json.Valid(params) {
+		return nil, errors.New("SimulationParams must be valid JSON")
+	}
+	temp, err := os.CreateTemp("", "vibesim-draft-params-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary SimulationParams file: %w", err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return nil, err
+	}
+	if _, err := temp.Write(params); err != nil {
+		_ = temp.Close()
+		return nil, err
+	}
+	if err := temp.Close(); err != nil {
+		return nil, err
+	}
+	if _, err := c.run(ctx, "draft", "simulation-params", "set", draftID, tempPath); err != nil {
+		return nil, err
+	}
+	return c.jsonCommand(ctx, "draft", "simulation-params", "get", draftID)
+}
+
 func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID string) (ResourceDetail, error) {
 	command, normalizedType, err := resourceCommand(resourceType)
 	if err != nil {

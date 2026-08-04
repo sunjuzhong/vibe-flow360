@@ -270,6 +270,15 @@ export type ResourceDetail = {
   errors?: Record<string, string>
 }
 
+export type DraftParameterSchemaResponse = {
+  schema_version: number
+  validator_version?: string
+  source_type: string
+  stages: Array<'SurfaceMesh' | 'VolumeMesh' | 'Case'>
+  schema: DynamicFormSchema
+  baseline: Record<string, unknown>
+}
+
 export type GeometryDiagnosticCapability = {
   key: string
   status: 'available' | 'proxy' | 'unavailable'
@@ -668,6 +677,17 @@ async function mutate<T>(path: string, body?: unknown): Promise<T> {
   return payload as T
 }
 
+async function replace<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || payload.message || response.statusText)
+  return payload as T
+}
+
 async function remove<T>(path: string): Promise<T> {
   const response = await fetch(path, { method: 'DELETE' })
   const payload = await response.json().catch(() => ({}))
@@ -704,6 +724,13 @@ export const api = {
     flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
   projectDrafts: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectDraftsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts${cacheOnly ? '?cache=only' : ''}`),
+  draftParameterSchema: (draftId: string) =>
+    json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
+  updateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>) =>
+    replace<{ simulation_params: Record<string, unknown> }>(
+      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters`,
+      { simulation_params: simulationParams },
+    ),
   startProjectSync: (projectId: string, force = false) =>
     mutate<ProjectSyncManifest>(
       `/api/flow360/projects/${encodeURIComponent(projectId)}/sync${force ? '?force=true' : ''}`,

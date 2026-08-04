@@ -235,6 +235,8 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
 		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
+		api.GET("/flow360/drafts/:draft_id/parameters/schema", s.flow360DraftParameterSchema)
+		api.PUT("/flow360/drafts/:draft_id/parameters", s.updateFlow360DraftParameters)
 		api.GET("/flow360/projects/:project_id/sync", s.projectSyncStatus)
 		api.POST("/flow360/projects/:project_id/sync", s.startProjectSync)
 		api.GET("/flow360/resources/:resource_type/:resource_id", s.flow360ResourceDetail)
@@ -2096,6 +2098,97 @@ func (s *Server) flow360ProjectItems(c *gin.Context) {
 
 func (s *Server) flow360ProjectDrafts(c *gin.Context) {
 	s.flow360ProjectJSON(c, "draft-list", s.flow360.ProjectDrafts)
+}
+
+func (s *Server) flow360DraftParameterSchema(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required"})
+		return
+	}
+	detail, err := s.flow360.ResourceDetail(c.Request.Context(), "Draft", draftID)
+	if err != nil || len(detail.SimulationParams) == 0 {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Draft SimulationParams are unavailable"})
+		return
+	}
+	sourceType := draftSourceType(detail.Info)
+	form, err := s.flow360.PlanFormSchema(c.Request.Context(), sourceType, "case", detail.SimulationParams)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	schema, err := combinedPlanFormSchema(form)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not combine the Draft parameter schemas"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"schema_version":    form.SchemaVersion,
+		"validator_version": form.ValidatorVersion,
+		"source_type":       sourceType,
+		"stages":            form.Stages,
+		"schema":            json.RawMessage(schema),
+		"baseline":          detail.SimulationParams,
+	})
+}
+
+const maxDraftParametersRequestBytes = 2 << 20
+
+type updateDraftParametersRequest struct {
+	SimulationParams json.RawMessage `json:"simulation_params"`
+}
+
+func (s *Server) updateFlow360DraftParameters(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDraftParametersRequestBytes)
+	var request updateDraftParametersRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Draft SimulationParams are too large"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft SimulationParams request"})
+		return
+	}
+	var object map[string]any
+	if !json.Valid(request.SimulationParams) || json.Unmarshal(request.SimulationParams, &object) != nil || object == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Draft SimulationParams must be a JSON object"})
+		return
+	}
+	canonical, err := s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, request.SimulationParams)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"simulation_params": canonical})
+}
+
+func draftSourceType(info json.RawMessage) string {
+	var metadata map[string]any
+	if json.Unmarshal(info, &metadata) == nil {
+		for _, key := range []string{"source_type", "root_resource_type", "parent_type"} {
+			if value, ok := metadata[key].(string); ok {
+				switch strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(strings.TrimSpace(value))) {
+				case "geometry":
+					return "Geometry"
+				case "surfacemesh":
+					return "SurfaceMesh"
+				case "volumemesh":
+					return "VolumeMesh"
+				case "case":
+					return "Case"
+				}
+			}
+		}
+	}
+	// Older Flow360 Draft metadata does not expose source_type. Geometry is the
+	// only root that safely projects every editable SimulationParams stage.
+	return "Geometry"
 }
 
 func (s *Server) flow360ProjectJSON(

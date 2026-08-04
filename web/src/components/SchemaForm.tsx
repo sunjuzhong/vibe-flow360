@@ -103,14 +103,18 @@ export function SchemaFormFields({
   onChange,
   sparse = false,
   baseline,
+  addLabel = 'Change',
+  removeLabel = 'Keep inherited',
 }: {
   schema: DynamicFormSchema
   value: unknown
   onChange: (value: unknown) => void
   sparse?: boolean
   baseline?: unknown
+  addLabel?: string
+  removeLabel?: string
 }) {
-  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} baseline={baseline} />
+  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} />
 }
 
 function SchemaField({
@@ -120,6 +124,8 @@ function SchemaField({
   path,
   sparse,
   baseline,
+  addLabel,
+  removeLabel,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -127,6 +133,8 @@ function SchemaField({
   path: string
   sparse: boolean
   baseline?: unknown
+  addLabel: string
+  removeLabel: string
 }) {
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
@@ -151,7 +159,7 @@ function SchemaField({
                   {child.description && <small>{child.description}</small>}
                 </span>
                 <button type="button" onClick={() => onChange({ ...object, [key]: initialValue(child, true) })}>
-                  <Plus size={13} /> Change
+                  <Plus size={13} /> {addLabel}
                 </button>
               </div>
             )
@@ -164,6 +172,8 @@ function SchemaField({
                 value={present ? object[key] : initialValue(child, sparse)}
                 baseline={baselineObject[key]}
                 sparse={sparse}
+                addLabel={addLabel}
+                removeLabel={removeLabel}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
               {sparse && !required && present && (
@@ -176,7 +186,7 @@ function SchemaField({
                     onChange(next)
                   }}
                 >
-                  <Trash2 size={12} /> Keep inherited
+                  <Trash2 size={12} /> {removeLabel}
                 </button>
               )}
             </div>
@@ -276,6 +286,8 @@ function SchemaField({
               path={`${path}.${index}`}
               value={item}
               sparse={sparse}
+              addLabel={addLabel}
+              removeLabel={removeLabel}
               onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
             />
             <button type="button" className="icon-button" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${title} ${index + 1}`}>
@@ -309,7 +321,7 @@ function SchemaField({
             ))}
           </select>
         </label>
-        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} onChange={(next) => onChange({ ...draft, value: next })} />
+        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} addLabel={addLabel} removeLabel={removeLabel} onChange={(next) => onChange({ ...draft, value: next })} />
       </fieldset>
     )
   }
@@ -486,6 +498,38 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
   }
 }
 
+// Convert canonical Flow360 JSON into the UI draft shape used by SchemaField.
+// Most values are already compatible; unions and free-form JSON fields need a
+// small wrapper so an existing Draft can be edited without losing its value.
+export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
+  if (value === undefined) return initialValue(schema, sparse)
+  switch (schema.type) {
+    case 'object': {
+      if (!isRecord(value)) return initialValue(schema, sparse)
+      const hydrated: Record<string, unknown> = { ...value }
+      for (const [key, child] of Object.entries(schema.properties ?? {})) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          hydrated[key] = hydrateSchemaValue(child, value[key], sparse)
+        }
+      }
+      return hydrated
+    }
+    case 'array':
+      return Array.isArray(value)
+        ? value.map((item) => hydrateSchemaValue(schema.items ?? { type: 'json' }, item, sparse))
+        : initialValue(schema, sparse)
+    case 'union': {
+      const variants = schema.variants ?? []
+      const variant = Math.max(0, variants.findIndex((candidate) => schemaValueMatches(candidate, value)))
+      return { variant, value: hydrateSchemaValue(variants[variant] ?? { type: 'json' }, value, sparse) }
+    }
+    case 'json':
+      return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+    default:
+      return value
+  }
+}
+
 export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
   switch (schema.type) {
     case 'object': {
@@ -559,6 +603,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isUnionDraft(value: unknown): value is UnionDraft {
   return isRecord(value) && typeof value.variant === 'number' && 'value' in value
+}
+
+function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean {
+  switch (schema.type) {
+    case 'quantity':
+      return isRecord(value) && 'value' in value && 'units' in value
+    case 'object':
+    case 'entity_assignment':
+      return isRecord(value)
+    case 'array':
+      return Array.isArray(value)
+    case 'boolean':
+      return typeof value === 'boolean'
+    case 'number':
+      return typeof value === 'number'
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value)
+    case 'string':
+      return typeof value === 'string'
+    case 'enum':
+      return (schema.options ?? []).some((option) => JSON.stringify(option) === JSON.stringify(value))
+    default:
+      return false
+  }
 }
 
 function humanize(value: string) {

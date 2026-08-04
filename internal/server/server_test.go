@@ -283,6 +283,53 @@ func TestGeometryDetailRouteCoexistsWithStaticDiagnosticRoutes(t *testing.T) {
 	}
 }
 
+func TestUpdateDraftParametersRequiresJSONObjectAndReturnsCanonicalParams(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+if [ "$3" = "set" ]; then
+  printf '{"status":"updated"}'
+else
+  printf '{"version":"canonical","meshing":{"defaults":{"target_surface_node_count":1000000}}}'
+fi
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPut, "/api/flow360/drafts/draft-1/parameters", strings.NewReader(`{"simulation_params":{"version":"draft"}}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	app.updateFlow360DraftParameters(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"version":"canonical"`) {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	context, _ = gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPut, "/api/flow360/drafts/draft-1/parameters", strings.NewReader(`{"simulation_params":[]}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	app.updateFlow360DraftParameters(context)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("array payload got %d, want 400", recorder.Code)
+	}
+}
+
+func TestDraftSourceTypeNormalizesMetadataAndFallsBackToGeometry(t *testing.T) {
+	if got := draftSourceType(json.RawMessage(`{"source_type":"surface-mesh"}`)); got != "SurfaceMesh" {
+		t.Fatalf("got %q, want SurfaceMesh", got)
+	}
+	if got := draftSourceType(json.RawMessage(`{"name":"legacy"}`)); got != "Geometry" {
+		t.Fatalf("got %q, want Geometry fallback", got)
+	}
+}
+
 // TestProjectInfoCacheOnlyReturnsSnapshotWithoutCallingFlow360 ensures that
 // the `?cache=only` flag serves stale snapshots when the live CLI is
 // broken — one of the core restart-recovery paths from lf5.10.
