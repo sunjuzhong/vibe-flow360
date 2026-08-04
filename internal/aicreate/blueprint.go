@@ -66,18 +66,19 @@ type simulationSpec struct {
 }
 
 type designResponse struct {
-	Version     string         `json:"version"`
-	Decision    string         `json:"decision"`
-	ProjectName string         `json:"project_name"`
-	Summary     string         `json:"summary"`
-	Geometry    Geometry       `json:"geometry"`
-	Simulation  simulationSpec `json:"simulation"`
-	Assumptions []string       `json:"assumptions"`
-	Questions   []string       `json:"questions"`
+	Version     string          `json:"version"`
+	Decision    string          `json:"decision"`
+	ProjectName string          `json:"project_name"`
+	Summary     string          `json:"summary"`
+	Geometry    Geometry        `json:"geometry"`
+	Simulation  simulationSpec  `json:"simulation"`
+	Assumptions []string        `json:"assumptions"`
+	Questions   json.RawMessage `json:"questions"`
 }
 
 type MissingInputError struct {
 	Questions []string
+	Fields    []ClarificationField
 }
 
 func (e *MissingInputError) Error() string {
@@ -85,6 +86,29 @@ func (e *MissingInputError) Error() string {
 		return "the agent needs more geometry information"
 	}
 	return strings.Join(e.Questions, " ")
+}
+
+type ClarificationOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type ClarificationField struct {
+	ID          string                `json:"id"`
+	Label       string                `json:"label"`
+	Description string                `json:"description,omitempty"`
+	Type        string                `json:"type"`
+	Required    bool                  `json:"required"`
+	Unit        string                `json:"unit,omitempty"`
+	Options     []ClarificationOption `json:"options,omitempty"`
+	Default     any                   `json:"default,omitempty"`
+	Min         *float64              `json:"min,omitempty"`
+	Max         *float64              `json:"max,omitempty"`
+}
+
+type ClarificationRound struct {
+	Fields  []ClarificationField `json:"fields"`
+	Answers map[string]any       `json:"answers"`
 }
 
 const geometrySystemPrompt = `You are the geometry-planning agent inside an engineering simulation product.
@@ -100,7 +124,7 @@ Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is an optional array of {name, selector}.
 - simulation: {velocity_m_s, alpha_deg, surface_edge_length_m, first_layer_thickness_m, max_steps}
 - assumptions: English string array
-- questions: English string array
+- questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}.
 
 The deterministic CAD DSL supports:
 - box params: length, width, height
@@ -120,9 +144,13 @@ Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %
 
 All dimensions are finite metres and all angles are degrees. Use multiple operations, bodies, and booleans when the requested geometry requires them. Every result must contain one or more closed solids suitable for exact STEP export. Do not emit Python, file paths, shell commands, STL, meshes, external URLs, or unsupported operations.
 
-Use decision "request-input" when the requested shape cannot be represented faithfully by this DSL or when missing dimensions would materially change the geometry. In that case provide focused questions and leave geometry.operations empty. Reasonable CFD operating and meshing values may be explicit assumptions; do not invent defining geometry features.`
+Use decision "request-input" when the requested shape cannot be represented faithfully by this DSL or when missing dimensions would materially change the geometry or physics. In that case provide at most six focused dynamic fields and leave geometry.operations empty. Use number fields with explicit engineering units and realistic bounds, select fields for mutually exclusive engineering choices, boolean fields for yes/no decisions, and text only when structured input is impossible. Match labels and descriptions to the user's language. Ask only for currently blocking facts and never repeat a field already answered in the clarification history. Reasonable CFD operating and meshing values may be explicit assumptions; do not invent defining geometry features.`
 
 func Design(ctx context.Context, model Completer, intent string) (Blueprint, error) {
+	return DesignConversation(ctx, model, intent, nil)
+}
+
+func DesignConversation(ctx context.Context, model Completer, intent string, history []ClarificationRound) (Blueprint, error) {
 	intent = strings.TrimSpace(intent)
 	if intent == "" {
 		return Blueprint{}, errors.New("simulation requirement is required")
@@ -130,7 +158,15 @@ func Design(ctx context.Context, model Completer, intent string) (Blueprint, err
 	if model == nil {
 		return Blueprint{}, errors.New("AI Create geometry agent is unavailable")
 	}
-	raw, err := model.Complete(ctx, geometrySystemPrompt, "User simulation request:\n"+intent, "")
+	userPrompt := "User simulation request:\n" + intent
+	if len(history) > 0 {
+		encoded, marshalErr := json.Marshal(history)
+		if marshalErr != nil {
+			return Blueprint{}, fmt.Errorf("encode clarification history: %w", marshalErr)
+		}
+		userPrompt += "\n\nClarification history (authoritative user answers; do not ask these again):\n" + string(encoded)
+	}
+	raw, err := model.Complete(ctx, geometrySystemPrompt, userPrompt, "")
 	if err != nil {
 		return Blueprint{}, fmt.Errorf("geometry agent failed: %w", err)
 	}
@@ -142,10 +178,15 @@ func Design(ctx context.Context, model Completer, intent string) (Blueprint, err
 		return Blueprint{}, fmt.Errorf("geometry agent returned unsupported contract %q", response.Version)
 	}
 	if response.Decision == "request-input" {
-		if len(response.Questions) == 0 {
-			response.Questions = []string{"Please provide the defining geometry dimensions or attach an exact CAD model."}
+		fields, fieldErr := parseClarificationFields(response.Questions)
+		if fieldErr != nil {
+			return Blueprint{}, fmt.Errorf("geometry agent returned invalid clarification fields: %w", fieldErr)
 		}
-		return Blueprint{}, &MissingInputError{Questions: response.Questions}
+		questions := make([]string, 0, len(fields))
+		for _, field := range fields {
+			questions = append(questions, field.Label)
+		}
+		return Blueprint{}, &MissingInputError{Questions: questions, Fields: fields}
 	}
 	if response.Decision != "generate" {
 		return Blueprint{}, fmt.Errorf("geometry agent returned invalid decision %q", response.Decision)
@@ -178,6 +219,64 @@ func Design(ctx context.Context, model Completer, intent string) (Blueprint, err
 			"time_stepping": map[string]any{"max_steps": response.Simulation.MaxSteps},
 		},
 	}, nil
+}
+
+func parseClarificationFields(raw json.RawMessage) ([]ClarificationField, error) {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "[]" {
+		return []ClarificationField{{
+			ID: "geometry_details", Label: "Please provide the defining geometry dimensions or attach an exact CAD model.",
+			Type: "text", Required: true,
+		}}, nil
+	}
+	var fields []ClarificationField
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		var questions []string
+		if stringErr := json.Unmarshal(raw, &questions); stringErr != nil {
+			return nil, err
+		}
+		fields = make([]ClarificationField, 0, len(questions))
+		for index, question := range questions {
+			fields = append(fields, ClarificationField{
+				ID: fmt.Sprintf("clarification_%d", index+1), Label: strings.TrimSpace(question), Type: "text", Required: true,
+			})
+		}
+	}
+	if len(fields) == 0 || len(fields) > 6 {
+		return nil, errors.New("clarification must contain between 1 and 6 fields")
+	}
+	seen := map[string]bool{}
+	for index := range fields {
+		field := &fields[index]
+		field.ID = strings.TrimSpace(field.ID)
+		field.Label = strings.TrimSpace(field.Label)
+		field.Type = strings.ToLower(strings.TrimSpace(field.Type))
+		if !identifierPattern.MatchString(field.ID) || seen[field.ID] || field.Label == "" || len(field.Label) > 240 {
+			return nil, fmt.Errorf("invalid or duplicate clarification field %q", field.ID)
+		}
+		seen[field.ID] = true
+		switch field.Type {
+		case "text", "number", "boolean":
+		case "select":
+			if len(field.Options) < 2 || len(field.Options) > 16 {
+				return nil, fmt.Errorf("select field %s must contain 2 to 16 options", field.ID)
+			}
+			optionValues := map[string]bool{}
+			for optionIndex := range field.Options {
+				option := &field.Options[optionIndex]
+				option.Value, option.Label = strings.TrimSpace(option.Value), strings.TrimSpace(option.Label)
+				if option.Value == "" || option.Label == "" || optionValues[option.Value] {
+					return nil, fmt.Errorf("select field %s contains an invalid option", field.ID)
+				}
+				optionValues[option.Value] = true
+			}
+		default:
+			return nil, fmt.Errorf("unsupported clarification type %q", field.Type)
+		}
+		if field.Min != nil && field.Max != nil && *field.Min > *field.Max {
+			return nil, fmt.Errorf("clarification field %s has invalid bounds", field.ID)
+		}
+	}
+	return fields, nil
 }
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)

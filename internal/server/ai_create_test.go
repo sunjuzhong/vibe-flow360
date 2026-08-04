@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -199,6 +200,80 @@ func TestAICreateProjectRequiresFolder(t *testing.T) {
 	(&Server{}).aiCreateProject(context)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("got %d", recorder.Code)
+	}
+}
+
+func TestAICreateProjectContinuesThroughStructuredClarificationRounds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requests := make([]string, 0, 2)
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, string(body))
+		content := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"Cylinder diameter","description":"Reference diameter","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"Domain model","type":"select","required":true,"options":[{"value":"periodic","label":"Thin periodic"},{"value":"finite","label":"Finite span"}]}]}`
+		if len(requests) == 2 {
+			content = `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"velocity_m_s","label":"Freestream velocity","type":"number","required":true,"unit":"m/s","min":0.01,"max":1000}]}`
+		}
+		encoded, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer agentServer.Close()
+	app := &Server{agent: &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: agentServer.URL, Model: "test", Client: agentServer.Client()}}
+
+	first := httptest.NewRecorder()
+	firstContext, _ := gin.CreateTestContext(first)
+	firstContext.Request = httptest.NewRequest(http.MethodPost, "/api/ai-create", bytes.NewBufferString(`{"intent":"Create cylinder flow","folder_id":"folder-1"}`))
+	firstContext.Request.Header.Set("Content-Type", "application/json")
+	app.aiCreateProject(firstContext)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first round returned %d: %s", first.Code, first.Body.String())
+	}
+	var firstResponse aiCreateClarificationResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstResponse); err != nil {
+		t.Fatal(err)
+	}
+	if firstResponse.Status != "needs_input" || firstResponse.Round != 1 || len(firstResponse.Fields) != 2 {
+		t.Fatalf("unexpected first clarification: %#v", firstResponse)
+	}
+
+	secondBody, _ := json.Marshal(aiCreateRequest{
+		Intent: "Create cylinder flow", FolderID: "folder-1", SessionID: firstResponse.SessionID,
+		Answers: map[string]any{"diameter_m": 0.5, "domain_model": "periodic"},
+	})
+	second := httptest.NewRecorder()
+	secondContext, _ := gin.CreateTestContext(second)
+	secondContext.Request = httptest.NewRequest(http.MethodPost, "/api/ai-create", bytes.NewReader(secondBody))
+	secondContext.Request.Header.Set("Content-Type", "application/json")
+	app.aiCreateProject(secondContext)
+	if second.Code != http.StatusOK {
+		t.Fatalf("second round returned %d: %s", second.Code, second.Body.String())
+	}
+	var secondResponse aiCreateClarificationResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &secondResponse); err != nil {
+		t.Fatal(err)
+	}
+	if secondResponse.Round != 2 || len(secondResponse.Fields) != 1 || secondResponse.Fields[0].ID != "velocity_m_s" {
+		t.Fatalf("unexpected second clarification: %#v", secondResponse)
+	}
+	if len(requests) != 2 || !strings.Contains(requests[1], `\"diameter_m\":0.5`) || !strings.Contains(requests[1], `\"domain_model\":\"periodic\"`) {
+		t.Fatalf("prior answers were not sent to the agent: %s", requests[1])
+	}
+}
+
+func TestValidateAICreateAnswersEnforcesTypesOptionsAndBounds(t *testing.T) {
+	minimum, maximum := 0.1, 10.0
+	fields := []aicreate.ClarificationField{
+		{ID: "diameter", Label: "Diameter", Type: "number", Required: true, Min: &minimum, Max: &maximum},
+		{ID: "mode", Label: "Domain mode", Type: "select", Required: true, Options: []aicreate.ClarificationOption{{Value: "periodic", Label: "Periodic"}, {Value: "finite", Label: "Finite"}}},
+	}
+	if _, err := validateAICreateAnswers(fields, map[string]any{"diameter": 0.5, "mode": "periodic"}); err != nil {
+		t.Fatalf("valid answers were rejected: %v", err)
+	}
+	if _, err := validateAICreateAnswers(fields, map[string]any{"diameter": 50.0, "mode": "periodic"}); err == nil {
+		t.Fatal("out-of-range number was accepted")
+	}
+	if _, err := validateAICreateAnswers(fields, map[string]any{"diameter": 0.5, "mode": "unknown"}); err == nil {
+		t.Fatal("unknown select option was accepted")
 	}
 }
 

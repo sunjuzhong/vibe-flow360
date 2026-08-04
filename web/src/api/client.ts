@@ -58,6 +58,27 @@ export type AICreateResult = {
   stages: string[]
 }
 
+export type AICreateClarificationField = {
+  id: string
+  label: string
+  description?: string
+  type: 'text' | 'number' | 'select' | 'boolean'
+  required: boolean
+  unit?: string
+  options?: Array<{ value: string; label: string }>
+  default?: unknown
+  min?: number
+  max?: number
+}
+
+export type AICreateClarification = {
+  status: 'needs_input'
+  session_id: string
+  message: string
+  round: number
+  fields: AICreateClarificationField[]
+}
+
 export type AgentProposalField = {
   key: string
   value: unknown
@@ -820,18 +841,18 @@ export const api = {
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run`),
-  aiCreate: async (intent: string, folderId: string) => {
+  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>) => {
     const response = await fetch('/api/ai-create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent, folder_id: folderId }),
+      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers }),
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
       const questions = Array.isArray(body.questions) ? body.questions.join(' ') : ''
       throw new Error([body.error || response.statusText, questions].filter(Boolean).join(' '))
     }
-    return body as AICreateResult
+    return body as AICreateResult | AICreateClarification
   },
   abortImport: async (id: string) => {
     const response = await fetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' })

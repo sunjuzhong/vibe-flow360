@@ -60,6 +60,8 @@ type Server struct {
 	geometryJobs       *geometrydiag.JobStore
 	geometryJobSlots   chan struct{}
 	annotationHandlers *AnnotationHandlers
+	aiCreateMu         sync.Mutex
+	aiCreateSessions   map[string]aiCreateSession
 }
 
 type geometryDiagnosticsCacheEntry struct {

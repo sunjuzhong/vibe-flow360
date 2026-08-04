@@ -12,6 +12,16 @@ func (s staticCompleter) Complete(context.Context, string, string, string) (stri
 	return string(s), nil
 }
 
+type recordingCompleter struct {
+	raw        string
+	userPrompt string
+}
+
+func (r *recordingCompleter) Complete(_ context.Context, _ string, userPrompt string, _ string) (string, error) {
+	r.userPrompt = userPrompt
+	return r.raw, nil
+}
+
 func TestDesignUsesAgentAuthoredGeometryInsteadOfTemplate(t *testing.T) {
 	raw := `{
   "version":"v1","decision":"generate","project_name":"Cooling Enclosure","summary":"External flow around a vented enclosure.",
@@ -44,6 +54,43 @@ func TestDesignReturnsAgentQuestionsForUnsupportedShape(t *testing.T) {
 	missing, ok := err.(*MissingInputError)
 	if !ok || len(missing.Questions) != 1 || !strings.Contains(missing.Questions[0], "airfoil") {
 		t.Fatalf("expected focused missing-input result, got %T: %v", err, err)
+	}
+}
+
+func TestDesignReturnsStructuredClarificationFields(t *testing.T) {
+	raw := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"圆柱直径","description":"用于定义几何和雷诺数","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"计算域类型","type":"select","required":true,"options":[{"value":"periodic","label":"薄周期域"},{"value":"finite","label":"有限跨度"}]}]}`
+	_, err := Design(context.Background(), staticCompleter(raw), "创建圆柱绕流")
+	missing, ok := err.(*MissingInputError)
+	if !ok {
+		t.Fatalf("expected missing-input result, got %T: %v", err, err)
+	}
+	if len(missing.Fields) != 2 || missing.Fields[0].Type != "number" || missing.Fields[0].Unit != "m" {
+		t.Fatalf("structured fields were not preserved: %#v", missing.Fields)
+	}
+	if len(missing.Fields[1].Options) != 2 {
+		t.Fatalf("select options were not preserved: %#v", missing.Fields[1])
+	}
+}
+
+func TestDesignConversationIncludesAuthoritativePriorAnswers(t *testing.T) {
+	model := &recordingCompleter{raw: `{
+  "version":"v1","decision":"generate","project_name":"Answered Cylinder","summary":"Cylinder flow using clarified dimensions.",
+  "geometry":{"name":"answered-cylinder","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"cylinder","params":{"radius":0.25,"height":1,"axis":"z"}}],"result":"body"},
+  "simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.02,"first_layer_thickness_m":0.00002,"max_steps":1000},"assumptions":[],"questions":[]
+}`}
+	history := []ClarificationRound{{
+		Fields:  []ClarificationField{{ID: "diameter_m", Label: "Cylinder diameter", Type: "number", Required: true, Unit: "m"}},
+		Answers: map[string]any{"diameter_m": 0.5},
+	}}
+	blueprint, err := DesignConversation(context.Background(), model, "Create cylinder flow", history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blueprint.ProjectName != "Answered Cylinder" {
+		t.Fatalf("unexpected blueprint: %#v", blueprint)
+	}
+	if !strings.Contains(model.userPrompt, "authoritative user answers") || !strings.Contains(model.userPrompt, `"diameter_m":0.5`) {
+		t.Fatalf("clarification history missing from agent prompt: %s", model.userPrompt)
 	}
 }
 

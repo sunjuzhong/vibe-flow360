@@ -20,12 +20,34 @@ import (
 )
 
 const maxAICreateIntentBytes = 4000
+const maxAICreateRequestBytes = 20 << 10
+const maxAICreateClarificationRounds = 8
 
 var flow360ProjectIDPattern = regexp.MustCompile(`\bprj-[A-Za-z0-9][A-Za-z0-9-]{7,}\b`)
 
 type aiCreateRequest struct {
-	Intent   string `json:"intent"`
-	FolderID string `json:"folder_id"`
+	Intent    string         `json:"intent"`
+	FolderID  string         `json:"folder_id"`
+	SessionID string         `json:"session_id,omitempty"`
+	Answers   map[string]any `json:"answers,omitempty"`
+}
+
+type aiCreateSession struct {
+	ID        string                        `json:"id"`
+	Intent    string                        `json:"intent"`
+	FolderID  string                        `json:"folder_id"`
+	Rounds    []aicreate.ClarificationRound `json:"rounds"`
+	Pending   []aicreate.ClarificationField `json:"pending,omitempty"`
+	CreatedAt time.Time                     `json:"created_at"`
+	UpdatedAt time.Time                     `json:"updated_at"`
+}
+
+type aiCreateClarificationResponse struct {
+	Status    string                        `json:"status"`
+	SessionID string                        `json:"session_id"`
+	Message   string                        `json:"message"`
+	Round     int                           `json:"round"`
+	Fields    []aicreate.ClarificationField `json:"fields"`
 }
 
 type aiCreateResponse struct {
@@ -38,7 +60,7 @@ type aiCreateResponse struct {
 }
 
 func (s *Server) aiCreateProject(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAICreateIntentBytes+1024)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAICreateRequestBytes)
 	var request aiCreateRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		var tooLarge *http.MaxBytesError
@@ -51,20 +73,27 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	}
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.FolderID = strings.TrimSpace(request.FolderID)
+	request.SessionID = strings.TrimSpace(request.SessionID)
 	if len(request.Intent) > maxAICreateIntentBytes {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "simulation requirement is too large"})
 		return
 	}
-	if request.FolderID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "select a destination folder before creating a project"})
+	session, err := s.advanceAICreateSession(request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	blueprint, err := aicreate.Design(c.Request.Context(), s.agent, request.Intent)
+	blueprint, err := aicreate.DesignConversation(c.Request.Context(), s.agent, session.Intent, session.Rounds)
 	if err != nil {
 		var missing *aicreate.MissingInputError
 		if errors.As(err, &missing) {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "The geometry agent needs more information before it can create reliable CAD.", "questions": missing.Questions})
+			s.setAICreateSessionPending(session.ID, missing.Fields)
+			c.JSON(http.StatusOK, aiCreateClarificationResponse{
+				Status: "needs_input", SessionID: session.ID,
+				Message: "I need a few engineering decisions before I can create reliable CAD and complete Flow360 parameters.",
+				Round:   len(session.Rounds) + 1, Fields: missing.Fields,
+			})
 			return
 		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -102,7 +131,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 
 	rawResult, err := s.flow360.CreateProjectSync(
 		c.Request.Context(), []string{geometryPath}, "geometry", blueprint.ProjectName,
-		blueprint.Geometry.Unit, "standard", "", request.FolderID, []string{"ai-create", "agent-cad-v1"},
+		blueprint.Geometry.Unit, "standard", "", session.FolderID, []string{"ai-create", "agent-cad-v1"},
 	)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateProjectError(err)})
@@ -157,7 +186,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: remote.ProjectID, ProjectName: blueprint.ProjectName,
 		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: geometryName,
-		Target: blueprint.Target, Name: "AI Create · " + blueprint.ProjectName, Intent: request.Intent,
+		Target: blueprint.Target, Name: "AI Create · " + blueprint.ProjectName, Intent: session.Intent,
 		Patch: patch, Baseline: baseline, Evidence: evidence, ValidationHints: blueprint.Assumptions,
 		IdempotencyKey: "ai-create:" + remote.ProjectID,
 	})
@@ -173,12 +202,122 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		})
 		return
 	}
+	s.completeAICreateSession(session.ID)
 
 	c.JSON(http.StatusCreated, aiCreateResponse{
 		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: []string{"Agent interpreted requirement", "Agent authored a constrained CAD program", "Generated and validated exact STEP", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters", "Passed Flow360 schema preflight"},
 	})
+}
+
+func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSession, error) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	if s.aiCreateSessions == nil {
+		s.aiCreateSessions = map[string]aiCreateSession{}
+	}
+	if request.SessionID == "" {
+		if request.Intent == "" {
+			return aiCreateSession{}, errors.New("simulation requirement is required")
+		}
+		if request.FolderID == "" {
+			return aiCreateSession{}, errors.New("select a destination folder before creating a project")
+		}
+		identifier, err := newSubmissionID()
+		if err != nil {
+			return aiCreateSession{}, errors.New("could not start an AI Create session")
+		}
+		now := time.Now().UTC()
+		session := aiCreateSession{
+			ID: strings.Replace(identifier, "sub-", "aic-", 1), Intent: request.Intent, FolderID: request.FolderID,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		s.aiCreateSessions[session.ID] = session
+		return session, nil
+	}
+	session, ok := s.aiCreateSessions[request.SessionID]
+	if !ok {
+		return aiCreateSession{}, errors.New("AI Create session expired; start again with the original request")
+	}
+	if len(session.Rounds) >= maxAICreateClarificationRounds {
+		return aiCreateSession{}, errors.New("AI Create reached the clarification limit; revise the original request or attach exact CAD")
+	}
+	if len(session.Pending) == 0 {
+		return aiCreateSession{}, errors.New("AI Create session is not waiting for clarification")
+	}
+	answers, err := validateAICreateAnswers(session.Pending, request.Answers)
+	if err != nil {
+		return aiCreateSession{}, err
+	}
+	session.Rounds = append(session.Rounds, aicreate.ClarificationRound{Fields: session.Pending, Answers: answers})
+	session.Pending = nil
+	session.UpdatedAt = time.Now().UTC()
+	s.aiCreateSessions[session.ID] = session
+	return session, nil
+}
+
+func (s *Server) setAICreateSessionPending(sessionID string, fields []aicreate.ClarificationField) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	session.Pending = append([]aicreate.ClarificationField(nil), fields...)
+	session.UpdatedAt = time.Now().UTC()
+	s.aiCreateSessions[sessionID] = session
+}
+
+func (s *Server) completeAICreateSession(sessionID string) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	delete(s.aiCreateSessions, sessionID)
+}
+
+func validateAICreateAnswers(fields []aicreate.ClarificationField, supplied map[string]any) (map[string]any, error) {
+	answers := make(map[string]any, len(fields))
+	for _, field := range fields {
+		value, present := supplied[field.ID]
+		if !present || value == nil || value == "" {
+			if field.Required {
+				return nil, fmt.Errorf("%s is required", field.Label)
+			}
+			continue
+		}
+		switch field.Type {
+		case "number":
+			number, ok := value.(float64)
+			if !ok || number != number {
+				return nil, fmt.Errorf("%s must be a number", field.Label)
+			}
+			if field.Min != nil && number < *field.Min || field.Max != nil && number > *field.Max {
+				return nil, fmt.Errorf("%s is outside the allowed range", field.Label)
+			}
+		case "boolean":
+			if _, ok := value.(bool); !ok {
+				return nil, fmt.Errorf("%s must be yes or no", field.Label)
+			}
+		case "select":
+			selected, ok := value.(string)
+			valid := false
+			for _, option := range field.Options {
+				valid = valid || selected == option.Value
+			}
+			if !ok || !valid {
+				return nil, fmt.Errorf("%s has an invalid selection", field.Label)
+			}
+		case "text":
+			text, ok := value.(string)
+			if !ok || len(strings.TrimSpace(text)) > 2000 {
+				return nil, fmt.Errorf("%s must be valid text", field.Label)
+			}
+		default:
+			return nil, fmt.Errorf("%s has an unsupported input type", field.Label)
+		}
+		answers[field.ID] = value
+	}
+	return answers, nil
 }
 
 var unsafeGeometryName = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
