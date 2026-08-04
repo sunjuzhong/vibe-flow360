@@ -94,6 +94,50 @@
   padding: 0 7px;
 }
 
+.surface-review-workspace .resource-review-inventory .surface-boundary-row {
+  min-height: 46px;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: stretch;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-select {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  grid-template-areas:
+    'name assignment'
+    'metadata metadata';
+  align-content: center;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 6px 8px 6px 12px;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-select > span {
+  grid-area: name;
+  min-width: 0;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-select > small {
+  grid-area: assignment;
+  max-width: 88px;
+  margin: 0;
+  text-align: right;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-select > em {
+  grid-area: metadata;
+  min-width: 0;
+  margin: 0;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-row-actions button {
+  min-height: 22px;
+  padding: 0;
+}
+
 .surface-review-workspace .resource-review-inventory .surface-selected-detail,
 .surface-review-workspace .resource-review-inventory .surface-review-warning,
 .surface-review-workspace .resource-review-inventory .surface-show-all,
