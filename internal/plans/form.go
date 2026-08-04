@@ -163,6 +163,10 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 			}
 			seen[entity] = true
 		}
+	case "field_removal":
+		if value != nil {
+			return fmt.Errorf("%s must be removed", label)
+		}
 	case "number", "integer":
 		number, ok := value.(float64)
 		if !ok || math.IsInf(number, 0) || math.IsNaN(number) {
@@ -277,6 +281,9 @@ func expandFormValue(schema formNode, value, current any, depth int) (any, error
 			result["units"] = canonicalFormUnit(schema, unit)
 		}
 		return result, nil
+	}
+	if schema.Type == "field_removal" {
+		return nil, nil
 	}
 	if schema.Type != "entity_assignment" {
 		return value, nil

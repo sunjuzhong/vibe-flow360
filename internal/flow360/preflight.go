@@ -563,6 +563,14 @@ def projected_editor_schema(stage):
         "required": [],
     }
     for path in EDITOR_PATHS.get(stage, ()):
+        if path == ("meshing", "defaults", "target_surface_node_count"):
+            asset_cache = original_params.get("private_attribute_asset_cache", {})
+            supports_target_count = bool(
+                asset_cache.get("use_inhouse_mesher")
+                or asset_cache.get("use_geometry_AI")
+            )
+            if not supports_target_count:
+                continue
         raw = schema_at_path(path)
         if not raw:
             continue
@@ -723,6 +731,23 @@ def issue_payload(raw, level):
         "_loc": location,
     }
 
+def incompatible_field_recovery(issue):
+    message = issue.get("message", "")
+    if "is not supported by the legacy mesher" not in message.lower():
+        return None
+    return {
+        "type": "field_removal",
+        "title": "Remove unsupported meshing setting",
+        "description": "This optional setting is incompatible with the active Flow360 mesher and must be omitted.",
+        "recommendation": {
+            "title": "Use the active mesher without this setting",
+            "reason": "Changing the number cannot make this field valid. The schema-safe repair is to remove it and retain the current mesher.",
+            "confidence": "high",
+            "evidence": [message],
+            "provenance": "flow360_schema_validation",
+        },
+    }
+
 issues = [issue_payload(item, "error") for item in (errors or [])]
 for item in validation_warnings or []:
     if isinstance(item, dict):
@@ -753,7 +778,9 @@ for issue in issues:
     if path_key in seen_paths:
         continue
     seen_paths.add(path_key)
-    leaf = normalize(schema_at_path(projected_path))
+    leaf = incompatible_field_recovery(issue)
+    if leaf is None:
+        leaf = normalize(schema_at_path(projected_path))
     if projected_path == ["models"]:
         assignment = entity_assignment_schema(issue)
         if assignment is not None:

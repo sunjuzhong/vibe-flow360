@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { initialValue, serializeValue } from './SchemaForm'
+import { initialValue, SchemaFormFields, serializeValue } from './SchemaForm'
 
 describe('schema-driven Flow360 form', () => {
   it('creates and serializes nested values without field-specific code', () => {
@@ -96,6 +98,28 @@ describe('schema-driven Flow360 form', () => {
       model: 'existing:0',
       entities: ['face-1', 'face-2'],
     })
+  })
+
+  it('serializes an incompatible field recovery as a merge-patch removal', () => {
+    const schema: DynamicFormSchema = {
+      type: 'field_removal',
+      title: 'Remove unsupported meshing setting',
+      recommendation: {
+        title: 'Use legacy mesher defaults',
+        reason: 'This field is not supported by the active mesher.',
+        confidence: 'high',
+      },
+    }
+    expect(initialValue(schema)).toBeNull()
+    expect(serializeValue(schema, 100000)).toBeNull()
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: null,
+      onChange: () => undefined,
+    }))
+    expect(markup).toContain('Schema-safe repair')
+    expect(markup).toContain('Use legacy mesher defaults')
+    expect(markup).not.toContain('type="number"')
   })
 
   it('keeps optional stage values sparse so inherited parameters are not overwritten', () => {

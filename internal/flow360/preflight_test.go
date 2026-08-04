@@ -119,6 +119,13 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 			t.Fatalf("%s editor schema exposed private Flow360 attributes", stage)
 		}
 	}
+	var surfaceSchema map[string]any
+	if err := json.Unmarshal(result.EditorSchemas["SurfaceMesh"], &surfaceSchema); err != nil {
+		t.Fatal(err)
+	}
+	if targetCount := findSchemaByTitle(surfaceSchema, "Target Surface Node Count"); targetCount != nil {
+		t.Fatalf("legacy mesher form exposed unsupported target node count: %#v", targetCount)
+	}
 	var volumeSchema map[string]any
 	if err := json.Unmarshal(result.EditorSchemas["VolumeMesh"], &volumeSchema); err != nil {
 		t.Fatal(err)
@@ -147,6 +154,69 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	if aliases, _ := velocity["unit_aliases"].(map[string]any); aliases["meter/second"] != "m/s" {
 		t.Fatalf("expected legacy velocity alias normalization, got %#v", velocity)
 	}
+}
+
+func TestLegacyMesherTargetCountProducesRemovalRecovery(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	current := json.RawMessage(`{
+		"version":"25.10.3",
+		"unit_system":{"name":"SI"},
+		"meshing":{"type_name":"MeshingParams","defaults":{"target_surface_node_count":100000}}
+	}`)
+	result, err := NewClient().PreflightSimulationParams(
+		context.Background(),
+		"Geometry",
+		"surface-mesh",
+		current,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recovery map[string]any
+	if err := json.Unmarshal(result.FormSchema, &recovery); err != nil {
+		t.Fatal(err)
+	}
+	leaf := findSchemaByType(recovery, "field_removal")
+	if leaf == nil {
+		t.Fatalf("expected an incompatible-field removal recovery, got issues=%#v schema=%s", result.Issues, result.FormSchema)
+	}
+	values := json.RawMessage(`{"meshing":{"defaults":{"surface_max_edge_length":{"value":0.1,"units":"m"},"target_surface_node_count":null}}}`)
+	if err := plans.ValidateFormValues(result.FormSchema, values); err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := plans.ExpandFormValues(result.FormSchema, values, current)
+	if err != nil || !strings.Contains(string(expanded), `"target_surface_node_count":null`) {
+		t.Fatalf("recovery did not produce a field removal: %s / %v", expanded, err)
+	}
+	var currentObject, removalPatch map[string]any
+	if json.Unmarshal(current, &currentObject) != nil || json.Unmarshal(expanded, &removalPatch) != nil {
+		t.Fatal("could not decode recovery merge patch")
+	}
+	revalidatedParams, _ := json.Marshal(mergePreflightFixture(currentObject, removalPatch))
+	revalidated, err := NewClient().PreflightSimulationParams(
+		context.Background(), "Geometry", "surface-mesh", revalidatedParams,
+	)
+	if err != nil || !revalidated.Valid {
+		t.Fatalf("field-removal recovery did not clear preflight: %#v / %v", revalidated, err)
+	}
+}
+
+func findSchemaByType(node map[string]any, nodeType string) map[string]any {
+	if node["type"] == nodeType {
+		return node
+	}
+	if properties, ok := node["properties"].(map[string]any); ok {
+		for _, child := range properties {
+			if object, ok := child.(map[string]any); ok {
+				if found := findSchemaByType(object, nodeType); found != nil {
+					return found
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func findQuantitySchema(node map[string]any) map[string]any {
@@ -317,6 +387,10 @@ func mergePreflightFixture(base, patch map[string]any) map[string]any {
 		result[key] = value
 	}
 	for key, value := range patch {
+		if value == nil {
+			delete(result, key)
+			continue
+		}
 		if patchObject, ok := value.(map[string]any); ok {
 			if baseObject, ok := result[key].(map[string]any); ok {
 				result[key] = mergePreflightFixture(baseObject, patchObject)

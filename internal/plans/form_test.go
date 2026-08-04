@@ -68,6 +68,34 @@ func TestQuantityUnitsNormalizeOnlyDeclaredFlow360Aliases(t *testing.T) {
 	}
 }
 
+func TestFieldRemovalFormProducesMergePatchDeletion(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object","required":["meshing"],"properties":{"meshing":{
+			"type":"object","required":["defaults"],"properties":{"defaults":{
+				"type":"object","required":["target_surface_node_count"],"properties":{
+					"target_surface_node_count":{"type":"field_removal"}
+				}
+			}}
+		}}
+	}`)
+	values := json.RawMessage(`{"meshing":{"defaults":{"target_surface_node_count":null}}}`)
+	if err := ValidateFormValues(schema, values); err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := ExpandFormValues(schema, values, json.RawMessage(`{
+		"meshing":{"defaults":{"target_surface_node_count":100000}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(expanded) != `{"meshing":{"defaults":{"target_surface_node_count":null}}}` {
+		t.Fatalf("expected a merge-patch deletion, got %s", expanded)
+	}
+	if err := ValidateFormValues(schema, json.RawMessage(`{"meshing":{"defaults":{"target_surface_node_count":10}}}`)); err == nil {
+		t.Fatal("expected a replacement value to be rejected")
+	}
+}
+
 func TestExpandFormValuesUpdatesExistingBoundaryModelFromServerChoices(t *testing.T) {
 	schema := json.RawMessage(`{
 		"type":"object","required":["models"],"properties":{"models":{

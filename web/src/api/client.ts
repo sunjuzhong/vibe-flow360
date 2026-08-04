@@ -385,7 +385,7 @@ export type DynamicFormRecommendation = {
 }
 
 export type DynamicFormSchema = {
-  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'entity_assignment' | 'json'
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'entity_assignment' | 'field_removal' | 'json'
   title?: string
   description?: string
   default?: unknown

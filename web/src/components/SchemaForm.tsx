@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
+import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 
 type SchemaFormDialogProps = {
   schema: DynamicFormSchema
@@ -29,7 +30,8 @@ export default function SchemaFormDialog({
   )
   const [value, setValue] = useState<unknown>(initial)
   const [error, setError] = useState('')
-  const hasRecommendation = schemaHasRecommendation(schema)
+  const hasRecommendation = schemaContainsRecommendation(schema)
+  const requiresUserInput = schemaRequiresUserInput(schema)
 
   useEffect(() => {
     setValue(initial)
@@ -57,7 +59,9 @@ export default function SchemaFormDialog({
             <h2>{hasRecommendation ? 'The Agent found a recovery path' : 'The Agent needs your input'}</h2>
             <span>
               {hasRecommendation
-                ? 'Review the evidence and apply the recommendation. No CFD parameter entry is required.'
+                ? requiresUserInput
+                  ? 'Review the recovery and provide only the remaining engineering inputs requested by Flow360.'
+                  : 'Review the evidence and apply the recommendation. No CFD parameter entry is required.'
                 : 'Flow360 has no safe default for these engineering decisions. Complete only the requested fields; the Agent will validate them before approval.'}
             </span>
           </div>
@@ -216,6 +220,28 @@ function SchemaField({
   }
   if (schema.type === 'entity_assignment') {
     return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} />
+  }
+  if (schema.type === 'field_removal') {
+    const recommendation = schema.recommendation
+    return (
+      <fieldset className="schema-object schema-entity-assignment">
+        <legend>{title}</legend>
+        <div className="schema-ai-recommendation">
+          <div className="schema-ai-heading">
+            <span><Sparkles size={15} /><strong>Schema-safe repair</strong></span>
+            <em className={`confidence-${recommendation?.confidence ?? 'high'}`}>{recommendation?.confidence ?? 'high'} confidence</em>
+          </div>
+          <h3>{recommendation?.title ?? 'Remove this incompatible setting'}</h3>
+          <p>{recommendation?.reason ?? schema.description}</p>
+          {recommendation?.evidence?.length ? (
+            <details>
+              <summary>Flow360 validation evidence</summary>
+              <ul>{recommendation.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+            </details>
+          ) : null}
+        </div>
+      </fieldset>
+    )
   }
   if (schema.type === 'boolean') {
     return (
@@ -445,6 +471,8 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
         model: schema.default_model ?? schema.model_choices?.[0]?.value ?? '',
         entities: schema.default_entities ?? [],
       }
+    case 'field_removal':
+      return null
     case 'boolean':
       return false
     case 'enum':
@@ -496,6 +524,8 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       if (!entities.length) throw new Error(`${schema.title || 'Boundary assignment'} requires at least one surface.`)
       return { model, entities }
     }
+    case 'field_removal':
+      return null
     case 'number':
     case 'integer': {
       const numeric = Number(value)
@@ -542,11 +572,4 @@ function compactValue(value: unknown) {
     return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? '' : 's'}`
   }
   return String(value)
-}
-
-function schemaHasRecommendation(schema: DynamicFormSchema): boolean {
-  if (schema.recommendation) return true
-  return Object.values(schema.properties ?? {}).some(schemaHasRecommendation)
-    || (schema.variants ?? []).some(schemaHasRecommendation)
-    || Boolean(schema.items && schemaHasRecommendation(schema.items))
 }

@@ -32,7 +32,7 @@ import {
   type SimulationStage,
 } from '../lib/planStages'
 import { errorMessage } from '../lib/errors'
-import { executionTemplate, preflightPrimaryAction } from '../lib/planPresentation'
+import { executionTemplate, preflightPrimaryAction, schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 import ExecutionMonitor from './ExecutionMonitor'
@@ -217,6 +217,12 @@ export default function PlanPanel({
   const hasStructuredInputs = Boolean(
     selected?.preflight
     && Object.keys(selected.preflight.form_schema.properties ?? {}).length > 0,
+  )
+  const hasPreflightRecommendation = Boolean(
+    selected?.preflight && schemaContainsRecommendation(selected.preflight.form_schema),
+  )
+  const hasPreflightEngineeringInput = Boolean(
+    selected?.preflight && schemaRequiresUserInput(selected.preflight.form_schema),
   )
   const primaryPreflightAction = preflightPrimaryAction(preflightReady, hasStructuredInputs)
   const activeStages = useMemo(
@@ -756,7 +762,7 @@ export default function PlanPanel({
                 <section className="plan-review-section">
                   <h3>
                     <ShieldCheck size={15} /> Flow360 schema preflight
-                    <span>{preflightReady ? 'Ready' : `${preflightErrors.length} required`}</span>
+                    <span>{preflightReady ? 'Ready' : hasPreflightRecommendation ? `${preflightErrors.length} to resolve` : `${preflightErrors.length} required`}</span>
                   </h3>
                   {selected.preflight ? (
                     <>
@@ -765,12 +771,18 @@ export default function PlanPanel({
                           <strong>
                             {preflightReady
                               ? 'SimulationParams are ready for this target'
-                              : hasStructuredInputs
+                              : hasPreflightRecommendation
+                                ? 'The Agent found a schema-safe repair'
+                                : hasStructuredInputs
                                 ? 'The Agent needs an engineering input from you'
                                 : 'The Agent found a preflight problem'}
                           </strong>
                           <small>
-                            {hasStructuredInputs && !preflightReady
+                            {hasPreflightRecommendation && !preflightReady
+                              ? hasPreflightEngineeringInput
+                                ? `${preflightErrors.length} preflight issue${preflightErrors.length === 1 ? '' : 's'} · review the repair and remaining inputs`
+                                : `${preflightErrors.length} incompatible setting${preflightErrors.length === 1 ? '' : 's'} · no value entry is required`
+                              : hasStructuredInputs && !preflightReady
                               ? `${preflightErrors.length} required value${preflightErrors.length === 1 ? '' : 's'} · no safe default will be guessed`
                               : `Flow360 schema ${selected.preflight.validator_version || 'installed'} · plan revision ${selected.revision}`}
                           </small>
@@ -794,12 +806,16 @@ export default function PlanPanel({
                             ? <RefreshCw size={14} className="spin" />
                             : preflightReady
                               ? <RefreshCw size={14} />
-                              : hasStructuredInputs
+                              : hasPreflightRecommendation
+                                ? <Sparkles size={14} />
+                                : hasStructuredInputs
                                 ? <GitPullRequestDraft size={14} />
                                 : <Sparkles size={14} />}
                           {preflightReady
                             ? 'Validate again'
-                            : hasStructuredInputs
+                            : hasPreflightRecommendation
+                              ? 'Review Agent repair'
+                              : hasStructuredInputs
                               ? 'Review required inputs'
                               : 'Open Agent diagnosis'}
                         </button>
@@ -808,11 +824,13 @@ export default function PlanPanel({
                         <div className="preflight-agent-guidance">
                           <Sparkles size={16} />
                           <span>
-                            <strong>Why the Agent is asking</strong>
+                            <strong>{hasPreflightRecommendation ? 'Why the Agent is repairing this' : 'Why the Agent is asking'}</strong>
                             <small>
-                              Flow360 requires a value that changes mesh fidelity and cost.
-                              Provide only the requested input; the Agent will apply it, rerun schema validation,
-                              and return an updated parameter diff before approval.
+                              {hasPreflightRecommendation
+                                ? hasPreflightEngineeringInput
+                                  ? 'Flow360 rejects one setting for the active mesher. The Agent will remove that incompatible field, preserve the remaining requested inputs, and rerun schema validation.'
+                                  : 'Flow360 rejects this setting for the active mesher. The Agent will remove only the incompatible field, rerun schema validation, and show the updated parameter diff.'
+                                : 'Flow360 requires a value that changes mesh fidelity and cost. Provide only the requested input; the Agent will apply it, rerun schema validation, and return an updated parameter diff before approval.'}
                             </small>
                           </span>
                         </div>
