@@ -1,9 +1,16 @@
 import { ArrowRight, CircleHelp, Loader2, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { AgentQuestion } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
 export type ClarificationAnswers = Record<string, unknown>
+
+export function agentClarificationPortalTarget(
+  ownerDocument: Pick<Document, 'body'> | undefined = typeof document === 'undefined' ? undefined : document,
+) {
+  return ownerDocument?.body ?? null
+}
 
 export function initialClarificationAnswers(questions: AgentQuestion[]): ClarificationAnswers {
   return Object.fromEntries(questions.map((question) => {
@@ -63,6 +70,14 @@ export default function AgentClarificationDialog({
     if (open) setAnswers(initialClarificationAnswers(questions))
   }, [open, questions])
 
+  useEffect(() => {
+    const target = agentClarificationPortalTarget()
+    if (!open || !target) return
+    const previousOverflow = target.style.overflow
+    target.style.overflow = 'hidden'
+    return () => { target.style.overflow = previousOverflow }
+  }, [open])
+
   const normalized = useMemo(
     () => serializedClarificationAnswers(questions, answers),
     [answers, questions],
@@ -75,7 +90,7 @@ export default function AgentClarificationDialog({
     onSubmit(normalized, clarificationAnswerSummary(questions, normalized))
   }
 
-  return (
+  const modal = (
     <div className="agent-clarification-overlay" role="presentation">
       <div ref={dialogRef} className="agent-clarification-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-clarification-title" tabIndex={-1}>
         <div className="agent-clarification-header">
@@ -129,4 +144,7 @@ export default function AgentClarificationDialog({
       </div>
     </div>
   )
+
+  const portalTarget = agentClarificationPortalTarget()
+  return portalTarget ? createPortal(modal, portalTarget) : modal
 }

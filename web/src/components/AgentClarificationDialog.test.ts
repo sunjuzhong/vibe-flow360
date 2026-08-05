@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clarificationAnswerSummary,
+  agentClarificationPortalTarget,
   initialClarificationAnswers,
   serializedClarificationAnswers,
 } from './AgentClarificationDialog'
@@ -15,6 +16,11 @@ const questions: AgentQuestion[] = [
 ]
 
 describe('Agent clarification form helpers', () => {
+  it('mounts the modal at the document body instead of inside an Agent session panel', () => {
+    const body = {} as HTMLElement
+    expect(agentClarificationPortalTarget({ body } as Pick<Document, 'body'>)).toBe(body)
+  })
+
   it('uses typed defaults and serializes numbers', () => {
     expect(initialClarificationAnswers(questions)).toEqual({ velocity: 40, model: 'sa' })
     expect(serializedClarificationAnswers(questions, { velocity: '55', model: 'sa' })).toEqual({ velocity: 55, model: 'sa' })
