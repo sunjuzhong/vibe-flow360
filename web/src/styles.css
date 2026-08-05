@@ -1851,7 +1851,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .viewer-controls-rail {
   position: absolute;
-  z-index: 3;
+  z-index: 20;
   right: 10px;
   bottom: 10px;
   left: 10px;

@@ -38,6 +38,7 @@ import {
   type ViewerPointerEvent,
 } from '../../lib/viewer-tools'
 import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSelection } from './ViewerPrecisionControl'
+import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
 
 export type MeshGroupData = {
   id: string
@@ -118,7 +119,7 @@ function nearestControlPointIndex(
 
 export type ViewerState =
   | { status: 'idle' }
-  | { status: 'loading'; progress: number }
+  | ViewerLoadingState
   | { status: 'ready' }
   | { status: 'error'; message: string }
 
@@ -548,11 +549,11 @@ export function Viewer3D({
     if (manifest && state.status === 'ready') {
       const controller = new AbortController()
       const preserveCamera = loadedAssetURLRef.current === manifest.asset_url && assetRef.current !== null
-      setAssetState({ status: 'loading', progress: 0 })
+      setAssetState({ status: 'loading', message: 'Loading 3D resources…' })
       void updateGeometry(
         manifest,
         controller.signal,
-        (progress) => setAssetState({ status: 'loading', progress }),
+        (progress) => setAssetState({ status: 'loading', message: 'Loading 3D resources…', progress }),
         requestedLODLevel,
         preserveCamera,
       )
@@ -1016,9 +1017,9 @@ export function Viewer3D({
         tabIndex={0}
       />
       {visibleState.status === 'loading' && (
-        <div className="viewer-overlay viewer-loading">
+        <div className="viewer-overlay viewer-loading" role="status" aria-live="polite">
           <div className="viewer-spinner" />
-          <p>Loading 3D preview... {Math.round(visibleState.progress * 100)}%</p>
+          <p>{viewerLoadingLabel(visibleState)}</p>
         </div>
       )}
       {visibleState.status === 'error' && (

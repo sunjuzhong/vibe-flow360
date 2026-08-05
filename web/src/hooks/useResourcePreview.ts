@@ -22,7 +22,7 @@ export function useResourcePreview(
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
-    setState({ status: 'loading', progress: 0 })
+    setState({ status: 'loading', message: 'Preparing 3D preview…' })
     setSource(null)
     setPrimaryError('')
 
