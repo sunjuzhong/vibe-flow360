@@ -43,40 +43,30 @@ export default function ProjectDraftBar({
     <section className="project-draft-bar" aria-label="Project drafts" aria-busy={loading}>
       <div className="project-draft-heading">
         <span><GitPullRequestDraft size={15} /></span>
-        <div>
-          <strong>Drafts</strong>
-          <small>{loading ? 'Loading…' : `${drafts.length} configuration${drafts.length === 1 ? '' : 's'}`}</small>
-        </div>
+        <strong>Draft</strong>
       </div>
 
-      <div className="project-draft-list" role="listbox" aria-label="Switch active Draft">
-        {!loading && drafts.map((draft) => {
+      <label className="project-draft-select">
+        <span>Active Draft</span>
+        <select
+          aria-label="Switch active Draft"
+          value={selectedId}
+          disabled={loading || drafts.length === 0}
+          onChange={(event) => onSelect(event.target.value)}
+        >
+          {loading && <option value="">Loading Drafts…</option>}
+          {!loading && drafts.length === 0 && <option value="">{error || 'No Drafts'}</option>}
+          {!loading && drafts.map((draft) => {
           const active = draft.id === selectedId
           const status = draftStatus(draft, selectedDetail, active)
           return (
-            <button
-              type="button"
-              role="option"
-              aria-selected={active}
-              className={active ? 'active' : ''}
-              key={draft.id}
-              onClick={() => onSelect(draft.id)}
-              title={`${draft.name || draft.id} · ${status}`}
-            >
-              <span className={`draft-state-dot status-${status.toLowerCase()}`} />
-              <span>
-                <strong>{draft.name || 'Untitled Draft'}</strong>
-                <small>{status}</small>
-              </span>
-            </button>
+            <option key={draft.id} value={draft.id}>
+              {draft.name || 'Untitled Draft'} · {status}
+            </option>
           )
         })}
-        {!loading && !drafts.length && (
-          <div className="project-draft-empty">
-            {error || 'No remote Drafts yet. New configurations appear here before they are run.'}
-          </div>
-        )}
-      </div>
+        </select>
+      </label>
 
       <div className="project-draft-actions">
         <button
@@ -88,8 +78,9 @@ export default function ProjectDraftBar({
           <Braces size={14} />
           <span>{detailLoading ? 'Reading…' : 'Parameters'}</span>
         </button>
-        <button type="button" onClick={onRefresh} disabled={loading} aria-label="Refresh Drafts" title="Refresh Drafts">
+        <button type="button" onClick={onRefresh} disabled={loading} aria-label="Refresh Drafts" title="Reload the Draft list and active Draft parameters">
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          <span>Refresh Drafts</span>
         </button>
       </div>
     </section>

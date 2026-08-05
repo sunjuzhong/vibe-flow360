@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
-import { geometryContextId, initialProjectPanel, projectSyncProgress } from './ProjectPage'
+import { geometryContextId, initialProjectPanel, projectSyncProgress, resourceContextLabel } from './ProjectPage'
 
 describe('Project panel defaults', () => {
   it('opens Project resources on first entry', () => {
     expect(initialProjectPanel).toBe('resources')
+  })
+})
+
+describe('resourceContextLabel', () => {
+  it('does not repeat a Project name for its same-named root resource', () => {
+    expect(resourceContextLabel('Cylinder wake', 'Cylinder wake', 'Geometry')).toBe('Geometry resource')
+    expect(resourceContextLabel('Cylinder wake', 'Baseline mesh', 'SurfaceMesh')).toBe('Baseline mesh')
   })
 })
 

@@ -1,7 +1,6 @@
 import {
   AlertCircle,
   ArrowLeft,
-  CheckCircle2,
   Cloud,
   GitBranch,
   GitCompare,
@@ -9,7 +8,6 @@ import {
   Info,
   MessageSquareText,
   PanelLeftOpen,
-  PanelRightOpen,
   RefreshCw,
   Sparkles,
   Tags,
@@ -34,6 +32,7 @@ import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
 import PlanPanel from '../components/PlanPanel'
 import { ProjectShellAction } from '../components/ProjectShellAction'
+import ProjectContextBar from '../components/ProjectContextBar'
 import ProjectDraftBar, { draftRecords } from '../components/ProjectDraftBar'
 import ResourceDetailPanel, {
   resourceStatus,
@@ -78,6 +77,12 @@ function getFlow360Domain(environment?: string): string {
 function buildWorkbenchUrl(environment: string | undefined, projectId: string, resourceId: string, resourceType: string): string {
   const domain = getFlow360Domain(environment)
   return `https://${domain}/workbench/${projectId}?id=${resourceId}&type=${resourceType}`
+}
+
+export function resourceContextLabel(projectName: string, resourceName: string, resourceType: string): string {
+  return projectName.trim().toLocaleLowerCase() === resourceName.trim().toLocaleLowerCase()
+    ? `${resourceType.replace('Mesh', ' Mesh')} resource`
+    : resourceName
 }
 
 const resourceSuggestions: Record<string, string[]> = {
@@ -484,14 +489,9 @@ export default function ProjectPage() {
         <div className="project-shell-context">
           <Link to="/" aria-label="Back to workspace"><ArrowLeft size={15} /></Link>
           <div>
-            <span>{project?.name || (loading ? 'Loading Project…' : 'Project')}</span>
-            <strong>{selected?.name || projectId}</strong>
+            <span>Project</span>
+            <strong>{project?.name || (loading ? 'Loading Project…' : projectId)}</strong>
           </div>
-          {detail && (
-            <em className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>
-              {resourceStatus(detail)}
-            </em>
-          )}
         </div>
         <div className="project-shell-actions">
           <ProjectShellAction
@@ -500,16 +500,6 @@ export default function ProjectPage() {
             className={activePanel === 'resources' ? 'active' : ''}
             onClick={() => setActivePanel((panel) => panel === 'resources' ? null : 'resources')}
             aria-expanded={activePanel === 'resources'}
-          />
-          <ProjectShellAction
-            label="Details"
-            icon={<PanelRightOpen size={15} />}
-            className={activePanel === 'details' ? 'active' : ''}
-            onClick={() => {
-              setDetailTab('overview')
-              setActivePanel((panel) => panel === 'details' ? null : 'details')
-            }}
-            aria-expanded={activePanel === 'details'}
           />
           <ProjectShellAction
             label="Annotations"
@@ -629,56 +619,33 @@ export default function ProjectPage() {
           )}
 
           <main className="resource-workspace project-canvas">
-            <ProjectDraftBar
-              drafts={drafts}
-              selectedId={activeDraftId}
-              selectedDetail={draftDetail}
-              loading={draftsLoading}
-              detailLoading={draftDetailLoading}
-              error={draftsError}
-              onSelect={setActiveDraftId}
-              onInspect={() => setActivePanel('draft')}
-              onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
+            <ProjectContextBar
+              resourceName={resourceContextLabel(project.name, selected.name, selected.type)}
+              resourceType={selected.type}
+              resourceId={selected.id}
+              resourceUrl={buildWorkbenchUrl(flowStatus?.environment, projectId, selected.id, selected.type)}
+              status={resourceStatus(detail)}
+              stages={stages}
+              selectedStage={selectedStage}
+              resourceIcon={<ResourceIcon type={selected.type} size={17} />}
+              draftControls={(
+                <ProjectDraftBar
+                  drafts={drafts}
+                  selectedId={activeDraftId}
+                  selectedDetail={draftDetail}
+                  loading={draftsLoading}
+                  detailLoading={draftDetailLoading}
+                  error={draftsError}
+                  onSelect={setActiveDraftId}
+                  onInspect={() => setActivePanel('draft')}
+                  onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
+                />
+              )}
+              onDetails={() => {
+                setDetailTab('overview')
+                setActivePanel('details')
+              }}
             />
-            <div className="project-canvas-toolbar">
-              <div className="canvas-resource-title">
-                <span className={`resource-type-icon type-${selected.type.toLowerCase()}`}>
-                  <ResourceIcon type={selected.type} size={17} />
-                </span>
-                <div>
-                  <strong>{selected.name}</strong>
-                  <small>
-                    {selected.type} ·{' '}
-                    <a
-                      className="id-link"
-                      href={buildWorkbenchUrl(flowStatus?.environment, projectId, selected.id, selected.type)}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Open in Flow360 workbench"
-                    >
-                      {selected.id}
-                    </a>
-                  </small>
-                </div>
-              </div>
-              <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages">
-              {stages.map((stage, index) => (
-                <div className={`${index === selectedStage ? 'current' : ''} ${index < selectedStage ? 'before' : ''}`} key={stage}>
-                  <span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span>
-                  <small>{stage.replace('Mesh', ' Mesh')}</small>
-                </div>
-              ))}
-              </div>
-              <button
-                className="canvas-info-button"
-                onClick={() => {
-                  setDetailTab('overview')
-                  setActivePanel('details')
-                }}
-              >
-                <Info size={15} /> Info
-              </button>
-            </div>
 
             {selected.type === 'Geometry' && (
               <GeometryWorkspace
