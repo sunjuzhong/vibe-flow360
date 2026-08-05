@@ -1,0 +1,33 @@
+{
+  "workflows": [
+    {"id": "geometry-to-case", "title": "Run a project from Geometry through meshing to Case", "tutorial": "T01"},
+    {"id": "surface-mesh-to-case", "title": "Run a project starting from SurfaceMesh", "tutorial": "T02"},
+    {"id": "volume-mesh-to-case", "title": "Run a project starting from VolumeMesh", "tutorial": "T02"},
+    {"id": "case-fork", "title": "Fork an existing Case", "tutorial": "T43"},
+    {"id": "case-restart", "title": "Restart an existing Case", "tutorial": "T43"},
+    {"id": "mesh-interpolation", "title": "Initialize a Case by mesh interpolation", "tutorial": "T43"},
+    {"id": "parameter-sweep", "title": "Run a parameter sweep", "tutorial": "T41"},
+    {"id": "batch-submit", "title": "Submit meshes and Cases in a batch", "tutorial": "T42"},
+    {"id": "wait-and-status", "title": "Wait for a resource and inspect status", "tutorial": "T42"},
+    {"id": "logs", "title": "Inspect and save resource logs", "tutorial": "T44"},
+    {"id": "project-resource-list", "title": "List and search Project resources", "tutorial": "T44"},
+    {"id": "result-download", "title": "Download and archive results", "tutorial": "T44"},
+    {"id": "folder-organization", "title": "Create and organize cloud folders", "tutorial": "T42"},
+    {"id": "configuration-migration", "title": "Migrate a legacy configuration", "tutorial": "T45"},
+    {"id": "environment-selection", "title": "Select an account and Flow360 environment safely", "tutorial": "T46"}
+  ],
+  "results": [
+    {"id": "convergence", "title": "Read residual and convergence histories", "tutorial": "T28"},
+    {"id": "forces-and-moments", "title": "Read forces and moments", "tutorial": "T37"},
+    {"id": "surface-field", "title": "Read surface field data", "tutorial": "T33"},
+    {"id": "volume-field", "title": "Read volume field data", "tutorial": "T33"},
+    {"id": "slice", "title": "Read slice data", "tutorial": "T34"},
+    {"id": "probe-monitor", "title": "Read probe monitor data", "tutorial": "T35"},
+    {"id": "surface-monitor", "title": "Read surface monitor data", "tutorial": "T35"},
+    {"id": "time-average", "title": "Read time-averaged results", "tutorial": "T36"},
+    {"id": "aeroacoustics", "title": "Read aeroacoustic observer results", "tutorial": "T38"},
+    {"id": "render", "title": "Create reproducible renders and animations", "tutorial": "T39"},
+    {"id": "report", "title": "Generate an engineering report", "tutorial": "T40"},
+    {"id": "case-comparison", "title": "Compare result evidence across Cases", "tutorial": "T40"}
+  ]
+}

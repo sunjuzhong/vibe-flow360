@@ -1,0 +1,9 @@
+{
+  "api_version": "release-25.10",
+  "package": "flow360",
+  "package_version": "25.10.3",
+  "install_spec": "flow360==25.10.3",
+  "schema_roots": [
+    "flow360.SimulationParams"
+  ]
+}

@@ -1,0 +1,277 @@
+registry: tutorials/feature-registry.json
+api_version: release-25.10
+package_version: 25.10.3
+
+# A mapping means the public capability has a teaching home. "planned" becomes
+# "verified" only when an artifact exists and passes Flow360 validation.
+mappings:
+  - tutorial: T01
+    section: baseline
+    status: planned
+    selector:
+      owners: [SimulationParams, UnitSystemConfig, ReferenceGeometry, CoordinateSystem, CoordinateSystemAssignmentGroup, CoordinateSystemParent, EntitySelector, Predicate, GeometryBodyGroup, MirrorPlane, MirroredGeometryBodyGroup, MirroredSurface, Surface]
+  - tutorial: T03
+    section: baseline
+    status: planned
+    selector:
+      owners: [MeshingParams, MeshingDefaults, BoundaryLayer, SurfaceRefinement]
+  - tutorial: T04
+    section: variants
+    status: planned
+    selector:
+      owners: [AngleBasedRefinement, AspectRatioBasedRefinement, Edge, GeometryRefinement, HeightBasedRefinement, PassiveSpacing, ProjectAnisoSpacing, flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement]
+  - tutorial: T05
+    section: variants
+    status: planned
+    selector:
+      owners: [AxisymmetricBody, AxisymmetricRefinement, Box, Cylinder, MeshSliceOutput, OctreeSpacing, Sphere, StructuredBoxRefinement, UniformRefinement, VolumeMeshingDefaults, VolumeMeshingParams, VoxelGrid]
+  - tutorial: T06
+    section: variants
+    status: planned
+    selector:
+      owners: [AutomatedFarfield, UserDefinedFarfield]
+  - tutorial: T07
+    section: baseline
+    status: planned
+    selector:
+      owners: [CustomVolume, CustomZones, GenericVolume, SeedpointVolume]
+  - tutorial: T08
+    section: baseline
+    status: planned
+    selector:
+      owners: [CentralBelt, FullyMovingFloor, StaticFloor, WheelBelts, WindTunnelFarfield]
+  - tutorial: T09
+    section: baseline
+    status: planned
+    selector:
+      owners: [RotationCylinder, RotationSphere, RotationVolume]
+  - tutorial: T10
+    section: baseline
+    status: planned
+    selector:
+      owners: [BodyRefinement, CastellatedMeshControls, ModularMeshingWorkflow, QualityMetrics, RegionRefinement, SmoothControls, SnapControls, SurfaceMeshingDefaults, SurfaceMeshingParams, flow360_schema__models__simulation__meshing_param__snappy__snappy_mesh_refinements__SurfaceEdgeRefinement]
+  - tutorial: T11
+    section: baseline
+    status: planned
+    selector:
+      owners: [Air, AerospaceCondition, GenericReferenceCondition, Mach, Temperature, ThermalState]
+  - tutorial: T12
+    section: baseline
+    status: planned
+    selector:
+      owners: [Gravity, LiquidOperatingCondition, Water]
+  - tutorial: T13
+    section: baseline
+    status: planned
+    selector:
+      owners: [FrozenSpecies, NASA9CoefficientSet, NASA9Coefficients, Sutherland, ThermallyPerfectGas]
+  - tutorial: T14
+    section: variants
+    status: planned
+    selector:
+      owner_pattern: '^(Fluid|KOmegaSST|KOmegaSSTModelConstants|NoneSolver|SpalartAllmaras|SpalartAllmarasModelConstants|TurbulenceModelControls|Turbulent.*|SpecificDissipationRate.*|ModifiedTurbulentViscosity.*)$'
+  - tutorial: T15
+    section: variants
+    status: planned
+    selector:
+      owners: [DetachedEddySimulation, TransitionModelSolver]
+  - tutorial: T16
+    section: diagnostics
+    status: planned
+    selector:
+      owners: [KrylovLinearSolver, LinearSolver, LineSearch, NavierStokesSolver, RoeFlux, SLAU2Flux]
+  - tutorial: T17
+    section: variants
+    status: planned
+    selector:
+      owners: [HeatEquationInitialCondition, NavierStokesInitialCondition, NavierStokesModifiedRestartSolution]
+  - tutorial: T18
+    section: baseline
+    status: planned
+    selector:
+      owners: [HeatEquationSolver, Solid, SolidMaterial]
+  - tutorial: T19
+    section: baseline
+    status: planned
+    selector:
+      owners: [Freestream, HeatFlux, SlipWall, SymmetryPlane, Wall, WallFunction, WallRotation]
+  - tutorial: T20
+    section: variants
+    status: planned
+    selector:
+      owners: [Inflow, MassFlowRate, Outflow, Pressure, Supersonic, TotalPressure]
+  - tutorial: T21
+    section: baseline
+    status: planned
+    selector:
+      owners: [Periodic, Rotational, SurfacePair, Translational]
+  - tutorial: T22
+    section: baseline
+    status: planned
+    selector:
+      owners: [PorousJump, SlaterPorousBleed]
+  - tutorial: T23
+    section: baseline
+    status: planned
+    selector:
+      owners: [PorousMedium]
+  - tutorial: T24
+    section: baseline
+    status: planned
+    selector:
+      owners: [ActuatorDisk, ForcePerArea]
+  - tutorial: T25
+    section: variants
+    status: planned
+    selector:
+      owners: [AuxiliaryPolarFile, BETDisk, BETDiskChord, BETDiskSectionalPolar, BETDiskTwist, C81File, DFDCFile, XFOILFile, XROTORFile]
+  - tutorial: T26
+    section: variants
+    status: planned
+    selector:
+      owners: [AngleExpression, AngularVelocity, Rotation]
+  - tutorial: T27
+    section: baseline
+    status: planned
+    selector:
+      owners: [VelocityForcingPlane]
+  - tutorial: T28
+    section: baseline
+    status: planned
+    selector:
+      owners: [AdaptiveCFL, RampCFL, RunControl, Steady]
+  - tutorial: T29
+    section: baseline
+    status: planned
+    selector:
+      owners: [Unsteady]
+  - tutorial: T30
+    section: baseline
+    status: planned
+    selector:
+      owners: [StoppingCriterion]
+  - tutorial: T31
+    section: baseline
+    status: planned
+    selector:
+      owners: [FromUserDefinedDynamics, UserDefinedDynamic, UserVariable]
+  - tutorial: T32
+    section: baseline
+    status: planned
+    selector:
+      owners: [Expression, UserDefinedField]
+  - tutorial: T33
+    section: baseline
+    status: planned
+    selector:
+      owners: [SurfaceOutput, VolumeOutput]
+  - tutorial: T34
+    section: baseline
+    status: planned
+    selector:
+      owners: [Isosurface, IsosurfaceOutput, Slice, SliceOutput, StreamlineOutput]
+  - tutorial: T35
+    section: baseline
+    status: planned
+    selector:
+      owners: [Point, PointArray, PointArray2D, ProbeOutput, SurfaceProbeOutput, SurfaceSliceOutput]
+  - tutorial: T36
+    section: variants
+    status: planned
+    selector:
+      owner_pattern: '^(MovingStatistic|TimeAverage.*)$'
+  - tutorial: T37
+    section: baseline
+    status: planned
+    selector:
+      owners: [ForceDistributionOutput, ForceOutput, ImportedSurface, SurfaceIntegralOutput]
+  - tutorial: T38
+    section: baseline
+    status: planned
+    selector:
+      owners: [AeroAcousticOutput, Observer]
+  - tutorial: T39
+    section: baseline
+    status: planned
+    selector:
+      owners: [AmbientLight, AnimatedView, Camera, DirectionalLight, Environment, FieldMaterial, Keyframe, Lighting, OrthographicProjection, PBRMaterial, PerspectiveProjection, RenderOutput, RenderOutputGroup, SceneTransform, SkyboxBackground, SkyboxTexture, SolidBackground, StaticView]
+  - tutorial: T02
+    section: workflow
+    status: planned
+    selector:
+      feature_pattern: '^workflow:(surface-mesh-to-case|volume-mesh-to-case)$'
+  - tutorial: T01
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:geometry-to-case$'}
+  - tutorial: T41
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:parameter-sweep$'}
+  - tutorial: T42
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:(batch-submit|folder-organization|wait-and-status)$'}
+  - tutorial: T43
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:(case-fork|case-restart|mesh-interpolation)$'}
+  - tutorial: T44
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:(logs|project-resource-list|result-download)$'}
+  - tutorial: T45
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:configuration-migration$'}
+  - tutorial: T46
+    section: workflow
+    status: planned
+    selector: {feature_pattern: '^workflow:environment-selection$'}
+  - tutorial: T28
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:convergence$'}
+  - tutorial: T33
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:(surface-field|volume-field)$'}
+  - tutorial: T34
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:slice$'}
+  - tutorial: T35
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:(probe-monitor|surface-monitor)$'}
+  - tutorial: T36
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:time-average$'}
+  - tutorial: T37
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:forces-and-moments$'}
+  - tutorial: T38
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:aeroacoustics$'}
+  - tutorial: T39
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:render$'}
+  - tutorial: T40
+    section: evidence
+    status: planned
+    selector: {feature_pattern: '^result:(case-comparison|report)$'}
+
+exclusions:
+  - reason: Private implementation attributes are not part of the supported user API.
+    selector: {feature_pattern: '^schema:field:.*\.private_attribute_'}
+  - reason: Pydantic collection wrappers are generated schema plumbing, not user-facing capabilities.
+    selector: {owner_pattern: '^(EntityList_|Unique(Item|String)List|abc__UniqueItemList_).*'}
+  - reason: Cached constructor inputs are serialization internals and are not authored by users.
+    selector: {owner_pattern: '.*Cache$'}
+  - reason: Resource metadata and ghost entities are generated by Flow360 services.
+    selector:
+      owners: [AxisymmetricSegment, BodyComponentInfo, CoordinateSystemEntityRef, CoordinateSystemStatus, GeometryEntityInfo, GhostCircularPlane, GhostSphere, GhostSurface, GhostSurfacePair, MirrorStatus, SurfaceMeshEntityInfo, SurfacePrivateAttributes, VariableContextInfo, VolumeMeshEntityInfo, WindTunnelGhostSurface]

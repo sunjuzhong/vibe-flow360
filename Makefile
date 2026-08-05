@@ -1,4 +1,5 @@
-.PHONY: dev web server build init test clean cad-runtime install
+<<<<<<< HEAD
+.PHONY: dev web server build init test clean cad-runtime install tutorials-registry tutorials-coverage tutorials-validate tutorials-test
 
 web:
 	cd web && npm run build
@@ -27,6 +28,21 @@ install: build
 test: web
 	go test ./...
 	cd web && npm run test
+
+tutorials-registry:
+	python3 scripts/export_flow360_features.py
+
+tutorials-coverage:
+	go run ./cmd/tutorial-coverage
+
+tutorials-validate:
+	python3 scripts/validate_tutorials.py
+	go run ./cmd/tutorial-coverage --validation-report .tutorial-validation/report.json
+
+tutorials-test:
+	python3 -m unittest scripts/test_validate_tutorials.py
+	go test ./cmd/tutorial-coverage
+	$(MAKE) tutorials-validate
 
 clean:
 	rm -rf web/dist internal/server/dist vibe-flow360 vibesim

@@ -1,0 +1,30 @@
+name: Tutorial coverage
+
+on:
+  pull_request:
+    paths:
+      - "tutorials/**"
+      - "scripts/export_flow360_features.py"
+      - "cmd/tutorial-coverage/**"
+      - "go.mod"
+      - "go.sum"
+  push:
+    branches: [main]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned Flow360 schema package
+        run: python -m pip install "$(python -c 'import json; print(json.load(open("tutorials/flow360-version.json"))["install_spec"])')"
+      - name: Verify registry snapshot
+        run: python scripts/export_flow360_features.py --check
+      - name: Verify every public feature is accounted for
+        run: go run ./cmd/tutorial-coverage
