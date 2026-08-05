@@ -28,6 +28,7 @@ import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
+import { StructuredDataView } from './StructuredDataView'
 import {
   createViewerContext,
   findLengthUnit,
@@ -478,28 +479,16 @@ export default function CaseWorkspace({
             <summary><Gauge size={13} /> Physical setup</summary>
             <div className="case-review-detail-block">
               <strong>Operating conditions</strong>
-              <dl className="case-detail-list">
-                {Object.keys(viewModel.operatingPoint).length ? Object.entries(viewModel.operatingPoint).map(([key, value]) => (
-                  <div key={key}><dt>{key}</dt><dd>{metricText(value)}</dd></div>
-                )) : <div className="case-empty">Not reported by Flow360 snapshot.</div>}
-              </dl>
+              <StructuredDataView value={viewModel.operatingPoint} empty="Not reported by Flow360 snapshot." />
               <strong>Reference quantities</strong>
-              <dl className="case-detail-list">
-                {Object.keys(viewModel.referenceQuantities).length ? Object.entries(viewModel.referenceQuantities).map(([key, value]) => (
-                  <div key={key}><dt>{key}</dt><dd>{metricText(value)}</dd></div>
-                )) : <div className="case-empty">Not reported by Flow360 snapshot.</div>}
-              </dl>
+              <StructuredDataView value={viewModel.referenceQuantities} empty="Not reported by Flow360 snapshot." />
             </div>
           </details>
 
           <details className="case-review-details">
             <summary><Thermometer size={13} /> Solver settings</summary>
             <div className="case-review-detail-block">
-              <dl className="case-detail-list">
-                {Object.keys(viewModel.solverSettings).length ? Object.entries(viewModel.solverSettings).slice(0, 8).map(([key, value]) => (
-                  <div key={key}><dt>{key}</dt><dd>{metricText(value)}</dd></div>
-                )) : <div className="case-empty">Not reported by Flow360 snapshot.</div>}
-              </dl>
+              <StructuredDataView value={viewModel.solverSettings} empty="Not reported by Flow360 snapshot." />
             </div>
           </details>
 

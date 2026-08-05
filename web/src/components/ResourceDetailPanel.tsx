@@ -16,6 +16,7 @@ import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import DraftParameterEditor from './DraftParameterEditor'
 import { ResultTablePreview } from './ResultTablePreview'
+import { StructuredDataView } from './StructuredDataView'
 
 export type ResourceDetailTab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
 
@@ -75,10 +76,7 @@ function formatBytes(value?: number) {
 }
 
 function JsonView({ value, empty }: { value: unknown; empty: string }) {
-  if (value === undefined || value === null) {
-    return <div className="detail-empty">{empty}</div>
-  }
-  return <pre className="resource-json">{JSON.stringify(value, null, 2)}</pre>
+  return <StructuredDataView value={value} empty={empty} className="resource-structured-data" />
 }
 
 export function resourceStatus(detail: ResourceDetail | null) {
