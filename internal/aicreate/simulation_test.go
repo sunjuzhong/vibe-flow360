@@ -2,6 +2,7 @@ package aicreate
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -71,5 +72,34 @@ func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
 	symmetryEntities := storedBoundaryEntities(byType["SymmetryPlane"])
 	if len(symmetryEntities) != 1 || symmetryEntities[0].(map[string]any)["name"] != "symmetric" {
 		t.Fatalf("AutomatedFarfield symmetry mapping failed: %#v", symmetryEntities)
+	}
+}
+
+func TestValidateImportedGeometryContractAcceptsCompleteNamedCoverage(t *testing.T) {
+	geometry := Geometry{Results: []GeometryResult{{Name: "fluid", Faces: []FaceLabel{
+		{Name: "inlet"}, {Name: "outlet"}, {Name: "cylinder_wall"},
+	}}}}
+	baseline := json.RawMessage(`{"simulation_params":{"private_attribute_asset_cache":{"project_entity_info":{
+		"face_group_tag":"faceId","grouped_faces":[
+			[{"name":"face-1","private_attribute_id":"face-1","private_attribute_tag_key":"faceId"},{"name":"face-2","private_attribute_id":"face-2","private_attribute_tag_key":"faceId"},{"name":"face-3","private_attribute_id":"face-3","private_attribute_tag_key":"faceId"}],
+			[{"name":"inlet","private_attribute_tag_key":"builtinName","private_attribute_sub_components":["face-1"]},{"name":"outlet","private_attribute_tag_key":"builtinName","private_attribute_sub_components":["face-2"]},{"name":"cylinder_wall","private_attribute_tag_key":"builtinName","private_attribute_sub_components":["face-3"]}]
+		]}}}}`)
+	if err := ValidateImportedGeometryContract(baseline, geometry); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateImportedGeometryContractRejectsPartialCylinderWall(t *testing.T) {
+	geometry := Geometry{Results: []GeometryResult{{Name: "fluid", Faces: []FaceLabel{
+		{Name: "spanwise_periodic_min"}, {Name: "spanwise_periodic_max"}, {Name: "cylinder_wall"},
+	}}}}
+	baseline := json.RawMessage(`{"simulation_params":{"private_attribute_asset_cache":{"project_entity_info":{
+		"face_group_tag":"faceId","grouped_faces":[
+			[{"name":"face-1","private_attribute_id":"face-1","private_attribute_tag_key":"faceId"},{"name":"face-2","private_attribute_id":"face-2","private_attribute_tag_key":"faceId"},{"name":"face-3","private_attribute_id":"face-3","private_attribute_tag_key":"faceId"},{"name":"face-4","private_attribute_id":"face-4","private_attribute_tag_key":"faceId"}],
+			[{"name":"spanwise_periodic_min","private_attribute_tag_key":"builtinName","private_attribute_sub_components":["face-1"]},{"name":"spanwise_periodic_max","private_attribute_tag_key":"builtinName","private_attribute_sub_components":["face-2"]},{"name":"cylinder_wall","private_attribute_tag_key":"builtinName","private_attribute_sub_components":["face-3"]}]
+		]}}}}`)
+	err := ValidateImportedGeometryContract(baseline, geometry)
+	if err == nil || !strings.Contains(err.Error(), "unnamed concrete faces=1") {
+		t.Fatalf("partial wall coverage was not rejected: %v", err)
 	}
 }

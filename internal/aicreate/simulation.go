@@ -4,8 +4,96 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
+
+// ValidateImportedGeometryContract reconciles the semantic names authored in
+// the STEP file with the concrete entities Flow360 actually imported. This is
+// deliberately separate from CAD validation: STEPCAF metadata may be changed
+// or dropped by a downstream importer even when OpenCascade round-trips it.
+func ValidateImportedGeometryContract(baseline json.RawMessage, geometry Geometry) error {
+	var document map[string]any
+	if !json.Valid(baseline) || json.Unmarshal(baseline, &document) != nil {
+		return errors.New("Flow360 Geometry SimulationParams are invalid")
+	}
+	if wrapped, ok := document["simulation_params"].(map[string]any); ok {
+		document = wrapped
+	}
+	expected := map[string]bool{}
+	for _, result := range geometry.Results {
+		for _, face := range result.Faces {
+			expected[strings.ToLower(face.Name)] = true
+		}
+	}
+	if len(expected) == 0 {
+		return errors.New("the generated STEP does not declare any Flow360 boundary names")
+	}
+
+	cache, _ := document["private_attribute_asset_cache"].(map[string]any)
+	info, _ := cache["project_entity_info"].(map[string]any)
+	groups, _ := info["grouped_faces"].([]any)
+	imported := map[string]bool{}
+	namedFaceOwners := map[string]int{}
+	for _, rawGroup := range groups {
+		group, _ := rawGroup.([]any)
+		for _, rawEntity := range group {
+			entity, _ := rawEntity.(map[string]any)
+			if stringValue(entity["private_attribute_tag_key"]) != "builtinName" {
+				continue
+			}
+			name := strings.ToLower(stringValue(entity["name"]))
+			if name != "" {
+				imported[name] = true
+			}
+			components, _ := entity["private_attribute_sub_components"].([]any)
+			for _, component := range components {
+				if id, ok := component.(string); ok && strings.TrimSpace(id) != "" {
+					namedFaceOwners[id]++
+				}
+			}
+		}
+	}
+	missing := make([]string, 0)
+	for name := range expected {
+		matched := imported[name]
+		if !matched {
+			for importedName := range imported {
+				if strings.HasPrefix(importedName, name+"_") {
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			missing = append(missing, name)
+		}
+	}
+
+	concreteFaces, _ := geometryFaces(document)
+	unnamedCount, overlappingCount := 0, 0
+	if len(namedFaceOwners) > 0 {
+		for _, rawFace := range concreteFaces {
+			face, _ := rawFace.(map[string]any)
+			id := stringValue(face["private_attribute_id"])
+			if id == "" {
+				id = stringValue(face["name"])
+			}
+			switch namedFaceOwners[id] {
+			case 0:
+				unnamedCount++
+			case 1:
+			default:
+				overlappingCount++
+			}
+		}
+	}
+	if len(missing) == 0 && unnamedCount == 0 && overlappingCount == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	return fmt.Errorf("Flow360 imported Geometry does not satisfy the STEP boundary contract: missing semantic names=%v, unnamed concrete faces=%d, multiply assigned concrete faces=%d", missing, unnamedCount, overlappingCount)
+}
 
 // CompleteSimulationPatch resolves named CAD faces into schema-supported
 // boundary models. Explicit semantic names produced by the CAD Agent (wall,

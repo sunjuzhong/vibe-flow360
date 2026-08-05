@@ -121,7 +121,7 @@ Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - summary: concise engineering summary in the user's language
 - geometry: {name, unit:"m", representation:"analytic-brep", format:"step", generator:"cadquery-dsl-v1", operations, results}
 - operations: ordered array of {id, op, params}. IDs must be unique.
-- results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is an optional array of {name, selector}.
+- results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is a required array of {name, selector} for AI Create.
 - simulation: {velocity_m_s, alpha_deg, surface_edge_length_m, first_layer_thickness_m, max_steps}
 - assumptions: string array in the user's language
 - questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}. Always choose the most specific control type. Whenever project evidence supports a safe engineering recommendation, set default and explain the recommendation in description so the user can confirm it rather than type it manually.
@@ -142,7 +142,7 @@ The deterministic CAD DSL supports:
 - union/cut/intersect params: left, right
 - fillet params: source, radius
 
-Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, and %TORUS. Give every result a descriptive body name and label engineering-relevant faces such as inlet, outlet, wall, symmetry, blade, or farfield. A selector may match multiple faces; they are exported with deterministic numeric suffixes.
+Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, and %TORUS. Design the final exact BREP for Flow360, not merely for CAD validity: every face of every result must be selected exactly once, with no unnamed faces and no selector overlap. Give every result a descriptive body name and use stable semantic boundary names such as inlet, outlet, cylinder_wall, symmetry, blade, or farfield. Periodic faces must be emitted as complementary pairs sharing a base name and ending in _min and _max, for example spanwise_periodic_min and spanwise_periodic_max. A selector may match multiple faces; they are exported with deterministic numeric suffixes. Ensure obstacle cuts fully span the intended fluid domain where the requested topology requires that; do not leave accidental internal caps, partial wall coverage, or coincident unlabelled faces.
 
 All dimensions are finite metres and all angles are degrees. Use multiple operations, bodies, and booleans when the requested geometry requires them. Every result must contain one or more closed solids suitable for exact STEP export. Do not emit Python, file paths, shell commands, STL, meshes, external URLs, or unsupported operations.
 
@@ -192,7 +192,7 @@ func RepairAfterGenerationFailure(ctx context.Context, model Completer, intent s
 	}
 	userPrompt := "User simulation request:\n" + strings.TrimSpace(intent) +
 		"\n\nClarification history (authoritative user answers):\n" + string(historyJSON) +
-		"\n\nThe deterministic CadQuery/OpenCascade execution of the previous plan failed. Diagnose the CAD construction, then return a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Preserve the user's intent and confirmed answers. If a defining engineering choice is truly missing, return request-input fields instead. Do not explain the correction outside JSON." +
+		"\n\nThe deterministic CadQuery/OpenCascade execution or Flow360 boundary-contract validation of the previous plan failed. Treat topology, selector coverage, boundary naming, and imported entity mismatches as mechanical defects that you must repair autonomously. Diagnose the CAD construction, then return a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Preserve the user's intent and confirmed answers. Ask for input only if a missing physical choice would materially change the user's engineering goal; never ask the user to choose how to repair STEP topology or boundary naming. Do not explain the correction outside JSON." +
 		"\nExecution diagnostic:\n" + diagnostic + "\nPrevious blueprint:\n" + string(currentJSON)
 	repaired, err := model.Complete(ctx, geometrySystemPrompt, userPrompt, "")
 	if err != nil {
@@ -441,6 +441,53 @@ func validateGeometry(geometry Geometry) error {
 		}
 	}
 	return nil
+}
+
+// ValidateFlow360GeometryContract applies the stricter contract used by AI
+// Create. The general CAD generator still accepts a legacy unnamed result for
+// non-Flow360 callers, but an autonomous Flow360 setup must declare every
+// boundary group before exact STEP generation.
+func ValidateFlow360GeometryContract(geometry Geometry) error {
+	if len(geometry.Results) == 0 {
+		return &GenerationError{Kind: GenerationGeometryFailure, Err: errors.New("Flow360-ready CAD requires named results with semantic face assignments; legacy unnamed result is not sufficient")}
+	}
+	periodic := map[string]map[string]bool{}
+	for _, result := range geometry.Results {
+		if len(result.Faces) == 0 {
+			return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("Flow360-ready result %s has no semantic face assignments", result.Name)}
+		}
+		for _, face := range result.Faces {
+			name := strings.ToLower(face.Name)
+			if !strings.Contains(name, "periodic") {
+				continue
+			}
+			base, side, ok := periodicBoundaryPair(name)
+			if !ok {
+				return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("periodic boundary %s must end in _min and _max as a stable complementary pair", face.Name)}
+			}
+			if periodic[base] == nil {
+				periodic[base] = map[string]bool{}
+			}
+			periodic[base][side] = true
+		}
+	}
+	for base, sides := range periodic {
+		if !sides["min"] || !sides["max"] || len(sides) != 2 {
+			return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("periodic boundary pair %s must contain exactly one _min and one _max assignment", base)}
+		}
+	}
+	return nil
+}
+
+func periodicBoundaryPair(name string) (string, string, bool) {
+	for _, suffix := range []string{"_min", "-min", "_max", "-max"} {
+		if strings.HasSuffix(name, suffix) {
+			side := strings.TrimPrefix(suffix, "_")
+			side = strings.TrimPrefix(side, "-")
+			return strings.TrimSuffix(name, suffix), side, true
+		}
+	}
+	return "", "", false
 }
 
 func validateOperation(operation Operation, available map[string]bool) error {

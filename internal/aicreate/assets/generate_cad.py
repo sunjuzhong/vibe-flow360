@@ -106,6 +106,12 @@ def main():
     body_names = []
     face_names = []
     shapes = []
+    face_coverage_checked = bool(recipe.get("results")) and all(
+        specification.get("faces") for specification in specifications
+    )
+    named_face_count = 0
+    unnamed_face_count = 0
+    overlapping_face_count = 0
     for specification in specifications:
         result = values[specification["source"]]
         shape = result.val()
@@ -115,6 +121,8 @@ def main():
         assembly.add(result, name=body_name)
         body_names.append(body_name)
         shapes.append(shape)
+        body_faces = result.faces().vals()
+        face_assignments = [0] * len(body_faces)
         for face_specification in specification.get("faces", []):
             selected = result.faces(face_specification["selector"]).vals()
             if not selected:
@@ -129,6 +137,19 @@ def main():
                     face, name=face_name, layer=face_specification["name"]
                 )
                 face_names.append(face_name)
+                matches = [
+                    body_index for body_index, body_face in enumerate(body_faces)
+                    if face.isSame(body_face)
+                ]
+                if len(matches) != 1:
+                    raise ValueError(
+                        f"could not map named face {face_name} to exactly one result face in {body_name}"
+                    )
+                face_assignments[matches[0]] += 1
+        if face_coverage_checked:
+            named_face_count += sum(count > 0 for count in face_assignments)
+            unnamed_face_count += sum(count == 0 for count in face_assignments)
+            overlapping_face_count += sum(count > 1 for count in face_assignments)
     compound = assembly.toCompound()
     if not compound.isValid():
         raise ValueError("OpenCascade reported an invalid multi-body compound")
@@ -150,6 +171,10 @@ def main():
         "kernel": "CadQuery 2.6.1 / OpenCascade",
         "body_names": body_names,
         "face_names": face_names,
+        "face_coverage_checked": face_coverage_checked,
+        "named_face_count": named_face_count,
+        "unnamed_face_count": unnamed_face_count,
+        "overlapping_face_count": overlapping_face_count,
     }, separators=(",", ":")))
 
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,5 +73,27 @@ func TestClassifyCADExecutionFailureSeparatesInfrastructureFromGeometry(t *testi
 	}
 	if got := classifyCADExecutionFailure("Traceback: ValueError: Boolean operation produced an empty solid"); got != GenerationGeometryFailure {
 		t.Fatalf("geometry construction failure classified as %q", got)
+	}
+}
+
+func TestCadQueryGeneratorRejectsIncompleteFlow360FaceCoverage(t *testing.T) {
+	uvDirectory := t.TempDir()
+	fakeUV := filepath.Join(uvDirectory, "uv")
+	script := `#!/bin/sh
+output_path=""
+for argument in "$@"; do case "$argument" in *.step) output_path="$argument" ;; esac; done
+printf 'ISO-10303-21;\nDATA;\n#1=MANIFOLD_SOLID_BREP('"'"'shape'"'"',#2);\nENDSEC;\nEND-ISO-10303-21;\n' > "$output_path"
+printf '%s' '{"solid_count":1,"face_count":3,"volume":1,"kernel":"fake","face_coverage_checked":true,"named_face_count":2,"unnamed_face_count":1,"overlapping_face_count":0}'
+`
+	if err := os.WriteFile(fakeUV, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	geometry := Geometry{
+		Name: "cylinder", Unit: "m", Representation: "analytic-brep", Format: "step", Generator: "cadquery-dsl-v1", Result: "body",
+		Operations: []Operation{{ID: "body", Op: "cylinder", Params: map[string]any{"radius": 0.5, "height": 1.0, "axis": "z"}}},
+	}
+	_, err := (&CadQueryGenerator{UVBinary: fakeUV, Timeout: time.Second}).Generate(context.Background(), geometry, filepath.Join(t.TempDir(), "cylinder.step"))
+	if err == nil || GenerationFailure(err) != GenerationGeometryFailure || !strings.Contains(err.Error(), "1 are unnamed") {
+		t.Fatalf("incomplete Flow360 face coverage was not rejected: %v", err)
 	}
 }

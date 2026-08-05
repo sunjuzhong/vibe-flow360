@@ -41,7 +41,7 @@ func newCADRepairAgent(t *testing.T, calls *int) *agent.Service {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		(*calls)++
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Repaired Cylinder\",\"summary\":\"Repaired exact cylinder.\",\"geometry\":{\"name\":\"repaired-cylinder\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"cylinder\",\"params\":{\"radius\":0.5,\"height\":1,\"axis\":\"z\"}}],\"result\":\"body\"},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.02,\"first_layer_thickness_m\":0.00002,\"max_steps\":1000},\"assumptions\":[],\"questions\":[]}"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Repaired Cylinder\",\"summary\":\"Repaired exact cylinder.\",\"geometry\":{\"name\":\"repaired-cylinder\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"cylinder\",\"params\":{\"radius\":0.5,\"height\":1,\"axis\":\"z\"}}],\"results\":[{\"source\":\"body\",\"name\":\"cylinder-body\",\"faces\":[{\"name\":\"cylinder-wall\",\"selector\":\"%CYLINDER\"},{\"name\":\"cap-min\",\"selector\":\"<Z\"},{\"name\":\"cap-max\",\"selector\":\">Z\"}]}]},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.02,\"first_layer_thickness_m\":0.00002,\"max_steps\":1000},\"assumptions\":[],\"questions\":[]}"}}]}`))
 	}))
 	t.Cleanup(server.Close)
 	return &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: server.URL, Model: "test", Client: server.Client()}
@@ -56,6 +56,16 @@ func (g *sequenceCADGenerator) Generate(_ context.Context, _ aicreate.Geometry, 
 	return aicreate.GeometryValidation{SolidCount: 1, FaceCount: 3, Volume: 1, Kernel: "test"}, nil
 }
 
+func validTestFlow360Geometry(name string) aicreate.Geometry {
+	return aicreate.Geometry{
+		Name: name, Unit: "m", Representation: "analytic-brep", Format: "step", Generator: "cadquery-dsl-v1",
+		Operations: []aicreate.Operation{{ID: "body", Op: "cylinder", Params: map[string]any{"radius": 0.5, "height": 1.0, "axis": "z"}}},
+		Results: []aicreate.GeometryResult{{Source: "body", Name: "body", Faces: []aicreate.FaceLabel{
+			{Name: "wall", Selector: "%CYLINDER"}, {Name: "cap-min", Selector: "<Z"}, {Name: "cap-max", Selector: ">Z"},
+		}}},
+	}
+}
+
 func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
@@ -66,7 +76,7 @@ func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		agentRequests = append(agentRequests, string(body))
 		w.Header().Set("Content-Type", "application/json")
-		content := `{"version":"v1","decision":"generate","project_name":"Agent Flow Geometry","summary":"Agent-designed external-flow geometry.","geometry":{"name":"agent-body","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"box","params":{"length":2,"width":1,"height":0.5}}],"result":"body"},"simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.03,"first_layer_thickness_m":0.000025,"max_steps":10000},"assumptions":["Review inferred values."],"questions":[]}`
+		content := `{"version":"v1","decision":"generate","project_name":"Agent Flow Geometry","summary":"Agent-designed external-flow geometry.","geometry":{"name":"agent-body","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"box","params":{"length":2,"width":1,"height":0.5}}],"results":[{"source":"body","name":"fluid-domain","faces":[{"name":"cylinder-side","selector":"%PLANE"}]}]},"simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.03,"first_layer_thickness_m":0.000025,"max_steps":10000},"assumptions":["Review inferred values."],"questions":[]}`
 		if agentCalls > 1 {
 			content = "```json\n" + `{"version":"v1","kind":"create-plan","message":"Configured from the installed Flow360 schemas.","proposals":[{"id":"schema-plan","action":"Geometry","target":"case","name":"Schema-native setup","intent":"Create a reviewable baseline","patch":{"time_stepping":{"max_steps":2000}},"branch_preview":"schema-native","fields":[{"key":"time_stepping.max_steps","value":2000,"provenance":"inferred"}]}],"questions":[],"warnings":[],"assumptions":["Used the canonical Geometry baseline."]}` + "\n```"
 		}
@@ -87,7 +97,7 @@ case " $* " in
     printf '%s' '{"items":[{"id":"geometry-ai-1","name":"Cylinder","parent_id":null,"type":"Geometry"}]}'
     ;;
   *" geometry simulation-params get geometry-ai-1 "*)
-    printf '%s' '{"simulation_params":{"version":"25.10.17","unit_system":{"name":"SI"},"meshing":{"defaults":{}},"models":[{"type":"Wall","entities":{"stored_entities":[{"name":"*"}]}},{"type":"Freestream"},{"type":"Fluid"}],"private_attribute_asset_cache":{"project_entity_info":{"face_group_tag":"faceId","grouped_faces":[[{"name":"cylinder-side","private_attribute_id":"face-1","private_attribute_tag_key":"faceId","private_attribute_entity_type_name":"Surface","private_attribute_sub_components":["face-1"]}]]}}}}'
+    printf '%s' '{"simulation_params":{"version":"25.10.17","unit_system":{"name":"SI"},"meshing":{"defaults":{}},"models":[{"type":"Wall","entities":{"stored_entities":[{"name":"*"}]}},{"type":"Freestream"},{"type":"Fluid"}],"private_attribute_asset_cache":{"project_entity_info":{"face_group_tag":"faceId","grouped_faces":[[{"name":"cylinder-side","private_attribute_id":"face-1","private_attribute_tag_key":"faceId","private_attribute_entity_type_name":"Surface","private_attribute_sub_components":["face-1"]}],[{"name":"cylinder-side","private_attribute_id":"cylinder-side","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}]]}}}}'
     ;;
   *" geometry info geometry-ai-1 "*|*" geometry state geometry-ai-1 "*|*" geometry summary geometry-ai-1 "*)
     printf '%s' '{}'
@@ -360,7 +370,7 @@ func TestAICreateProjectReportsDetailedRequestByteLimit(t *testing.T) {
 
 func TestGenerateAICreateCADRetriesTemporaryRuntimeFailure(t *testing.T) {
 	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("temporary runtime failure")}}}
-	blueprint := aicreate.Blueprint{Geometry: aicreate.Geometry{Name: "body"}}
+	blueprint := aicreate.Blueprint{Geometry: validTestFlow360Geometry("body")}
 	result, validation, err := (&Server{}).generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "test"}, blueprint, filepath.Join(t.TempDir(), "body.step"), "")
 	if err != nil {
 		t.Fatal(err)
@@ -374,7 +384,7 @@ func TestGenerateAICreateCADLetsAgentRepairGeometryFailure(t *testing.T) {
 	agentCalls := 0
 	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationGeometryFailure, Err: errors.New("boolean produced an empty solid")}}}
 	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
-	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
+	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: validTestFlow360Geometry("initial")}
 	repaired, validation, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"), "")
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +407,7 @@ func TestGenerateAICreateCADCanRecoverOnThirdAgentRepair(t *testing.T) {
 	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
 	progressID := "aip-third-repair-1234"
 	app.startAICreateProgress(progressID)
-	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
+	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: validTestFlow360Geometry("initial")}
 	repaired, validation, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"), progressID)
 	if err != nil {
 		t.Fatal(err)
@@ -423,7 +433,7 @@ func TestGenerateAICreateCADStopsAfterThreeAgentRepairs(t *testing.T) {
 		geometryFailure("ValueError: final face selector matched no faces"),
 	}}
 	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
-	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
+	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: validTestFlow360Geometry("initial")}
 	_, _, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"), "")
 	if err == nil {
 		t.Fatal("expected CAD repair exhaustion")

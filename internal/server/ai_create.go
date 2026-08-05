@@ -59,6 +59,12 @@ type aiCreatePrepared struct {
 	BoundaryPatch  json.RawMessage    `json:"boundary_patch"`
 }
 
+type aiCreateImportedGeometry struct {
+	ProjectID      string
+	RootResourceID string
+	Baseline       json.RawMessage
+}
+
 type aiCreateClarificationResponse struct {
 	Status    string                        `json:"status"`
 	SessionID string                        `json:"session_id"`
@@ -189,65 +195,73 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	blueprint.Geometry.Validated = true
-	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP validation passed: %d solids, %d faces, volume %.8g m^3, %d named bodies and %d named faces (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, len(validation.BodyNames), len(validation.FaceNames), validation.Kernel)
+	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP and complete boundary coverage validation passed: %d solids, %d faces, volume %.8g m^3, %d named bodies and %d named faces (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, len(validation.BodyNames), len(validation.FaceNames), validation.Kernel)
 	if err := validateAICreateAsset(geometryPath, "geometry"); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
 
-	projectCreateStartedAt := time.Now().UTC()
-	s.updateAICreateProgress(request.ProgressID, 2, "Flow360 is uploading the exact STEP and processing the Project root Geometry (--sync).")
-	rawResult, err := s.flow360.CreateProjectSync(
-		c.Request.Context(), []string{geometryPath}, "geometry", blueprint.ProjectName,
-		blueprint.Geometry.Unit, "standard", "", session.FolderID, []string{"ai-create", "agent-cad-v1"},
-	)
+	remote, err := s.importAICreateGeometry(c.Request.Context(), session.FolderID, blueprint, geometryPath, request.ProgressID)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateProjectError(err)})
-		return
-	}
-	if findProjectIDFromRaw(rawResult) == "" {
-		reconciled, reconcileErr := reconcileAICreateProjectResult(
-			c.Request.Context(), rawResult, blueprint.ProjectName, "geometry",
-			projectCreateStartedAt.Add(-30*time.Second),
-			func(ctx context.Context, name, sourceType string, notBefore time.Time) (json.RawMessage, error) {
-				return s.flow360.FindProjectByName(ctx, session.FolderID, name, sourceType, notBefore)
-			},
-			aiCreateProjectReconcileAttempts, aiCreateProjectReconcileDelay,
-		)
-		if reconcileErr == nil {
-			rawResult = reconciled
-		} else {
-			log.Printf("AI Create could not reconcile incomplete Flow360 Project response %s: %v", compactAICreateResult(rawResult), reconcileErr)
-		}
-	}
-	normalized, err := s.normalizeAICreateResult(c.Request.Context(), rawResult, "geometry")
-	if err != nil {
-		projectID := findProjectIDFromRaw(rawResult)
 		payload := gin.H{"error": err.Error()}
-		if projectID != "" {
-			payload["project_id"] = projectID
+		if remote.ProjectID != "" {
+			payload["project_id"] = remote.ProjectID
 		}
 		c.JSON(http.StatusBadGateway, payload)
 		return
 	}
-	var remote struct {
-		ProjectID      string `json:"project_id"`
-		RootResourceID string `json:"root_resource_id"`
+	for repairAttempt := 1; ; repairAttempt++ {
+		contractErr := aicreate.ValidateImportedGeometryContract(remote.Baseline, blueprint.Geometry)
+		if contractErr == nil {
+			break
+		}
+		if repairAttempt > maxAICreateCADRepairAttempts {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error":      fmt.Sprintf("The Geometry Agent could not reconcile the STEP boundary contract with Flow360 after %d self-repairs: %s", maxAICreateCADRepairAttempts, lastAICreateDiagnosticLine(contractErr.Error())),
+				"project_id": remote.ProjectID,
+			})
+			return
+		}
+		s.updateAICreateProgress(request.ProgressID, 2, fmt.Sprintf("Flow360 entity reconciliation found a mechanical STEP boundary defect; the Geometry Agent is applying import self-repair %d of %d.", repairAttempt, maxAICreateCADRepairAttempts))
+		repaired, repairErr := aicreate.RepairAfterGenerationFailure(c.Request.Context(), s.agent, session.Intent, session.Rounds, blueprint, contractErr.Error())
+		if repairErr != nil {
+			// Imported topology and naming are implementation details, not an
+			// engineering decision. Do not turn them into a user form.
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error":      "The Geometry Agent could not autonomously repair the Flow360 STEP boundary contract: " + repairErr.Error(),
+				"project_id": remote.ProjectID,
+			})
+			return
+		}
+		repaired, validation, repairErr = s.generateAICreateCAD(c.Request.Context(), generator, session, repaired, geometryPath, request.ProgressID)
+		if repairErr != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error":      humanizeAICreateGenerationError(repairErr),
+				"project_id": remote.ProjectID,
+			})
+			return
+		}
+		repaired.Geometry.Validated = true
+		repaired.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP and complete boundary coverage validation passed: %d solids, %d faces, volume %.8g m^3, %d named bodies and %d named faces (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, len(validation.BodyNames), len(validation.FaceNames), validation.Kernel)
+		// The Project is a candidate created by this request and has not been
+		// exposed as a successful result. Remove it transactionally before
+		// importing the repaired STEP so users do not accumulate broken Projects.
+		if _, deleteErr := s.flow360.DeleteProject(c.Request.Context(), remote.ProjectID); deleteErr != nil {
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":      "The Agent repaired the STEP locally, but could not roll back the incomplete candidate Project before retrying the import.",
+				"project_id": remote.ProjectID,
+			})
+			return
+		}
+		blueprint = repaired
+		remote, err = s.importAICreateGeometry(c.Request.Context(), session.FolderID, blueprint, geometryPath, request.ProgressID)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "project_id": remote.ProjectID})
+			return
+		}
 	}
-	if err := json.Unmarshal(normalized, &remote); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not read the AI-created project result"})
-		return
-	}
-	s.bindAICreateProgressResources(request.ProgressID, remote.ProjectID, remote.RootResourceID)
-	s.updateAICreateProgress(request.ProgressID, 3, "Flow360 Project processing completed; querying Geometry state, canonical SimulationParams, and installed stage schemas.")
-	baseline, err := s.waitForAICreateSimulationParams(c.Request.Context(), remote.RootResourceID, request.ProgressID)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error":      "Project was created, but Flow360 did not finish preparing its simulation parameters",
-			"project_id": remote.ProjectID,
-		})
-		return
-	}
+	blueprint.Geometry.Validation += " Flow360 import entity reconciliation passed."
+	baseline := remote.Baseline
 	// Geometry planning emits engineering hints, not authoritative Flow360
 	// paths. Start the parameter phase from canonical Flow360 data plus the
 	// deterministic CAD entity assignments so guessed keys cannot leak into the
@@ -293,7 +307,7 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 			ProjectID: prepared.ProjectID, ProjectName: prepared.Blueprint.ProjectName,
 			SourceID: prepared.RootResourceID, SourceType: "Geometry", SourceName: prepared.GeometryName,
 			Target: "case", Intent: session.Intent,
-			Prompt: "Configure a complete, reviewable Flow360 setup that can run without manual parameter editing. Use defensible CFD defaults when the request asks for a basic or introductory case. Confirmed clarification history: " + string(history),
+			Prompt: "Configure a complete, reviewable Flow360 setup that can run without manual parameter editing. Act autonomously on configuration-level choices: for a basic, introductory, benchmark, or ready-to-run request, choose canonical defensible CFD defaults for operating conditions, mesh controls, turbulence model, steady versus unsteady solver, time step, and outputs, and record them as assumptions. Request user input only for a physical ambiguity that would materially change the engineering objective; never ask the user to repair CAD topology, entity names, selectors, or schema wiring. Confirmed clarification history: " + string(history),
 		},
 		Name: prepared.GeometryName, Baseline: boundaryBaseline, Form: form,
 	}
@@ -382,6 +396,54 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: stages, Warnings: warnings,
 	})
+}
+
+func (s *Server) importAICreateGeometry(ctx context.Context, folderID string, blueprint aicreate.Blueprint, geometryPath, progressID string) (aiCreateImportedGeometry, error) {
+	result := aiCreateImportedGeometry{}
+	projectCreateStartedAt := time.Now().UTC()
+	s.updateAICreateProgress(progressID, 2, "Flow360 is uploading the exact STEP and processing the Project root Geometry (--sync).")
+	rawResult, err := s.flow360.CreateProjectSync(
+		ctx, []string{geometryPath}, "geometry", blueprint.ProjectName,
+		blueprint.Geometry.Unit, "standard", "", folderID, []string{"ai-create", "agent-cad-v1"},
+	)
+	if err != nil {
+		return result, errors.New(humanizeAICreateProjectError(err))
+	}
+	if findProjectIDFromRaw(rawResult) == "" {
+		reconciled, reconcileErr := reconcileAICreateProjectResult(
+			ctx, rawResult, blueprint.ProjectName, "geometry",
+			projectCreateStartedAt.Add(-30*time.Second),
+			func(ctx context.Context, name, sourceType string, notBefore time.Time) (json.RawMessage, error) {
+				return s.flow360.FindProjectByName(ctx, folderID, name, sourceType, notBefore)
+			},
+			aiCreateProjectReconcileAttempts, aiCreateProjectReconcileDelay,
+		)
+		if reconcileErr == nil {
+			rawResult = reconciled
+		} else {
+			log.Printf("AI Create could not reconcile incomplete Flow360 Project response %s: %v", compactAICreateResult(rawResult), reconcileErr)
+		}
+	}
+	result.ProjectID = findProjectIDFromRaw(rawResult)
+	normalized, err := s.normalizeAICreateResult(ctx, rawResult, "geometry")
+	if err != nil {
+		return result, err
+	}
+	var remote struct {
+		ProjectID      string `json:"project_id"`
+		RootResourceID string `json:"root_resource_id"`
+	}
+	if err := json.Unmarshal(normalized, &remote); err != nil {
+		return result, errors.New("could not read the AI-created project result")
+	}
+	result.ProjectID, result.RootResourceID = remote.ProjectID, remote.RootResourceID
+	s.bindAICreateProgressResources(progressID, result.ProjectID, result.RootResourceID)
+	s.updateAICreateProgress(progressID, 3, "Flow360 Project processing completed; querying Geometry state, canonical SimulationParams, and imported boundary entities.")
+	result.Baseline, err = s.waitForAICreateSimulationParams(ctx, result.RootResourceID, progressID)
+	if err != nil {
+		return result, errors.New("Project was created, but Flow360 did not finish preparing its simulation parameters")
+	}
+	return result, nil
 }
 
 func reconcileAICreateProjectResult(
@@ -497,6 +559,9 @@ func (e *aiCreateCADRepairExhaustedError) Error() string {
 
 func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Generator, session aiCreateSession, blueprint aicreate.Blueprint, outputPath, progressID string) (aicreate.Blueprint, aicreate.GeometryValidation, error) {
 	generate := func(candidate aicreate.Blueprint) (aicreate.GeometryValidation, error) {
+		if err := aicreate.ValidateFlow360GeometryContract(candidate.Geometry); err != nil {
+			return aicreate.GeometryValidation{}, err
+		}
 		validation, err := generator.Generate(ctx, candidate.Geometry, outputPath)
 		if err != nil && aicreate.GenerationFailure(err) == aicreate.GenerationTemporaryFailure {
 			return generator.Generate(ctx, candidate.Geometry, outputPath)

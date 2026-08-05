@@ -19,13 +19,17 @@ import (
 var cadGeneratorScript []byte
 
 type GeometryValidation struct {
-	SolidCount int       `json:"solid_count"`
-	FaceCount  int       `json:"face_count"`
-	Volume     float64   `json:"volume"`
-	Bounds     []float64 `json:"bounds"`
-	Kernel     string    `json:"kernel"`
-	BodyNames  []string  `json:"body_names,omitempty"`
-	FaceNames  []string  `json:"face_names,omitempty"`
+	SolidCount           int       `json:"solid_count"`
+	FaceCount            int       `json:"face_count"`
+	Volume               float64   `json:"volume"`
+	Bounds               []float64 `json:"bounds"`
+	Kernel               string    `json:"kernel"`
+	BodyNames            []string  `json:"body_names,omitempty"`
+	FaceNames            []string  `json:"face_names,omitempty"`
+	FaceCoverageChecked  bool      `json:"face_coverage_checked,omitempty"`
+	NamedFaceCount       int       `json:"named_face_count,omitempty"`
+	UnnamedFaceCount     int       `json:"unnamed_face_count,omitempty"`
+	OverlappingFaceCount int       `json:"overlapping_face_count,omitempty"`
 }
 
 type Generator interface {
@@ -158,6 +162,12 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	}
 	if validation.SolidCount < 1 || validation.FaceCount < 1 || validation.Volume <= 0 {
 		return validation, &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("CAD topology validation failed: solids=%d faces=%d volume=%g", validation.SolidCount, validation.FaceCount, validation.Volume)}
+	}
+	if validation.FaceCoverageChecked && (validation.UnnamedFaceCount != 0 || validation.OverlappingFaceCount != 0 || validation.NamedFaceCount != validation.FaceCount) {
+		return validation, &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf(
+			"Flow360 boundary coverage validation failed: %d of %d faces are named, %d are unnamed, and %d have overlapping assignments; every result face must be assigned exactly one semantic boundary name",
+			validation.NamedFaceCount, validation.FaceCount, validation.UnnamedFaceCount, validation.OverlappingFaceCount,
+		)}
 	}
 	return validation, nil
 }

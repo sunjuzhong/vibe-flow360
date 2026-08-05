@@ -48,8 +48,14 @@ func TestCadQueryGeneratorExportsNamedMultiBodySTEP(t *testing.T) {
 			{ID: "shifted", Op: "translate", Params: map[string]any{"source": "right", "vector": []any{2.0, 0.0, 0.0}}},
 		},
 		Results: []GeometryResult{
-			{Source: "left", Name: "enclosure", Faces: []FaceLabel{{Name: "top", Selector: ">Z"}}},
-			{Source: "shifted", Name: "cylinder", Faces: []FaceLabel{{Name: "wall", Selector: "%CYLINDER"}}},
+			{Source: "left", Name: "enclosure", Faces: []FaceLabel{
+				{Name: "left", Selector: "<X"}, {Name: "right", Selector: ">X"},
+				{Name: "front", Selector: "<Y"}, {Name: "back", Selector: ">Y"},
+				{Name: "bottom", Selector: "<Z"}, {Name: "top", Selector: ">Z"},
+			}},
+			{Source: "shifted", Name: "cylinder", Faces: []FaceLabel{
+				{Name: "wall", Selector: "%CYLINDER"}, {Name: "cap-min", Selector: "<Z"}, {Name: "cap-max", Selector: ">Z"},
+			}},
 		},
 	}
 	outputPath := filepath.Join(t.TempDir(), "named-multi-body.step")
@@ -57,7 +63,7 @@ func TestCadQueryGeneratorExportsNamedMultiBodySTEP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if validation.SolidCount != 2 || len(validation.BodyNames) != 2 || len(validation.FaceNames) != 2 {
+	if validation.SolidCount != 2 || len(validation.BodyNames) != 2 || len(validation.FaceNames) != 9 || validation.NamedFaceCount != validation.FaceCount {
 		t.Fatalf("unexpected named topology validation: %#v", validation)
 	}
 	exported, err := os.ReadFile(outputPath)

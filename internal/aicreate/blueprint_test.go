@@ -194,3 +194,20 @@ func TestDesignRejectsUnknownFaceSelector(t *testing.T) {
 		t.Fatalf("unsafe selector was not rejected: %v", err)
 	}
 }
+
+func TestValidateFlow360GeometryContractRequiresNamedFacesAndPeriodicPairs(t *testing.T) {
+	legacy := Geometry{Result: "body"}
+	if err := ValidateFlow360GeometryContract(legacy); err == nil {
+		t.Fatal("legacy unnamed result must not enter Flow360 AI Create")
+	}
+	geometry := Geometry{Results: []GeometryResult{{Name: "fluid", Faces: []FaceLabel{
+		{Name: "spanwise_periodic_min", Selector: "<Z"},
+	}}}}
+	if err := ValidateFlow360GeometryContract(geometry); err == nil || !strings.Contains(err.Error(), "exactly one _min and one _max") {
+		t.Fatalf("unpaired periodic boundary was not rejected: %v", err)
+	}
+	geometry.Results[0].Faces = append(geometry.Results[0].Faces, FaceLabel{Name: "spanwise_periodic_max", Selector: ">Z"})
+	if err := ValidateFlow360GeometryContract(geometry); err != nil {
+		t.Fatalf("valid periodic pair was rejected: %v", err)
+	}
+}
