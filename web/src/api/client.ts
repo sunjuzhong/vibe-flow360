@@ -199,6 +199,13 @@ export type ProjectRecord = {
   } | null>
 }
 
+export type ProjectMutationResult = {
+  id?: string
+  name?: string
+  deleted?: boolean
+  message?: string
+}
+
 export type ProjectListResponse = {
   records?: ProjectRecord[]
   projects?: ProjectRecord[]
@@ -779,6 +786,12 @@ export const api = {
   deleteFolder: (folderId: string, confirmed: boolean) =>
     remove<FolderMutationResult>(
       `/api/flow360/folders/${encodeURIComponent(folderId)}?confirmed=${confirmed ? 'true' : 'false'}`,
+    ),
+  renameProject: (projectId: string, name: string) =>
+    replace<ProjectMutationResult>(`/api/flow360/projects/${encodeURIComponent(projectId)}/name`, { name }),
+  deleteProject: (projectId: string, confirmed: boolean) =>
+    remove<ProjectMutationResult>(
+      `/api/flow360/projects/${encodeURIComponent(projectId)}?confirmed=${confirmed ? 'true' : 'false'}`,
     ),
   projectInfo: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectInfo>(`/api/flow360/projects/${encodeURIComponent(projectId)}${cacheOnly ? '?cache=only' : ''}`),

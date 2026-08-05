@@ -23,6 +23,8 @@ import AICreateModal from '../components/AICreateModal'
 import FolderTree from '../components/FolderTree'
 import FolderMutationDialog, { type FolderMutationMode } from '../components/FolderMutationDialog'
 import ImportPanel from '../components/ImportPanel'
+import ProjectActions, { type ProjectMutationMode } from '../components/ProjectActions'
+import ProjectMutationDialog from '../components/ProjectMutationDialog'
 import TopBar from '../components/TopBar'
 
 function projectCount(project: ProjectRecord, key: string) {
@@ -107,6 +109,7 @@ export default function WorkspacePage() {
   const [importOpen, setImportOpen] = useState(false)
   const [aiCreateOpen, setAICreateOpen] = useState(false)
   const [folderMutation, setFolderMutation] = useState<{ mode: FolderMutationMode; folder: FolderNode } | null>(null)
+  const [projectMutation, setProjectMutation] = useState<{ mode: ProjectMutationMode; project: ProjectRecord } | null>(null)
 
   const loadStatus = () => {
     api.flow360Status().then(setFlowStatus).catch((error) => {
@@ -148,24 +151,26 @@ export default function WorkspacePage() {
     void loadFolders()
   }, [])
 
-  const loadProjects = async (folder: FolderNode) => {
+  const loadProjects = async (folder: FolderNode, cacheFirst = true) => {
     restoredFolderSelection.current = true
     writeWorkspaceSelectedFolder(window.sessionStorage, folder.id)
     setSelectedFolder(folder)
     setProjectsLoading(true)
     setProjectsMessage('')
     let cachedLoaded = false
-    try {
-      const cached = await api.projects(folder.id, true)
-      const records = cached.data.records ?? cached.data.projects ?? []
-      setProjects(records)
-      setProjectsDataSource('cache')
-      setProjectsCachedAt(cached.cachedAt || '')
-      setProjectsMessage(records.length ? '' : 'This folder has no cached projects')
-      cachedLoaded = true
-      setProjectsLoading(false)
-    } catch {
-      // A first-visit cache miss is expected.
+    if (cacheFirst) {
+      try {
+        const cached = await api.projects(folder.id, true)
+        const records = cached.data.records ?? cached.data.projects ?? []
+        setProjects(records)
+        setProjectsDataSource('cache')
+        setProjectsCachedAt(cached.cachedAt || '')
+        setProjectsMessage(records.length ? '' : 'This folder has no cached projects')
+        cachedLoaded = true
+        setProjectsLoading(false)
+      } catch {
+        // A first-visit cache miss is expected.
+      }
     }
     try {
       const response = await api.projects(folder.id)
@@ -363,56 +368,61 @@ export default function WorkspacePage() {
             viewMode === 'list' ? (
               <div className="project-table">
                 <div className="project-table-head">
-                  <span>Project</span><span>Workflow</span><span>Resources</span><span>Created</span><span>Solver</span><span />
+                  <span>Project</span><span>Workflow</span><span>Resources</span><span>Created</span><span>Solver</span><span>Actions</span>
                 </div>
                 {filteredProjects.map((project) => (
-                  <Link className="project-table-row" key={project.id} to={`/projects/${project.id}`}>
-                    <span className="project-primary">
-                      <span className="project-type-mark"><Box size={16} /></span>
-                      <span><strong>{project.name}</strong><small>{project.id}</small></span>
-                    </span>
-                    <span><span className="type-badge">{project.root_item_type}</span></span>
-                    <span className="resource-counts">
-                      <small>G {projectCount(project, 'geometry')}</small>
-                      <small>SM {projectCount(project, 'surface_mesh')}</small>
-                      <small>VM {projectCount(project, 'volume_mesh')}</small>
-                      <small>C {projectCount(project, 'case')}</small>
-                    </span>
-                    <time className="project-created" dateTime={project.created_at}>{formatProjectCreatedAt(project.created_at)}</time>
-                    <span className="solver-label">{project.solver_version}</span>
-                    <span className="row-arrow"><ChevronRight size={16} /></span>
-                  </Link>
+                  <div className="project-table-row" key={project.id}>
+                    <Link className="project-table-row-link" to={`/projects/${project.id}`}>
+                      <span className="project-primary">
+                        <span className="project-type-mark"><Box size={16} /></span>
+                        <span><strong>{project.name}</strong><small>{project.id}</small></span>
+                      </span>
+                      <span><span className="type-badge">{project.root_item_type}</span></span>
+                      <span className="resource-counts">
+                        <small>G {projectCount(project, 'geometry')}</small>
+                        <small>SM {projectCount(project, 'surface_mesh')}</small>
+                        <small>VM {projectCount(project, 'volume_mesh')}</small>
+                        <small>C {projectCount(project, 'case')}</small>
+                      </span>
+                      <time className="project-created" dateTime={project.created_at}>{formatProjectCreatedAt(project.created_at)}</time>
+                      <span className="solver-label">{project.solver_version}</span>
+                    </Link>
+                    <ProjectActions project={project} onAction={(mode, target) => setProjectMutation({ mode, project: target })} />
+                  </div>
                 ))}
               </div>
             ) : (
               <div className="project-card-grid">
                 {filteredProjects.map((project) => (
-                  <Link className="project-card" key={project.id} to={`/projects/${project.id}`}>
-                    <div className={`project-card-visual type-${project.root_item_type.toLowerCase()}`} aria-hidden="true">
-                      <Box size={31} strokeWidth={1.25} />
-                      <span>{project.root_item_type}</span>
-                    </div>
-                    <div className="project-card-body">
-                      <div className="project-card-heading">
-                        <div><strong>{project.name}</strong><small>{project.id}</small></div>
-                        <ChevronRight size={16} />
+                  <div className="project-card" key={project.id}>
+                    <Link className="project-card-link" to={`/projects/${project.id}`}>
+                      <div className={`project-card-visual type-${project.root_item_type.toLowerCase()}`} aria-hidden="true">
+                        <Box size={31} strokeWidth={1.25} />
+                        <span>{project.root_item_type}</span>
                       </div>
-                      {project.description && <p>{project.description}</p>}
-                      <div className="project-card-meta">
-                        <span className="type-badge">{project.root_item_type}</span>
-                        <span className="solver-label">{project.solver_version}</span>
+                      <div className="project-card-body">
+                        <div className="project-card-heading">
+                          <div><strong>{project.name}</strong><small>{project.id}</small></div>
+                          <ChevronRight size={16} />
+                        </div>
+                        {project.description && <p>{project.description}</p>}
+                        <div className="project-card-meta">
+                          <span className="type-badge">{project.root_item_type}</span>
+                          <span className="solver-label">{project.solver_version}</span>
+                        </div>
+                        <div className="resource-counts">
+                          <small>G {projectCount(project, 'geometry')}</small>
+                          <small>SM {projectCount(project, 'surface_mesh')}</small>
+                          <small>VM {projectCount(project, 'volume_mesh')}</small>
+                          <small>C {projectCount(project, 'case')}</small>
+                        </div>
+                        <time className="project-card-created" dateTime={project.created_at}>
+                          <Clock3 size={12} /> Created {formatProjectCreatedAt(project.created_at)}
+                        </time>
                       </div>
-                      <div className="resource-counts">
-                        <small>G {projectCount(project, 'geometry')}</small>
-                        <small>SM {projectCount(project, 'surface_mesh')}</small>
-                        <small>VM {projectCount(project, 'volume_mesh')}</small>
-                        <small>C {projectCount(project, 'case')}</small>
-                      </div>
-                      <time className="project-card-created" dateTime={project.created_at}>
-                        <Clock3 size={12} /> Created {formatProjectCreatedAt(project.created_at)}
-                      </time>
-                    </div>
-                  </Link>
+                    </Link>
+                    <ProjectActions project={project} onAction={(mode, target) => setProjectMutation({ mode, project: target })} />
+                  </div>
                 ))}
               </div>
             )
@@ -471,6 +481,23 @@ export default function WorkspacePage() {
                 subfolders: [],
               })
             }
+          }}
+        />
+      )}
+      {projectMutation && (
+        <ProjectMutationDialog
+          mode={projectMutation.mode}
+          project={projectMutation.project}
+          onClose={() => setProjectMutation(null)}
+          onComplete={async (result) => {
+            const { mode, project } = projectMutation
+            setProjectMutation(null)
+            setProjects((current) => mode === 'delete'
+              ? current.filter((item) => item.id !== project.id)
+              : current.map((item) => item.id === project.id
+                ? { ...item, name: result.name || project.name }
+                : item))
+            if (selectedFolder) await loadProjects(selectedFolder, false)
           }}
         />
       )}

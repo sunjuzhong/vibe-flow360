@@ -200,6 +200,41 @@ printf '{"id":"folder-child","name":"Design studies"}'
 	}
 }
 
+func TestProjectMutationsUseTypedCLICommands(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s ' "$@" >> %q
+printf '\n' >> %q
+printf '{"id":"prj-123","name":"Renamed project"}'
+`, argsPath, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	ctx := context.Background()
+	if _, err := client.RenameProject(ctx, "prj-123", " Renamed project "); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.DeleteProject(ctx, "prj-123"); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(args)
+	for _, expected := range []string{
+		"project rename prj-123 --name Renamed project",
+		"project delete prj-123 --yes",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Errorf("missing %q in commands:\n%s", expected, got)
+		}
+	}
+}
+
 func TestEnsureDraftCreatesOnceAndReturnsRemoteID(t *testing.T) {
 	dir := t.TempDir()
 	countPath := filepath.Join(dir, "count.txt")

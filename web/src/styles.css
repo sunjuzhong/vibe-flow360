@@ -1208,7 +1208,7 @@ button { color: inherit; }
   max-width: 1180px;
   min-height: 300px;
   margin: 0 auto;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid #d9dbd2;
   border-radius: 12px;
   background: #fafaf7;
@@ -1273,6 +1273,8 @@ button { color: inherit; }
   column-gap: 12px;
 }
 
+.project-table-row-link { display: contents; color: inherit; text-decoration: none; }
+
 .project-table-head {
   height: 38px;
   padding: 0 15px;
@@ -1328,6 +1330,52 @@ button { color: inherit; }
 .project-created { color: #777c72; font-family: 'DM Mono'; font-size: 8px; }
 .row-arrow { display: grid; place-items: center; color: #9da198; transition: transform .15s ease; }
 
+.project-actions { position: relative; z-index: 5; display: grid; place-items: center; }
+.project-actions-trigger {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #8d9288;
+  background: transparent;
+  cursor: pointer;
+}
+.project-actions-trigger:hover,
+.project-actions-trigger[aria-expanded="true"] { color: #4c630f; background: #e7edd6; }
+.project-actions-menu {
+  position: absolute;
+  z-index: 8;
+  top: 31px;
+  right: 0;
+  display: grid;
+  width: 140px;
+  padding: 5px;
+  border: 1px solid #d6d8ce;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(34,38,29,.18);
+}
+.project-actions-menu button {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: #555b50;
+  background: transparent;
+  font-size: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+.project-actions-menu button:hover { background: #f0f3e7; }
+.project-actions-menu button.danger { color: #a34d3b; }
+.project-actions-menu button.danger:hover { background: #fff0eb; }
+
 .project-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
@@ -1336,8 +1384,9 @@ button { color: inherit; }
 }
 
 .project-card {
+  position: relative;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid #dcddd6;
   border-radius: 10px;
   color: #3e433a;
@@ -1345,6 +1394,12 @@ button { color: inherit; }
   text-decoration: none;
   transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
 }
+
+.project-card-link { display: block; overflow: hidden; border-radius: inherit; color: inherit; text-decoration: none; }
+.project-card > .project-actions { position: absolute; z-index: 6; top: 9px; right: 9px; }
+.project-card > .project-actions .project-actions-trigger { color: #556514; background: rgba(255,255,255,.82); box-shadow: 0 2px 8px rgba(38,41,34,.1); }
+.project-card > .project-actions .project-actions-trigger:hover,
+.project-card > .project-actions .project-actions-trigger[aria-expanded="true"] { background: #fff; }
 
 .project-card:hover {
   transform: translateY(-2px);
@@ -1388,6 +1443,7 @@ button { color: inherit; }
 .project-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
 .project-card .resource-counts { margin-top: 10px; }
 .project-card-created { display: flex; align-items: center; gap: 5px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #ebebe6; color: #83887e; font-family: 'DM Mono'; font-size: 7px; }
+.project-dialog .folder-dialog-target strong { display: flex; align-items: center; gap: 6px; }
 
 .home-guidance {
   display: flex;
@@ -2702,7 +2758,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .copilot-panel { width: min(380px,100vw); }
   .project-table-head { display: none; }
   .project-table-row { grid-template-columns: minmax(200px,1fr) 100px minmax(135px,.7fr) 25px; }
-  .project-table-row > span:nth-child(3),.project-table-row > span:nth-child(5){display:none}
+  .project-table-row-link > span:nth-child(3),.project-table-row-link > span:nth-child(5){display:none}
   .project-workbench { grid-template-columns: 230px minmax(0,1fr); }
 }
 
@@ -2717,7 +2773,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .workspace-home-actions .ai-action { flex: 1; }
   .home-guidance { display: none; }
   .project-table-row { grid-template-columns: minmax(0,1fr) minmax(120px,.7fr) 25px; }
-  .project-table-row > span:nth-child(2){display:none}
+  .project-table-row-link > span:nth-child(2){display:none}
   .project-header { padding: 16px 14px; }
   .project-header-main { align-items: flex-start; }
   .project-header-actions button:first-child span { display: none; }

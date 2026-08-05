@@ -242,6 +242,8 @@ func (s *Server) routes() {
 		api.PUT("/flow360/folders/:folder_id/parent", s.moveFlow360Folder)
 		api.DELETE("/flow360/folders/:folder_id", s.deleteFlow360Folder)
 		api.GET("/flow360/projects/:project_id", s.flow360ProjectInfo)
+		api.PUT("/flow360/projects/:project_id/name", s.renameFlow360Project)
+		api.DELETE("/flow360/projects/:project_id", s.deleteFlow360Project)
 		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
 		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
@@ -2114,6 +2116,81 @@ func (s *Server) flow360Projects(c *gin.Context) {
 		return
 	}
 	s.cacheLiveJSON(cacheKind, cacheKey, raw)
+	s.writeLiveJSON(c, raw)
+}
+
+func validFlow360ProjectID(value string) bool {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "prj-") || len(value) > 96 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func normalizeFlow360ProjectName(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("project name is required")
+	}
+	if utf8.RuneCountInString(value) > 128 {
+		return "", errors.New("project name must be 128 characters or fewer")
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return "", errors.New("project name cannot contain control characters")
+		}
+	}
+	return value, nil
+}
+
+func (s *Server) renameFlow360Project(c *gin.Context) {
+	projectID := strings.TrimSpace(c.Param("project_id"))
+	if !validFlow360ProjectID(projectID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project ID"})
+		return
+	}
+	var request struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project request"})
+		return
+	}
+	name, err := normalizeFlow360ProjectName(request.Name)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	raw, err := s.flow360.RenameProject(c.Request.Context(), projectID, name)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not rename the project"})
+		return
+	}
+	s.writeLiveJSON(c, raw)
+}
+
+func (s *Server) deleteFlow360Project(c *gin.Context) {
+	projectID := strings.TrimSpace(c.Param("project_id"))
+	if !validFlow360ProjectID(projectID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project ID"})
+		return
+	}
+	if !strings.EqualFold(c.Query("confirmed"), "true") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project deletion requires confirmed=true"})
+		return
+	}
+	raw, err := s.flow360.DeleteProject(c.Request.Context(), projectID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not delete the project"})
+		return
+	}
 	s.writeLiveJSON(c, raw)
 }
 

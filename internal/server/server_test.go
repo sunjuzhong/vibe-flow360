@@ -128,6 +128,41 @@ fi
 	}
 }
 
+func TestProjectMutationValidation(t *testing.T) {
+	for _, valid := range []string{"prj-1234", "prj-a-b-C-9"} {
+		if !validFlow360ProjectID(valid) {
+			t.Errorf("valid Project ID rejected: %q", valid)
+		}
+	}
+	for _, invalid := range []string{"", "project-123", "prj-a/b", "prj-a b"} {
+		if validFlow360ProjectID(invalid) {
+			t.Errorf("invalid Project ID accepted: %q", invalid)
+		}
+	}
+	if got, err := normalizeFlow360ProjectName("  Aero baseline  "); err != nil || got != "Aero baseline" {
+		t.Fatalf("unexpected normalized name %q: %v", got, err)
+	}
+	for _, invalid := range []string{"", "bad\nname", strings.Repeat("a", 129)} {
+		if _, err := normalizeFlow360ProjectName(invalid); err == nil {
+			t.Errorf("invalid Project name accepted: %q", invalid)
+		}
+	}
+}
+
+func TestDeleteProjectRequiresExplicitConfirmation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Params = gin.Params{{Key: "project_id", Value: "prj-1234"}}
+	context.Request = httptest.NewRequest(http.MethodDelete, "/api/flow360/projects/prj-1234", nil)
+
+	(&Server{}).deleteFlow360Project(context)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "confirmed=true") {
+		t.Fatalf("unexpected delete response %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestSubmitPlanToFlow360UpdatesAndRunsPreboundDraft(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")

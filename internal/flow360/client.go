@@ -179,6 +179,14 @@ func (c *Client) ProjectInfo(ctx context.Context, projectID string) (json.RawMes
 	return c.jsonCommand(ctx, "project", "info", projectID)
 }
 
+func (c *Client) RenameProject(ctx context.Context, projectID, name string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "project", "rename", strings.TrimSpace(projectID), "--name", strings.TrimSpace(name))
+}
+
+func (c *Client) DeleteProject(ctx context.Context, projectID string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "project", "delete", strings.TrimSpace(projectID), "--yes")
+}
+
 func (c *Client) ProjectTree(ctx context.Context, projectID string) (json.RawMessage, error) {
 	return c.jsonCommand(ctx, "project", "tree", projectID)
 }
