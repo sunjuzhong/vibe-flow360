@@ -24,7 +24,7 @@ describe('ManifestMemberGroup', () => {
     expect(visibleManifestMemberCount(members, { farfield: true, symmetry: false })).toBe(2)
   })
 
-  it('renders a consistent expandable header and bulk actions', () => {
+  it('renders a consistent one-row header with one contextual visibility action', () => {
     const markup = renderToStaticMarkup(
       <ManifestMemberGroup
         label="Geometry bodies"
@@ -41,13 +41,14 @@ describe('ManifestMemberGroup', () => {
 
     expect(markup).toContain('aria-expanded="true"')
     expect(markup).toContain('aria-label="Collapse Geometry bodies"')
-    expect(markup).toContain('2/3 visible')
+    expect(markup).toContain('title="2/3 visible"')
+    expect(markup).toContain('>2/3</span>')
     expect(markup).toContain('aria-label="Hide all surfaces"')
-    expect(markup).toContain('aria-label="Show all surfaces"')
+    expect(markup).not.toContain('aria-label="Show all surfaces"')
     expect(markup).toContain('members stay mounted')
   })
 
-  it('disables actions that cannot change the current state', () => {
+  it('disables empty groups and changes the action when every member is hidden', () => {
     const emptyMarkup = renderToStaticMarkup(
       <ManifestMemberGroup
         label="CAD edges"
@@ -61,7 +62,7 @@ describe('ManifestMemberGroup', () => {
         <p>No edges</p>
       </ManifestMemberGroup>,
     )
-    expect(emptyMarkup.match(/disabled=""/g)).toHaveLength(2)
+    expect(emptyMarkup.match(/disabled=""/g)).toHaveLength(1)
 
     const hiddenMarkup = renderToStaticMarkup(
       <ManifestMemberGroup
@@ -76,7 +77,8 @@ describe('ManifestMemberGroup', () => {
         <p>Hidden surfaces</p>
       </ManifestMemberGroup>,
     )
-    expect(hiddenMarkup).toMatch(/aria-label="Hide all surfaces"[^>]*disabled=""/)
+    expect(hiddenMarkup).toContain('aria-label="Show all surfaces"')
+    expect(hiddenMarkup).not.toContain('aria-label="Hide all surfaces"')
     expect(hiddenMarkup).not.toMatch(/aria-label="Show all surfaces"[^>]*disabled=""/)
   })
 })

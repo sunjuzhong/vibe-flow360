@@ -5280,21 +5280,21 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .manifest-member-group:first-child { border-top: 0; }
 
 .manifest-member-group__header {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
   align-items: center;
-  gap: 3px 6px;
-  padding: 6px 4px 5px;
+  gap: 4px;
+  padding: 6px 2px 5px;
 }
 
 .manifest-member-group__toggle {
   display: grid;
-  width: 100%;
+  width: auto;
   min-width: 0;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 5px;
-  padding: 2px;
+  gap: 4px;
+  padding: 1px;
   border: 0;
   border-radius: 4px;
   color: #4d5448;
@@ -5306,7 +5306,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 
 .manifest-member-group__toggle:hover { background: #f0f2ea; }
 .manifest-member-group__toggle:focus-visible,
-.manifest-member-group__actions button:focus-visible {
+.manifest-member-group__visibility:focus-visible {
   outline: 2px solid rgba(126, 151, 44, .45);
   outline-offset: 1px;
 }
@@ -5328,38 +5328,30 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   transform: rotate(-90deg);
 }
 
-.manifest-member-group__actions {
-  display: flex;
-  width: 100%;
-  justify-content: flex-end;
-  gap: 4px;
-}
-
-.manifest-member-group__actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 5px;
+.manifest-member-group__visibility {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
   border: 1px solid #d9dbd3;
-  border-radius: 4px;
+  border-radius: 6px;
   color: #5e6658;
   background: #fff;
-  font-size: 9px;
   cursor: pointer;
 }
 
-.manifest-member-group__actions button:hover:not(:disabled) {
+.manifest-member-group__visibility:hover:not(:disabled) {
   border-color: #acb993;
   color: #52651d;
   background: #f5f8ec;
 }
 
-.manifest-member-group__actions button:disabled { opacity: .38; cursor: not-allowed; }
+.manifest-member-group__visibility:disabled { opacity: .38; cursor: not-allowed; }
 .manifest-member-group__content[hidden] { display: none; }
 
 .geometry-review-workspace .manifest-member-group__toggle { font-size: 10px; }
-.geometry-review-workspace .manifest-member-group__toggle > span,
-.geometry-review-workspace .manifest-member-group__actions button { font-size: 9px; }
+.geometry-review-workspace .manifest-member-group__toggle > span { font-size: 9px; }
 
 .geometry-entity-row {
   display: grid;

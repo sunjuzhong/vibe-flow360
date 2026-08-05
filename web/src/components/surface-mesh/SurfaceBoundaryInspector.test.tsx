@@ -49,14 +49,15 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).toContain('Isolate wing-9')
     expect(markup).toContain('12 of 12 matching faces')
     expect(markup).toContain('1 face selected')
-    expect(markup).toContain('Show all boundaries')
     expect(markup).toContain('Hide all boundaries')
-    expect(markup).toContain('11/12 visible')
+    expect(markup).not.toContain('Show all boundaries')
+    expect(markup).toContain('title="11/12 visible"')
+    expect(markup).toContain('>11/12</span>')
     expect(markup).toContain('geometry-entity-row surface-boundary-row assigned selected')
     expect(markup).not.toContain('Selected: wing-9')
   })
 
-  it('disables show all when every face is already visible', () => {
+  it('offers the single hide action when every face is visible', () => {
     const markup = renderToStaticMarkup(
       <SurfaceBoundaryInspector
         inventory={inventory.slice(0, 2)}
@@ -72,6 +73,8 @@ describe('SurfaceBoundaryInspector', () => {
     )
 
     expect(markup).toContain('0 faces selected')
-    expect(markup).toMatch(/<button[^>]*aria-label="Show all boundaries"[^>]*disabled=""/)
+    expect(markup).toContain('aria-label="Hide all boundaries"')
+    expect(markup).not.toContain('aria-label="Show all boundaries"')
+    expect(markup).not.toMatch(/aria-label="Hide all boundaries"[^>]*disabled=""/)
   })
 })

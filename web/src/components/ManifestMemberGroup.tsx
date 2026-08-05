@@ -44,6 +44,8 @@ export function ManifestMemberGroup({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const contentId = useId()
+  const bulkAction = visibleCount > 0 ? 'Hide' : 'Show'
+  const BulkIcon = visibleCount > 0 ? EyeOff : Eye
 
   return (
     <section className="manifest-member-group">
@@ -59,30 +61,18 @@ export function ManifestMemberGroup({
           <ChevronDown className="manifest-member-group__chevron" size={12} aria-hidden="true" />
           {icon}
           <strong>{label}</strong>
-          <span>{visibleCount}/{total} visible</span>
+          <span title={`${visibleCount}/${total} visible`}>{visibleCount}/{total}</span>
         </button>
-        <div className="manifest-member-group__actions">
-          <button
-            type="button"
-            aria-label={`Hide all ${memberLabel}`}
-            title={`Hide all ${memberLabel}`}
-            disabled={total === 0 || visibleCount === 0}
-            onClick={onHideAll}
-          >
-            <EyeOff size={12} aria-hidden="true" />
-            <span>Hide all</span>
-          </button>
-          <button
-            type="button"
-            aria-label={`Show all ${memberLabel}`}
-            title={`Show all ${memberLabel}`}
-            disabled={total === 0 || visibleCount === total}
-            onClick={onShowAll}
-          >
-            <Eye size={12} aria-hidden="true" />
-            <span>Show all</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          className="manifest-member-group__visibility"
+          aria-label={`${bulkAction} all ${memberLabel}`}
+          title={`${bulkAction} all ${memberLabel}`}
+          disabled={total === 0}
+          onClick={visibleCount > 0 ? onHideAll : onShowAll}
+        >
+          <BulkIcon size={14} aria-hidden="true" />
+        </button>
       </div>
       <div id={contentId} className="manifest-member-group__content" hidden={!expanded}>
         {children}
