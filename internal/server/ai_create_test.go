@@ -36,6 +36,17 @@ type sequenceCADGenerator struct {
 	calls  int
 }
 
+func newCADRepairAgent(t *testing.T, calls *int) *agent.Service {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		(*calls)++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Repaired Cylinder\",\"summary\":\"Repaired exact cylinder.\",\"geometry\":{\"name\":\"repaired-cylinder\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"cylinder\",\"params\":{\"radius\":0.5,\"height\":1,\"axis\":\"z\"}}],\"result\":\"body\"},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.02,\"first_layer_thickness_m\":0.00002,\"max_steps\":1000},\"assumptions\":[],\"questions\":[]}"}}]}`))
+	}))
+	t.Cleanup(server.Close)
+	return &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: server.URL, Model: "test", Client: server.Client()}
+}
+
 func (g *sequenceCADGenerator) Generate(_ context.Context, _ aicreate.Geometry, _ string) (aicreate.GeometryValidation, error) {
 	index := g.calls
 	g.calls++
@@ -350,7 +361,7 @@ func TestAICreateProjectReportsDetailedRequestByteLimit(t *testing.T) {
 func TestGenerateAICreateCADRetriesTemporaryRuntimeFailure(t *testing.T) {
 	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("temporary runtime failure")}}}
 	blueprint := aicreate.Blueprint{Geometry: aicreate.Geometry{Name: "body"}}
-	result, validation, err := (&Server{}).generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "test"}, blueprint, filepath.Join(t.TempDir(), "body.step"))
+	result, validation, err := (&Server{}).generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "test"}, blueprint, filepath.Join(t.TempDir(), "body.step"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,20 +371,69 @@ func TestGenerateAICreateCADRetriesTemporaryRuntimeFailure(t *testing.T) {
 }
 
 func TestGenerateAICreateCADLetsAgentRepairGeometryFailure(t *testing.T) {
-	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Repaired Cylinder\",\"summary\":\"Repaired exact cylinder.\",\"geometry\":{\"name\":\"repaired-cylinder\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"cylinder\",\"params\":{\"radius\":0.5,\"height\":1,\"axis\":\"z\"}}],\"result\":\"body\"},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.02,\"first_layer_thickness_m\":0.00002,\"max_steps\":1000},\"assumptions\":[],\"questions\":[]}"}}]}`))
-	}))
-	defer agentServer.Close()
+	agentCalls := 0
 	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationGeometryFailure, Err: errors.New("boolean produced an empty solid")}}}
-	app := &Server{agent: &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: agentServer.URL, Model: "test", Client: agentServer.Client()}}
+	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
 	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
-	repaired, validation, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"))
+	repaired, validation, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if generator.calls != 2 || repaired.ProjectName != "Repaired Cylinder" || validation.SolidCount != 1 {
+	if generator.calls != 2 || agentCalls != 1 || repaired.ProjectName != "Repaired Cylinder" || validation.SolidCount != 1 {
 		t.Fatalf("Agent CAD repair did not complete: calls=%d result=%#v", generator.calls, repaired)
+	}
+}
+
+func TestGenerateAICreateCADCanRecoverOnThirdAgentRepair(t *testing.T) {
+	agentCalls := 0
+	geometryFailure := func(message string) error {
+		return &aicreate.GenerationError{Kind: aicreate.GenerationGeometryFailure, Err: errors.New(message)}
+	}
+	generator := &sequenceCADGenerator{errors: []error{
+		geometryFailure("initial boolean failure"),
+		geometryFailure("repair one face selector failure"),
+		geometryFailure("repair two topology failure"),
+	}}
+	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
+	progressID := "aip-third-repair-1234"
+	app.startAICreateProgress(progressID)
+	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
+	repaired, validation, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"), progressID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generator.calls != 4 || agentCalls != 3 || validation.SolidCount != 1 || repaired.ProjectName != "Repaired Cylinder" {
+		t.Fatalf("expected recovery on third Agent repair: generator=%d agent=%d result=%#v", generator.calls, agentCalls, repaired)
+	}
+	progress := app.aiCreateProgress[progressID]
+	if !strings.Contains(progress.Detail, "self-repair 3 of 3") {
+		t.Fatalf("progress did not expose the real repair round: %#v", progress)
+	}
+}
+
+func TestGenerateAICreateCADStopsAfterThreeAgentRepairs(t *testing.T) {
+	agentCalls := 0
+	geometryFailure := func(message string) error {
+		return &aicreate.GenerationError{Kind: aicreate.GenerationGeometryFailure, Err: errors.New(message)}
+	}
+	generator := &sequenceCADGenerator{errors: []error{
+		geometryFailure("initial failure"),
+		geometryFailure("repair one failed"),
+		geometryFailure("repair two failed"),
+		geometryFailure("ValueError: final face selector matched no faces"),
+	}}
+	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
+	initial := aicreate.Blueprint{ProjectName: "Initial", Geometry: aicreate.Geometry{Name: "initial"}}
+	_, _, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create cylinder flow"}, initial, filepath.Join(t.TempDir(), "body.step"), "")
+	if err == nil {
+		t.Fatal("expected CAD repair exhaustion")
+	}
+	if generator.calls != 4 || agentCalls != maxAICreateCADRepairAttempts {
+		t.Fatalf("repair loop exceeded its bound: generator=%d agent=%d", generator.calls, agentCalls)
+	}
+	message := humanizeAICreateGenerationError(err)
+	if !strings.Contains(message, "tried 3 CAD self-repairs") || !strings.Contains(message, "final face selector matched no faces") {
+		t.Fatalf("exhausted repair message is not actionable: %q", message)
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 const maxAICreateIntentCharacters = 4000
 const maxAICreateRequestBytes = 20 << 10
 const maxAICreateClarificationRounds = 8
+const maxAICreateCADRepairAttempts = 3
 const aiCreateProjectReconcileAttempts = 15
 const aiCreateProjectReconcileDelay = 2 * time.Second
 
@@ -171,7 +172,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	if generator == nil {
 		generator = aicreate.NewCadQueryGenerator()
 	}
-	blueprint, validation, err := s.generateAICreateCAD(c.Request.Context(), generator, session, blueprint, geometryPath)
+	blueprint, validation, err := s.generateAICreateCAD(c.Request.Context(), generator, session, blueprint, geometryPath, request.ProgressID)
 	if err != nil {
 		var missing *aicreate.MissingInputError
 		if errors.As(err, &missing) {
@@ -485,29 +486,74 @@ func (s *Server) materializeAICreateDraft(ctx context.Context, plan plans.Plan) 
 	return updated, remoteIDs.DraftID, nil
 }
 
-func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Generator, session aiCreateSession, blueprint aicreate.Blueprint, outputPath string) (aicreate.Blueprint, aicreate.GeometryValidation, error) {
-	validation, err := generator.Generate(ctx, blueprint.Geometry, outputPath)
-	if err == nil {
-		return blueprint, validation, nil
-	}
-	if aicreate.GenerationFailure(err) == aicreate.GenerationTemporaryFailure {
-		validation, err = generator.Generate(ctx, blueprint.Geometry, outputPath)
-		if err == nil {
-			return blueprint, validation, nil
+type aiCreateCADRepairExhaustedError struct {
+	Attempts   int
+	Diagnostic string
+}
+
+func (e *aiCreateCADRepairExhaustedError) Error() string {
+	return fmt.Sprintf("CAD self-repair failed after %d attempts: %s", e.Attempts, e.Diagnostic)
+}
+
+func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Generator, session aiCreateSession, blueprint aicreate.Blueprint, outputPath, progressID string) (aicreate.Blueprint, aicreate.GeometryValidation, error) {
+	generate := func(candidate aicreate.Blueprint) (aicreate.GeometryValidation, error) {
+		validation, err := generator.Generate(ctx, candidate.Geometry, outputPath)
+		if err != nil && aicreate.GenerationFailure(err) == aicreate.GenerationTemporaryFailure {
+			return generator.Generate(ctx, candidate.Geometry, outputPath)
 		}
+		return validation, err
+	}
+
+	current := blueprint
+	validation, err := generate(current)
+	if err == nil {
+		return current, validation, nil
 	}
 	if aicreate.GenerationFailure(err) != aicreate.GenerationGeometryFailure {
-		return blueprint, validation, err
+		return current, validation, err
 	}
-	repaired, repairErr := aicreate.RepairAfterGenerationFailure(ctx, s.agent, session.Intent, session.Rounds, blueprint, err.Error())
-	if repairErr != nil {
-		return blueprint, validation, repairErr
+	diagnostic := err.Error()
+	for attempt := 1; attempt <= maxAICreateCADRepairAttempts; attempt++ {
+		s.updateAICreateProgress(progressID, 1, fmt.Sprintf("Exact CAD validation failed; the Geometry Agent is applying self-repair %d of %d.", attempt, maxAICreateCADRepairAttempts))
+		repaired, repairErr := aicreate.RepairAfterGenerationFailure(ctx, s.agent, session.Intent, session.Rounds, current, diagnostic)
+		if repairErr != nil {
+			var missing *aicreate.MissingInputError
+			if errors.As(repairErr, &missing) {
+				return current, validation, repairErr
+			}
+			diagnostic = repairErr.Error()
+			continue
+		}
+		current = repaired
+		s.updateAICreateProgress(progressID, 1, fmt.Sprintf("Validating exact CAD produced by self-repair %d of %d.", attempt, maxAICreateCADRepairAttempts))
+		validation, err = generate(current)
+		if err == nil {
+			return current, validation, nil
+		}
+		if aicreate.GenerationFailure(err) != aicreate.GenerationGeometryFailure {
+			return current, validation, err
+		}
+		diagnostic = err.Error()
 	}
-	validation, err = generator.Generate(ctx, repaired.Geometry, outputPath)
-	if err != nil {
-		return repaired, validation, fmt.Errorf("CAD self-repair was exhausted: %w", err)
+	return current, validation, &aiCreateCADRepairExhaustedError{
+		Attempts: maxAICreateCADRepairAttempts, Diagnostic: lastAICreateDiagnosticLine(diagnostic),
 	}
-	return repaired, validation, nil
+}
+
+func lastAICreateDiagnosticLine(diagnostic string) string {
+	lines := strings.Split(strings.TrimSpace(diagnostic), "\n")
+	for index := len(lines) - 1; index >= 0; index-- {
+		line := strings.TrimSpace(lines[index])
+		if line == "" {
+			continue
+		}
+		runes := []rune(line)
+		if len(runes) > 360 {
+			line = string(runes[:360]) + "…"
+		}
+		return line
+	}
+	return "OpenCascade did not return a usable diagnostic"
 }
 
 func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSession, error) {
@@ -816,6 +862,10 @@ func humanizeAICreateDesignError(err error) string {
 }
 
 func humanizeAICreateGenerationError(err error) string {
+	var exhausted *aiCreateCADRepairExhaustedError
+	if errors.As(err, &exhausted) {
+		return fmt.Sprintf("The Geometry Agent tried %d CAD self-repairs, but exact STEP validation still failed. Last CAD diagnostic: %s", exhausted.Attempts, exhausted.Diagnostic)
+	}
 	switch aicreate.GenerationFailure(err) {
 	case aicreate.GenerationRuntimeFailure:
 		return "The exact CAD runtime is unavailable. Check the local CAD runtime configuration and try again."
