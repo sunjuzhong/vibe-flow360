@@ -21,6 +21,7 @@ import {
 } from '../api/client'
 import AICreateModal from '../components/AICreateModal'
 import FolderTree from '../components/FolderTree'
+import FolderMutationDialog, { type FolderMutationMode } from '../components/FolderMutationDialog'
 import ImportPanel from '../components/ImportPanel'
 import TopBar from '../components/TopBar'
 
@@ -54,6 +55,14 @@ export function writeWorkspaceSelectedFolder(storage: Pick<FolderSelectionStorag
     storage.setItem(workspaceSelectedFolderStorageKey, folderId)
   } catch {
     // Selection persistence is an enhancement; navigation still works without storage.
+  }
+}
+
+export function clearWorkspaceSelectedFolder(storage: Pick<Storage, 'removeItem'>) {
+  try {
+    storage.removeItem(workspaceSelectedFolderStorageKey)
+  } catch {
+    // Selection persistence is optional.
   }
 }
 
@@ -97,6 +106,7 @@ export default function WorkspacePage() {
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
   const [importOpen, setImportOpen] = useState(false)
   const [aiCreateOpen, setAICreateOpen] = useState(false)
+  const [folderMutation, setFolderMutation] = useState<{ mode: FolderMutationMode; folder: FolderNode } | null>(null)
 
   const loadStatus = () => {
     api.flow360Status().then(setFlowStatus).catch((error) => {
@@ -104,20 +114,22 @@ export default function WorkspacePage() {
     })
   }
 
-  const loadFolders = async () => {
+  const loadFolders = async (cacheFirst = true) => {
     setFoldersLoading(true)
     setFoldersError('')
     setFoldersDataSource('live')
     let cachedLoaded = false
-    try {
-      const cached = await api.folders(true)
-      setFolderRoot(cached.data.root)
-      setFoldersDataSource('cache')
-      setFoldersCachedAt(cached.cachedAt || '')
-      cachedLoaded = true
-      setFoldersLoading(false)
-    } catch {
-      // A first-visit cache miss is expected.
+    if (cacheFirst) {
+      try {
+        const cached = await api.folders(true)
+        setFolderRoot(cached.data.root)
+        setFoldersDataSource('cache')
+        setFoldersCachedAt(cached.cachedAt || '')
+        cachedLoaded = true
+        setFoldersLoading(false)
+      } catch {
+        // A first-visit cache miss is expected.
+      }
     }
     try {
       const response = await api.folders()
@@ -246,6 +258,11 @@ export default function WorkspacePage() {
             folders={folderRoot.subfolders}
             selected={selectedFolder?.id ?? ''}
             onSelect={(folder) => void loadProjects(folder)}
+            onCreateRoot={() => setFolderMutation({ mode: 'create', folder: folderRoot })}
+            onCreateChild={(folder) => setFolderMutation({ mode: 'create', folder })}
+            onRename={(folder) => setFolderMutation({ mode: 'rename', folder })}
+            onMove={(folder) => setFolderMutation({ mode: 'move', folder })}
+            onDelete={(folder) => setFolderMutation({ mode: 'delete', folder })}
           />
         )}
         <div className="workspace-sidebar-footer">
@@ -428,6 +445,35 @@ export default function WorkspacePage() {
         onClose={() => setAICreateOpen(false)}
         onCreated={(result) => navigate(aiCreateProjectPath(result))}
       />}
+      {folderRoot && folderMutation && (
+        <FolderMutationDialog
+          mode={folderMutation.mode}
+          folder={folderMutation.folder}
+          root={folderRoot}
+          onClose={() => setFolderMutation(null)}
+          onComplete={async (result) => {
+            const { mode, folder } = folderMutation
+            setFolderMutation(null)
+            if (mode === 'rename' && selectedFolder?.id === folder.id) {
+              setSelectedFolder({ ...selectedFolder, name: result.name || folder.name })
+            }
+            if (mode === 'delete' && selectedFolder?.id === folder.id) {
+              setSelectedFolder(null)
+              setProjects([])
+              setProjectsMessage('Select a folder to view its projects')
+              clearWorkspaceSelectedFolder(window.sessionStorage)
+            }
+            await loadFolders(false)
+            if (mode === 'create' && result.id) {
+              await loadProjects({
+                id: result.id,
+                name: result.name || 'New folder',
+                subfolders: [],
+              })
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

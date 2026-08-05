@@ -43,6 +43,91 @@ func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 	}
 }
 
+func TestFolderMutationValidation(t *testing.T) {
+	for _, valid := range []string{"folder-1234", "folder-a-b-C-9"} {
+		if !validFlow360FolderID(valid, false) {
+			t.Errorf("valid Folder ID rejected: %q", valid)
+		}
+	}
+	for _, invalid := range []string{"", flow360RootFolderID, "prj-123", "folder-a/b", "folder-a b"} {
+		if validFlow360FolderID(invalid, false) {
+			t.Errorf("invalid Folder ID accepted: %q", invalid)
+		}
+	}
+	if !validFlow360FolderID(flow360RootFolderID, true) {
+		t.Fatal("root Folder ID was rejected as a parent")
+	}
+	if got, err := normalizeFlow360FolderName("  Aero studies  "); err != nil || got != "Aero studies" {
+		t.Fatalf("unexpected normalized name %q: %v", got, err)
+	}
+	for _, invalid := range []string{"", "bad\nname", strings.Repeat("a", 129)} {
+		if _, err := normalizeFlow360FolderName(invalid); err == nil {
+			t.Errorf("invalid Folder name accepted: %q", invalid)
+		}
+	}
+}
+
+func TestDeleteFolderRequiresExplicitConfirmation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Params = gin.Params{{Key: "folder_id", Value: "folder-1234"}}
+	context.Request = httptest.NewRequest(http.MethodDelete, "/api/flow360/folders/folder-1234", nil)
+
+	(&Server{}).deleteFlow360Folder(context)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "confirmed=true") {
+		t.Fatalf("unexpected delete response %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCreateFolderUsesTypedClientAndRefreshesTreeCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+printf '%s ' "$@" >> "` + argsPath + `"
+printf '\n' >> "` + argsPath + `"
+if [ "$1 $2" = "folder create" ]; then
+  printf '{"id":"folder-new","name":"Aero studies","parent_id":"ROOT.FLOW360"}'
+else
+  printf '{"root":{"id":"ROOT.FLOW360","name":"Workspace","subfolders":[{"id":"folder-new","name":"Aero studies","subfolders":[]}]}}'
+fi
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := projectcache.New(filepath.Join(dir, "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second},
+		cache:   cache,
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/folders", strings.NewReader(`{
+		"name":" Aero studies ","parent_folder_id":"ROOT.FLOW360","tags":["cfd"]
+	}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.createFlow360Folder(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "folder-new") {
+		t.Fatalf("unexpected create response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	args, _ := os.ReadFile(argsPath)
+	if !strings.Contains(string(args), "folder create --name Aero studies --parent-folder-id ROOT.FLOW360 --tag cfd") {
+		t.Fatalf("unexpected folder command: %s", args)
+	}
+	entry, err := cache.Get("folder-tree", "root")
+	if err != nil || !strings.Contains(string(entry.Data), "folder-new") {
+		t.Fatalf("Folder tree cache was not refreshed: %s, %v", entry.Data, err)
+	}
+}
+
 func TestSubmitPlanToFlow360UpdatesAndRunsPreboundDraft(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")

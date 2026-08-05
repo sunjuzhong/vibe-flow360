@@ -682,6 +682,72 @@ button { color: inherit; }
 .folder-select svg { flex: 0 0 auto; }
 .folder-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.folder-branch { position: relative; }
+.folder-actions-button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  place-items: center;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: #8d9188;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+.folder-line:hover .folder-actions-button,
+.folder-actions-button[aria-expanded="true"],
+.folder-actions-button:focus-visible { opacity: 1; }
+.folder-actions-button:hover { color: #3f5408; background: rgba(255,255,255,.8); }
+.folder-actions-menu {
+  position: absolute;
+  z-index: 20;
+  top: 28px;
+  right: 3px;
+  display: grid;
+  width: 148px;
+  padding: 5px;
+  border: 1px solid #d6d8ce;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(34,38,29,.16);
+}
+.folder-actions-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: #555b50;
+  background: transparent;
+  font-size: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+.folder-actions-menu button:hover { background: #f0f3e7; }
+.folder-actions-menu button.danger { color: #a34d3b; }
+.folder-actions-menu button.danger:hover { background: #fff0eb; }
+.folder-tree-count { display: flex; align-items: center; justify-content: space-between; }
+.folder-tree-count button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 5px;
+  color: #647817;
+  background: transparent;
+  font-family: inherit;
+  font-size: 8px;
+  cursor: pointer;
+}
+.folder-tree-count button:hover { background: #e7edda; }
+
 .workspace-sidebar-footer {
   display: flex;
   align-items: center;
@@ -691,6 +757,59 @@ button { color: inherit; }
   color: #666b61;
   font-size: 9px;
 }
+
+.folder-dialog-overlay {
+  position: fixed;
+  z-index: 95;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(27,30,24,.52);
+  backdrop-filter: blur(5px);
+}
+.folder-dialog {
+  width: min(470px, 94vw);
+  overflow: hidden;
+  border: 1px solid #d7d9d0;
+  border-radius: 14px;
+  background: #f9f9f5;
+  box-shadow: 0 28px 80px rgba(20,23,18,.3);
+}
+.folder-dialog > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  padding: 0 15px;
+  border-bottom: 1px solid #dedfd8;
+}
+.folder-dialog > header > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 8px; color: #617916; background: #e6edcf; }
+.folder-dialog.mode-delete > header > span { color: #a34d3b; background: #f6dfd8; }
+.folder-dialog > header > div { flex: 1; }
+.folder-dialog > header small { color: #92978d; font-family: 'DM Mono'; font-size: 7px; letter-spacing: .07em; }
+.folder-dialog > header h2 { margin: 3px 0 0; font-size: 16px; }
+.folder-dialog form { padding: 20px; }
+.folder-dialog form > p { margin: 0 0 15px; color: #7d8278; font-size: 9px; line-height: 1.55; }
+.folder-dialog-target { display: grid; gap: 3px; padding: 11px; border: 1px solid #dfe1d8; border-radius: 8px; background: #f2f3ed; }
+.folder-dialog-target small { color: #969b91; font-size: 7px; text-transform: uppercase; }
+.folder-dialog-target strong { font-size: 10px; }
+.folder-dialog-target code { overflow: hidden; color: #878c82; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.folder-dialog form > label { display: grid; gap: 6px; margin-top: 14px; color: #656b60; font-size: 8px; font-weight: 700; }
+.folder-dialog form > label > small { color: #969b91; font-weight: 400; }
+.folder-dialog input:not([type="checkbox"]),
+.folder-dialog select { width: 100%; height: 38px; padding: 0 10px; border: 1px solid #cfd2c8; border-radius: 7px; outline: 0; color: #3f443b; background: #fff; font: 10px inherit; }
+.folder-dialog input:focus,
+.folder-dialog select:focus { border-color: #9bb454; box-shadow: 0 0 0 3px rgba(155,180,84,.15); }
+.folder-delete-confirm { display: flex !important; align-items: flex-start; gap: 9px !important; padding: 12px; border: 1px solid #e3bdb2; border-radius: 8px; color: #8d4434 !important; background: #fff2ee; cursor: pointer; }
+.folder-delete-confirm input { margin-top: 2px; }
+.folder-delete-confirm span { display: flex; align-items: center; gap: 7px; line-height: 1.45; }
+.folder-dialog-error { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding: 9px; border-radius: 7px; color: #984632; background: #f9e3dc; font-size: 8px; }
+.folder-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin: 18px -20px -20px; padding: 13px 20px; border-top: 1px solid #dedfd8; background: #f2f3ed; }
+.folder-dialog footer button { display: inline-flex; min-height: 35px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid #ccd0c5; border-radius: 7px; color: #63695e; background: #fff; font-size: 9px; font-weight: 600; cursor: pointer; }
+.folder-dialog footer button.primary { border-color: #9eb74e; color: #28320f; background: #b9da50; }
+.folder-dialog footer button.danger { border-color: #a9513e; color: #fff; background: #ad5744; }
+.folder-dialog footer button:disabled { opacity: .45; cursor: not-allowed; }
 
 .workspace-sidebar-footer small { color: #969a91; font-family: 'DM Mono', monospace; font-size: 7px; }
 

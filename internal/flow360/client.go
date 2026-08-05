@@ -153,6 +153,28 @@ func (c *Client) Folders(ctx context.Context) (json.RawMessage, error) {
 	return c.jsonCommand(ctx, "folder", "tree")
 }
 
+func (c *Client) CreateFolder(ctx context.Context, name, parentFolderID string, tags []string) (json.RawMessage, error) {
+	args := []string{"folder", "create", "--name", strings.TrimSpace(name), "--parent-folder-id", strings.TrimSpace(parentFolderID)}
+	for _, tag := range tags {
+		if value := strings.TrimSpace(tag); value != "" {
+			args = append(args, "--tag", value)
+		}
+	}
+	return c.jsonCommand(ctx, args...)
+}
+
+func (c *Client) RenameFolder(ctx context.Context, folderID, name string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "folder", "rename", strings.TrimSpace(folderID), "--name", strings.TrimSpace(name))
+}
+
+func (c *Client) MoveFolder(ctx context.Context, folderID, parentFolderID string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "folder", "move", strings.TrimSpace(folderID), "--parent-folder-id", strings.TrimSpace(parentFolderID))
+}
+
+func (c *Client) DeleteFolder(ctx context.Context, folderID string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "folder", "delete", strings.TrimSpace(folderID), "--yes")
+}
+
 func (c *Client) ProjectInfo(ctx context.Context, projectID string) (json.RawMessage, error) {
 	return c.jsonCommand(ctx, "project", "info", projectID)
 }

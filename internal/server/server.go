@@ -237,6 +237,10 @@ func (s *Server) routes() {
 		api.GET("/flow360/status", s.flow360Status)
 		api.GET("/flow360/projects", s.flow360Projects)
 		api.GET("/flow360/folders", s.flow360Folders)
+		api.POST("/flow360/folders", s.createFlow360Folder)
+		api.PUT("/flow360/folders/:folder_id/name", s.renameFlow360Folder)
+		api.PUT("/flow360/folders/:folder_id/parent", s.moveFlow360Folder)
+		api.DELETE("/flow360/folders/:folder_id", s.deleteFlow360Folder)
 		api.GET("/flow360/projects/:project_id", s.flow360ProjectInfo)
 		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
@@ -2357,6 +2361,156 @@ func (s *Server) flow360Folders(c *gin.Context) {
 		return
 	}
 	s.cacheLiveJSON("folder-tree", "root", raw)
+	s.writeLiveJSON(c, raw)
+}
+
+const flow360RootFolderID = "ROOT.FLOW360"
+
+func validFlow360FolderID(value string, allowRoot bool) bool {
+	value = strings.TrimSpace(value)
+	if allowRoot && value == flow360RootFolderID {
+		return true
+	}
+	if !strings.HasPrefix(value, "folder-") || len(value) > 96 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func normalizeFlow360FolderName(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("folder name is required")
+	}
+	if utf8.RuneCountInString(value) > 128 {
+		return "", errors.New("folder name must be 128 characters or fewer")
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return "", errors.New("folder name cannot contain control characters")
+		}
+	}
+	return value, nil
+}
+
+func (s *Server) refreshFolderTreeCache(ctx context.Context) {
+	raw, err := s.flow360.Folders(ctx)
+	if err != nil {
+		log.Printf("Could not refresh Folder tree after mutation: %v", err)
+		return
+	}
+	s.cacheLiveJSON("folder-tree", "root", raw)
+}
+
+func (s *Server) createFlow360Folder(c *gin.Context) {
+	var request struct {
+		Name           string   `json:"name"`
+		ParentFolderID string   `json:"parent_folder_id"`
+		Tags           []string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid folder request"})
+		return
+	}
+	name, err := normalizeFlow360FolderName(request.Name)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	parentID := strings.TrimSpace(request.ParentFolderID)
+	if parentID == "" {
+		parentID = flow360RootFolderID
+	}
+	if !validFlow360FolderID(parentID, true) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid parent folder ID"})
+		return
+	}
+	raw, err := s.flow360.CreateFolder(c.Request.Context(), name, parentID, request.Tags)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not create the folder"})
+		return
+	}
+	s.refreshFolderTreeCache(c.Request.Context())
+	s.writeLiveJSON(c, raw)
+}
+
+func (s *Server) renameFlow360Folder(c *gin.Context) {
+	folderID := strings.TrimSpace(c.Param("folder_id"))
+	if !validFlow360FolderID(folderID, false) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid folder ID"})
+		return
+	}
+	var request struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid folder request"})
+		return
+	}
+	name, err := normalizeFlow360FolderName(request.Name)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	raw, err := s.flow360.RenameFolder(c.Request.Context(), folderID, name)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not rename the folder"})
+		return
+	}
+	s.refreshFolderTreeCache(c.Request.Context())
+	s.writeLiveJSON(c, raw)
+}
+
+func (s *Server) moveFlow360Folder(c *gin.Context) {
+	folderID := strings.TrimSpace(c.Param("folder_id"))
+	if !validFlow360FolderID(folderID, false) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid folder ID"})
+		return
+	}
+	var request struct {
+		ParentFolderID string `json:"parent_folder_id"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid folder request"})
+		return
+	}
+	parentID := strings.TrimSpace(request.ParentFolderID)
+	if !validFlow360FolderID(parentID, true) || parentID == folderID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid destination parent folder"})
+		return
+	}
+	raw, err := s.flow360.MoveFolder(c.Request.Context(), folderID, parentID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not move the folder"})
+		return
+	}
+	s.refreshFolderTreeCache(c.Request.Context())
+	s.writeLiveJSON(c, raw)
+}
+
+func (s *Server) deleteFlow360Folder(c *gin.Context) {
+	folderID := strings.TrimSpace(c.Param("folder_id"))
+	if !validFlow360FolderID(folderID, false) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid folder ID"})
+		return
+	}
+	if !strings.EqualFold(c.Query("confirmed"), "true") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder deletion requires confirmed=true"})
+		return
+	}
+	raw, err := s.flow360.DeleteFolder(c.Request.Context(), folderID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not delete the folder; it may not be empty"})
+		return
+	}
+	s.refreshFolderTreeCache(c.Request.Context())
 	s.writeLiveJSON(c, raw)
 }
 

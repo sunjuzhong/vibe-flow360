@@ -155,6 +155,14 @@ export type FolderTreeResponse = {
   root: FolderNode
 }
 
+export type FolderMutationResult = {
+  id: string
+  name?: string
+  parent_id?: string
+  deleted?: boolean
+  tags?: string[]
+}
+
 export type ProjectRecord = {
   id: string
   name: string
@@ -732,6 +740,18 @@ export const api = {
   },
   folders: (cacheOnly = false) =>
     flow360JSON<FolderTreeResponse>(`/api/flow360/folders${cacheOnly ? '?cache=only' : ''}`),
+  createFolder: (input: { name: string; parent_folder_id: string; tags?: string[] }) =>
+    mutate<FolderMutationResult>('/api/flow360/folders', input),
+  renameFolder: (folderId: string, name: string) =>
+    replace<FolderMutationResult>(`/api/flow360/folders/${encodeURIComponent(folderId)}/name`, { name }),
+  moveFolder: (folderId: string, parentFolderId: string) =>
+    replace<FolderMutationResult>(`/api/flow360/folders/${encodeURIComponent(folderId)}/parent`, {
+      parent_folder_id: parentFolderId,
+    }),
+  deleteFolder: (folderId: string, confirmed: boolean) =>
+    remove<FolderMutationResult>(
+      `/api/flow360/folders/${encodeURIComponent(folderId)}?confirmed=${confirmed ? 'true' : 'false'}`,
+    ),
   projectInfo: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectInfo>(`/api/flow360/projects/${encodeURIComponent(projectId)}${cacheOnly ? '?cache=only' : ''}`),
   projectTree: (projectId: string, cacheOnly = false) =>

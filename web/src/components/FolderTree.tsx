@@ -1,4 +1,4 @@
-import { ChevronDown, Folder, FolderOpen, Search } from 'lucide-react'
+import { ChevronDown, Folder, FolderInput, FolderOpen, FolderPlus, MoreHorizontal, Pencil, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { FolderNode } from '../api/client'
 
@@ -36,6 +36,12 @@ function Branch({
   expanded,
   onToggle,
   onSelect,
+  menuFor,
+  onToggleMenu,
+  onCreateChild,
+  onRename,
+  onMove,
+  onDelete,
   searchQuery,
 }: {
   node: FolderNode
@@ -44,6 +50,12 @@ function Branch({
   expanded: Set<string>
   onToggle: (id: string) => void
   onSelect: (node: FolderNode) => void
+  menuFor: string
+  onToggleMenu: (id: string) => void
+  onCreateChild: (node: FolderNode) => void
+  onRename: (node: FolderNode) => void
+  onMove: (node: FolderNode) => void
+  onDelete: (node: FolderNode) => void
   searchQuery: string
 }) {
   const hasChildren = Boolean(node.subfolders?.length)
@@ -69,7 +81,18 @@ function Branch({
           {isExpanded || searchQuery ? <FolderOpen size={14} /> : <Folder size={14} />}
           <span>{node.name}</span>
         </button>
+        <button className="folder-actions-button" onClick={() => onToggleMenu(node.id)} aria-label={`Manage ${node.name}`} aria-expanded={menuFor === node.id}>
+          <MoreHorizontal size={14} />
+        </button>
       </div>
+      {menuFor === node.id && (
+        <div className="folder-actions-menu" role="menu" aria-label={`Folder actions for ${node.name}`}>
+          <button role="menuitem" onClick={() => onCreateChild(node)}><FolderPlus size={13} /> New subfolder</button>
+          <button role="menuitem" onClick={() => onRename(node)}><Pencil size={13} /> Rename</button>
+          <button role="menuitem" onClick={() => onMove(node)}><FolderInput size={13} /> Move</button>
+          <button role="menuitem" className="danger" onClick={() => onDelete(node)}><Trash2 size={13} /> Delete</button>
+        </div>
+      )}
       {hasChildren && (isExpanded || searchQuery) && node.subfolders.map((child) => (
         <Branch
           key={child.id}
@@ -79,6 +102,12 @@ function Branch({
           expanded={expanded}
           onToggle={onToggle}
           onSelect={onSelect}
+          menuFor={menuFor}
+          onToggleMenu={onToggleMenu}
+          onCreateChild={onCreateChild}
+          onRename={onRename}
+          onMove={onMove}
+          onDelete={onDelete}
           searchQuery={searchQuery}
         />
       ))}
@@ -90,13 +119,29 @@ export default function FolderTree({
   folders,
   selected,
   onSelect,
+  onCreateRoot,
+  onCreateChild,
+  onRename,
+  onMove,
+  onDelete,
 }: {
   folders: FolderNode[]
   selected: string
   onSelect: (node: FolderNode) => void
+  onCreateRoot: () => void
+  onCreateChild: (node: FolderNode) => void
+  onRename: (node: FolderNode) => void
+  onMove: (node: FolderNode) => void
+  onDelete: (node: FolderNode) => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
+  const [menuFor, setMenuFor] = useState('')
+
+  const runAction = (action: (node: FolderNode) => void) => (node: FolderNode) => {
+    setMenuFor('')
+    action(node)
+  }
 
   useEffect(() => {
     if (!selected) return
@@ -144,7 +189,10 @@ export default function FolderTree({
         />
         {query && <button className="folder-search-clear" onClick={() => setQuery('')} aria-label="Clear search">×</button>}
       </div>
-      <div className="folder-tree-count">{totalFolders} folders</div>
+      <div className="folder-tree-count">
+        <span>{totalFolders} folders</span>
+        <button onClick={onCreateRoot} aria-label="Create top-level folder"><FolderPlus size={12} /> New</button>
+      </div>
       {folders.map((folder) => (
         <Branch
           key={folder.id}
@@ -154,6 +202,12 @@ export default function FolderTree({
           expanded={expanded}
           onToggle={toggle}
           onSelect={onSelect}
+          menuFor={menuFor}
+          onToggleMenu={(id) => setMenuFor((current) => current === id ? '' : id)}
+          onCreateChild={runAction(onCreateChild)}
+          onRename={runAction(onRename)}
+          onMove={runAction(onMove)}
+          onDelete={runAction(onDelete)}
           searchQuery={query}
         />
       ))}
