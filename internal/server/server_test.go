@@ -112,6 +112,46 @@ func TestListInterventionsReturnsEmptyJSONArray(t *testing.T) {
 	}
 }
 
+func TestChatStreamPersistsAndRestoresProjectResourceSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store, err := agent.NewChatStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{agent: &agent.Service{}, chatSessions: store}
+	body := `{
+  "message":"Why did this case diverge?",
+  "project_id":"project-1",
+  "resource_id":"case-1",
+  "context":"{\"project_id\":\"project-1\",\"source_id\":\"case-1\",\"source_type\":\"Case\",\"source_status\":\"Completed\"}"
+}`
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/agent/chat/stream", strings.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.chatStream(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"type":"done"`) {
+		t.Fatalf("unexpected stream response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	session, err := store.Get("project-1", "case-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Messages) != 2 || session.Messages[0].Content != "Why did this case diverge?" {
+		t.Fatalf("unexpected persisted transcript: %#v", session)
+	}
+
+	getRecorder := httptest.NewRecorder()
+	getContext, _ := gin.CreateTestContext(getRecorder)
+	getContext.Request = httptest.NewRequest(http.MethodGet, "/api/agent/chat/session?project_id=project-1&resource_id=case-1", nil)
+	app.getChatSession(getContext)
+	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), "Why did this case diverge?") {
+		t.Fatalf("session was not restored: %d %s", getRecorder.Code, getRecorder.Body.String())
+	}
+}
+
 func TestRecoverPlanCreatesInterventionForPersistedPreflightFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	temp := t.TempDir()

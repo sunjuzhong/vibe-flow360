@@ -79,10 +79,10 @@ function buildWorkbenchUrl(environment: string | undefined, projectId: string, r
 }
 
 const resourceSuggestions: Record<string, string[]> = {
-  Geometry: ['检查这个 Geometry 的建模前提', '规划 Surface Mesh', '有哪些输入还需要确认？'],
-  SurfaceMesh: ['评估当前表面网格设置', '规划 Volume Mesh', '解释网格参数摘要'],
-  VolumeMesh: ['规划一个基准 Case', '检查计算域和边界条件', '给出求解前验证清单'],
-  Case: ['评估这个 Case 的设置', '检查结果是否值得信任', '规划一个参数变化工况'],
+  Geometry: ['Review this Geometry’s modeling assumptions', 'Plan a Surface Mesh', 'What inputs still need confirmation?'],
+  SurfaceMesh: ['Assess the current surface mesh settings', 'Plan a Volume Mesh', 'Explain the mesh parameter summary'],
+  VolumeMesh: ['Plan a baseline Case', 'Check the domain and boundary conditions', 'Give me a pre-solve checklist'],
+  Case: ['Assess this Case setup', 'Are these results trustworthy?', 'Plan a parameter variation'],
 }
 
 function descendants(node: ResourceNode): number {
@@ -905,10 +905,37 @@ export default function ProjectPage() {
       <CopilotPanel
         open={chatOpen}
         onClose={() => setChatOpen(false)}
+        projectId={projectId}
+        resourceId={selected?.id}
         contextLabel={selected ? `${selected.type} · ${selected.name}` : `Project · ${project?.name || projectId}`}
-        context={selected && project
-          ? `The user is viewing Flow360 project ${project.name} (${project.id}), solver ${project.solver_version}. Selected ${selected.type} ${selected.name} (${selected.id}), status ${resourceStatus(detail)}. Active Draft: ${activeDraft?.name ?? 'none'} (${activeDraft?.id ?? 'none'}), Draft status ${resourceStatus(draftDetail)}, Draft SimulationParams: ${JSON.stringify(draftDetail?.simulation_params ?? {})}. The Project has ${items.length} resources and ${drafts.length} Drafts; this branch has ${descendants(selected) + 1}. Flow360 summary: ${JSON.stringify(detail?.summary ?? {})}. Case result artifact count: ${detail?.results?.records?.length ?? 0}. Partial read errors: ${JSON.stringify(detail?.errors ?? {})}. This is a read-only workbench; propose plans and validation but do not claim execution.`
-          : `The user is opening Flow360 project ${projectId}.`}
+        context={JSON.stringify({
+          project_id: project?.id ?? projectId,
+          project_name: project?.name,
+          solver_version: project?.solver_version,
+          source_id: selected?.id,
+          source_type: selected?.type,
+          source_name: selected?.name,
+          source_status: resourceStatus(detail),
+          simulation_params: detail?.simulation_params,
+          resource_info: detail?.info,
+          resource_state: detail?.state,
+          resource_summary: detail?.summary,
+          result_artifacts: detail?.results?.records,
+          partial_errors: detail?.errors,
+          project_resources: items.map(({ id, name, type, parent_id }) => ({ id, name, type, parent_id })),
+          active_draft: activeDraft ? {
+            id: activeDraft.id,
+            name: activeDraft.name,
+            status: resourceStatus(draftDetail),
+            source_id: activeDraft.source_id,
+            source_type: activeDraft.source_type,
+            simulation_params: draftDetail?.simulation_params,
+          } : undefined,
+          project_resource_count: items.length,
+          project_draft_count: drafts.length,
+          branch_resource_count: selected ? descendants(selected) + 1 : undefined,
+          execution_boundary: 'Read-only workbench. Propose plans and validation, but do not claim execution.',
+        })}
         suggestions={selected ? resourceSuggestions[selected.type] ?? [] : []}
       />
       {project && selected && (

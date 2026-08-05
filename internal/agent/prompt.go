@@ -15,24 +15,26 @@ const (
 	// boundaries, outputs, and time stepping are present. Keep enough of the
 	// source snapshot for plan composition so the Agent does not ask users for
 	// values that are already available on the resource.
-	maxSimulationParamsBytes = 48000
-	maxSchemaBytes           = 24000
-	maxEvidenceBytes         = 4000
-	maxUserFeedbackBytes     = 2000
-	maxHistoryTurns          = 20
-	maxUserMessageBytes      = 4000
+	maxSimulationParamsBytes  = 48000
+	maxSchemaBytes            = 24000
+	maxEvidenceBytes          = 4000
+	maxResourceInventoryBytes = 12000
+	maxUserFeedbackBytes      = 2000
+	maxHistoryTurns           = 20
+	maxUserMessageBytes       = 4000
 )
 
 var tripleBacktick = "`" + "`" + "`"
 
 func AgentSystemPrompt() string {
 	return `You are Vibe Flow360, a careful CFD copilot for Flow360.
-Help the user translate an engineering question into an auditable CFD simulation plan.
-You communicate through a STRUCTURED ACTION PROTOCOL.
+Help the user understand the current Project/resource, answer related CFD questions, assess evidence, and translate requested changes into an auditable CFD simulation plan.
+For explanatory or diagnostic questions, answer directly in concise Markdown. Do not force a plan when the user only wants understanding.
+When the user asks to create or change a simulation, communicate through the STRUCTURED ACTION PROTOCOL below.
 
 ## AgentAction v1 Output Contract
 
-When you determine the user's intent, you MUST respond with a valid JSON object inside a fenced code block:
+When the user's intent requires a plan or missing engineering input, you MUST respond with a valid JSON object inside a fenced code block:
 
 ` + tripleBacktick + `json
 {
@@ -75,24 +77,37 @@ When you determine the user's intent, you MUST respond with a valid JSON object 
 - You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
 - If unsure, use request-missing-input rather than guessing.
 - Keep the action JSON compact — only include fields that matter.
-- Reply in the user's language.
+- Reply in English.
 
 ## Context payload format:
 You will receive a structured context block with project info, resource details, SimulationParams snapshot, and Flow360 schema preflight. Use this to make informed proposals.`
 }
 
 type ChatContextPayload struct {
-	ProjectID        string          `json:"project_id,omitempty"`
-	ProjectName      string          `json:"project_name,omitempty"`
-	SourceID         string          `json:"source_id,omitempty"`
-	SourceType       string          `json:"source_type,omitempty"`
-	SourceName       string          `json:"source_name,omitempty"`
-	Target           string          `json:"target,omitempty"`
-	SimulationParams json.RawMessage `json:"simulation_params,omitempty"`
-	PreflightIssues  []string        `json:"preflight_issues,omitempty"`
-	FormSchema       json.RawMessage `json:"form_schema,omitempty"`
-	Boundaries       []string        `json:"boundaries,omitempty"`
-	RecentLogs       string          `json:"recent_logs,omitempty"`
+	ProjectID            string          `json:"project_id,omitempty"`
+	ProjectName          string          `json:"project_name,omitempty"`
+	SolverVersion        string          `json:"solver_version,omitempty"`
+	SourceID             string          `json:"source_id,omitempty"`
+	SourceType           string          `json:"source_type,omitempty"`
+	SourceName           string          `json:"source_name,omitempty"`
+	SourceStatus         string          `json:"source_status,omitempty"`
+	Target               string          `json:"target,omitempty"`
+	SimulationParams     json.RawMessage `json:"simulation_params,omitempty"`
+	ResourceInfo         json.RawMessage `json:"resource_info,omitempty"`
+	ResourceState        json.RawMessage `json:"resource_state,omitempty"`
+	ResourceSummary      json.RawMessage `json:"resource_summary,omitempty"`
+	ResultArtifacts      json.RawMessage `json:"result_artifacts,omitempty"`
+	ProjectResources     json.RawMessage `json:"project_resources,omitempty"`
+	ActiveDraft          json.RawMessage `json:"active_draft,omitempty"`
+	PartialErrors        json.RawMessage `json:"partial_errors,omitempty"`
+	ProjectResourceCount int             `json:"project_resource_count,omitempty"`
+	ProjectDraftCount    int             `json:"project_draft_count,omitempty"`
+	BranchResourceCount  int             `json:"branch_resource_count,omitempty"`
+	ExecutionBoundary    string          `json:"execution_boundary,omitempty"`
+	PreflightIssues      []string        `json:"preflight_issues,omitempty"`
+	FormSchema           json.RawMessage `json:"form_schema,omitempty"`
+	Boundaries           []string        `json:"boundaries,omitempty"`
+	RecentLogs           string          `json:"recent_logs,omitempty"`
 }
 
 func BuildChatPrompt(request ChatRequest) (string, ChatContextPayload) {
@@ -129,7 +144,7 @@ func BuildChatPrompt(request ChatRequest) (string, ChatContextPayload) {
 		}
 	}
 
-	sb.WriteString("\nRespond with an AgentAction v1 JSON object in a fenced code block.")
+	sb.WriteString("\nAnswer directly in English for explanation or analysis. Use an AgentAction v1 JSON object in a fenced code block only when proposing a plan or requesting inputs for one.")
 	return sb.String(), payload
 }
 
@@ -138,9 +153,19 @@ func parseContextPayload(contextStr string) ChatContextPayload {
 	if err := json.Unmarshal([]byte(contextStr), &payload); err == nil {
 		payload.SimulationParams = truncateRaw(payload.SimulationParams, maxSimulationParamsBytes)
 		payload.FormSchema = truncateRaw(payload.FormSchema, maxSchemaBytes)
+		payload.ResourceInfo = truncateRaw(payload.ResourceInfo, maxEvidenceBytes)
+		payload.ResourceState = truncateRaw(payload.ResourceState, maxEvidenceBytes)
+		payload.ResourceSummary = truncateRaw(payload.ResourceSummary, maxEvidenceBytes)
+		payload.ResultArtifacts = truncateRaw(payload.ResultArtifacts, maxResourceInventoryBytes)
+		payload.ProjectResources = truncateRaw(payload.ProjectResources, maxResourceInventoryBytes)
+		payload.ActiveDraft = truncateRaw(payload.ActiveDraft, maxSimulationParamsBytes)
+		payload.PartialErrors = truncateRaw(payload.PartialErrors, maxEvidenceBytes)
 		payload.RecentLogs = truncate(payload.RecentLogs, maxEvidenceBytes)
 		payload.ProjectName = truncate(payload.ProjectName, 200)
 		payload.SourceName = truncate(payload.SourceName, 200)
+		payload.SolverVersion = truncate(payload.SolverVersion, 100)
+		payload.SourceStatus = truncate(payload.SourceStatus, 100)
+		payload.ExecutionBoundary = truncate(payload.ExecutionBoundary, 300)
 		return payload
 	}
 

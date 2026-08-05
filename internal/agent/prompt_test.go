@@ -36,6 +36,42 @@ func TestBuildChatPromptInjectsUserMessageAndContext(t *testing.T) {
 	}
 }
 
+func TestBuildChatPromptKeepsProjectResourceCFDContext(t *testing.T) {
+	req := ChatRequest{
+		Message: "Are these results trustworthy?",
+		Context: `{
+  "project_id":"prj-1",
+  "project_name":"Cylinder Flow",
+  "solver_version":"25.10",
+  "source_id":"case-1",
+  "source_type":"Case",
+  "source_name":"Baseline",
+  "source_status":"Completed",
+  "simulation_params":{"operating_condition":{"velocity_magnitude":40}},
+  "resource_info":{"solver":"flow360"},
+  "resource_state":{"status":"completed"},
+  "resource_summary":{"convergence":"not-converged"},
+  "result_artifacts":[{"name":"linear_residual_v2.csv"}],
+  "project_resources":[{"id":"geo-1","type":"Geometry"},{"id":"case-1","type":"Case"}],
+  "partial_errors":{"logs":"tail unavailable"},
+  "project_resource_count":2,
+  "branch_resource_count":2
+}`,
+	}
+	prompt, payload := BuildChatPrompt(req)
+	if payload.ProjectName != "Cylinder Flow" || payload.SourceStatus != "Completed" {
+		t.Fatalf("project/resource identity was not preserved: %#v", payload)
+	}
+	for _, expected := range []string{"not-converged", "linear_residual_v2.csv", "velocity_magnitude", "tail unavailable", "flow360"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("prompt is missing CFD context %q: %s", expected, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "Answer directly in English") {
+		t.Fatalf("chat prompt does not allow direct CFD answers: %s", prompt)
+	}
+}
+
 func TestBuildChatPromptKeepsTypicalCaseSimulationParams(t *testing.T) {
 	largeValue := strings.Repeat("case-parameter-", 1200)
 	contextJSON, err := json.Marshal(ChatContextPayload{

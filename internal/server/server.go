@@ -43,6 +43,7 @@ type Server struct {
 	router             *gin.Engine
 	flow360            *flow360.Client
 	agent              *agent.Service
+	chatSessions       *agent.ChatStore
 	cadGenerator       aicreate.Generator
 	plans              *plans.Store
 	imports            *importplans.Store
@@ -119,12 +120,17 @@ func New() *Server {
 		panic(err)
 	}
 	aiService := agent.NewService()
+	chatStore, err := agent.NewChatStore(filepath.Join(dataDir, "chat-sessions"))
+	if err != nil {
+		panic(err)
+	}
 	interventionEngine := agent.NewEngine(interventionStore, planStore, aiService)
 
 	app := &Server{
 		router:             router,
 		flow360:            flowClient,
 		agent:              aiService,
+		chatSessions:       chatStore,
 		cadGenerator:       aicreate.NewCadQueryGenerator(),
 		plans:              planStore,
 		imports:            importStore,
@@ -278,6 +284,7 @@ func (s *Server) routes() {
 		api.GET("/agent/state", func(c *gin.Context) {
 			c.JSON(http.StatusOK, s.agent.State())
 		})
+		api.GET("/agent/chat/session", s.getChatSession)
 		api.POST("/agent/chat/stream", s.chatStream)
 		api.POST("/agent/plan-from-action", s.planFromAction)
 		api.GET("/interventions", s.listInterventions)
@@ -2359,6 +2366,21 @@ func (s *Server) chatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	if s.chatSessions != nil && strings.TrimSpace(request.ProjectID) != "" {
+		session, err := s.chatSessions.Get(request.ProjectID, request.ResourceID)
+		if err == nil {
+			request.History = session.Messages
+		} else if !errors.Is(err, agent.ErrChatSessionNotFound) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		_, promptContext := agent.BuildChatPrompt(request)
+		if (promptContext.ProjectID != "" && promptContext.ProjectID != request.ProjectID) ||
+			(promptContext.SourceID != "" && promptContext.SourceID != request.ResourceID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "chat scope does not match the structured context"})
+			return
+		}
+	}
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -2375,6 +2397,16 @@ func (s *Server) chatStream(c *gin.Context) {
 		writeEvent(c.Writer, flusher, gin.H{"type": "error", "error": err.Error()})
 		return
 	}
+	if s.chatSessions != nil && strings.TrimSpace(request.ProjectID) != "" {
+		if _, err := s.chatSessions.Append(
+			request.ProjectID,
+			request.ResourceID,
+			agent.Message{Role: "user", Content: request.Message},
+			agent.Message{Role: "assistant", Content: reply},
+		); err != nil {
+			log.Printf("Could not persist Ask AI session for project %s: %v", request.ProjectID, err)
+		}
+	}
 
 	scanner := bufio.NewScanner(strings.NewReader(reply))
 	scanner.Split(scanWordsWithWhitespace)
@@ -2382,6 +2414,29 @@ func (s *Server) chatStream(c *gin.Context) {
 		writeEvent(c.Writer, flusher, gin.H{"type": "delta", "delta": scanner.Text()})
 	}
 	writeEvent(c.Writer, flusher, gin.H{"type": "done"})
+}
+
+func (s *Server) getChatSession(c *gin.Context) {
+	if s.chatSessions == nil {
+		c.JSON(http.StatusOK, gin.H{"messages": []agent.Message{}})
+		return
+	}
+	projectID := strings.TrimSpace(c.Query("project_id"))
+	resourceID := strings.TrimSpace(c.Query("resource_id"))
+	session, err := s.chatSessions.Get(projectID, resourceID)
+	if errors.Is(err, agent.ErrChatSessionNotFound) {
+		c.JSON(http.StatusOK, gin.H{
+			"project_id":  projectID,
+			"resource_id": resourceID,
+			"messages":    []agent.Message{},
+		})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, session)
 }
 
 type actionPlanRequest struct {

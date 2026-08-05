@@ -25,6 +25,20 @@ export type AgentState = {
   execution: boolean
 }
 
+export type ChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type ChatSession = {
+  id?: string
+  project_id: string
+  resource_id?: string
+  messages: ChatMessage[]
+  created_at?: string
+  updated_at?: string
+}
+
 export type AICreateResult = {
   project_id: string
   draft_id?: string
@@ -890,6 +904,11 @@ export const api = {
     return body
   },
   agentState: () => json<AgentState>('/api/agent/state'),
+  agentChatSession: (projectId: string, resourceId?: string) => {
+    const params = new URLSearchParams({ project_id: projectId })
+    if (resourceId) params.set('resource_id', resourceId)
+    return json<ChatSession>(`/api/agent/chat/session?${params.toString()}`)
+  },
   planFromAction: (action: AgentAction) =>
     mutate<ActionPlanResult>('/api/agent/plan-from-action', { action }),
   interventions: (projectId?: string, state?: string) => {

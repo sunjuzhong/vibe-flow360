@@ -15,7 +15,7 @@ func TestLocalPlanIncludesGeometryAndSafetyBoundary(t *testing.T) {
 		Geometry: "wing.step",
 	})
 
-	for _, expected := range []string{"wing.step", "外流场空气动力学", "尚未创建或提交任何"} {
+	for _, expected := range []string{"wing.step", "external aerodynamics", "no Flow360 task has been created or submitted"} {
 		if !strings.Contains(result, expected) {
 			t.Fatalf("local plan does not contain %q: %s", expected, result)
 		}
@@ -24,7 +24,7 @@ func TestLocalPlanIncludesGeometryAndSafetyBoundary(t *testing.T) {
 
 func TestLocalPlanClassifiesInternalFlow(t *testing.T) {
 	result := localPlan(ChatRequest{Message: "计算这个管道的压降"})
-	if !strings.Contains(result, "内流场分析") {
+	if !strings.Contains(result, "internal-flow analysis") {
 		t.Fatalf("expected internal-flow classification: %s", result)
 	}
 }

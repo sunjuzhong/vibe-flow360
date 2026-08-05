@@ -1,0 +1,42 @@
+package agent
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestChatStorePersistsConversationByProjectResource(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewChatStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Append("project-1", "case-1",
+		Message{Role: "user", Content: "Why did this case diverge?"},
+		Message{Role: "assistant", Content: "The residual history is unstable."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || len(created.Messages) != 2 {
+		t.Fatalf("unexpected created session: %#v", created)
+	}
+
+	reopened, err := NewChatStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := reopened.Get("project-1", "case-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ID != created.ID || loaded.Messages[0].Content != "Why did this case diverge?" {
+		t.Fatalf("conversation did not survive restart: %#v", loaded)
+	}
+	if _, err := reopened.Get("project-1", "case-2"); !errors.Is(err, ErrChatSessionNotFound) {
+		t.Fatalf("resource conversations leaked across scope: %v", err)
+	}
+	if _, err := reopened.Get("project-2", "case-1"); !errors.Is(err, ErrChatSessionNotFound) {
+		t.Fatalf("project conversations leaked across scope: %v", err)
+	}
+}

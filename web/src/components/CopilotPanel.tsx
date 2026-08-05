@@ -1,13 +1,11 @@
 import { ArrowUp, ChevronRight, Loader2, MessageSquareText, Sparkles, X } from 'lucide-react'
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, type AgentAction, type AgentState } from '../api/client'
+import { api, type AgentAction, type AgentState, type ChatMessage } from '../api/client'
 import { readSSE } from '../lib/sse'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
-type Message = {
-  role: 'user' | 'assistant'
-  content: string
+type Message = ChatMessage & {
   error?: boolean
   action?: AgentAction
   actionExecuted?: boolean
@@ -18,19 +16,25 @@ export default function CopilotPanel({
   onClose,
   contextLabel,
   context,
+  projectId,
+  resourceId,
   suggestions = [],
 }: {
   open: boolean
   onClose: () => void
   contextLabel: string
   context: string
+  projectId: string
+  resourceId?: string
   suggestions?: string[]
 }) {
   const [agent, setAgent] = useState<AgentState | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const scopeRef = useRef('')
   const panelRef = useFocusTrap(open, onClose, 'textarea')
 
   const [converting, setConverting] = useState(false)
@@ -38,6 +42,28 @@ export default function CopilotPanel({
   useEffect(() => {
     api.agentState().then(setAgent).catch(() => setAgent(null))
   }, [])
+
+  useEffect(() => {
+    const scope = `${projectId}\u0000${resourceId ?? ''}`
+    scopeRef.current = scope
+    setMessages([])
+    setSessionLoading(true)
+    api.agentChatSession(projectId, resourceId)
+      .then((session) => {
+        if (scopeRef.current === scope) {
+          setMessages(session.messages.map((message) => ({
+            ...message,
+            action: message.role === 'assistant' ? extractAction(message.content) ?? undefined : undefined,
+          })))
+        }
+      })
+      .catch(() => {
+        if (scopeRef.current === scope) setMessages([])
+      })
+      .finally(() => {
+        if (scopeRef.current === scope) setSessionLoading(false)
+      })
+  }, [projectId, resourceId])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -71,7 +97,7 @@ export default function CopilotPanel({
         const next = [...current]
         next[messageIndex] = {
           ...msg,
-          content: msg.content + `\n\n✅ 已创建 ${result.created}/${result.total} 个计划${result.failed > 0 ? `（${result.failed} 个失败）` : ''}。`,
+          content: msg.content + `\n\n✅ Created ${result.created}/${result.total} plans${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
           actionExecuted: true,
         }
         return next
@@ -81,7 +107,7 @@ export default function CopilotPanel({
         const next = [...current]
         next[messageIndex] = {
           ...msg,
-          content: msg.content + `\n\n❌ 创建计划失败: ${String(err)}`,
+          content: msg.content + `\n\n❌ Plan creation failed: ${String(err)}`,
           actionExecuted: true,
         }
         return next
@@ -93,7 +119,8 @@ export default function CopilotPanel({
 
   const submit = async () => {
     const text = input.trim()
-    if (!text || busy) return
+    if (!text || busy || sessionLoading) return
+    const scope = `${projectId}\u0000${resourceId ?? ''}`
     const history = messages.map(({ role, content }) => ({ role, content }))
     setInput('')
     setBusy(true)
@@ -104,13 +131,19 @@ export default function CopilotPanel({
       const response = await fetch('/api/agent/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify({ message: text, history, context, session: 'web:workspace' }),
+        body: JSON.stringify({
+          message: text,
+          history,
+          context,
+          project_id: projectId,
+          resource_id: resourceId,
+        }),
       })
       if (!response.ok) throw new Error(await response.text())
       await readSSE(response, (event) => {
         if (event.type === 'delta') {
           accumulated += event.delta ?? ''
-          setMessages((current) => current.map((message, index) => {
+          setMessages((current) => scopeRef.current !== scope ? current : current.map((message, index) => {
             if (index !== current.length - 1) return message
             const action = extractAction(accumulated)
             return { role: 'assistant', content: accumulated, action: action ?? undefined }
@@ -119,7 +152,7 @@ export default function CopilotPanel({
         if (event.type === 'error') throw new Error(event.error || 'AI service unavailable')
       })
     } catch (error) {
-      setMessages((current) => current.map((message, index) =>
+      setMessages((current) => scopeRef.current !== scope ? current : current.map((message, index) =>
         index === current.length - 1
           ? { role: 'assistant', content: `Request failed: ${String(error)}`, error: true }
           : message
@@ -169,11 +202,14 @@ export default function CopilotPanel({
       </div>
       <div className="copilot-context"><MessageSquareText size={14} /><span>{contextLabel}</span></div>
       <div className="copilot-messages">
-        {!messages.length && (
+        {sessionLoading && !messages.length && (
+          <div className="copilot-empty"><Loader2 className="spin" size={22} /><p>Loading this conversation…</p></div>
+        )}
+        {!sessionLoading && !messages.length && (
           <div className="copilot-empty">
             <Sparkles size={23} />
             <h3>Ask in context</h3>
-            <p>我会基于当前 workspace、project 或 resource 回答，并在执行任何远程操作前展示计划。</p>
+            <p>I’ll answer using this Project and resource context, and show a reviewable plan before any remote action.</p>
             {suggestions.length > 0 && (
               <div className="copilot-suggestions">
                 {suggestions.map((suggestion) => (
@@ -195,8 +231,8 @@ export default function CopilotPanel({
               {message.action && message.action.kind === 'create-plan' && !message.actionExecuted && (
                 <div className="action-plan-card">
                   <div className="action-plan-header">
-                    <strong>📋 仿真计划</strong>
-                    <span className="action-plan-count">{message.action.proposals?.length ?? 0} 个提案</span>
+                    <strong>📋 Simulation plan</strong>
+                    <span className="action-plan-count">{message.action.proposals?.length ?? 0} proposals</span>
                   </div>
                   {message.action.warnings && message.action.warnings.length > 0 && (
                     <ul className="action-plan-warnings">
@@ -223,7 +259,7 @@ export default function CopilotPanel({
                     disabled={converting}
                     onClick={() => convertToPlans(index)}
                   >
-                    {converting ? <><Loader2 size={14} /> 转换中...</> : <><ChevronRight size={14} /> 转换为计划</>}
+                    {converting ? <><Loader2 size={14} /> Converting…</> : <><ChevronRight size={14} /> Convert to plans</>}
                   </button>
                 </div>
               )}
@@ -238,9 +274,9 @@ export default function CopilotPanel({
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Ask about this context…"
-          aria-label="向 Simulation Copilot 提问"
+          aria-label="Ask Simulation Copilot"
         />
-        <div><span>Review before running</span><button className="send-button" disabled={!input.trim() || busy}><ArrowUp size={16} /></button></div>
+        <div><span>Review before running</span><button className="send-button" disabled={!input.trim() || busy || sessionLoading}><ArrowUp size={16} /></button></div>
       </form>
     </aside>
   )
