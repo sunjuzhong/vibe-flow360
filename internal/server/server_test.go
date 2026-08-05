@@ -163,6 +163,43 @@ func TestDeleteProjectRequiresExplicitConfirmation(t *testing.T) {
 	}
 }
 
+func TestProjectMutationErrorMessagesAreActionable(t *testing.T) {
+	tests := map[string]string{
+		"403 forbidden":          "denied permission",
+		"401 unauthorized":       "authentication is required",
+		"unexpected remote fail": "refresh the folder and try again",
+	}
+	for message, expected := range tests {
+		if got := flow360ProjectMutationError("delete", errors.New(message)); !strings.Contains(got, expected) {
+			t.Errorf("message %q produced %q, want %q", message, got, expected)
+		}
+	}
+}
+
+func TestDeleteStaleProjectReturnsSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+printf "Not found error: {'error': 'Item not found.', 'code': '4040000001'}\n" >&2
+exit 1
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Params = gin.Params{{Key: "project_id", Value: "prj-stale"}}
+	context.Request = httptest.NewRequest(http.MethodDelete, "/api/flow360/projects/prj-stale?confirmed=true", nil)
+
+	app.deleteFlow360Project(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"already_absent":true`) {
+		t.Fatalf("unexpected stale delete response %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestSubmitPlanToFlow360UpdatesAndRunsPreboundDraft(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")

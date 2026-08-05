@@ -184,7 +184,28 @@ func (c *Client) RenameProject(ctx context.Context, projectID, name string) (jso
 }
 
 func (c *Client) DeleteProject(ctx context.Context, projectID string) (json.RawMessage, error) {
-	return c.jsonCommand(ctx, "project", "delete", strings.TrimSpace(projectID), "--yes")
+	projectID = strings.TrimSpace(projectID)
+	raw, err := c.jsonCommand(ctx, "project", "delete", projectID, "--yes")
+	if err != nil && isFlow360NotFoundError(err) {
+		return json.Marshal(map[string]any{
+			"id":             projectID,
+			"deleted":        true,
+			"already_absent": true,
+		})
+	}
+	return raw, err
+}
+
+func isFlow360NotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "item not found") ||
+		strings.Contains(message, "not found error") ||
+		strings.Contains(message, "httpstatus': 'not_found") ||
+		strings.Contains(message, `"httpstatus":"not_found"`) ||
+		strings.Contains(message, "4040000001")
 }
 
 func (c *Client) ProjectTree(ctx context.Context, projectID string) (json.RawMessage, error) {

@@ -3,6 +3,7 @@ package flow360
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -232,6 +233,49 @@ printf '{"id":"prj-123","name":"Renamed project"}'
 		if !strings.Contains(got, expected) {
 			t.Errorf("missing %q in commands:\n%s", expected, got)
 		}
+	}
+}
+
+func TestDeleteProjectTreatsNotFoundAsIdempotentSuccess(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+printf "Web project: Not found error: {'error': 'Item not found.', 'code': '4040000001', 'httpStatus': 'NOT_FOUND'}\n" >&2
+exit 1
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	raw, err := client.DeleteProject(context.Background(), "prj-stale")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		ID            string `json:"id"`
+		Deleted       bool   `json:"deleted"`
+		AlreadyAbsent bool   `json:"already_absent"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != "prj-stale" || !result.Deleted || !result.AlreadyAbsent {
+		t.Fatalf("unexpected idempotent delete result: %s", raw)
+	}
+}
+
+func TestFlow360NotFoundErrorClassification(t *testing.T) {
+	for _, message := range []string{
+		"Item not found.",
+		"Not found error: project missing",
+		"code 4040000001",
+	} {
+		if !isFlow360NotFoundError(errors.New(message)) {
+			t.Errorf("not-found error was not recognized: %q", message)
+		}
+	}
+	if isFlow360NotFoundError(errors.New("permission denied")) {
+		t.Fatal("permission error was misclassified as not found")
 	}
 }
 

@@ -2170,7 +2170,8 @@ func (s *Server) renameFlow360Project(c *gin.Context) {
 	}
 	raw, err := s.flow360.RenameProject(c.Request.Context(), projectID, name)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not rename the project"})
+		log.Printf("Flow360 could not rename Project %s: %v", projectID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": flow360ProjectMutationError("rename", err)})
 		return
 	}
 	s.writeLiveJSON(c, raw)
@@ -2188,10 +2189,22 @@ func (s *Server) deleteFlow360Project(c *gin.Context) {
 	}
 	raw, err := s.flow360.DeleteProject(c.Request.Context(), projectID)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not delete the project"})
+		log.Printf("Flow360 could not delete Project %s: %v", projectID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": flow360ProjectMutationError("delete", err)})
 		return
 	}
 	s.writeLiveJSON(c, raw)
+}
+
+func flow360ProjectMutationError(action string, err error) string {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "forbidden") || strings.Contains(message, "permission") || strings.Contains(message, "403") {
+		return fmt.Sprintf("Flow360 denied permission to %s this project", action)
+	}
+	if strings.Contains(message, "unauthorized") || strings.Contains(message, "authentication") || strings.Contains(message, "401") {
+		return fmt.Sprintf("Flow360 authentication is required to %s this project", action)
+	}
+	return fmt.Sprintf("Flow360 could not %s the project; refresh the folder and try again", action)
 }
 
 func (s *Server) flow360ProjectInfo(c *gin.Context) {
