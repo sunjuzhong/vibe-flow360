@@ -16,6 +16,8 @@ export function shouldShowCopilotClarification(panelOpen: boolean, action: Agent
   return panelOpen && action?.kind === 'request-missing-input' && Boolean(action.questions?.length)
 }
 
+export const copilotHorizontalContainment = { overflowX: 'hidden' } as const
+
 export default function CopilotPanel({
   open,
   onClose,
@@ -197,6 +199,7 @@ export default function CopilotPanel({
   return (
     <aside
       ref={panelRef}
+      style={copilotHorizontalContainment}
       className={`copilot-panel ${open ? 'open' : ''}`}
       aria-hidden={!open}
       aria-modal={open}
@@ -221,7 +224,7 @@ export default function CopilotPanel({
         <button className="icon-button" onClick={onClose} aria-label="Close AI assistant"><X size={18} /></button>
       </div>
       <div className="copilot-context"><MessageSquareText size={14} /><span>{contextLabel}</span></div>
-      <div className="copilot-messages">
+      <div className="copilot-messages" style={copilotHorizontalContainment}>
         {sessionLoading && !messages.length && (
           <div className="copilot-empty"><Loader2 className="spin" size={22} /><p>Loading this conversation…</p></div>
         )}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentAction } from '../api/client'
-import { shouldShowCopilotClarification } from './CopilotPanel'
+import { copilotHorizontalContainment, shouldShowCopilotClarification } from './CopilotPanel'
 
 const clarification: AgentAction = {
   version: 'v1',
@@ -17,5 +17,11 @@ describe('Ask AI clarification visibility', () => {
   it('displays only after the session action has selected a clarification request', () => {
     expect(shouldShowCopilotClarification(true, null)).toBe(false)
     expect(shouldShowCopilotClarification(true, clarification)).toBe(true)
+  })
+})
+
+describe('Ask AI horizontal overflow containment', () => {
+  it('keeps the drawer and message list from scrolling horizontally', () => {
+    expect(copilotHorizontalContainment).toEqual({ overflowX: 'hidden' })
   })
 })
