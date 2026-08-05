@@ -71,6 +71,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
+import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
 
 const readinessCopy = {
   ready: { label: 'Ready', detail: 'Available geometry evidence passes preflight.' },
@@ -548,93 +549,115 @@ export default function GeometryWorkspace({
           <button type="button" disabled={selectedGroupIds.length === 0} onClick={() => chooseGroups([])}>Clear</button>
         </div>
         <div className="geometry-entity-tree">
-          <div className="geometry-tree-root">
-            <Box size={13} />
-            <strong>Geometry bodies</strong>
-            <span>{visibleFaceCount}/{manifest?.groups.length ?? 0} visible</span>
-          </div>
-          {filteredGroups.map((group) => {
-            const visible = entityIsVisible(group.id)
-            return (
-            <div
-              data-entity-id={group.id}
-              className={`geometry-entity-row ${selectedGroupIdSet.has(group.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
-              key={group.id}
-            >
-              <button
-                type="button"
-                className="geometry-entity-select"
-                onClick={(event) => toggleGroupSelection(
-                  group.id,
-                  event.ctrlKey || event.metaKey || event.shiftKey,
-                )}
-                title="Select; Ctrl, Cmd, or Shift-click to add/remove"
+          <ManifestMemberGroup
+            label="Geometry bodies"
+            memberLabel="surfaces"
+            icon={<Box size={13} aria-hidden="true" />}
+            total={manifest?.groups.length ?? 0}
+            visibleCount={visibleFaceCount}
+            onHideAll={() => setEntityVisibility((current) => ({
+              ...current,
+              ...manifestVisibilityMap(manifest?.groups ?? [], false),
+            }))}
+            onShowAll={() => setEntityVisibility((current) => ({
+              ...current,
+              ...manifestVisibilityMap(manifest?.groups ?? [], true),
+            }))}
+          >
+            {filteredGroups.map((group) => {
+              const visible = entityIsVisible(group.id)
+              return (
+              <div
+                data-entity-id={group.id}
+                className={`geometry-entity-row ${selectedGroupIdSet.has(group.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+                key={group.id}
               >
-                <span
-                  className="viewer-color-swatch"
-                  style={{ background: entityAppearances[group.id]?.color ?? group.color }}
-                />
-                <span className="geometry-face-name">
-                  <span>{group.name}</span>
-                  <small title={`Display material: ${appearanceForGroup(group.id)?.name ?? 'Default CAD'}`}>
-                    {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
+                <button
+                  type="button"
+                  className="geometry-entity-select"
+                  onClick={(event) => toggleGroupSelection(
+                    group.id,
+                    event.ctrlKey || event.metaKey || event.shiftKey,
+                  )}
+                  title="Select; Ctrl, Cmd, or Shift-click to add/remove"
+                >
+                  <span
+                    className="viewer-color-swatch"
+                    style={{ background: entityAppearances[group.id]?.color ?? group.color }}
+                  />
+                  <span className="geometry-face-name">
+                    <span>{group.name}</span>
+                    <small title={`Display material: ${appearanceForGroup(group.id)?.name ?? 'Default CAD'}`}>
+                      {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
+                    </small>
+                  </span>
+                  <small className={assignments[group.id] ? 'assigned' : ''}>
+                    {assignments[group.id]
+                      ? assignments[group.id].role
+                      : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
                   </small>
-                </span>
-                <small className={assignments[group.id] ? 'assigned' : ''}>
-                  {assignments[group.id]
-                    ? assignments[group.id].role
-                    : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
-                </small>
-              </button>
-              <button
-                type="button"
-                className="geometry-entity-visibility"
-                aria-label={`${visible ? 'Hide' : 'Show'} surface ${group.name}`}
-                aria-pressed={visible}
-                title={`${visible ? 'Hide' : 'Show'} surface`}
-                onClick={() => toggleEntityVisibility(group.id)}
+                </button>
+                <button
+                  type="button"
+                  className="geometry-entity-visibility"
+                  aria-label={`${visible ? 'Hide' : 'Show'} surface ${group.name}`}
+                  aria-pressed={visible}
+                  title={`${visible ? 'Hide' : 'Show'} surface`}
+                  onClick={() => toggleEntityVisibility(group.id)}
+                >
+                  {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                </button>
+              </div>
+              )
+            })}
+          </ManifestMemberGroup>
+          <ManifestMemberGroup
+            label="CAD edges"
+            memberLabel="edges"
+            icon={<Shapes size={13} aria-hidden="true" />}
+            total={manifest?.edges?.length ?? 0}
+            visibleCount={visibleEdgeCount}
+            onHideAll={() => setEntityVisibility((current) => ({
+              ...current,
+              ...manifestVisibilityMap(manifest?.edges ?? [], false),
+            }))}
+            onShowAll={() => setEntityVisibility((current) => ({
+              ...current,
+              ...manifestVisibilityMap(manifest?.edges ?? [], true),
+            }))}
+          >
+            {filteredEdges.map((edge) => {
+              const visible = entityIsVisible(edge.id)
+              return (
+              <div
+                className={`geometry-entity-row ${viewerSelection.groupId === edge.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+                data-entity-id={edge.id}
+                key={edge.id}
               >
-                {visible ? <Eye size={13} /> : <EyeOff size={13} />}
-              </button>
-            </div>
-            )
-          })}
-          <div className="geometry-tree-root geometry-edge-root">
-            <Shapes size={13} />
-            <strong>CAD edges</strong>
-            <span>{visibleEdgeCount}/{manifest?.edges?.length ?? 0} visible</span>
-          </div>
-          {filteredEdges.map((edge) => {
-            const visible = entityIsVisible(edge.id)
-            return (
-            <div
-              className={`geometry-entity-row ${viewerSelection.groupId === edge.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
-              data-entity-id={edge.id}
-              key={edge.id}
-            >
-              <button
-                type="button"
-                className="geometry-entity-select"
-                onClick={() => setViewerSelection({ groupId: edge.id })}
-                title="Select edge"
-              >
-                <span className="geometry-edge-mark" />
-                <span>{edge.name}</span>
-                <small>{edge.segments !== undefined ? `${edge.segments} segs` : 'edge'}</small>
-              </button>
-              <button
-                type="button"
-                className="geometry-entity-visibility"
-                aria-label={`${visible ? 'Hide' : 'Show'} edge ${edge.name}`}
-                aria-pressed={visible}
-                title={`${visible ? 'Hide' : 'Show'} edge`}
-                onClick={() => toggleEntityVisibility(edge.id)}
-              >
-                {visible ? <Eye size={13} /> : <EyeOff size={13} />}
-              </button>
-            </div>
-            )
-          })}
+                <button
+                  type="button"
+                  className="geometry-entity-select"
+                  onClick={() => setViewerSelection({ groupId: edge.id })}
+                  title="Select edge"
+                >
+                  <span className="geometry-edge-mark" />
+                  <span>{edge.name}</span>
+                  <small>{edge.segments !== undefined ? `${edge.segments} segs` : 'edge'}</small>
+                </button>
+                <button
+                  type="button"
+                  className="geometry-entity-visibility"
+                  aria-label={`${visible ? 'Hide' : 'Show'} edge ${edge.name}`}
+                  aria-pressed={visible}
+                  title={`${visible ? 'Hide' : 'Show'} edge`}
+                  onClick={() => toggleEntityVisibility(edge.id)}
+                >
+                  {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                </button>
+              </div>
+              )
+            })}
+          </ManifestMemberGroup>
           {filteredGroups.length === 0 && filteredEdges.length === 0 && (
             <div className="geometry-empty-list">No geometry entities match “{entitySearch}”.</div>
           )}

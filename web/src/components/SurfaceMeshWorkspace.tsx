@@ -180,6 +180,7 @@ export default function SurfaceMeshWorkspace({
             onIsolate={review.isolateBoundary}
             onToggleVisibility={review.toggleBoundaryVisibility}
             onShowAll={review.showAllBoundaries}
+            onHideAll={review.hideAllBoundaries}
           />
         </>
       )}

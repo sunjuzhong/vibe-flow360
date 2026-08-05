@@ -206,6 +206,12 @@ export function useSurfaceMeshReview(
       visibility: Object.fromEntries(boundaryInventory.map((row) => [row.id, true])),
     })
   }, [boundaryInventory])
+  const hideAllBoundaries = useCallback(() => {
+    dispatch({
+      type: 'visibility',
+      visibility: Object.fromEntries(boundaryInventory.map((row) => [row.id, false])),
+    })
+  }, [boundaryInventory])
   const toggleBoundaryVisibility = useCallback((groupId: string) => {
     dispatch({ type: 'toggle-visibility', groupId })
   }, [])
@@ -234,6 +240,7 @@ export function useSurfaceMeshReview(
     handleFieldsDiscovered,
     isolateBoundary,
     showAllBoundaries,
+    hideAllBoundaries,
     toggleBoundaryVisibility,
     locateExtreme,
   }

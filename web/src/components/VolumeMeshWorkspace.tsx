@@ -28,6 +28,11 @@ import {
 } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFFieldInfo } from '../lib/uvf-three'
+import {
+  ManifestMemberGroup,
+  manifestVisibilityMap,
+  visibleManifestMemberCount,
+} from './ManifestMemberGroup'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -233,7 +238,7 @@ export default function VolumeMeshWorkspace({
       ? 'The volume mesh failed. Review the logs and correct meshing inputs before planning a Case.'
       : 'Review missing mesh evidence and lifecycle state before relying on this domain for a Case.'
   const groups = manifest?.groups ?? []
-  const visibleGroupCount = groups.filter((group) => entityVisibility[group.id] ?? group.visible).length
+  const visibleGroupCount = visibleManifestMemberCount(groups, entityVisibility)
   const selectedGroup = groups.find((group) => group.id === viewerSelection.groupId) ?? null
 
   const toggleGroupVisibility = (groupId: string) => {
@@ -246,7 +251,11 @@ export default function VolumeMeshWorkspace({
   }
 
   const showAllGroups = () => {
-    setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, true])))
+    setEntityVisibility(manifestVisibilityMap(groups, true))
+  }
+
+  const hideAllGroups = () => {
+    setEntityVisibility(manifestVisibilityMap(groups, false))
   }
 
   return (
@@ -263,49 +272,50 @@ export default function VolumeMeshWorkspace({
             </div>
             <span className="geometry-count-badge">{groups.length}</span>
           </div>
-          <div className="geometry-selection-tools volume-region-tools">
-            <strong>{visibleGroupCount}/{groups.length} visible</strong>
-            <button type="button" onClick={showAllGroups} disabled={groups.length === 0}>Show all</button>
-          </div>
           <div className="geometry-entity-tree">
-            <div className="geometry-tree-root">
-              <Volume2 size={13} />
-              <strong>{previewSource === 'fallback' ? 'Geometry surfaces' : 'Cell zones and regions'}</strong>
-              <span>{groups.length}</span>
-            </div>
-            {groups.map((group) => {
-              const visible = entityVisibility[group.id] ?? group.visible
-              return (
-                <div
-                  className={`geometry-entity-row ${viewerSelection.groupId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
-                  data-entity-id={group.id}
-                  key={group.id}
-                >
-                  <button
-                    type="button"
-                    className="geometry-entity-select"
-                    onClick={() => setViewerSelection({ groupId: group.id })}
-                    title="Select volume region"
+            <ManifestMemberGroup
+              label={previewSource === 'fallback' ? 'Geometry surfaces' : 'Cell zones and regions'}
+              memberLabel="regions"
+              icon={<Volume2 size={13} aria-hidden="true" />}
+              total={groups.length}
+              visibleCount={visibleGroupCount}
+              onShowAll={showAllGroups}
+              onHideAll={hideAllGroups}
+            >
+              {groups.map((group) => {
+                const visible = entityVisibility[group.id] ?? group.visible
+                return (
+                  <div
+                    className={`geometry-entity-row ${viewerSelection.groupId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+                    data-entity-id={group.id}
+                    key={group.id}
                   >
-                    <span className="viewer-color-swatch" style={{ background: group.color }} />
-                    <span>{group.name}</span>
-                    <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} elems` : 'region'}</small>
-                  </button>
-                  <button
-                    type="button"
-                    className="geometry-entity-visibility"
-                    aria-label={`${visible ? 'Hide' : 'Show'} region ${group.name}`}
-                    aria-pressed={visible}
-                    onClick={() => toggleGroupVisibility(group.id)}
-                  >
-                    {visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                  </button>
-                </div>
-              )
-            })}
-            {groups.length === 0 && (
-              <div className="geometry-empty-list">No volume regions were reported by the visualization asset.</div>
-            )}
+                    <button
+                      type="button"
+                      className="geometry-entity-select"
+                      onClick={() => setViewerSelection({ groupId: group.id })}
+                      title="Select volume region"
+                    >
+                      <span className="viewer-color-swatch" style={{ background: group.color }} />
+                      <span>{group.name}</span>
+                      <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} elems` : 'region'}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="geometry-entity-visibility"
+                      aria-label={`${visible ? 'Hide' : 'Show'} region ${group.name}`}
+                      aria-pressed={visible}
+                      onClick={() => toggleGroupVisibility(group.id)}
+                    >
+                      {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                    </button>
+                  </div>
+                )
+              })}
+              {groups.length === 0 && (
+                <div className="geometry-empty-list">No volume regions were reported by the visualization asset.</div>
+              )}
+            </ManifestMemberGroup>
           </div>
         </>
       )}

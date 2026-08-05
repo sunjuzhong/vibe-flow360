@@ -37,6 +37,7 @@ describe('SurfaceBoundaryInspector', () => {
         onIsolate={vi.fn()}
         onToggleVisibility={vi.fn()}
         onShowAll={vi.fn()}
+        onHideAll={vi.fn()}
       />,
     )
 
@@ -48,7 +49,9 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).toContain('Isolate wing-9')
     expect(markup).toContain('12 of 12 matching faces')
     expect(markup).toContain('1 face selected')
-    expect(markup).toContain('Show all faces')
+    expect(markup).toContain('Show all boundaries')
+    expect(markup).toContain('Hide all boundaries')
+    expect(markup).toContain('11/12 visible')
     expect(markup).toContain('geometry-entity-row surface-boundary-row assigned selected')
     expect(markup).not.toContain('Selected: wing-9')
   })
@@ -64,10 +67,11 @@ describe('SurfaceBoundaryInspector', () => {
         onIsolate={vi.fn()}
         onToggleVisibility={vi.fn()}
         onShowAll={vi.fn()}
+        onHideAll={vi.fn()}
       />,
     )
 
     expect(markup).toContain('0 faces selected')
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Show all faces<\/button>/)
+    expect(markup).toMatch(/<button[^>]*aria-label="Show all boundaries"[^>]*disabled=""/)
   })
 })

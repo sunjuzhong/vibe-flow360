@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Eye, EyeOff, Focus, Search } from 'lucide-react'
+import { Eye, EyeOff, Focus, Layers3, Search } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
+import { ManifestMemberGroup } from '../ManifestMemberGroup'
 
 export type SurfaceBoundaryFilter = 'all' | SurfaceBoundaryRow['status']
 
@@ -34,6 +35,7 @@ export function SurfaceBoundaryInspector({
   onIsolate,
   onToggleVisibility,
   onShowAll,
+  onHideAll,
 }: {
   inventory: SurfaceBoundaryRow[]
   selectedId: string | null
@@ -44,6 +46,7 @@ export function SurfaceBoundaryInspector({
   onIsolate: (groupId: string) => void
   onToggleVisibility: (groupId: string) => void
   onShowAll: () => void
+  onHideAll: () => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SurfaceBoundaryFilter>('all')
@@ -53,7 +56,7 @@ export function SurfaceBoundaryInspector({
     [filter, inventory, query],
   )
   const displayed = filtered.slice(0, visibleCount)
-  const allFacesVisible = inventory.every((row) => visibility[row.id] !== false)
+  const visibleBoundaryCount = inventory.filter((row) => visibility[row.id] !== false).length
   const counts = useMemo(() => ({
     assigned: inventory.filter((row) => row.status === 'assigned').length,
     unassigned: inventory.filter((row) => row.status === 'unassigned').length,
@@ -99,66 +102,73 @@ export function SurfaceBoundaryInspector({
       {inventory.length > 0 && (
         <div className="geometry-selection-tools surface-boundary-selection-tools">
           <strong>{selectedBoundary ? '1 face selected' : '0 faces selected'}</strong>
-          <button type="button" disabled={allFacesVisible} onClick={onShowAll}>
-            Show all faces
-          </button>
         </div>
       )}
-      <div className="surface-boundary-list">
-        {displayed.length > 0 ? displayed.map((row) => {
-          const visible = visibility[row.id] !== false
-          return (
-          <div
-            key={row.id}
-            className={`geometry-entity-row surface-boundary-row ${row.status} ${selectedId === row.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
-          >
-            <button
-              type="button"
-              className="geometry-entity-select surface-boundary-select"
-              onClick={() => onSelect(row.id)}
+      <ManifestMemberGroup
+        label="Surface boundaries"
+        memberLabel="boundaries"
+        icon={<Layers3 size={13} aria-hidden="true" />}
+        total={inventory.length}
+        visibleCount={visibleBoundaryCount}
+        onShowAll={onShowAll}
+        onHideAll={onHideAll}
+      >
+        <div className="surface-boundary-list">
+          {displayed.length > 0 ? displayed.map((row) => {
+            const visible = visibility[row.id] !== false
+            return (
+            <div
+              key={row.id}
+              className={`geometry-entity-row surface-boundary-row ${row.status} ${selectedId === row.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
             >
-              <span>{row.name}</span>
-              <small>
-                {row.assignments.length > 0
-                  ? row.assignments.map((assignment) => `${assignment.modelName} · ${assignment.modelType}`).join(', ')
-                  : 'Unassigned'}
-              </small>
-              <em>{row.status} · {row.triangles?.toLocaleString() ?? '—'} triangles</em>
-            </button>
-            <div className="surface-boundary-row-actions">
               <button
                 type="button"
-                aria-label={`${visible ? 'Hide' : 'Show'} ${row.name}`}
-                aria-pressed={!visible}
-                title={`${visible ? 'Hide' : 'Show'} ${row.name}`}
-                onClick={() => onToggleVisibility(row.id)}
+                className="geometry-entity-select surface-boundary-select"
+                onClick={() => onSelect(row.id)}
               >
-                {visible ? <Eye size={12} /> : <EyeOff size={12} />}
+                <span>{row.name}</span>
+                <small>
+                  {row.assignments.length > 0
+                    ? row.assignments.map((assignment) => `${assignment.modelName} · ${assignment.modelType}`).join(', ')
+                    : 'Unassigned'}
+                </small>
+                <em>{row.status} · {row.triangles?.toLocaleString() ?? '—'} triangles</em>
               </button>
-              <button
-                type="button"
-                aria-label={`Isolate ${row.name}`}
-                title={`Isolate ${row.name}`}
-                onClick={() => onIsolate(row.id)}
-              >
-                <Focus size={12} />
-              </button>
+              <div className="surface-boundary-row-actions">
+                <button
+                  type="button"
+                  aria-label={`${visible ? 'Hide' : 'Show'} ${row.name}`}
+                  aria-pressed={!visible}
+                  title={`${visible ? 'Hide' : 'Show'} ${row.name}`}
+                  onClick={() => onToggleVisibility(row.id)}
+                >
+                  {visible ? <Eye size={12} /> : <EyeOff size={12} />}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Isolate ${row.name}`}
+                  title={`Isolate ${row.name}`}
+                  onClick={() => onIsolate(row.id)}
+                >
+                  <Focus size={12} />
+                </button>
+              </div>
             </div>
-          </div>
-          )
-        }) : (
-          <p>{inventory.length > 0 ? 'No faces match the current search and status filter.' : 'No Face entities are present in the current render asset.'}</p>
+            )
+          }) : (
+            <p>{inventory.length > 0 ? 'No faces match the current search and status filter.' : 'No Face entities are present in the current render asset.'}</p>
+          )}
+        </div>
+        {visibleCount < filtered.length && (
+          <button
+            type="button"
+            className="surface-boundary-more"
+            onClick={() => setVisibleCount((current) => current + initialVisibleCount)}
+          >
+            Show {Math.min(initialVisibleCount, filtered.length - visibleCount)} more faces
+          </button>
         )}
-      </div>
-      {visibleCount < filtered.length && (
-        <button
-          type="button"
-          className="surface-boundary-more"
-          onClick={() => setVisibleCount((current) => current + initialVisibleCount)}
-        >
-          Show {Math.min(initialVisibleCount, filtered.length - visibleCount)} more faces
-        </button>
-      )}
+      </ManifestMemberGroup>
       {conflictCount > 0 && filter !== 'conflict' && (
         <p className="surface-review-warning">{conflictCount} face group(s) have multiple model assignments.</p>
       )}
