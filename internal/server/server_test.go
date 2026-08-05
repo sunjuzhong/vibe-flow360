@@ -391,6 +391,38 @@ func TestCacheableSnapshotRejectsEmptyWorkspaceResponses(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRootProjectsReuseAllProjectsCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cache, err := projectcache.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := json.RawMessage(`{"records":[{"id":"prj-root","name":"Workspace project"}]}`)
+	if _, err := cache.Put("project-list", "all", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		flow360: &flow360.Client{Binary: "false", Timeout: 100 * time.Millisecond},
+		cache:   cache,
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodGet,
+		"/api/flow360/projects?folder_id=ROOT.FLOW360&cache=only",
+		nil,
+	)
+
+	app.flow360Projects(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "prj-root") {
+		t.Fatalf("workspace root did not reuse all-projects cache: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("X-VibeSim-Data-Source"); got != "cache" {
+		t.Fatalf("got data source %q, want cache", got)
+	}
+}
+
 func TestSweepPatchBuildsNestedMergePatch(t *testing.T) {
 	patch := sweepPatch(
 		[]comparison.SweepParameter{

@@ -135,11 +135,18 @@ func (c *Client) Projects(ctx context.Context, limit int, folderID string) (json
 		limit = 25
 	}
 	args := []string{"project", "list", "--limit", fmt.Sprint(limit), "--format", "json"}
-	if strings.TrimSpace(folderID) != "" {
-		args = append(args, "--folder-id", strings.TrimSpace(folderID), "--exclude-subfolders")
+	folderID = strings.TrimSpace(folderID)
+	// ROOT.FLOW360 is the workspace itself, not a regular folder. Listing the
+	// workspace without a folder filter is both the canonical Flow360 query and
+	// allows callers to share the all-projects snapshot.
+	if folderID != "" && !strings.EqualFold(folderID, "ROOT.FLOW360") {
+		args = append(args, "--folder-id", folderID, "--exclude-subfolders")
 	}
 	output, err := c.run(ctx, args...)
 	if err != nil {
+		if unsupportedProjectTypeError(err) {
+			return c.projectsWithoutStrictTypeValidation(ctx, limit, folderID)
+		}
 		return nil, err
 	}
 	raw, err := extractJSON(output)

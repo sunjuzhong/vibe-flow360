@@ -2110,17 +2110,21 @@ func (s *Server) flow360Status(c *gin.Context) {
 
 func (s *Server) flow360Projects(c *gin.Context) {
 	folderID := strings.TrimSpace(c.Query("folder_id"))
+	queryFolderID := folderID
+	if strings.EqualFold(folderID, flow360RootFolderID) {
+		queryFolderID = ""
+	}
 	cacheKey := "all"
 	cacheKind := "project-list"
-	if folderID != "" {
-		cacheKey = folderID
+	if queryFolderID != "" {
+		cacheKey = queryFolderID
 		cacheKind = "folder-projects"
 	}
 	if strings.EqualFold(c.Query("cache"), "only") {
 		s.serveCachedJSON(c, cacheKind, cacheKey)
 		return
 	}
-	raw, err := s.flow360.Projects(c.Request.Context(), 25, folderID)
+	raw, err := s.flow360.Projects(c.Request.Context(), 25, queryFolderID)
 	if err != nil {
 		log.Printf("Flow360 project listing unavailable: %v", err)
 		if s.serveCachedJSON(c, cacheKind, cacheKey) {

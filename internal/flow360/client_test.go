@@ -103,6 +103,40 @@ func TestExtractJSONAllowsFlow360LogPrefix(t *testing.T) {
 	}
 }
 
+func TestProjectsTreatsWorkspaceRootAsUnfilteredListing(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > %q
+printf '{"records":[{"id":"prj-1"}]}'
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	if _, err := client.Projects(context.Background(), 25, "ROOT.FLOW360"); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(args), "--folder-id") || strings.Contains(string(args), "--exclude-subfolders") {
+		t.Fatalf("workspace root was sent as a folder filter: %q", args)
+	}
+}
+
+func TestUnsupportedProjectTypeErrorRecognizesSDKLiteralFailure(t *testing.T) {
+	err := errors.New("records.3.rootItemType: Input should be Geometry [type=literal_error]")
+	if !unsupportedProjectTypeError(err) {
+		t.Fatal("Flow360 rootItemType Literal failure was not recognized")
+	}
+	if unsupportedProjectTypeError(errors.New("network unavailable")) {
+		t.Fatal("unrelated project list failure was treated as an SDK compatibility error")
+	}
+}
+
 func TestCompactProjectOutputPreservesIDsOutsideFirstJSONValue(t *testing.T) {
 	output := []byte("{\"id\":\"geo-one\",\"type\":\"Geometry\"}\nproject id = prj-later-in-output\n")
 	compact := compactProjectOutput(output)
