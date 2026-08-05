@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   clarificationAnswerSummary,
   agentClarificationPortalTarget,
+  inferredClarificationDefault,
+  inferredClarificationQuestionType,
   initialClarificationAnswers,
+  resolvedClarificationQuestions,
   serializedClarificationAnswers,
 } from './AgentClarificationDialog'
 import type { AgentQuestion } from '../api/client'
@@ -30,5 +33,32 @@ describe('Agent clarification form helpers', () => {
     const summary = clarificationAnswerSummary(questions, { velocity: 40, model: 'sa' })
     expect(summary).toContain('Freestream velocity (velocity): 40 m/s')
     expect(summary).toContain('Turbulence model (model): Spalart-Allmaras')
+  })
+
+  it('upgrades legacy untyped questions to friendly controls and safe defaults', () => {
+    const legacy: AgentQuestion[] = [
+      {
+        field: 'operating_condition.velocity_magnitude',
+        message: 'Confirm whether the new draft should retain 40 m/s.',
+        urgency: 'required',
+      },
+      {
+        field: 'time_stepping.step_size',
+        message: 'Confirm whether I may derive the physical time step from the cylinder diameter.',
+        urgency: 'required',
+      },
+      {
+        field: 'geometry_asset',
+        message: 'Provide a supported CAD geometry.',
+        urgency: 'required',
+      },
+    ]
+
+    const resolved = resolvedClarificationQuestions(legacy)
+    expect(resolved.map((question) => question.type)).toEqual(['number', 'boolean', 'text'])
+    expect(resolved[0]).toMatchObject({ default: 40, unit: 'm/s' })
+    expect(resolved[1].default).toBe(true)
+    expect(inferredClarificationQuestionType(legacy[2])).toBe('text')
+    expect(inferredClarificationDefault(legacy[2])).toBeUndefined()
   })
 })

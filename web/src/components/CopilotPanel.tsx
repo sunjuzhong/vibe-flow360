@@ -12,6 +12,10 @@ type Message = ChatMessage & {
   actionExecuted?: boolean
 }
 
+export function shouldShowCopilotClarification(panelOpen: boolean, action: AgentAction | null) {
+  return panelOpen && action?.kind === 'request-missing-input' && Boolean(action.questions?.length)
+}
+
 export default function CopilotPanel({
   open,
   onClose,
@@ -58,10 +62,7 @@ export default function CopilotPanel({
             action: message.role === 'assistant' ? extractAction(message.content) ?? undefined : undefined,
           }))
           setMessages(restored)
-          const latest = restored.at(-1)
-          setClarificationAction(latest?.role === 'assistant' && latest.action?.kind === 'request-missing-input'
-            ? latest.action
-            : null)
+          setClarificationAction(null)
         }
       })
       .catch(() => {
@@ -75,6 +76,10 @@ export default function CopilotPanel({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (!open) setClarificationAction(null)
+  }, [open])
 
   const extractAction = (text: string): AgentAction | null => {
     const patterns = [
@@ -163,10 +168,6 @@ export default function CopilotPanel({
             const action = extractAction(accumulated)
             return { role: 'assistant', content: accumulated, action: action ?? undefined }
           }))
-        }
-        if (event.type === 'done') {
-          const action = extractAction(accumulated)
-          setClarificationAction(action?.kind === 'request-missing-input' ? action : null)
         }
         if (event.type === 'error') throw new Error(event.error || 'AI service unavailable')
       })
@@ -286,7 +287,7 @@ export default function CopilotPanel({
               )}
               {message.action?.kind === 'request-missing-input' && Boolean(message.action.questions?.length) && (
                 <button className="action-plan-convert" type="button" onClick={() => setClarificationAction(message.action ?? null)}>
-                  Answer engineering questions
+                  <ChevronRight size={14} /> Input required · Answer {message.action.questions?.length} engineering question{message.action.questions?.length === 1 ? '' : 's'}
                 </button>
               )}
             </div>
@@ -305,7 +306,7 @@ export default function CopilotPanel({
         <div><span>Review before running</span><button className="send-button" disabled={!input.trim() || busy || sessionLoading}><ArrowUp size={16} /></button></div>
       </form>
       <AgentClarificationDialog
-        open={Boolean(clarificationAction?.questions?.length)}
+        open={shouldShowCopilotClarification(open, clarificationAction)}
         message={clarificationAction?.message}
         questions={clarificationAction?.questions ?? []}
         busy={busy}

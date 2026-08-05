@@ -115,17 +115,18 @@ type Field struct {
 }
 
 type Question struct {
-	Field       string           `json:"field"`
-	Message     string           `json:"message"`
-	Urgency     string           `json:"urgency"`
-	Reason      string           `json:"reason,omitempty"`
-	Type        string           `json:"type,omitempty"`
-	Unit        string           `json:"unit,omitempty"`
-	Options     []QuestionOption `json:"options,omitempty"`
-	Default     any              `json:"default,omitempty"`
-	Min         *float64         `json:"min,omitempty"`
-	Max         *float64         `json:"max,omitempty"`
-	Placeholder string           `json:"placeholder,omitempty"`
+	Field          string           `json:"field"`
+	Message        string           `json:"message"`
+	Urgency        string           `json:"urgency"`
+	Reason         string           `json:"reason,omitempty"`
+	Type           string           `json:"type,omitempty"`
+	Unit           string           `json:"unit,omitempty"`
+	Options        []QuestionOption `json:"options,omitempty"`
+	Default        any              `json:"default,omitempty"`
+	Recommendation string           `json:"recommendation,omitempty"`
+	Min            *float64         `json:"min,omitempty"`
+	Max            *float64         `json:"max,omitempty"`
+	Placeholder    string           `json:"placeholder,omitempty"`
 }
 
 type QuestionOption struct {

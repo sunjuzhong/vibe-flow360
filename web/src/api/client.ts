@@ -143,6 +143,7 @@ export type AgentQuestion = {
   unit?: string
   options?: AgentQuestionOption[]
   default?: unknown
+  recommendation?: string
   min?: number
   max?: number
   placeholder?: string

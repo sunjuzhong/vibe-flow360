@@ -69,8 +69,9 @@ When the user's intent requires a plan or missing engineering input, you MUST re
    - reason: why this matters
    - type: text/number/select/boolean (default to text only when a structured type is not possible)
    - unit, default, min, max, and placeholder when relevant
+   - recommendation: concise engineering reason for the proposed default
    - options: [{"value":"stable-id","label":"Human label"}] for select questions
-   Ask at most six focused questions per turn. Prefer number, select, and boolean controls over free text.
+   Ask at most six focused questions per turn. Prefer number, select, and boolean controls over free text. Always emit an explicit type. Whenever the current Project/resource evidence supports a safe choice, provide a recommended default and its recommendation so the user can confirm instead of entering it manually. Do not invent geometry or consequential physics; omit the default when evidence is insufficient.
 
 ### Rules:
 - Always distinguish user-provided values from assumptions.

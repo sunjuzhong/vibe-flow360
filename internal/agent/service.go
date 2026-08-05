@@ -274,7 +274,8 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
   {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional"}.
   Never emit fields as an object/map; use [] when empty.
 - questions: array (for request-missing-input), each with field, message, urgency, reason, type
-  (text|number|select|boolean), and optional unit/options/default/min/max/placeholder.
+  (text|number|select|boolean), and optional unit/options/default/min/max/placeholder/recommendation.
+  Always include type. Include a safe evidence-based default and recommendation whenever possible.
 - warnings: array of strings
 - assumptions: array of strings
 

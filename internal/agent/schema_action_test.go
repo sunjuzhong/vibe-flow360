@@ -286,7 +286,8 @@ func TestParseAcceptsTypedClarificationQuestion(t *testing.T) {
     "urgency":"required",
     "type":"select",
     "options":[{"value":"sa","label":"Spalart-Allmaras"},{"value":"sst","label":"k-omega SST"}],
-    "default":"sa"
+    "default":"sa",
+    "recommendation":"Stable baseline for this external-flow setup"
   }]
 }`
 	action, err := Parse(raw)
@@ -294,7 +295,7 @@ func TestParseAcceptsTypedClarificationQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	question := action.Questions[0]
-	if question.Type != "select" || len(question.Options) != 2 || question.Default != "sa" {
+	if question.Type != "select" || len(question.Options) != 2 || question.Default != "sa" || question.Recommendation == "" {
 		t.Fatalf("typed question was not preserved: %#v", question)
 	}
 }

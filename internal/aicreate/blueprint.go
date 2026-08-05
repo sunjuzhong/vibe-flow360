@@ -124,7 +124,7 @@ Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is an optional array of {name, selector}.
 - simulation: {velocity_m_s, alpha_deg, surface_edge_length_m, first_layer_thickness_m, max_steps}
 - assumptions: string array in the user's language
-- questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}.
+- questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}. Always choose the most specific control type. Whenever project evidence supports a safe engineering recommendation, set default and explain the recommendation in description so the user can confirm it rather than type it manually.
 
 The deterministic CAD DSL supports:
 - box params: length, width, height

@@ -5,11 +5,61 @@ import type { AgentQuestion } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
 export type ClarificationAnswers = Record<string, unknown>
+type ClarificationQuestionType = NonNullable<AgentQuestion['type']>
+type ResolvedAgentQuestion = AgentQuestion & { type: ClarificationQuestionType }
 
 export function agentClarificationPortalTarget(
   ownerDocument: Pick<Document, 'body'> | undefined = typeof document === 'undefined' ? undefined : document,
 ) {
   return ownerDocument?.body ?? null
+}
+
+function confirmationQuestion(question: AgentQuestion) {
+  return /\b(confirm|whether|may i|should i|can i|allow|approve)\b|确认|是否|允许|同意/i.test(`${question.message} ${question.reason ?? ''}`)
+}
+
+function derivationConfirmation(question: AgentQuestion) {
+  return /\bmay (?:i|we) derive\b|\bderive .* (?:from|using)\b|是否.*推导|允许.*推导/i.test(`${question.message} ${question.reason ?? ''}`)
+}
+
+export function inferredClarificationQuestionType(question: AgentQuestion): ClarificationQuestionType {
+  if (question.type) return question.type
+  if (question.options?.length) return 'select'
+  if (typeof question.default === 'boolean') return 'boolean'
+  if (typeof question.default === 'number' || question.unit || question.min !== undefined || question.max !== undefined) return 'number'
+  if (derivationConfirmation(question)) return 'boolean'
+  if (/(?:^|\.)(?:velocity(?:_magnitude)?|mach|reynolds|temperature|pressure|density|alpha|beta|angle|diameter|radius|length|height|width|max_steps)$/i.test(question.field)) return 'number'
+  if (confirmationQuestion(question)) return 'boolean'
+  return 'text'
+}
+
+function escapedRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function inferredClarificationDefault(question: AgentQuestion, type = inferredClarificationQuestionType(question)) {
+  if (question.default !== undefined) return question.default
+  if (type === 'boolean' && confirmationQuestion(question)) return true
+  if (type === 'number') {
+    const inferredUnit = question.unit || (/(?:^|\.)velocity(?:_magnitude)?$/i.test(question.field) ? 'm/s' : '')
+    if (!inferredUnit) return undefined
+    const match = `${question.message} ${question.reason ?? ''}`.match(new RegExp(`(-?\\d+(?:\\.\\d+)?)\\s*${escapedRegExp(inferredUnit)}`, 'i'))
+    if (match) return Number(match[1])
+  }
+  return undefined
+}
+
+export function resolvedClarificationQuestions(questions: AgentQuestion[]): ResolvedAgentQuestion[] {
+  return questions.map((question) => {
+    const type = inferredClarificationQuestionType(question)
+    const defaultValue = inferredClarificationDefault(question, type)
+    return {
+      ...question,
+      type,
+      ...(!question.unit && type === 'number' && /(?:^|\.)velocity(?:_magnitude)?$/i.test(question.field) ? { unit: 'm/s' } : {}),
+      ...(defaultValue !== undefined ? { default: defaultValue } : {}),
+    }
+  })
 }
 
 export function initialClarificationAnswers(questions: AgentQuestion[]): ClarificationAnswers {
@@ -65,10 +115,11 @@ export default function AgentClarificationDialog({
 }) {
   const [answers, setAnswers] = useState<ClarificationAnswers>({})
   const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose, 'input,select,textarea,button[type="submit"]')
+  const resolvedQuestions = useMemo(() => resolvedClarificationQuestions(questions), [questions])
 
   useEffect(() => {
-    if (open) setAnswers(initialClarificationAnswers(questions))
-  }, [open, questions])
+    if (open) setAnswers(initialClarificationAnswers(resolvedQuestions))
+  }, [open, resolvedQuestions])
 
   useEffect(() => {
     const target = agentClarificationPortalTarget()
@@ -79,15 +130,23 @@ export default function AgentClarificationDialog({
   }, [open])
 
   const normalized = useMemo(
-    () => serializedClarificationAnswers(questions, answers),
-    [answers, questions],
+    () => serializedClarificationAnswers(resolvedQuestions, answers),
+    [answers, resolvedQuestions],
   )
+
+  const recommendedCount = resolvedQuestions.filter((question) => question.default !== undefined).length
+  const requiredQuestions = resolvedQuestions.filter((question) => question.urgency === 'required')
+  const allRequiredAnswered = requiredQuestions.every((question) => {
+    const value = normalized[question.field]
+    return value !== undefined && value !== null && (typeof value !== 'string' || value.trim() !== '')
+  })
+  const confirmOnly = recommendedCount > 0 && allRequiredAnswered
 
   if (!open) return null
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    onSubmit(normalized, clarificationAnswerSummary(questions, normalized))
+    onSubmit(normalized, clarificationAnswerSummary(resolvedQuestions, normalized))
   }
 
   const modal = (
@@ -99,14 +158,21 @@ export default function AgentClarificationDialog({
           <button type="button" onClick={onClose} disabled={busy} aria-label="Close clarification form"><X size={17} /></button>
         </div>
         <form onSubmit={submit}>
+          {recommendedCount > 0 && (
+            <div className="agent-clarification-recommendation-summary">
+              <strong>{recommendedCount} Agent recommendation{recommendedCount === 1 ? '' : 's'} prefilled</strong>
+              <span>Review the highlighted values, then confirm or change only what is necessary.</span>
+            </div>
+          )}
           <div className="agent-clarification-fields">
-            {questions.map((question) => {
-              const type = question.type ?? 'text'
+            {resolvedQuestions.map((question) => {
+              const type = question.type
               const required = question.urgency === 'required'
               return (
-                <label key={question.field}>
-                  <span>{question.message}{required && <em>*</em>}</span>
+                <label className={question.default !== undefined ? 'recommended' : ''} key={question.field}>
+                  <span>{question.message}{required && <em>*</em>}{question.default !== undefined && <b>Agent recommendation</b>}</span>
                   {question.reason && <small>{question.reason}</small>}
+                  {question.recommendation && <small className="agent-clarification-reason">Why this default · {question.recommendation}</small>}
                   {type === 'select' && (
                     <select value={String(answers[question.field] ?? '')} required={required} disabled={busy} onChange={(event) => setAnswers((current) => ({ ...current, [question.field]: event.target.value }))}>
                       {question.default === undefined && <option value="" disabled>Select an option</option>}
@@ -120,7 +186,7 @@ export default function AgentClarificationDialog({
                     </span>
                   )}
                   {type === 'text' && (
-                    <textarea rows={2} value={String(answers[question.field] ?? '')} placeholder={question.placeholder} required={required} disabled={busy} onChange={(event) => setAnswers((current) => ({ ...current, [question.field]: event.target.value }))} />
+                    <input type="text" value={String(answers[question.field] ?? '')} placeholder={question.placeholder} required={required} disabled={busy} onChange={(event) => setAnswers((current) => ({ ...current, [question.field]: event.target.value }))} />
                   )}
                   {type === 'boolean' && (
                     <span className="agent-clarification-boolean">
@@ -137,7 +203,7 @@ export default function AgentClarificationDialog({
             <span>Your answers will be added to this Agent session.</span>
             <button type="submit" disabled={busy}>
               {busy ? <Loader2 className="spin" size={14} /> : <ArrowRight size={14} />}
-              {busy ? 'Continuing…' : 'Continue'}
+              {busy ? 'Continuing…' : confirmOnly ? 'Confirm recommended values & continue' : 'Continue'}
             </button>
           </div>
         </form>
