@@ -3188,6 +3188,8 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .structured-data-boolean.false { color: #777d74; background: #e9ebe5; }
 .structured-data-number { color: #384f68; }
 .structured-data-string { color: #3f4a3e; white-space: pre-wrap; }
+.structured-data-quantity { display: inline-flex; max-width: 100%; align-items: baseline; justify-content: flex-end; gap: 4px; }
+.structured-data-unit { color: #818a7e; font: 8px 'DM Sans', sans-serif; white-space: normal; }
 .resource-structured-data { max-height: 520px; overflow: auto; padding: 9px; border: 1px solid #dfe0da; border-radius: 7px; background: #f7f8f4; }
 .case-subitem { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; color: #5e781c; font-size: 8px; }
 .case-empty { grid-column: 1 / -1; padding: 6px 0; color: #8b8f84; font-size: 9px; text-align: center; }

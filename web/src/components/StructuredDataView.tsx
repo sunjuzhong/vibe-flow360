@@ -18,6 +18,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isScalar(value: unknown): boolean {
+  return value === null || value === undefined || typeof value !== 'object'
+}
+
+export type SemanticDataValue = {
+  value: unknown
+  units?: string
+}
+
+export function semanticDataValue(value: unknown): SemanticDataValue | null {
+  if (!isRecord(value) || !Object.hasOwn(value, 'value') || !isScalar(value.value)) return null
+  const keys = Object.keys(value)
+  if (!keys.every((key) => key === 'value' || key === 'units' || key === 'unit')) return null
+  const rawUnits = value.units ?? value.unit
+  if (rawUnits !== undefined && rawUnits !== null && typeof rawUnits !== 'string' && typeof rawUnits !== 'number') return null
+  return {
+    value: value.value,
+    units: rawUnits === undefined || rawUnits === null || rawUnits === '' ? undefined : String(rawUnits),
+  }
+}
+
 function primitiveValue(value: unknown): ReactNode {
   if (value === null || value === undefined || value === '') {
     return <span className="structured-data-empty">Not reported</span>
@@ -41,6 +62,16 @@ function StructuredNode({ value, depth, label }: { value: unknown; depth: number
     return <>{primitiveValue(value)}</>
   }
 
+  const semantic = semanticDataValue(value)
+  if (semantic) {
+    return (
+      <span className="structured-data-quantity">
+        {primitiveValue(semantic.value)}
+        {semantic.units && <span className="structured-data-unit">{semantic.units}</span>}
+      </span>
+    )
+  }
+
   const entries: [string, unknown][] = Array.isArray(value)
     ? value.map((item, index) => [`Item ${index + 1}`, item])
     : Object.entries(value)
@@ -52,7 +83,7 @@ function StructuredNode({ value, depth, label }: { value: unknown; depth: number
   const rows = (
     <dl className="structured-data-list">
       {entries.map(([key, child]) => {
-        const nested = Array.isArray(child) || isRecord(child)
+        const nested = (Array.isArray(child) || isRecord(child)) && !semanticDataValue(child)
         if (nested) {
           return (
             <div className="structured-data-row nested" key={key}>

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { humanizeDataKey, StructuredDataView } from './StructuredDataView'
+import { humanizeDataKey, semanticDataValue, StructuredDataView } from './StructuredDataView'
 
 describe('StructuredDataView', () => {
   it('humanizes snake, kebab, and camel case keys', () => {
@@ -23,6 +23,31 @@ describe('StructuredDataView', () => {
     expect(html).toContain('288.15')
     expect(html).toContain('Yes')
     expect(html).not.toContain('&quot;thermal_state&quot;')
+  })
+
+  it('compacts value and units objects into one semantic quantity', () => {
+    const html = renderToStaticMarkup(
+      <StructuredDataView value={{
+        alpha: { value: 0, units: 'degree' },
+        velocity_magnitude: { value: 40, unit: 'meter/second' },
+        enabled: { value: false },
+      }} />,
+    )
+
+    expect(html).toContain('0</span><span class="structured-data-unit">degree')
+    expect(html).toContain('40</span><span class="structured-data-unit">meter/second')
+    expect(html).toContain('structured-data-boolean false')
+    expect(html).not.toContain('2 properties')
+    expect(html).not.toContain('<dt>Units</dt>')
+  })
+
+  it('keeps records with extra metadata in the generic tree', () => {
+    const value = { value: 288.15, units: 'K', source: 'freestream' }
+    const html = renderToStaticMarkup(<StructuredDataView value={{ temperature: value }} />)
+
+    expect(semanticDataValue(value)).toBeNull()
+    expect(html).toContain('3 properties')
+    expect(html).toContain('<dt>Source</dt>')
   })
 
   it('labels arrays and empty data clearly', () => {
