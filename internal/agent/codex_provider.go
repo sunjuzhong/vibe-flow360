@@ -15,9 +15,29 @@ import (
 )
 
 const (
-	defaultCodexTimeout = 120 * time.Second
+	defaultCodexTimeout = 5 * time.Minute
 	maxCodexOutput      = 4 << 20
 )
+
+// GenerationTimeoutError distinguishes a provider deadline from malformed
+// model output. Callers can safely offer a retry because Codex runs ephemeral,
+// read-only, and cannot mutate Flow360 or the local workspace.
+type GenerationTimeoutError struct {
+	Provider string
+	After    time.Duration
+}
+
+func (e *GenerationTimeoutError) Error() string {
+	return fmt.Sprintf("%s timed out after %s", e.Provider, e.After)
+}
+
+func GenerationTimeout(err error) (time.Duration, bool) {
+	var timeout *GenerationTimeoutError
+	if !errors.As(err, &timeout) {
+		return 0, false
+	}
+	return timeout.After, true
+}
 
 func codexTimeoutFromEnv() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("VIBESIM_CODEX_TIMEOUT_SECONDS"))
@@ -83,8 +103,11 @@ func (s *Service) chatWithCodex(
 	command.Stderr = &diagnostics
 
 	if err := command.Run(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("external Codex timed out after %s", s.CodexTimeout)
+			return "", &GenerationTimeoutError{Provider: "external Codex", After: s.CodexTimeout}
 		}
 		return "", fmt.Errorf("external Codex failed: %w: %s", err, diagnostics.String())
 	}

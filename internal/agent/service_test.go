@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +48,52 @@ func TestNewServiceSelectsCodexProvider(t *testing.T) {
 	}
 	if service.CodexTimeout != 15*time.Second {
 		t.Fatalf("expected 15 second timeout, got %s", service.CodexTimeout)
+	}
+}
+
+func TestNewServiceUsesFiveMinuteCodexBudgetByDefault(t *testing.T) {
+	t.Setenv("VIBESIM_CODEX_TIMEOUT_SECONDS", "")
+	service := NewService()
+	if service.CodexTimeout != 5*time.Minute {
+		t.Fatalf("expected five minute default Codex budget, got %s", service.CodexTimeout)
+	}
+}
+
+func TestCodexProviderReturnsTypedTimeout(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "codex")
+	script := `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then output="$2"; shift 2; else shift; fi
+done
+cat >/dev/null
+sleep 1
+printf '{}' > "$output"
+`
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Provider: "codex", CodexBinary: binary, CodexTimeout: 20 * time.Millisecond}
+	_, err := service.Chat(context.Background(), ChatRequest{Message: "Fill the plan form"})
+	if err == nil {
+		t.Fatal("expected Codex timeout")
+	}
+	after, ok := GenerationTimeout(err)
+	if !ok || after != 20*time.Millisecond {
+		t.Fatalf("expected typed 20ms timeout, got %v (%v)", after, err)
+	}
+}
+
+func TestCodexProviderPreservesCallerCancellation(t *testing.T) {
+	binary := writeFakeCodex(t)
+	service := &Service{Provider: "codex", CodexBinary: binary, CodexTimeout: time.Second}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := service.Chat(ctx, ChatRequest{Message: "Fill the plan form"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected caller cancellation, got %v", err)
+	}
+	if _, ok := GenerationTimeout(err); ok {
+		t.Fatalf("caller cancellation was misclassified as a provider timeout: %v", err)
 	}
 }
 

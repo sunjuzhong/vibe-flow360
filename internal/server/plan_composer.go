@@ -100,7 +100,8 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		Message: message, Context: string(contextPayload), Session: "web:plan-composer",
 	})
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "AI could not produce schema-valid form values: " + err.Error()})
+		status, response := planAssistAgentError(err)
+		c.JSON(status, response)
 		return
 	}
 	if action.Kind == agent.ActionRequestMissingInput {
@@ -203,6 +204,20 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		Action: *action, Proposal: &proposal, Preflight: &preflight,
 		RepairAttempts: repairAttempts, AutoRepaired: autoRepaired,
 	})
+}
+
+func planAssistAgentError(err error) (int, gin.H) {
+	if timeout, timedOut := agent.GenerationTimeout(err); timedOut {
+		return http.StatusGatewayTimeout, gin.H{
+			"code":      "ai_timeout",
+			"retryable": true,
+			"error": fmt.Sprintf(
+				"AI parameter generation did not finish within %s. No form values were changed; retry the same request.",
+				timeout,
+			),
+		}
+	}
+	return http.StatusBadGateway, gin.H{"error": "AI could not produce schema-valid form values: " + err.Error()}
 }
 
 func preparePlanAssistProposal(action agent.Action, composer planComposerContext, schema json.RawMessage) (agent.Proposal, error) {

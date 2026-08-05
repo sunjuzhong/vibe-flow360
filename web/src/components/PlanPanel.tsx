@@ -567,6 +567,9 @@ export default function PlanPanel({
                       {assistLoading ? 'Filling…' : 'Fill plan parameters with AI'}
                     </button>
                   </div>
+                  {assistLoading && (
+                    <small role="status">Codex is checking the active multi-stage Flow360 schemas. Complex plans can take a few minutes.</small>
+                  )}
                   {assistAction && (
                     <div className="plan-ai-form-result">
                       <strong>{assistAction.message}</strong>

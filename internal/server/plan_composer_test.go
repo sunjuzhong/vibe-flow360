@@ -2,13 +2,35 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
+
+func TestPlanAssistAgentErrorClassifiesTimeoutAsRetryable(t *testing.T) {
+	status, payload := planAssistAgentError(&agent.GenerationTimeoutError{
+		Provider: "external Codex",
+		After:    5 * time.Minute,
+	})
+	if status != http.StatusGatewayTimeout || payload["code"] != "ai_timeout" || payload["retryable"] != true {
+		t.Fatalf("unexpected timeout response: status=%d payload=%#v", status, payload)
+	}
+	message, _ := payload["error"].(string)
+	if !strings.Contains(message, "No form values were changed") || !strings.Contains(message, "retry") {
+		t.Fatalf("timeout response is not actionable: %q", message)
+	}
+
+	status, payload = planAssistAgentError(errors.New("invalid action"))
+	if status != http.StatusBadGateway || payload["code"] != nil {
+		t.Fatalf("non-timeout error was misclassified: status=%d payload=%#v", status, payload)
+	}
+}
 
 func TestPlanAssistRepairPromptIncludesExactIssuesAndRemovalSemantics(t *testing.T) {
 	prompt := planAssistRepairPrompt(

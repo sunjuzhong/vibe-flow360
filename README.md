@@ -113,7 +113,7 @@ export VIBESIM_AGENT_PROVIDER="codex"
 export VIBESIM_CODEX_BINARY="codex"        # or an absolute path
 export VIBESIM_CODEX_MODEL=""              # empty uses the Codex CLI default
 export VIBESIM_CODEX_PROFILE=""            # optional Codex config profile
-export VIBESIM_CODEX_TIMEOUT_SECONDS="120"
+export VIBESIM_CODEX_TIMEOUT_SECONDS="300"  # per-request budget for complex Flow360 schemas
 ```
 
 External Codex runs with `codex exec --ephemeral --sandbox read-only`. Vibe
