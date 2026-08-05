@@ -248,18 +248,50 @@
 }
 
 .case-field-inventory,
+.case-surface-inventory,
 .case-result-inventory {
   min-height: 0;
   padding: 0 7px 8px;
 }
 
-.case-field-inventory {
-  flex: 1;
+.case-surface-inventory {
+  display: flex;
+  min-height: 150px;
+  flex: 1 1 42%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.case-surface-tools {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.case-surface-tools > span {
+  display: flex;
+  gap: 3px;
+}
+
+.case-surface-list {
+  min-height: 0;
   overflow-y: auto;
 }
 
+.case-surface-list .geometry-entity-select {
+  padding-left: 7px;
+}
+
+.case-field-inventory {
+  max-height: 31%;
+  flex: 0 1 31%;
+  overflow-y: auto;
+  border-top: 1px solid #e3e4dd;
+  padding-top: 7px;
+}
+
 .case-result-inventory {
-  max-height: 38%;
+  max-height: 27%;
+  flex: 0 1 27%;
   overflow-y: auto;
   border-top: 1px solid #e3e4dd;
   padding-top: 8px;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { mapCaseStatus, normalizeCase, isTerminal } from './CaseWorkspace'
+import { caseSurfaceVisibilityMap, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -71,5 +71,22 @@ describe('normalizeCase', () => {
     )
     const vm = normalizeCase(d)
     expect(vm.turbulenceModel).toBe('k-epsilon')
+  })
+})
+
+describe('Case surface visibility', () => {
+  const groups = [
+    { id: 'wall', visible: true },
+    { id: 'farfield', visible: false },
+  ]
+
+  it('resolves manifest defaults and controlled overrides', () => {
+    expect(visibleCaseSurfaceCount(groups, {})).toBe(1)
+    expect(visibleCaseSurfaceCount(groups, { wall: false, farfield: true })).toBe(1)
+  })
+
+  it('builds complete Show all and Hide all maps', () => {
+    expect(caseSurfaceVisibilityMap(groups, true)).toEqual({ wall: true, farfield: true })
+    expect(caseSurfaceVisibilityMap(groups, false)).toEqual({ wall: false, farfield: false })
   })
 })
