@@ -1,8 +1,36 @@
-import { useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Box, ChevronDown, Circle, CircleDot, LandPlot, MapPin, Minus, Route, Ruler, Triangle, Wrench, X } from 'lucide-react'
 import type { WorkspaceViewerToolsModel } from '../../hooks/useWorkspaceViewerTools'
 import type { BasicToolId } from './basic-tools'
 import { formatDistance } from './distance'
+import './ViewerToolsUI.css'
+
+const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+export type ViewerToolsMenuPosition = {
+  left: number
+  bottom: number
+  width: number
+}
+
+export function positionViewerToolsMenu(
+  anchor: Pick<DOMRect, 'top' | 'right'>,
+  viewport: { width: number; height: number },
+): ViewerToolsMenuPosition {
+  const edge = 10
+  const gap = 10
+  const width = Math.max(0, Math.min(350, viewport.width - edge * 2))
+  const left = Math.min(
+    Math.max(edge, anchor.right - width),
+    Math.max(edge, viewport.width - width - edge),
+  )
+  return {
+    left,
+    bottom: Math.max(edge, viewport.height - anchor.top + gap),
+    width,
+  }
+}
 
 const toolIcons = {
   distance: Ruler,
@@ -24,6 +52,9 @@ export function ViewerToolsDock({
   initiallyOpen?: boolean
 }) {
   const [open, setOpen] = useState(initiallyOpen)
+  const [menuPosition, setMenuPosition] = useState<ViewerToolsMenuPosition | null>(null)
+  const launcherRef = useRef<HTMLButtonElement>(null)
+  const menuId = useId()
   const selectDistance = () => {
     model.activateDistance()
     setOpen(true)
@@ -33,31 +64,66 @@ export function ViewerToolsDock({
     setOpen(true)
   }
 
+  useClientLayoutEffect(() => {
+    if (!open) {
+      setMenuPosition(null)
+      return
+    }
+    const updatePosition = () => {
+      const anchor = launcherRef.current?.getBoundingClientRect()
+      if (!anchor) return
+      setMenuPosition(positionViewerToolsMenu(anchor, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }))
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
+  const menu = (
+    <div
+      id={menuId}
+      className={`viewer-tools-menu ${menuPosition ? 'viewer-tools-menu-portal' : ''}`}
+      role="toolbar"
+      aria-label="Viewer tools"
+      style={menuPosition ?? undefined}
+    >
+      <ToolButton id="distance" label="Distance" active={model.activeToolId === 'distance'} onClick={selectDistance} />
+      {model.basic.tools.map((tool) => (
+        <ToolButton
+          key={tool.id}
+          id={tool.id as BasicToolId}
+          label={tool.label}
+          active={model.activeToolId === tool.id}
+          onClick={() => selectBasic(tool.id as BasicToolId)}
+        />
+      ))}
+    </div>
+  )
+
   return (
     <div className={`viewer-tools-dock ${open ? 'open' : ''}`}>
       <button
+        ref={launcherRef}
         type="button"
         className={`viewer-tools-launcher ${model.panelOpen ? 'active' : ''}`}
         aria-expanded={open}
-        aria-controls="viewer-tools-menu"
+        aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
       >
         <Wrench size={13} /> Tools <ChevronDown size={12} />
       </button>
-      {open && (
-        <div id="viewer-tools-menu" className="viewer-tools-menu" role="toolbar" aria-label="Viewer tools">
-          <ToolButton id="distance" label="Distance" active={model.activeToolId === 'distance'} onClick={selectDistance} />
-          {model.basic.tools.map((tool) => (
-            <ToolButton
-              key={tool.id}
-              id={tool.id as BasicToolId}
-              label={tool.label}
-              active={model.activeToolId === tool.id}
-              onClick={() => selectBasic(tool.id as BasicToolId)}
-            />
-          ))}
-        </div>
-      )}
+      {open && (typeof document === 'undefined'
+        ? menu
+        : menuPosition
+          ? createPortal(menu, document.body)
+          : null)}
     </div>
   )
 }

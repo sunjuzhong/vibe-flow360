@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { WorkspaceViewerToolsModel } from '../../hooks/useWorkspaceViewerTools'
 import { BASIC_TOOLS, polylineToolDefinition } from './basic-tools'
-import { ViewerToolPanel, ViewerToolsDock } from './ViewerToolsUI'
+import { positionViewerToolsMenu, ViewerToolPanel, ViewerToolsDock } from './ViewerToolsUI'
 
 function model(overrides: Partial<WorkspaceViewerToolsModel> = {}): WorkspaceViewerToolsModel {
   const idleDistance = {
@@ -35,6 +35,17 @@ function model(overrides: Partial<WorkspaceViewerToolsModel> = {}): WorkspaceVie
 }
 
 describe('ViewerToolsUI', () => {
+  it('keeps the portaled menu inside the viewport and right-aligns it to the launcher', () => {
+    expect(positionViewerToolsMenu(
+      { top: 700, right: 590 },
+      { width: 800, height: 900 },
+    )).toEqual({ left: 240, bottom: 210, width: 350 })
+    expect(positionViewerToolsMenu(
+      { top: 300, right: 120 },
+      { width: 320, height: 600 },
+    )).toEqual({ left: 10, bottom: 310, width: 300 })
+  })
+
   it('opens one compact launcher containing every registered tool', () => {
     const html = renderToStaticMarkup(<ViewerToolsDock model={model()} initiallyOpen />)
     expect(html).toContain('aria-expanded="true"')

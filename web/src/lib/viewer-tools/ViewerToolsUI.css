@@ -1,0 +1,40 @@
+.viewer-tools-menu.viewer-tools-menu-portal {
+  position: fixed;
+  z-index: 1000;
+  top: auto;
+  right: auto;
+  box-sizing: border-box;
+  max-width: none;
+  transform: none;
+}
+
+.viewer-tools-menu-portal button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #62695c;
+  background: transparent;
+  font-size: 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.viewer-tools-menu-portal button:hover {
+  border-color: #d9decf;
+  background: #f0f2eb;
+}
+
+.viewer-tools-menu-portal button.active {
+  border-color: #a9bd69;
+  color: #304016;
+  background: #e7f0ce;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5);
+}
