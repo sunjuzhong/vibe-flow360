@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SimulationPlan } from '../api/client'
-import { isExecutionTrackable } from './ExecutionMonitor'
+import { displayedExecutionProgress, isExecutionTrackable } from './ExecutionMonitor'
 
 function plan(status: SimulationPlan['status']): SimulationPlan {
   return {
@@ -32,4 +32,18 @@ describe('execution monitoring eligibility', () => {
     'does not poll %s plans',
     (status) => expect(isExecutionTrackable(plan(status))).toBe(false),
   )
+})
+
+describe('execution progress', () => {
+  it('does not invent percentages for non-terminal lifecycle states', () => {
+    expect(displayedExecutionProgress('running')).toBeUndefined()
+    expect(displayedExecutionProgress('submitted')).toBeUndefined()
+    expect(displayedExecutionProgress('reconciling')).toBeUndefined()
+  })
+
+  it('uses only a reported percentage or a terminal 100%', () => {
+    expect(displayedExecutionProgress('submitted', 42)).toBe(42)
+    expect(displayedExecutionProgress('completed')).toBe(100)
+    expect(displayedExecutionProgress('failed')).toBe(100)
+  })
 })

@@ -750,6 +750,21 @@ func TestPlanMonitorTargetUsesReturnedResourceType(t *testing.T) {
 			},
 			wantType: "VolumeMesh", wantID: "vm-1", wantOK: true,
 		},
+		{
+			name: "draft fallback",
+			plan: plans.Plan{
+				Target: "case", RemoteIDs: &plans.RemoteIDs{DraftID: "dft-1"},
+			},
+			wantType: "Draft", wantID: "dft-1", wantOK: true,
+		},
+		{
+			name: "recovers nested legacy result",
+			plan: plans.Plan{
+				Target: "case",
+				Result: json.RawMessage(`{"draft":{"id":"dft-1","type":"Draft"},"result":{"id":"case-1","type":"Case"}}`),
+			},
+			wantType: "Case", wantID: "case-1", wantOK: true,
+		},
 		{name: "missing IDs", plan: plans.Plan{}, wantOK: false},
 	}
 	for _, test := range tests {

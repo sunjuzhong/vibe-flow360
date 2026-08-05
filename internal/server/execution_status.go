@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -22,7 +23,7 @@ var executionSecretPatterns = []*regexp.Regexp{
 type planExecutionSnapshot struct {
 	Plan          plans.Plan     `json:"plan"`
 	Phase         string         `json:"phase"`
-	Progress      int            `json:"progress"`
+	Progress      *float64       `json:"progress,omitempty"`
 	ResourceType  string         `json:"resource_type,omitempty"`
 	ResourceID    string         `json:"resource_id,omitempty"`
 	RemoteState   string         `json:"remote_state,omitempty"`
@@ -56,9 +57,24 @@ func (s *Server) planExecution(c *gin.Context) {
 	snapshot := planExecutionSnapshot{Plan: plan, RefreshedAt: time.Now().UTC()}
 	resourceType, resourceID, ok := planMonitorTarget(plan)
 	if !ok {
-		snapshot.Phase, snapshot.Progress, snapshot.Terminal = executionPhase(plan.Status, "")
+		snapshot.Phase, snapshot.Terminal = executionPhase(plan.Status, "")
+		snapshot.StateError = "Flow360 accepted the submission, but the response did not include a draft or output resource ID to monitor."
 		c.JSON(http.StatusOK, snapshot)
 		return
+	}
+	if snapshot.Plan.RemoteIDs == nil {
+		recovered := plans.ExtractRemoteIDs(plan.Result)
+		if recovered != nil {
+			if recovered.ProjectID == "" {
+				recovered.ProjectID = plan.ProjectID
+			}
+			if persisted, persistErr := s.plans.SetRemoteIDs(plan.ID, recovered); persistErr == nil {
+				plan = persisted
+				snapshot.Plan = persisted
+			} else {
+				snapshot.Plan.RemoteIDs = recovered
+			}
+		}
 	}
 	snapshot.ResourceType = resourceType
 	snapshot.ResourceID = resourceID
@@ -88,6 +104,7 @@ func (s *Server) planExecution(c *gin.Context) {
 	} else {
 		_ = json.Unmarshal(stateRaw, &snapshot.State)
 		snapshot.RemoteState = executionState(snapshot.State)
+		snapshot.Progress = executionProgress(snapshot.State)
 	}
 	if logsErr != nil {
 		snapshot.LogsError = "Flow360 logs are not available yet."
@@ -95,8 +112,32 @@ func (s *Server) planExecution(c *gin.Context) {
 		snapshot.LogsAvailable = true
 		snapshot.Logs = redactExecutionLogs(string(logs))
 	}
-	snapshot.Phase, snapshot.Progress, snapshot.Terminal = executionPhase(plan.Status, snapshot.RemoteState)
+	snapshot.Phase, snapshot.Terminal = executionPhase(plan.Status, snapshot.RemoteState)
+	if snapshot.Terminal {
+		completeProgress := float64(100)
+		snapshot.Progress = &completeProgress
+		snapshot.Plan = s.reconcileTerminalExecution(snapshot.Plan, snapshot.RemoteState, snapshot.State)
+	}
 	c.JSON(http.StatusOK, snapshot)
+}
+
+func (s *Server) reconcileTerminalExecution(plan plans.Plan, remoteState string, state map[string]any) plans.Plan {
+	if plan.Status == plans.StatusCompleted || plan.Status == plans.StatusFailed {
+		return plan
+	}
+	if isSuccessState(remoteState) {
+		updated, err := s.plans.MarkComplete(plan.ID, state)
+		if err == nil {
+			return updated
+		}
+	}
+	if isFailureState(remoteState) {
+		updated, err := s.plans.MarkFailed(plan.ID, errors.New("remote simulation ended with state: "+remoteState))
+		if err == nil {
+			return updated
+		}
+	}
+	return plan
 }
 
 func redactExecutionLogs(logs string) string {
@@ -107,44 +148,83 @@ func redactExecutionLogs(logs string) string {
 }
 
 func executionState(state map[string]any) string {
-	for _, key := range []string{"state", "status", "phase", "result"} {
-		if value, ok := state[key].(string); ok {
-			return value
+	return findLifecycleString(state)
+}
+
+func findLifecycleString(value any) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"state", "status", "phase"} {
+			if state, ok := typed[key].(string); ok && strings.TrimSpace(state) != "" {
+				return state
+			}
+		}
+		for _, key := range []string{"result", "data", "resource", "details"} {
+			if state := findLifecycleString(typed[key]); state != "" {
+				return state
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if state := findLifecycleString(item); state != "" {
+				return state
+			}
 		}
 	}
 	return ""
 }
 
-func executionPhase(status, remoteState string) (string, int, bool) {
+func executionProgress(state map[string]any) *float64 {
+	for _, key := range []string{"progress_percent", "percent_complete", "percentage"} {
+		if value, ok := state[key].(float64); ok && value >= 0 && value <= 100 {
+			progress := value
+			return &progress
+		}
+	}
+	for _, key := range []string{"data", "resource", "details"} {
+		if nested, ok := state[key].(map[string]any); ok {
+			if progress := executionProgress(nested); progress != nil {
+				return progress
+			}
+		}
+	}
+	return nil
+}
+
+func executionPhase(status, remoteState string) (string, bool) {
 	if status == plans.StatusCompleted {
-		return "Completed", 100, true
+		return "Completed", true
 	}
 	if status == plans.StatusFailed {
-		return "Failed", 100, true
+		return "Failed", true
 	}
 	state := strings.ToLower(strings.TrimSpace(remoteState))
 	switch state {
 	case "completed", "processed", "success", "succeeded", "done":
-		return "Completed", 100, true
+		return "Completed", true
 	case "failed", "error", "diverged", "cancelled", "canceled", "expired", "timed_out":
-		return "Failed", 100, true
+		return "Failed", true
 	}
 	switch {
 	case strings.Contains(state, "post"), strings.Contains(state, "final"):
-		return "Finalizing results", 88, false
+		return "Finalizing results", false
 	case strings.Contains(state, "run"), strings.Contains(state, "solv"), strings.Contains(state, "process"):
-		return "Running on Flow360", 68, false
+		return "Running on Flow360", false
 	case strings.Contains(state, "upload"), strings.Contains(state, "preprocess"), strings.Contains(state, "mesh"):
-		return "Preparing remote resources", 48, false
+		return "Preparing remote resources", false
+	case state == "pending":
+		return "Pending on Flow360", false
+	case state == "queued":
+		return "Queued on Flow360", false
 	case state != "":
-		return "Queued on Flow360", 38, false
+		return "Flow360: " + remoteState, false
 	case status == plans.StatusReconciling:
-		return "Reconciling remote submission", 25, false
+		return "Reconciling remote submission", false
 	case status == plans.StatusSubmitted:
-		return "Accepted by Flow360", 35, false
+		return "Accepted by Flow360", false
 	case status == plans.StatusRunning:
-		return "Submitting to Flow360", 15, false
+		return "Submitting to Flow360", false
 	default:
-		return "Waiting to start", 0, false
+		return "Waiting to start", false
 	}
 }

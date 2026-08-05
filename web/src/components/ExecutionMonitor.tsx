@@ -15,6 +15,11 @@ export function isExecutionTrackable(plan: SimulationPlan) {
   return ['running', 'submitted', 'reconciling', 'completed', 'failed'].includes(plan.status)
 }
 
+export function displayedExecutionProgress(status: SimulationPlan['status'], reported?: number) {
+  if (reported !== undefined) return reported
+  return status === 'completed' || status === 'failed' ? 100 : undefined
+}
+
 export default function ExecutionMonitor({
   plan,
   onPlanUpdate,
@@ -65,9 +70,8 @@ export default function ExecutionMonitor({
         : plan.status === 'completed' ? 'Completed'
           : plan.status === 'failed' ? 'Failed'
             : 'Accepted by Flow360')
-  const progress = snapshot?.progress
-    ?? (plan.status === 'completed' || plan.status === 'failed' ? 100 : plan.status === 'running' ? 15 : 35)
   const terminal = snapshot?.terminal ?? ['completed', 'failed'].includes(plan.status)
+  const progress = displayedExecutionProgress(plan.status, snapshot?.progress)
   const success = phase === 'Completed'
 
   return (
@@ -100,10 +104,13 @@ export default function ExecutionMonitor({
       </header>
 
       <div className="execution-progress-row">
-        <div className="execution-progress-track" aria-label={`${progress}% complete`}>
-          <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+        <div
+          className="execution-progress-track"
+          aria-label={progress === undefined ? 'Flow360 has not reported numeric progress' : `${progress}% complete`}
+        >
+          <span style={progress === undefined ? undefined : { width: `${Math.max(0, Math.min(100, progress))}%` }} />
         </div>
-        <strong>{progress}%</strong>
+        <strong>{progress === undefined ? 'Live' : `${progress}%`}</strong>
       </div>
 
       <div className="execution-metadata">

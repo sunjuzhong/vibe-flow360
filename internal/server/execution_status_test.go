@@ -12,23 +12,23 @@ func TestExecutionPhase(t *testing.T) {
 		status    string
 		remote    string
 		wantPhase string
-		want      int
 		terminal  bool
 	}{
-		{"submitting", plans.StatusRunning, "", "Submitting to Flow360", 15, false},
-		{"submitted", plans.StatusSubmitted, "", "Accepted by Flow360", 35, false},
-		{"queued", plans.StatusSubmitted, "queued", "Queued on Flow360", 38, false},
-		{"running", plans.StatusSubmitted, "running", "Running on Flow360", 68, false},
-		{"postprocessing", plans.StatusSubmitted, "postprocessing", "Finalizing results", 88, false},
-		{"completed remote", plans.StatusSubmitted, "completed", "Completed", 100, true},
-		{"failed local", plans.StatusFailed, "", "Failed", 100, true},
+		{"submitting", plans.StatusRunning, "", "Submitting to Flow360", false},
+		{"submitted", plans.StatusSubmitted, "", "Accepted by Flow360", false},
+		{"pending", plans.StatusSubmitted, "pending", "Pending on Flow360", false},
+		{"queued", plans.StatusSubmitted, "queued", "Queued on Flow360", false},
+		{"running", plans.StatusSubmitted, "running", "Running on Flow360", false},
+		{"postprocessing", plans.StatusSubmitted, "postprocessing", "Finalizing results", false},
+		{"completed remote", plans.StatusSubmitted, "completed", "Completed", true},
+		{"failed local", plans.StatusFailed, "", "Failed", true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			phase, progress, terminal := executionPhase(test.status, test.remote)
-			if phase != test.wantPhase || progress != test.want || terminal != test.terminal {
-				t.Fatalf("got (%q, %d, %v), want (%q, %d, %v)",
-					phase, progress, terminal, test.wantPhase, test.want, test.terminal)
+			phase, terminal := executionPhase(test.status, test.remote)
+			if phase != test.wantPhase || terminal != test.terminal {
+				t.Fatalf("got (%q, %v), want (%q, %v)",
+					phase, terminal, test.wantPhase, test.terminal)
 			}
 		})
 	}
@@ -40,6 +40,19 @@ func TestExecutionStateUsesKnownLifecycleKeys(t *testing.T) {
 	}
 	if got := executionState(map[string]any{"message": "not a state"}); got != "" {
 		t.Fatalf("got unexpected lifecycle state %q", got)
+	}
+	if got := executionState(map[string]any{"data": map[string]any{"status": "pending"}}); got != "pending" {
+		t.Fatalf("got nested lifecycle state %q", got)
+	}
+}
+
+func TestExecutionProgressOnlyUsesReportedPercent(t *testing.T) {
+	if got := executionProgress(map[string]any{"status": "running"}); got != nil {
+		t.Fatalf("invented progress for lifecycle-only response: %v", *got)
+	}
+	got := executionProgress(map[string]any{"details": map[string]any{"percent_complete": float64(42)}})
+	if got == nil || *got != 42 {
+		t.Fatalf("expected reported progress 42, got %v", got)
 	}
 }
 

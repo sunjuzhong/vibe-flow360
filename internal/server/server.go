@@ -1249,22 +1249,29 @@ func (s *Server) startPlanMonitor(plan plans.Plan) {
 }
 
 func planMonitorTarget(plan plans.Plan) (string, string, bool) {
-	if plan.RemoteIDs == nil {
+	remoteIDs := plan.RemoteIDs
+	if remoteIDs == nil {
+		remoteIDs = plans.ExtractRemoteIDs(plan.Result)
+	}
+	if remoteIDs == nil {
 		return "", "", false
 	}
-	if plan.RemoteIDs.CaseID != "" {
-		return "Case", plan.RemoteIDs.CaseID, true
+	if remoteIDs.CaseID != "" {
+		return "Case", remoteIDs.CaseID, true
 	}
-	if plan.RemoteIDs.MeshID != "" {
+	if remoteIDs.MeshID != "" {
 		switch strings.ToLower(plan.Target) {
 		case "surface-mesh":
-			return "SurfaceMesh", plan.RemoteIDs.MeshID, true
+			return "SurfaceMesh", remoteIDs.MeshID, true
 		case "volume-mesh":
-			return "VolumeMesh", plan.RemoteIDs.MeshID, true
+			return "VolumeMesh", remoteIDs.MeshID, true
 		}
 	}
-	if plan.RemoteIDs.GeometryID != "" {
-		return "Geometry", plan.RemoteIDs.GeometryID, true
+	if remoteIDs.GeometryID != "" {
+		return "Geometry", remoteIDs.GeometryID, true
+	}
+	if remoteIDs.DraftID != "" {
+		return "Draft", remoteIDs.DraftID, true
 	}
 	return "", "", false
 }
@@ -1294,7 +1301,7 @@ func (s *Server) handleMonitorTimeout(planID string) {
 
 func isSuccessState(state string) bool {
 	switch strings.ToLower(state) {
-	case "completed", "success", "done", "processed":
+	case "completed", "success", "succeeded", "done", "processed":
 		return true
 	default:
 		return false
@@ -1303,7 +1310,7 @@ func isSuccessState(state string) bool {
 
 func isFailureState(state string) bool {
 	switch strings.ToLower(state) {
-	case "failed", "error", "cancelled", "expired", "timed_out":
+	case "failed", "error", "diverged", "cancelled", "canceled", "expired", "timed_out":
 		return true
 	default:
 		return false

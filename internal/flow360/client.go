@@ -517,8 +517,9 @@ func (c *Client) PollResourceTerminalState(ctx context.Context, resourceType, re
 
 	states := map[string]bool{
 		"completed": true, "failed": true, "cancelled": true,
-		"expired": true, "success": true, "error": true,
-		"done": true, "timed_out": true,
+		"canceled": true, "expired": true, "success": true,
+		"succeeded": true, "processed": true, "error": true,
+		"diverged": true, "done": true, "timed_out": true,
 	}
 
 	ticker := time.NewTicker(interval)

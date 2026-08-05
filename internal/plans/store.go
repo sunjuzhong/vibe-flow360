@@ -468,37 +468,76 @@ func classifyError(err error) ErrorCategory {
 	}
 }
 
-func extractRemoteIDs(result json.RawMessage) *RemoteIDs {
+// ExtractRemoteIDs accepts both the legacy flat response and the nested
+// {"draft": {...}, "result": {...}} payload returned by current Flow360 CLI
+// releases. Keeping this parser independent of a particular target also lets
+// execution monitoring recover older submitted plans whose remote_ids field
+// was never populated.
+func ExtractRemoteIDs(result json.RawMessage) *RemoteIDs {
 	if len(result) == 0 {
 		return nil
 	}
-	var data map[string]interface{}
+	var data any
 	if err := json.Unmarshal(result, &data); err != nil {
 		return nil
 	}
 	ids := &RemoteIDs{}
-	if pid, ok := data["project_id"].(string); ok {
-		ids.ProjectID = pid
-	}
-	if did, ok := data["draft_id"].(string); ok {
-		ids.DraftID = did
-	}
-	if gid, ok := data["geometry_id"].(string); ok {
-		ids.GeometryID = gid
-	}
-	if mid, ok := data["mesh_id"].(string); ok {
-		ids.MeshID = mid
-	}
-	if cid, ok := data["case_id"].(string); ok {
-		ids.CaseID = cid
-	}
-	if sv, ok := data["solver_version"].(string); ok {
-		ids.SolverVersion = sv
-	}
+	collectRemoteIDs(data, ids)
 	if ids.ProjectID == "" && ids.DraftID == "" && ids.GeometryID == "" && ids.MeshID == "" && ids.CaseID == "" {
 		return nil
 	}
 	return ids
+}
+
+func collectRemoteIDs(value any, ids *RemoteIDs) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			collectRemoteIDs(item, ids)
+		}
+	case map[string]any:
+		setRemoteID(&ids.ProjectID, typed, "project_id")
+		setRemoteID(&ids.DraftID, typed, "draft_id")
+		setRemoteID(&ids.GeometryID, typed, "geometry_id")
+		setRemoteID(&ids.MeshID, typed, "mesh_id")
+		setRemoteID(&ids.CaseID, typed, "case_id")
+		setRemoteID(&ids.SolverVersion, typed, "solver_version")
+
+		resourceType, _ := typed["type"].(string)
+		resourceID, _ := typed["id"].(string)
+		if resourceID != "" {
+			switch normalizeType(resourceType) {
+			case "Draft":
+				if ids.DraftID == "" {
+					ids.DraftID = resourceID
+				}
+			case "Geometry":
+				if ids.GeometryID == "" {
+					ids.GeometryID = resourceID
+				}
+			case "SurfaceMesh", "VolumeMesh":
+				if ids.MeshID == "" {
+					ids.MeshID = resourceID
+				}
+			case "Case":
+				if ids.CaseID == "" {
+					ids.CaseID = resourceID
+				}
+			}
+		}
+		for _, child := range typed {
+			collectRemoteIDs(child, ids)
+		}
+	}
+}
+
+func setRemoteID(target *string, record map[string]any, key string) {
+	if *target != "" {
+		return
+	}
+	if value, ok := record[key].(string); ok && value != "" {
+		*target = value
+	}
 }
 
 func (s *Store) SetRunning(id, submissionID string) (Plan, error) {
@@ -654,7 +693,7 @@ func MergedSimulationParams(plan Plan) (json.RawMessage, error) {
 }
 
 func (s *Store) MarkSubmitted(id string, result json.RawMessage) (Plan, error) {
-	remoteIDs := extractRemoteIDs(result)
+	remoteIDs := ExtractRemoteIDs(result)
 	return s.Update(id, func(plan *Plan) error {
 		plan.Status = StatusSubmitted
 		plan.CompletedAt = nil
@@ -664,6 +703,33 @@ func (s *Store) MarkSubmitted(id string, result json.RawMessage) (Plan, error) {
 		plan.ErrorCategory = ""
 		return nil
 	})
+}
+
+// SetRemoteIDs persists IDs recovered from legacy nested submission results.
+// It never discards IDs already saved by a newer submission path.
+func (s *Store) SetRemoteIDs(id string, recovered *RemoteIDs) (Plan, error) {
+	if recovered == nil {
+		return s.Get(id)
+	}
+	return s.Update(id, func(plan *Plan) error {
+		if plan.RemoteIDs == nil {
+			plan.RemoteIDs = recovered
+			return nil
+		}
+		mergeRemoteID(&plan.RemoteIDs.ProjectID, recovered.ProjectID)
+		mergeRemoteID(&plan.RemoteIDs.DraftID, recovered.DraftID)
+		mergeRemoteID(&plan.RemoteIDs.GeometryID, recovered.GeometryID)
+		mergeRemoteID(&plan.RemoteIDs.MeshID, recovered.MeshID)
+		mergeRemoteID(&plan.RemoteIDs.CaseID, recovered.CaseID)
+		mergeRemoteID(&plan.RemoteIDs.SolverVersion, recovered.SolverVersion)
+		return nil
+	})
+}
+
+func mergeRemoteID(target *string, recovered string) {
+	if *target == "" && recovered != "" {
+		*target = recovered
+	}
 }
 
 func (s *Store) MarkFailed(id string, runErr error) (Plan, error) {
@@ -715,6 +781,8 @@ func normalizeType(value string) string {
 		return "VolumeMesh"
 	case "case":
 		return "Case"
+	case "draft":
+		return "Draft"
 	default:
 		return ""
 	}

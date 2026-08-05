@@ -231,6 +231,58 @@ func TestStoreMarkSubmittedStoresRemoteIDs(t *testing.T) {
 	}
 }
 
+func TestStoreMarkSubmittedStoresNestedFlow360RemoteIDs(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-local", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "case", Name: "nested result", Intent: "Run case.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := json.RawMessage(`{
+		"draft":{"id":"dft-1","type":"Draft","project_id":"prj-1","solver_version":"release-25.10"},
+		"result":{"id":"case-1","type":"Case","mesh_id":"vm-1","status":"pending"}
+	}`)
+	submitted, err := store.MarkSubmitted(created.ID, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submitted.RemoteIDs == nil || submitted.RemoteIDs.DraftID != "dft-1" ||
+		submitted.RemoteIDs.CaseID != "case-1" || submitted.RemoteIDs.MeshID != "vm-1" ||
+		submitted.RemoteIDs.ProjectID != "prj-1" {
+		t.Fatalf("unexpected nested remote IDs: %#v", submitted.RemoteIDs)
+	}
+}
+
+func TestStoreSetRemoteIDsBackfillsWithoutOverwriting(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "case", Name: "legacy", Intent: "Run case.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.SetRemoteIDs(created.ID, &RemoteIDs{DraftID: "dft-1", CaseID: "case-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err = store.SetRemoteIDs(updated.ID, &RemoteIDs{DraftID: "wrong", MeshID: "vm-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.RemoteIDs.DraftID != "dft-1" || updated.RemoteIDs.CaseID != "case-1" || updated.RemoteIDs.MeshID != "vm-1" {
+		t.Fatalf("unexpected merged remote IDs: %#v", updated.RemoteIDs)
+	}
+}
+
 func TestStoreMarkFailedClassifiesError(t *testing.T) {
 	store, err := NewStore(t.TempDir())
 	if err != nil {
@@ -385,14 +437,14 @@ func TestClassifyErrorDetectsCategories(t *testing.T) {
 
 func TestExtractRemoteIDsSelectsKnownFields(t *testing.T) {
 	result := json.RawMessage(`{"project_id":"p1","draft_id":"d1","case_id":"c1","solver_version":"2025.1","unrelated":"x"}`)
-	ids := extractRemoteIDs(result)
+	ids := ExtractRemoteIDs(result)
 	if ids == nil {
 		t.Fatal("expected remote ids")
 	}
 	if ids.ProjectID != "p1" || ids.DraftID != "d1" || ids.CaseID != "c1" || ids.SolverVersion != "2025.1" {
 		t.Fatalf("unexpected ids: %#v", ids)
 	}
-	if extractRemoteIDs(json.RawMessage(`{"unrelated":"x"}`)) != nil {
+	if ExtractRemoteIDs(json.RawMessage(`{"unrelated":"x"}`)) != nil {
 		t.Fatal("expected nil when no known ids")
 	}
 }

@@ -499,7 +499,7 @@ export type SimulationPlan = {
 export type PlanExecutionSnapshot = {
   plan: SimulationPlan
   phase: string
-  progress: number
+  progress?: number
   resource_type?: string
   resource_id?: string
   remote_state?: string
