@@ -297,17 +297,26 @@
 
 .case-result-row {
   display: grid;
+  width: 100%;
   grid-template-columns: 13px minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-height: 30px;
   padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
   color: #697167;
+  background: transparent;
   font-size: 9px;
+  text-align: left;
 }
 
 .case-result-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .case-result-row small { color: #969b93; font: 7px 'DM Mono'; text-transform: uppercase; }
+.case-result-row.previewable { cursor: pointer; }
+.case-result-row.previewable:hover,
+.case-result-row.previewable:focus-visible { color: #315c68; background: #e8f0f1; outline: none; }
+.case-result-row.previewable small { color: #477b88; }
 
 .case-review-workspace .case-review-heading { align-items: flex-start; }
 .case-review-heading .hero-status { flex: 0 0 auto; margin: 0; }

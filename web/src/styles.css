@@ -1445,10 +1445,28 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .result-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
 .result-action-btn { display: inline-grid; width: 24px; height: 24px; place-items: center; border: 1px solid #d5d7ce; border-radius: 5px; background: white; color: #6b7066; cursor: pointer; }
 .result-action-btn:hover { color: #354507; border-color: #a8bd6b; background: #f3f7e7; }
-.result-preview-modal { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(29,32,26,.52); }
-.result-preview-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid #d9dad2; background: #fafaf7; }
-.result-preview-header strong { font-size: 10px; color: #4c5148; }
-.result-preview-content { width: min(800px,92vw); max-height: 60vh; overflow: auto; padding: 15px; background: #f2f3ee; color: #485042; font: 8px/1.6 'DM Mono',monospace; white-space: pre-wrap; word-break: break-word; }
+.result-preview-modal { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(29,32,26,.52); backdrop-filter: blur(2px); }
+.result-preview-dialog { display: flex; width: min(1060px,94vw); max-height: min(760px,86vh); min-height: 260px; flex-direction: column; overflow: hidden; border: 1px solid #d4d6cd; border-radius: 11px; background: #f8f8f4; box-shadow: 0 24px 70px rgba(24,28,20,.28); }
+.result-preview-header { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-bottom: 1px solid #d9dad2; background: #fafaf7; }
+.result-preview-header > div { display: flex; min-width: 0; align-items: center; gap: 9px; color: #718627; }
+.result-preview-header span { min-width: 0; }
+.result-preview-header strong,.result-preview-header small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-preview-header strong { color: #41483e; font-size: 11px; }
+.result-preview-header small { max-width: min(820px,75vw); margin-top: 2px; color: #92978e; font: 7px 'DM Mono'; }
+.result-preview-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 13px; border-bottom: 1px solid #e0e2da; color: #747b70; background: #f1f2ec; font: 7px 'DM Mono'; }
+.result-preview-meta span,.result-preview-meta em { padding: 3px 6px; border: 1px solid #dcdfd5; border-radius: 999px; background: #fff; font-style: normal; }
+.result-preview-meta em { color: #8c7340; border-color: #e3cf95; background: #f8f0dd; }
+.result-preview-content { min-height: 0; flex: 1; overflow: auto; background: #f8f8f4; color: #485042; font: 8px/1.5 'DM Mono',monospace; }
+.result-preview-table { min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.result-preview-table th,.result-preview-table td { max-width: 320px; padding: 7px 10px; overflow: hidden; border-right: 1px solid #e4e6df; border-bottom: 1px solid #e4e6df; text-overflow: ellipsis; white-space: nowrap; }
+.result-preview-table th { position: sticky; z-index: 1; top: 0; color: #596153; background: #eef0e8; font-weight: 700; text-align: left; }
+.result-preview-table td { background: rgba(255,255,255,.74); }
+.result-preview-table tbody tr:nth-child(even) td { background: #f5f6f1; }
+.result-preview-table tbody tr:hover td { background: #eef3e2; }
+.result-preview-table td.numeric { color: #3d5f69; text-align: right; font-variant-numeric: tabular-nums; }
+.result-preview-state { display: flex; min-height: 220px; flex: 1; align-items: center; justify-content: center; gap: 9px; color: #687064; font-size: 10px; }
+.result-preview-state.error { color: #9e5041; }
+.result-preview-empty { padding: 26px; color: #8a9086; text-align: center; }
 .convergence-panel, .compare-panel { padding: 4px 0; }
 .convergence-summary { display: grid; gap: 8px; margin: 12px 0; }
 .convergence-metric { display: grid; grid-template-columns: 140px 1fr; gap: 12px; padding: 8px 10px; border: 1px solid #e6e7e0; border-radius: 6px; background: #fafaf7; }

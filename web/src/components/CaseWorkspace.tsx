@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { useState, useCallback, useMemo } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
-import type { ResourceDetail } from '../api/client'
+import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
 import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
@@ -27,6 +27,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
 import {
   createViewerContext,
   findLengthUnit,
@@ -217,6 +218,12 @@ export default function CaseWorkspace({
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [caseFields, setCaseFields] = useState<string[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
+  const [resultPreview, setResultPreview] = useState<{
+    path: string
+    content?: string
+    error?: string
+    loading: boolean
+  } | null>(null)
   const viewModel = normalizeCase(detail)
   const terminal = isTerminal(viewModel.status)
   const resultCount = detail?.results?.records?.length ?? 0
@@ -260,6 +267,16 @@ export default function CaseWorkspace({
   const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
     setCaseFields(fields.map((f) => f.name))
   }, [])
+
+  const openResultPreview = useCallback(async (path: string) => {
+    setResultPreview({ path, loading: true })
+    try {
+      const content = await api.previewResult('Case', resourceId ?? detail?.id ?? '', path)
+      setResultPreview({ path, content, loading: false })
+    } catch (error) {
+      setResultPreview({ path, error: String(error).replace('Error: ', ''), loading: false })
+    }
+  }, [detail?.id, resourceId])
 
   const resultRecords = detail?.results?.records ?? []
   const reviewLevel = viewModel.status === 'failed'
@@ -335,13 +352,31 @@ export default function CaseWorkspace({
               <strong>Result artifacts</strong>
               <span>{resultRecords.length}</span>
             </div>
-            {resultRecords.slice(0, 8).map((result, index) => (
-              <div className="case-result-row" key={result.path ?? result.name ?? index}>
-                <FileOutput size={11} />
-                <span title={result.path ?? result.name}>{result.name ?? result.path ?? `Result ${index + 1}`}</span>
-                <small>{result.file_type ?? 'file'}</small>
-              </div>
-            ))}
+            {resultRecords.map((result, index) => {
+              const path = result.path
+              const label = result.name ?? path ?? `Result ${index + 1}`
+              const previewable = isTabularResult(path, result.file_type) && Boolean(path)
+              const content = (
+                <>
+                  <FileOutput size={11} />
+                  <span title={path ?? result.name}>{label}</span>
+                  <small>{previewable ? 'Open' : result.file_type ?? 'file'}</small>
+                </>
+              )
+              return previewable ? (
+                <button
+                  type="button"
+                  className="case-result-row previewable"
+                  onClick={() => void openResultPreview(path!)}
+                  aria-label={`Preview ${label}`}
+                  key={path ?? label}
+                >
+                  {content}
+                </button>
+              ) : (
+                <div className="case-result-row" key={path ?? label}>{content}</div>
+              )
+            })}
             {resultRecords.length === 0 && <div className="geometry-empty-list">No result artifacts reported.</div>}
           </div>
         </>
@@ -369,19 +404,26 @@ export default function CaseWorkspace({
             }
           />
           <ViewerToolPanel model={tools} />
-          <div className={`cfd-viewer-source ${previewSource === 'fallback' ? 'context' : ''}`} role="status" aria-live="polite">
-            <ScanLine size={13} />
-            <div>
-              <strong>{previewSource === 'fallback' ? 'Geometry context' : activeField ?? 'Solution field'}</strong>
-              <span aria-label="case field description">
-                {previewSource === 'fallback'
-                  ? 'Case field data is unavailable; parent Geometry anchors the solver and result context.'
-                  : activeField
-                    ? 'The selected result field is mapped onto the current Case asset.'
-                    : 'Choose a result field from the solution inventory to inspect the flow solution.'}
-              </span>
+          {previewSource === 'fallback' && (
+            <div className="cfd-viewer-source context" role="status" aria-live="polite">
+              <ScanLine size={13} />
+              <div>
+                <strong>Geometry context</strong>
+                <span aria-label="case field description">
+                  Case field data is unavailable; parent Geometry anchors the solver and result context.
+                </span>
+              </div>
             </div>
-          </div>
+          )}
+          {resultPreview && (
+            <ResultTablePreview
+              path={resultPreview.path}
+              content={resultPreview.content}
+              loading={resultPreview.loading}
+              error={resultPreview.error}
+              onClose={() => setResultPreview(null)}
+            />
+          )}
         </>
       )}
       inspector={(

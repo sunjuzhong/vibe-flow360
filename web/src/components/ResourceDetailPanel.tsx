@@ -14,8 +14,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
-import { useFocusTrap } from '../lib/useFocusTrap'
 import DraftParameterEditor from './DraftParameterEditor'
+import { ResultTablePreview } from './ResultTablePreview'
 
 export type ResourceDetailTab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
 
@@ -112,8 +112,6 @@ export default function ResourceDetailPanel({
   const [previewResult, setPreviewResult] = useState<{ path: string; content: string } | null>(null)
   const [resultError, setResultError] = useState('')
   const [resultAction, setResultAction] = useState<{ path: string; kind: 'preview' | 'download' } | null>(null)
-  const previewOpen = previewResult !== null
-  const previewRef = useFocusTrap<HTMLDivElement>(previewOpen, () => setPreviewResult(null), 'button.icon-button')
   const {
     result: convergence,
     loading: convergenceLoading,
@@ -297,23 +295,11 @@ export default function ResourceDetailPanel({
               </div>
             )}
             {previewResult && (
-              <div
-                ref={previewRef}
-                className="result-preview-modal"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Result preview"
-              >
-                <div className="result-preview-header">
-                  <strong>{previewResult.path}</strong>
-                  <button
-                    className="icon-button"
-                    onClick={() => setPreviewResult(null)}
-                    aria-label="Close preview"
-                  >×</button>
-                </div>
-                <pre className="result-preview-content">{previewResult.content}</pre>
-              </div>
+              <ResultTablePreview
+                path={previewResult.path}
+                content={previewResult.content}
+                onClose={() => setPreviewResult(null)}
+              />
             )}
             {results.length ? (
               <div className="result-list">
