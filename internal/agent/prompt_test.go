@@ -67,8 +67,20 @@ func TestBuildChatPromptKeepsProjectResourceCFDContext(t *testing.T) {
 			t.Fatalf("prompt is missing CFD context %q: %s", expected, prompt)
 		}
 	}
-	if !strings.Contains(prompt, "Answer directly in English") {
-		t.Fatalf("chat prompt does not allow direct CFD answers: %s", prompt)
+	if !strings.Contains(prompt, "Respond in the same language as the User Request") || strings.Contains(prompt, "Answer directly in English") {
+		t.Fatalf("chat prompt does not follow the user's language: %s", prompt)
+	}
+}
+
+func TestAgentSystemPromptFollowsLatestUserLanguage(t *testing.T) {
+	prompt := AgentSystemPrompt()
+	for _, expected := range []string{"latest request", "message", "questions", "warnings", "assumptions", "JSON keys"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("language contract is missing %q: %s", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Reply in English") {
+		t.Fatalf("system prompt still forces English: %s", prompt)
 	}
 }
 

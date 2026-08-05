@@ -117,13 +117,13 @@ Interpret the user's actual request. Never substitute a canned example or pre-ge
 Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - version: "v1"
 - decision: "generate" or "request-input"
-- project_name: concise English name
-- summary: concise English engineering summary
+- project_name: concise name in the user's language
+- summary: concise engineering summary in the user's language
 - geometry: {name, unit:"m", representation:"analytic-brep", format:"step", generator:"cadquery-dsl-v1", operations, results}
 - operations: ordered array of {id, op, params}. IDs must be unique.
 - results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is an optional array of {name, selector}.
 - simulation: {velocity_m_s, alpha_deg, surface_edge_length_m, first_layer_thickness_m, max_steps}
-- assumptions: English string array
+- assumptions: string array in the user's language
 - questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}.
 
 The deterministic CAD DSL supports:

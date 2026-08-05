@@ -28,6 +28,9 @@ func TestPlanAssistRepairPromptIncludesExactIssuesAndRemovalSemantics(t *testing
 			t.Fatalf("repair prompt is missing %q: %s", expected, prompt)
 		}
 	}
+	if !strings.Contains(prompt, "Use the language of the Original intent") {
+		t.Fatalf("repair prompt does not preserve the user's language: %s", prompt)
+	}
 }
 
 func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
@@ -93,6 +96,9 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("plan assist prompt is missing %q: %s", expected, prompt)
 		}
+	}
+	if !strings.Contains(prompt, "Use the language of the Plan intent and User form instruction") {
+		t.Fatalf("plan assist prompt does not preserve the user's language: %s", prompt)
 	}
 }
 

@@ -12,6 +12,17 @@ func (s staticCompleter) Complete(context.Context, string, string, string) (stri
 	return string(s), nil
 }
 
+func TestGeometrySystemPromptFollowsUserLanguage(t *testing.T) {
+	for _, expected := range []string{"project_name: concise name in the user's language", "summary: concise engineering summary in the user's language", "assumptions: string array in the user's language"} {
+		if !strings.Contains(geometrySystemPrompt, expected) {
+			t.Fatalf("geometry prompt is missing %q", expected)
+		}
+	}
+	if strings.Contains(geometrySystemPrompt, "concise English") || strings.Contains(geometrySystemPrompt, "English string array") {
+		t.Fatalf("geometry prompt still forces English: %s", geometrySystemPrompt)
+	}
+}
+
 type recordingCompleter struct {
 	raw        string
 	userPrompt string

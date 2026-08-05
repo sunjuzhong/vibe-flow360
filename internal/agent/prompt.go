@@ -77,7 +77,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
 - If unsure, use request-missing-input rather than guessing.
 - Keep the action JSON compact — only include fields that matter.
-- Reply in English.
+- Match the language of the user's latest request. Use that language for all explanatory text and human-readable string values, including message, questions, warnings, assumptions, and field descriptions. Keep JSON keys, enum values, SimulationParams paths, and protocol identifiers unchanged.
 
 ## Context payload format:
 You will receive a structured context block with project info, resource details, SimulationParams snapshot, and Flow360 schema preflight. Use this to make informed proposals.`
@@ -144,7 +144,7 @@ func BuildChatPrompt(request ChatRequest) (string, ChatContextPayload) {
 		}
 	}
 
-	sb.WriteString("\nAnswer directly in English for explanation or analysis. Use an AgentAction v1 JSON object in a fenced code block only when proposing a plan or requesting inputs for one.")
+	sb.WriteString("\nRespond in the same language as the User Request above. Answer directly for explanation or analysis. Use an AgentAction v1 JSON object in a fenced code block only when proposing a plan or requesting inputs for one; keep its protocol keys and enum values unchanged.")
 	return sb.String(), payload
 }
 
@@ -305,6 +305,7 @@ Propose fix actions as an AgentAction v1 JSON object with:
 - kind: "create-plan" (for proposing parameter changes)
 - Each proposal should include specific parameter changes in the patch field
 - Include reasoning and confidence in the fields
+- If user feedback is present, use its language for all human-readable text. Otherwise, use the language of the error reason. Keep JSON protocol keys and enum values unchanged.
 
 Respond with the JSON object in a fenced code block.`)
 

@@ -253,6 +253,8 @@ func planAssistRepairPrompt(request planComposerRequest, proposal agent.Proposal
 	return fmt.Sprintf(`Your candidate Flow360 parameter patch did not pass schema preflight. Repair it now.
 Return exactly one create-plan proposal containing the COMPLETE corrected patch for the same %s-to-%s route. Use the newly supplied stage schema, which reflects the candidate model variants. Resolve every listed issue rather than merely describing it. Preserve valid candidate values. JSON merge-patch semantics apply: set an obsolete inherited field to null when Flow360 reports it as extra or forbidden. Do not request user input for a schema-mechanical correction such as a missing required field, renamed field, discriminator-dependent field, or removal of a field from the previous model variant.
 
+Use the language of the Original intent for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
+
 Original intent: %s
 Repair attempt: %d
 Candidate patch: %s
@@ -344,6 +346,8 @@ This is parameter assistance, not geometry generation. Never claim CAD dimension
 Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
 When the user asks for a basic, baseline, demonstration, or first-pass simulation, choose defensible reviewable defaults for missing operating, meshing, physical-model, and steady/unsteady settings when the active schemas support them. Put every inferred value in assumptions and explain the engineering consequence in the message. For external-flow baselines, answer explicitly whether the existing automated farfield/domain treatment is sufficient; do not ask for a physical wind tunnel unless the user requests wall-bounded tunnel effects. Ask a focused question only when the choice would materially change geometry, make the setup invalid, or has no defensible baseline. Do not turn every unspecified preference into a blocking question.
+
+Use the language of the Plan intent and User form instruction for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
 
 Plan intent: %s
 User form instruction: %s`, request.SourceType, request.SourceType, request.SourceType, request.Target, request.Intent, request.Prompt)

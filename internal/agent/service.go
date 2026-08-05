@@ -277,8 +277,13 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
 - warnings: array of strings
 - assumptions: array of strings
 
+Use the same language as the original user request for all human-readable string values. Keep JSON keys, enum values, and SimulationParams paths unchanged.
+
+The original user request was:
+%s
+
 Your previous response was:
-%s`, truncate(rawResponse, 2000))
+%s`, truncate(request.Message, 1000), truncate(rawResponse, 2000))
 
 	if s.effectiveProvider() == "codex" {
 		repaired, repairErr := s.chatWithCodex(ctx, AgentSystemPrompt(), repairPrompt, request.Model)
@@ -347,6 +352,10 @@ Your previous response was:
 }
 
 func providerFallback(request ChatRequest, err error) string {
+	if containsHan(request.Message) {
+		return fmt.Sprintf("> AI 模型当前不可用（%s），已切换到本地 CFD 规划模式。\n\n%s",
+			err.Error(), localPlan(request))
+	}
 	return fmt.Sprintf("> The AI model is currently unavailable (%s), so I switched to local CFD planning mode.\n\n%s",
 		err.Error(), localPlan(request))
 }
@@ -377,6 +386,26 @@ func localPlan(request ChatRequest) string {
 				parsed.SourceID, firstNonEmpty(parsed.SourceStatus, "unknown"))
 		}
 	}
+	if containsHan(request.Message) {
+		return fmt.Sprintf(`以下是根据当前本地上下文整理的第一版 CFD 分析草案。
+
+**当前理解**
+
+- 分析类型：%s
+- 几何：%s
+- 工程问题：%s
+- 当前上下文：%s
+
+**执行前需要确认**
+
+1. 几何单位和一个可核对的参考尺寸
+2. 入口速度或 Mach 数，以及温度和压力/高度
+3. 稳态或非稳态；不确定时可先用稳态 RANS 建立基线
+4. 主要输出，例如力、力矩、压降、流量、温度或局部流动结构
+
+这只是本地建议；尚未创建或提交任何 Flow360 任务。`,
+			localizedAnalysisKind(kind), localizedGeometry(geometry), request.Message, localizedContext(parsed))
+	}
 
 	return fmt.Sprintf(`Here is a reviewable first-pass CFD brief based on the available local context.
 
@@ -403,6 +432,48 @@ func localPlan(request ChatRequest) string {
 
 This is local guidance only; no Flow360 task has been created or submitted.`,
 		kind, geometry, request.Message, context)
+}
+
+func containsHan(value string) bool {
+	for _, r := range value {
+		if r >= '\u4e00' && r <= '\u9fff' {
+			return true
+		}
+	}
+	return false
+}
+
+func localizedAnalysisKind(kind string) string {
+	switch kind {
+	case "thermal-fluid analysis":
+		return "热流体分析"
+	case "rotating-machinery aerodynamics":
+		return "旋转机械空气动力学"
+	case "internal-flow analysis":
+		return "内流分析"
+	default:
+		return "外流空气动力学"
+	}
+}
+
+func localizedGeometry(geometry string) string {
+	if geometry == "not specified" {
+		return "未指定"
+	}
+	return geometry
+}
+
+func localizedContext(parsed ChatContextPayload) string {
+	if parsed.ProjectID == "" {
+		return "未选择 Flow360 Project/resource"
+	}
+	context := fmt.Sprintf("Project %s（%s）", firstNonEmpty(parsed.ProjectName, "未命名"), parsed.ProjectID)
+	if parsed.SourceID != "" {
+		context += fmt.Sprintf("，当前 %s %s（%s），状态 %s",
+			firstNonEmpty(parsed.SourceType, "resource"), firstNonEmpty(parsed.SourceName, "未命名"),
+			parsed.SourceID, firstNonEmpty(parsed.SourceStatus, "未知"))
+	}
+	return context
 }
 
 func firstNonEmpty(values ...string) string {

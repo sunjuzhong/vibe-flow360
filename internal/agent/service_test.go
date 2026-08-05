@@ -11,7 +11,7 @@ import (
 
 func TestLocalPlanIncludesGeometryAndSafetyBoundary(t *testing.T) {
 	result := localPlan(ChatRequest{
-		Message:  "分析机翼在 45 m/s 下的升阻力",
+		Message:  "Analyze lift and drag for this wing at 45 m/s",
 		Geometry: "wing.step",
 	})
 
@@ -24,7 +24,7 @@ func TestLocalPlanIncludesGeometryAndSafetyBoundary(t *testing.T) {
 
 func TestLocalPlanClassifiesInternalFlow(t *testing.T) {
 	result := localPlan(ChatRequest{Message: "计算这个管道的压降"})
-	if !strings.Contains(result, "internal-flow analysis") {
+	if !strings.Contains(result, "内流分析") || !strings.Contains(result, "尚未创建或提交任何 Flow360 任务") {
 		t.Fatalf("expected internal-flow classification: %s", result)
 	}
 }
