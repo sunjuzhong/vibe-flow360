@@ -32,6 +32,7 @@ describe('ProjectDraftBar', () => {
     expect(markup).toContain('value="draft-2" selected=""')
     expect(markup).toContain('Parameters')
     expect(markup).toContain('aria-label="Refresh Drafts"')
+    expect(markup).not.toContain('Active Draft')
     expect(markup).not.toContain('Draft menu')
   })
 })

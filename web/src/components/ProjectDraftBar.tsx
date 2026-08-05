@@ -47,7 +47,6 @@ export default function ProjectDraftBar({
       </div>
 
       <label className="project-draft-select">
-        <span>Active Draft</span>
         <select
           aria-label="Switch active Draft"
           value={selectedId}

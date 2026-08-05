@@ -4121,14 +4121,8 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .project-draft-heading strong { color: #34421e; font-size: 10px; }
 
 .project-draft-select {
-  display: grid;
+  display: block;
   min-width: 0;
-  gap: 2px;
-}
-.project-draft-select > span {
-  color: #7c8572;
-  font: 7px 'DM Mono';
-  text-transform: uppercase;
 }
 .project-draft-select select {
   width: 100%;
@@ -4985,8 +4979,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
     padding: 7px 9px;
   }
   .project-context-bar .canvas-resource-title > em,
-  .project-draft-heading strong,
-  .project-draft-select > span { display: none; }
+  .project-draft-heading strong { display: none; }
   .project-draft-inline { grid-template-columns: auto minmax(110px, 1fr) auto; gap: 5px; }
   .project-draft-heading > span { width: 26px; height: 26px; }
   .project-draft-actions > button:first-child { width: 34px; padding: 0; }
