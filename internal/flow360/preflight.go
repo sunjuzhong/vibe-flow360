@@ -771,15 +771,17 @@ def issue_payload(raw, level):
 
 def incompatible_field_recovery(issue):
     message = issue.get("message", "")
-    if "is not supported by the legacy mesher" not in message.lower():
+    extra_forbidden = issue.get("code") == "extra_forbidden"
+    legacy_incompatible = "is not supported by the legacy mesher" in message.lower()
+    if not extra_forbidden and not legacy_incompatible:
         return None
     return {
         "type": "field_removal",
-        "title": "Remove unsupported meshing setting",
-        "description": "This optional setting is incompatible with the active Flow360 mesher and must be omitted.",
+        "title": "Remove field rejected by the active Flow360 schema",
+        "description": "This inherited or candidate field is incompatible with the selected schema variant and must be removed through JSON merge-patch semantics.",
         "recommendation": {
-            "title": "Use the active mesher without this setting",
-            "reason": "Changing the number cannot make this field valid. The schema-safe repair is to remove it and retain the current mesher.",
+            "title": "Remove the incompatible field",
+            "reason": "Flow360 explicitly rejected this path as an extra input. The schema-safe repair is to remove it while retaining the selected model variant.",
             "confidence": "high",
             "evidence": [message],
             "provenance": "flow360_schema_validation",

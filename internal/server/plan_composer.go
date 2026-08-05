@@ -184,6 +184,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not load the schema for the candidate configuration.")
 			break
 		}
+		repairForm = includePlanRecoverySchema(repairForm, preflight.FormSchema)
 		repairCatalog, catalogErr := schemaPromptCatalog(repairForm)
 		if catalogErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not read the candidate schema.")
@@ -256,6 +257,18 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		Action: *action, Proposal: &proposal, Preflight: &preflight,
 		RepairAttempts: repairAttempts, AutoRepaired: autoRepaired,
 	}, nil
+}
+
+func includePlanRecoverySchema(form flow360.PlanFormSchema, recovery json.RawMessage) flow360.PlanFormSchema {
+	const recoveryStage = "PreflightRecovery"
+	copy := form
+	copy.Stages = append(append([]string(nil), form.Stages...), recoveryStage)
+	copy.Schemas = make(map[string]json.RawMessage, len(form.Schemas)+1)
+	for stage, schema := range form.Schemas {
+		copy.Schemas[stage] = append(json.RawMessage(nil), schema...)
+	}
+	copy.Schemas[recoveryStage] = append(json.RawMessage(nil), recovery...)
+	return copy
 }
 
 func planAssistIssueContext(issues []flow360.PreflightIssue) []string {
@@ -483,7 +496,18 @@ func recommendedPlanAssistPatch(schema, current json.RawMessage) (json.RawMessag
 }
 
 func recommendedPlanAssistValues(node map[string]any) (map[string]any, bool) {
-	if nodeType, _ := node["type"].(string); nodeType == "entity_assignment" {
+	nodeType, _ := node["type"].(string)
+	if nodeType == "field_removal" {
+		recommendation, _ := node["recommendation"].(map[string]any)
+		confidence, _ := recommendation["confidence"].(string)
+		if confidence == "high" {
+			// A typed nil map marshals as JSON null. ExpandFormValues preserves
+			// that tombstone so JSON merge-patch removes the rejected field.
+			return nil, true
+		}
+		return nil, false
+	}
+	if nodeType == "entity_assignment" {
 		recommendation, _ := node["recommendation"].(map[string]any)
 		confidence, _ := recommendation["confidence"].(string)
 		model, _ := node["default_model"].(string)

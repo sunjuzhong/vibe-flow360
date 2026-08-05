@@ -203,6 +203,33 @@ func TestLegacyMesherTargetCountProducesRemovalRecovery(t *testing.T) {
 	}
 }
 
+func TestExtraForbiddenProducesRemovalRecovery(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	current := json.RawMessage(`{
+		"version":"25.10.3",
+		"unit_system":{"name":"SI"},
+		"agent_obsolete_field":true
+	}`)
+	result, err := NewClient().PreflightSimulationParams(context.Background(), "Geometry", "case", current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recovery map[string]any
+	if json.Unmarshal(result.FormSchema, &recovery) != nil {
+		t.Fatal("could not decode recovery schema")
+	}
+	leaf := findSchemaByType(recovery, "field_removal")
+	if leaf == nil || leaf["path"] != "agent_obsolete_field" {
+		t.Fatalf("extra_forbidden did not produce a typed removal: issues=%#v schema=%s", result.Issues, result.FormSchema)
+	}
+	recommendation, _ := leaf["recommendation"].(map[string]any)
+	if recommendation["confidence"] != "high" || recommendation["provenance"] != "flow360_schema_validation" {
+		t.Fatalf("field removal lacks authoritative recommendation evidence: %#v", leaf)
+	}
+}
+
 func findSchemaByType(node map[string]any, nodeType string) map[string]any {
 	if node["type"] == nodeType {
 		return node

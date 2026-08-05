@@ -267,6 +267,43 @@ func TestRecommendedPlanAssistPatchExpandsHighConfidenceBoundaryAssignment(t *te
 	}
 }
 
+func TestRecommendedPlanAssistPatchExpandsHighConfidenceFieldRemoval(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object","required":["time_stepping"],"properties":{"time_stepping":{
+			"type":"object","required":["max_steps"],"properties":{"max_steps":{
+				"type":"field_removal","recommendation":{"confidence":"high","provenance":"flow360_schema_validation"}
+			}}
+		}}
+	}`)
+	current := json.RawMessage(`{"time_stepping":{"type_name":"Unsteady","max_steps":2000,"steps":2000}}`)
+	patch, applied, err := recommendedPlanAssistPatch(schema, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !applied || !strings.Contains(string(patch), `"max_steps":null`) {
+		t.Fatalf("high-confidence field removal was not expanded: applied=%v patch=%s", applied, patch)
+	}
+	compiled, err := plans.Compile(plans.CreateInput{
+		ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case", Name: "repair", Intent: "repair",
+		Baseline: current, Patch: patch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := plans.MergedSimulationParams(compiled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if json.Unmarshal(merged, &decoded) != nil {
+		t.Fatal("could not decode removal patch")
+	}
+	timeStepping := decoded["time_stepping"].(map[string]any)
+	if _, exists := timeStepping["max_steps"]; exists {
+		t.Fatalf("merge-patch removal was not applied: %s", merged)
+	}
+}
+
 func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing.T) {
 	prompt := planAssistPrompt(planComposerRequest{
 		SourceType: "Geometry", Target: "case",
@@ -310,6 +347,28 @@ func TestCombinedPlanFormSchemaPreservesOverlappingStageObjects(t *testing.T) {
 	}
 	if err := plans.ValidateFormValues(schema, json.RawMessage(`{"operating_condition":{}}`)); err == nil {
 		t.Fatal("expected a field outside the active source-to-target route to be rejected")
+	}
+}
+
+func TestIncludePlanRecoverySchemaMakesForbiddenFieldRemovalAgentEditable(t *testing.T) {
+	form := flow360.PlanFormSchema{
+		Stages: []string{"Case"},
+		Schemas: map[string]json.RawMessage{"Case": json.RawMessage(`{
+			"type":"object","properties":{"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"}}}}
+		}`)},
+	}
+	recovery := json.RawMessage(`{
+		"type":"object","required":["time_stepping"],"properties":{"time_stepping":{
+			"type":"object","required":["max_steps"],"properties":{"max_steps":{"type":"field_removal"}}
+		}}
+	}`)
+	combined, err := combinedPlanFormSchema(includePlanRecoverySchema(form, recovery))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := json.RawMessage(`{"time_stepping":{"steps":2000,"max_steps":null}}`)
+	if err := plans.ValidateFormValues(combined, values); err != nil {
+		t.Fatalf("Agent could not express the preflight-requested deletion: %v; schema=%s", err, combined)
 	}
 }
 
