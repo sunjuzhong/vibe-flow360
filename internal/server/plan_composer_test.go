@@ -98,6 +98,45 @@ func TestPreparePlanAssistProposalRemovesCanonicalReferenceAreaDiscriminator(t *
 	}
 }
 
+func TestPrepareAutonomousPlanPreservesRequiredAutomatedFarfield(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"volume_zones":{"type":"array","items":{"type":"json"}}}}}}`)
+	composer := planComposerContext{
+		Request:  planComposerRequest{ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case", Intent: "ready to run", Autonomous: true},
+		Name:     "Geometry",
+		Baseline: json.RawMessage(`{"simulation_params":{"meshing":{"volume_zones":[{"name":"Farfield","type":"AutomatedFarfield","relative_size":50}]}}}`),
+	}
+	action := agent.Action{Proposals: []agent.Proposal{{
+		SourceType: "Geometry", Target: "case", Patch: json.RawMessage(`{"meshing":{"volume_zones":[]}}`),
+	}}}
+	proposal, err := preparePlanAssistProposal(action, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(proposal.Patch), `"type":"AutomatedFarfield"`) {
+		t.Fatalf("autonomous patch deleted the required Farfield zone: %s", proposal.Patch)
+	}
+	if len(proposal.ValidationHints) != 1 || !strings.Contains(proposal.ValidationHints[0], "Preserved") {
+		t.Fatalf("Farfield preservation was not auditable: %#v", proposal.ValidationHints)
+	}
+}
+
+func TestPrepareInteractivePlanMayExplicitlyReplaceVolumeZones(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"volume_zones":{"type":"array","items":{"type":"json"}}}}}}`)
+	composer := planComposerContext{
+		Request:  planComposerRequest{ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case"},
+		Name:     "Geometry",
+		Baseline: json.RawMessage(`{"meshing":{"volume_zones":[{"type":"AutomatedFarfield"}]}}`),
+	}
+	action := agent.Action{Proposals: []agent.Proposal{{SourceType: "Geometry", Target: "case", Patch: json.RawMessage(`{"meshing":{"volume_zones":[]}}`)}}}
+	proposal, err := preparePlanAssistProposal(action, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(proposal.Patch), "AutomatedFarfield") {
+		t.Fatalf("interactive edit was unexpectedly overridden: %s", proposal.Patch)
+	}
+}
+
 func TestRecommendedQuestionDefaultsLetsAutonomousAICreateAcceptReynoldsNumber(t *testing.T) {
 	defaults, ok := recommendedQuestionDefaults([]agent.Question{{
 		Field: "target_reynolds_number", Message: "Target Reynolds number", Type: "select", Default: "3900",

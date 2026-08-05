@@ -376,6 +376,16 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 	if strings.TrimSpace(proposal.Name) == "" {
 		proposal.Name = composer.Name + " · " + composer.Request.Target
 	}
+	if composer.Request.Autonomous {
+		preserved, changed, err := preserveRequiredFarfield(composer.Baseline, proposal.Patch)
+		if err != nil {
+			return agent.Proposal{}, err
+		}
+		proposal.Patch = preserved
+		if changed {
+			proposal.ValidationHints = append(proposal.ValidationHints, "Preserved the baseline AutomatedFarfield volume zone required by Flow360.")
+		}
+	}
 	sanitized, removed, err := plans.SanitizeFormValues(schema, proposal.Patch)
 	if err != nil {
 		return agent.Proposal{}, errors.New("AI form values could not be projected onto the active Flow360 schema: " + err.Error())
@@ -389,6 +399,64 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 		return agent.Proposal{}, errors.New("AI form values do not match the active Flow360 schema: " + err.Error())
 	}
 	return proposal, nil
+}
+
+// preserveRequiredFarfield prevents an autonomous Agent patch from deleting
+// the Flow360 infrastructure that was created with the Geometry. Arrays use
+// JSON merge-patch replacement semantics, so returning an empty or partial
+// volume_zones array would otherwise silently remove AutomatedFarfield.
+func preserveRequiredFarfield(baseline, patch json.RawMessage) (json.RawMessage, bool, error) {
+	var baselineDocument map[string]any
+	var patchDocument map[string]any
+	if json.Unmarshal(baseline, &baselineDocument) != nil || json.Unmarshal(patch, &patchDocument) != nil {
+		return nil, false, errors.New("AI parameter patch or Flow360 baseline is invalid")
+	}
+	if wrapped, ok := baselineDocument["simulation_params"].(map[string]any); ok {
+		baselineDocument = wrapped
+	}
+	baselineMeshing, _ := baselineDocument["meshing"].(map[string]any)
+	baselineZones, _ := baselineMeshing["volume_zones"].([]any)
+	required := make([]any, 0, 1)
+	for _, raw := range baselineZones {
+		zone, _ := raw.(map[string]any)
+		if isAutomatedFarfield(zone) {
+			required = append(required, zone)
+		}
+	}
+	if len(required) == 0 {
+		return patch, false, nil
+	}
+	patchMeshing, exists := patchDocument["meshing"].(map[string]any)
+	if !exists {
+		return patch, false, nil
+	}
+	rawZones, explicitlySet := patchMeshing["volume_zones"]
+	if !explicitlySet {
+		return patch, false, nil
+	}
+	patchZones, _ := rawZones.([]any)
+	for _, raw := range patchZones {
+		zone, _ := raw.(map[string]any)
+		if isAutomatedFarfield(zone) {
+			return patch, false, nil
+		}
+	}
+	patchMeshing["volume_zones"] = append(required, patchZones...)
+	updated, err := json.Marshal(patchDocument)
+	if err != nil {
+		return nil, false, errors.New("could not preserve the required AutomatedFarfield volume zone")
+	}
+	return updated, true, nil
+}
+
+func isAutomatedFarfield(zone map[string]any) bool {
+	return zone != nil && (strings.EqualFold(stringValue(zone["type"]), "AutomatedFarfield") ||
+		strings.EqualFold(stringValue(zone["type_name"]), "AutomatedFarfield"))
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action, validationErr error, attempt int) string {

@@ -99,7 +99,10 @@ func ValidateImportedGeometryContract(baseline json.RawMessage, geometry Geometr
 // boundary models. Explicit semantic names produced by the CAD Agent (wall,
 // inlet/outlet/farfield, periodic) take precedence; otherwise a physical CAD
 // surface retains the safe external-body Wall fallback. AutomatedFarfield's
-// symmetric ghost is assigned to SymmetryPlane without asking the user.
+// symmetric ghost is assigned to SymmetryPlane without asking the user only
+// when the plane actually lies on the Geometry boundary. AutomatedFarfield can
+// expose an interior helper ghost named "symmetric"; assigning that entity as
+// a boundary condition creates an invalid Flow360 model.
 func CompleteSimulationPatch(baseline json.RawMessage, desired map[string]any) (map[string]any, error) {
 	var document map[string]any
 	if !json.Valid(baseline) || json.Unmarshal(baseline, &document) != nil {
@@ -255,11 +258,41 @@ func exactSymmetryGhost(info map[string]any) map[string]any {
 	ghosts, _ := info["ghost_entities"].([]any)
 	for _, raw := range ghosts {
 		ghost, _ := raw.(map[string]any)
-		if strings.EqualFold(stringValue(ghost["name"]), "symmetric") {
+		if strings.EqualFold(stringValue(ghost["name"]), "symmetric") && ghostCoincidesWithGeometryBoundary(info, ghost) {
 			return ghost
 		}
 	}
 	return nil
+}
+
+func ghostCoincidesWithGeometryBoundary(info, ghost map[string]any) bool {
+	normal, normalOK := numberSlice(ghost["normal_axis"])
+	center, centerOK := numberSlice(ghost["center"])
+	bounds, boundsOK := info["global_bounding_box"].([]any)
+	if !normalOK || !centerOK || !boundsOK || len(normal) != 3 || len(center) != 3 || len(bounds) != 2 {
+		return false
+	}
+	low, lowOK := numberSlice(bounds[0])
+	high, highOK := numberSlice(bounds[1])
+	if !lowOK || !highOK || len(low) != 3 || len(high) != 3 {
+		return false
+	}
+	axis := -1
+	for index, value := range normal {
+		if value > 0.5 || value < -0.5 {
+			axis = index
+			break
+		}
+	}
+	if axis < 0 {
+		return false
+	}
+	span := abs(high[axis] - low[axis])
+	tolerance := span * 1e-6
+	if tolerance < 1e-9 {
+		tolerance = 1e-9
+	}
+	return abs(center[axis]-low[axis]) <= tolerance || abs(center[axis]-high[axis]) <= tolerance
 }
 
 func faceCoincidesWithSymmetry(face, ghost map[string]any) bool {

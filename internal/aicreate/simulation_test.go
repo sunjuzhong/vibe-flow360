@@ -37,6 +37,7 @@ func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
 		{"type":"Fluid"}
 	],"private_attribute_asset_cache":{"project_entity_info":{
 		"face_group_tag":"faceId",
+		"global_bounding_box":[[-1,-1,0],[1,1,2]],
 		"grouped_faces":[[
 			{"name":"inlet","private_attribute_id":"inlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
 			{"name":"outlet","private_attribute_id":"outlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
@@ -44,7 +45,7 @@ func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
 			{"name":"spanwise_periodic_min","private_attribute_id":"periodic-min","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
 			{"name":"cylinder_wall","private_attribute_id":"wall","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}
 		]],
-		"ghost_entities":[{"name":"symmetric","private_attribute_id":"symmetric","private_attribute_entity_type_name":"GhostCircularPlane"}]
+		"ghost_entities":[{"name":"symmetric","center":[0,0,0],"normal_axis":[0,0,1],"private_attribute_id":"symmetric","private_attribute_entity_type_name":"GhostCircularPlane"}]
 	}}}`)
 	patch, err := CompleteSimulationPatch(baseline, map[string]any{})
 	if err != nil {
@@ -72,6 +73,33 @@ func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
 	symmetryEntities := storedBoundaryEntities(byType["SymmetryPlane"])
 	if len(symmetryEntities) != 1 || symmetryEntities[0].(map[string]any)["name"] != "symmetric" {
 		t.Fatalf("AutomatedFarfield symmetry mapping failed: %#v", symmetryEntities)
+	}
+}
+
+func TestCompleteSimulationPatchRejectsInteriorSymmetricGhost(t *testing.T) {
+	baseline := json.RawMessage(`{"models":[
+		{"type":"Wall","entities":{"stored_entities":[{"name":"*"}]}},
+		{"type":"Freestream","entities":{"stored_entities":[{"name":"farfield"}]}},
+		{"type":"Fluid"}
+	],"private_attribute_asset_cache":{"project_entity_info":{
+		"face_group_tag":"faceId",
+		"global_bounding_box":[[-27.5,-20,-4],[7.5,20,0]],
+		"grouped_faces":[[
+			{"name":"spanwise_periodic_min","private_attribute_id":"periodic-min","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"spanwise_periodic_max","private_attribute_id":"periodic-max","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"cylinder_wall","private_attribute_id":"wall","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}
+		]],
+		"ghost_entities":[{"name":"symmetric","center":[0,0,0],"normal_axis":[0,1,0],"private_attribute_id":"symmetric","private_attribute_entity_type_name":"GhostCircularPlane"}]
+	}}}`)
+	patch, err := CompleteSimulationPatch(baseline, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range patch["models"].([]any) {
+		model := raw.(map[string]any)
+		if model["type"] == "SymmetryPlane" {
+			t.Fatalf("interior AutomatedFarfield helper was assigned as a boundary: %#v", model)
+		}
 	}
 }
 
