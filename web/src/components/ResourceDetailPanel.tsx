@@ -296,6 +296,10 @@ export default function ResourceDetailPanel({
               <ResultTablePreview
                 path={previewResult.path}
                 content={previewResult.content}
+                candidates={results.flatMap((result, index) => result.path && /\.csv$/i.test(result.path)
+                  ? [{ path: result.path, label: result.name ?? `Result ${index + 1}` }]
+                  : [])}
+                loadCandidate={(candidatePath) => api.previewResult(resourceType, resourceId, candidatePath)}
                 onClose={() => setPreviewResult(null)}
               />
             )}

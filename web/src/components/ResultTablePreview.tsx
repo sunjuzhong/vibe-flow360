@@ -1,8 +1,10 @@
-import { AlertCircle, FileSpreadsheet, RefreshCw, X } from 'lucide-react'
-import { useId, useMemo } from 'react'
+import { AlertCircle, BarChart3, FileSpreadsheet, RefreshCw, Table2, X } from 'lucide-react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { DatasetPicker, datasetCompatibility, recommendResultChart, ResultChartPanel, type ChartDataset } from './ResultChartPanel'
 
-const MAX_PREVIEW_ROWS = 200
+const MAX_CHART_ROWS = 5000
+const MAX_TABLE_ROWS = 200
 const MAX_PREVIEW_COLUMNS = 40
 
 export type ParsedResultTable = {
@@ -90,7 +92,7 @@ export function parseResultTable(content: string, path = ''): ParsedResultTable 
     firstRow[index]?.trim() || `Column ${index + 1}`
   ))
   const dataRows = parsedRows.slice(1)
-  const rows = dataRows.slice(0, MAX_PREVIEW_ROWS).map((row) => (
+  const rows = dataRows.slice(0, MAX_CHART_ROWS).map((row) => (
     Array.from({ length: columnCount }, (_, index) => row[index] ?? '')
   ))
 
@@ -98,7 +100,7 @@ export function parseResultTable(content: string, path = ''): ParsedResultTable 
     headers,
     rows,
     totalRows: dataRows.length,
-    truncated: dataRows.length > MAX_PREVIEW_ROWS || parsedRows.some((row) => row.length > MAX_PREVIEW_COLUMNS),
+    truncated: dataRows.length > MAX_CHART_ROWS || parsedRows.some((row) => row.length > MAX_PREVIEW_COLUMNS),
     delimiter: detected === ',' ? 'comma' : detected === '\t' ? 'tab' : 'whitespace',
   }
 }
@@ -112,17 +114,59 @@ export function ResultTablePreview({
   content,
   loading = false,
   error = '',
+  candidates = [],
+  loadCandidate,
   onClose,
 }: {
   path: string
   content?: string
   loading?: boolean
   error?: string
+  candidates?: { path: string; label?: string }[]
+  loadCandidate?: (path: string) => Promise<string>
   onClose: () => void
 }) {
   const titleId = useId()
   const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, 'button.icon-button')
   const table = useMemo(() => content === undefined ? null : parseResultTable(content, path), [content, path])
+  const recommendation = useMemo(() => table ? recommendResultChart(table) : null, [table])
+  const [view, setView] = useState<'chart' | 'table'>('chart')
+  const [extraDatasets, setExtraDatasets] = useState<ChartDataset[]>([])
+  const [tablePath, setTablePath] = useState(path)
+  const [candidateLoading, setCandidateLoading] = useState('')
+  const [candidateError, setCandidateError] = useState('')
+  const datasets = useMemo<ChartDataset[]>(() => table ? [{ path, table }, ...extraDatasets] : extraDatasets, [extraDatasets, path, table])
+  const selectedTable = datasets.find((dataset) => dataset.path === tablePath) ?? datasets[0]
+
+  useEffect(() => {
+    setExtraDatasets([])
+    setTablePath(path)
+    setCandidateError('')
+  }, [path])
+
+  useEffect(() => {
+    if (recommendation && recommendation.yColumns.length === 0) setView('table')
+  }, [recommendation])
+
+  const addDataset = async (candidatePath: string) => {
+    if (!loadCandidate || !table || datasets.length >= 3) return
+    setCandidateLoading(candidatePath)
+    setCandidateError('')
+    try {
+      const candidateContent = await loadCandidate(candidatePath)
+      const candidateTable = parseResultTable(candidateContent, candidatePath)
+      const compatibility = datasetCompatibility(table, candidateTable)
+      if (!compatibility.compatible) {
+        setCandidateError(`${candidatePath.split('/').pop()}: ${compatibility.reason}`)
+        return
+      }
+      setExtraDatasets((current) => [...current, { path: candidatePath, table: candidateTable }])
+    } catch (candidateFailure) {
+      setCandidateError(String(candidateFailure).replace('Error: ', ''))
+    } finally {
+      setCandidateLoading('')
+    }
+  }
 
   return (
     <div ref={dialogRef} className="result-preview-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -154,25 +198,50 @@ export function ResultTablePreview({
               <span>{table.totalRows.toLocaleString()} data rows</span>
               <span>{table.headers.length} columns</span>
               <span>{table.delimiter} separated</span>
-              {table.truncated && <em>Preview truncated</em>}
+              {table.truncated && <em>Chart data truncated</em>}
+              {table.totalRows > MAX_TABLE_ROWS && <em>Table shows first {MAX_TABLE_ROWS}</em>}
+              <div className="result-preview-view-toggle" role="group" aria-label="Result view">
+                <button className={view === 'chart' ? 'selected' : ''} onClick={() => setView('chart')} disabled={!recommendation?.yColumns.length}><BarChart3 size={12} />Chart</button>
+                <button className={view === 'table' ? 'selected' : ''} onClick={() => setView('table')}><Table2 size={12} />Table</button>
+              </div>
             </div>
-            <div className="result-preview-content">
-              <table className="result-preview-table">
-                <thead>
-                  <tr>{table.headers.map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {table.rows.map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {row.map((cell, cellIndex) => (
-                        <td className={isNumericCell(cell) ? 'numeric' : ''} key={cellIndex}>{cell || '—'}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {table.rows.length === 0 && <div className="result-preview-empty">This result contains headers but no data rows.</div>}
-            </div>
+            {view === 'chart' && recommendation && (
+              <>
+                {loadCandidate && candidates.length > 0 && (
+                  <DatasetPicker candidates={datasets.length >= 3 ? [] : candidates} selected={datasets.map((dataset) => dataset.path)} loadingPath={candidateLoading} error={candidateError} onAdd={(candidatePath) => void addDataset(candidatePath)} />
+                )}
+                <ResultChartPanel
+                  datasets={datasets}
+                  recommendation={recommendation}
+                  onRemoveDataset={(datasetPath) => {
+                    setExtraDatasets((current) => current.filter((dataset) => dataset.path !== datasetPath))
+                    if (tablePath === datasetPath) setTablePath(path)
+                  }}
+                />
+              </>
+            )}
+            {view === 'table' && selectedTable && (
+              <div className="result-preview-content">
+                {datasets.length > 1 && (
+                  <label className="result-table-dataset-select">Dataset<select value={selectedTable.path} onChange={(event) => setTablePath(event.target.value)}>{datasets.map((dataset) => <option value={dataset.path} key={dataset.path}>{dataset.path.split('/').pop()}</option>)}</select></label>
+                )}
+                <table className="result-preview-table">
+                  <thead>
+                    <tr>{selectedTable.table.headers.map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {selectedTable.table.rows.slice(0, MAX_TABLE_ROWS).map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {row.map((cell, cellIndex) => (
+                          <td className={isNumericCell(cell) ? 'numeric' : ''} key={cellIndex}>{cell || '—'}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {selectedTable.table.rows.length === 0 && <div className="result-preview-empty">This result contains headers but no data rows.</div>}
+              </div>
+            )}
           </>
         )}
       </section>

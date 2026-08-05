@@ -35,15 +35,16 @@ describe('parseResultTable', () => {
 })
 
 describe('ResultTablePreview', () => {
-  it('renders accessible tabular result content', () => {
+  it('renders an accessible adaptive result explorer', () => {
     const markup = renderToStaticMarkup(
       <ResultTablePreview path="results/forces.csv" content={'step,cl\n1,0.5'} onClose={() => undefined} />,
     )
 
     expect(markup).toContain('role="dialog"')
-    expect(markup).toContain('result-preview-table')
-    expect(markup).toContain('<th>step</th>')
-    expect(markup).toContain('<td class="numeric">0.5</td>')
+    expect(markup).toContain('result-chart-panel')
+    expect(markup).toContain('Adaptive view')
+    expect(markup).toContain('Chart')
+    expect(markup).toContain('Table')
     expect(markup).toContain('Close result preview')
   })
 })

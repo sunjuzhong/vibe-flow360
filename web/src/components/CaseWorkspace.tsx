@@ -422,6 +422,10 @@ export default function CaseWorkspace({
               content={resultPreview.content}
               loading={resultPreview.loading}
               error={resultPreview.error}
+              candidates={resultRecords.flatMap((result, index) => result.path && /\.csv$/i.test(result.path)
+                ? [{ path: result.path, label: result.name ?? `Result ${index + 1}` }]
+                : [])}
+              loadCandidate={(candidatePath) => api.previewResult('Case', resourceId ?? detail?.id ?? '', candidatePath)}
               onClose={() => setResultPreview(null)}
             />
           )}
