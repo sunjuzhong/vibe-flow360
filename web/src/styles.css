@@ -4867,6 +4867,60 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .project-drawer-right .detail-field-grid { grid-template-columns: 1fr; }
 
+.project-parameters-dialog {
+  position: fixed;
+  z-index: 72;
+  top: calc(50% + 30px);
+  left: 50%;
+  display: flex;
+  width: min(920px, calc(100vw - 40px));
+  max-height: calc(100vh - 116px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d0d3c8;
+  border-radius: 13px;
+  outline: 0;
+  background: #fafaf7;
+  box-shadow: 0 24px 70px rgba(25, 29, 21, .28);
+  transform: translate(-50%, -50%);
+}
+.project-parameters-header {
+  display: grid;
+  min-height: 54px;
+  flex: 0 0 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid #dfe1d9;
+  color: #52631e;
+  background: #f3f5ec;
+}
+.project-parameters-header strong,
+.project-parameters-header span { display: block; }
+.project-parameters-header strong { color: #343b2e; font-size: 11px; }
+.project-parameters-header span { margin-top: 2px; color: #858c7d; font: 7px 'DM Mono'; }
+.project-parameters-header > button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d2d4cb;
+  border-radius: 7px;
+  color: #676d62;
+  background: #fff;
+  cursor: pointer;
+}
+.project-parameters-body {
+  min-height: 240px;
+  overflow: auto;
+  padding: 18px;
+  overscroll-behavior: contain;
+}
+.project-parameters-body > .detail-empty,
+.project-parameters-body > .detail-state { min-height: 240px; }
+
 .project-page > .project-sync-state {
   position: fixed;
   z-index: 58;
@@ -4941,6 +4995,17 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .canvas-stage-strip { display: none; }
   .project-panel-scrim { inset: 58px 0 0; }
   .project-drawer { top: 58px; width: 100vw; }
+  .project-parameters-dialog {
+    top: 58px;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    max-height: none;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    transform: none;
+  }
+  .project-parameters-body { padding: 13px; }
   .project-canvas > .geometry-workspace > .geometry-preflight {
     right: 10px;
     bottom: 10px;

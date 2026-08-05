@@ -28,6 +28,7 @@ import {
   type ResourceNode,
 } from '../api/client'
 import CopilotPanel from '../components/CopilotPanel'
+import DraftParametersDialog from '../components/DraftParametersDialog'
 import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
 import PlanPanel from '../components/PlanPanel'
@@ -149,15 +150,13 @@ export default function ProjectPage() {
   const [draftDetail, setDraftDetail] = useState<ResourceDetail | null>(null)
   const [draftDetailLoading, setDraftDetailLoading] = useState(false)
   const [draftDetailError, setDraftDetailError] = useState('')
-  const [draftDataSource, setDraftDataSource] = useState<'live' | 'cache'>('live')
-  const [draftCachedAt, setDraftCachedAt] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [initialPlanId, setInitialPlanId] = useState('')
   const openedRequestedPlan = useRef('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
-  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'draft' | null>(initialProjectPanel)
+  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'parameters' | null>(initialProjectPanel)
   const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -380,8 +379,6 @@ export default function ProjectPage() {
     try {
       const response = await api.resourceDetail('Draft', activeDraftId)
       setDraftDetail(response.data)
-      setDraftDataSource(response.source)
-      setDraftCachedAt(response.cachedAt || '')
     } catch (cause) {
       setDraftDetail(null)
       setDraftDetailError(String(cause).replace('Error: ', ''))
@@ -652,7 +649,7 @@ export default function ProjectPage() {
                   detailLoading={draftDetailLoading}
                   error={draftsError}
                   onSelect={setActiveDraftId}
-                  onInspect={() => setActivePanel('draft')}
+                  onInspect={() => setActivePanel('parameters')}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
                 />
               )}
@@ -817,6 +814,17 @@ export default function ProjectPage() {
                 <div><dt>Tags</dt><dd>{project.tags.length ? project.tags.join(', ') : 'None'}</dd></div>
               </dl>
             </div>
+            {activeDraft && (
+              <div className="inspector-section">
+                <p className="eyebrow">ACTIVE DRAFT</p>
+                <dl>
+                  <div><dt>Name</dt><dd>{activeDraft.name || 'Untitled Draft'}</dd></div>
+                  <div><dt>ID</dt><dd className="mono-value">{activeDraft.id}</dd></div>
+                  <div><dt>Source</dt><dd>{String(activeDraft.source_type || draftDetail?.info?.source_type || 'Project resource')}</dd></div>
+                  <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(draftDetail).toLowerCase()}`}>{resourceStatus(draftDetail)}</span></dd></div>
+                </dl>
+              </div>
+            )}
             <ResourceDetailPanel
               detail={detail}
               loading={detailLoading}
@@ -850,34 +858,17 @@ export default function ProjectPage() {
           </aside>
           )}
 
-          {activePanel === 'draft' && activeDraft && (
-          <aside ref={panelRef} className="resource-inspector project-drawer project-drawer-right" role="dialog" aria-modal="true" aria-label="Draft parameters" tabIndex={-1}>
-            <div className="workbench-panel-title">
-              <GitPullRequestDraft size={15} /><span>Draft configuration</span>
-              <button onClick={closePanel} aria-label="Close Draft parameters"><X size={15} /></button>
-            </div>
-            <div className="inspector-section draft-inspector-summary">
-              <p className="eyebrow">ACTIVE DRAFT</p>
-              <dl>
-                <div><dt>Name</dt><dd>{activeDraft.name || 'Untitled Draft'}</dd></div>
-                <div><dt>ID</dt><dd className="mono-value">{activeDraft.id}</dd></div>
-                <div><dt>Source</dt><dd>{String(activeDraft.source_type || draftDetail?.info?.source_type || 'Project resource')}</dd></div>
-                <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(draftDetail).toLowerCase()}`}>{resourceStatus(draftDetail)}</span></dd></div>
-              </dl>
-              <p className="draft-review-note">This Draft is editable configuration context. Meshing or solving still requires an approved run.</p>
-            </div>
-            <ResourceDetailPanel
+          {activePanel === 'parameters' && activeDraft && (
+            <DraftParametersDialog
+              ref={panelRef}
+              draftId={activeDraft.id}
+              draftName={activeDraft.name}
               detail={draftDetail}
               loading={draftDetailLoading}
               error={draftDetailError}
-              resourceType="Draft"
-              resourceId={activeDraft.id}
+              onClose={closePanel}
               onRetry={() => void loadDraftDetail()}
-              dataSource={draftDataSource}
-              cachedAt={draftCachedAt}
-              initialTab="parameters"
             />
-          </aside>
           )}
         </div>
       )}
