@@ -52,11 +52,13 @@ import {
 import { resourceStatus } from './ResourceDetailPanel'
 import {
   buildGeometryEntityAppearances,
+  isCfdGeometryAppearancePreset,
   loadGeometryAppearanceAssignments,
   loadGeometryAppearanceLibrary,
   newGeometryAppearance,
   saveGeometryAppearanceAssignments,
   saveGeometryAppearanceLibrary,
+  type GeometryAppearance,
 } from '../lib/geometryAppearances'
 import {
   LazyViewer3D,
@@ -90,6 +92,29 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
   document.body.appendChild(link)
   link.click()
   link.remove()
+}
+
+function GeometryAppearanceOptions({ appearances }: { appearances: GeometryAppearance[] }) {
+  const general = appearances.filter(({ id }) => !isCfdGeometryAppearancePreset(id))
+  const cfd = appearances.filter(({ id }) => isCfdGeometryAppearancePreset(id))
+  return (
+    <>
+      {general.length > 0 && (
+        <optgroup label="General display materials">
+          {general.map((appearance) => (
+            <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
+          ))}
+        </optgroup>
+      )}
+      {cfd.length > 0 && (
+        <optgroup label="CFD boundary display presets">
+          {cfd.map((appearance) => (
+            <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
+          ))}
+        </optgroup>
+      )}
+    </>
+  )
 }
 
 export default function GeometryWorkspace({
@@ -792,9 +817,7 @@ export default function GeometryWorkspace({
                 {selectedSurfaceAppearanceId === '__mixed__' && (
                   <option value="__mixed__" disabled>Mixed materials</option>
                 )}
-                {appearances.map((appearance) => (
-                  <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
-                ))}
+                <GeometryAppearanceOptions appearances={appearances} />
               </select>
             </label>
           )}
@@ -809,9 +832,7 @@ export default function GeometryWorkspace({
             <label className="geometry-semantic-field">
               Material record
               <select value={selectedAppearanceId} onChange={(event) => setSelectedAppearanceId(event.target.value)}>
-                {appearances.map((appearance) => (
-                  <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
-                ))}
+                <GeometryAppearanceOptions appearances={appearances} />
               </select>
             </label>
             <label className="geometry-semantic-field">
@@ -839,7 +860,8 @@ export default function GeometryWorkspace({
               <button type="button" disabled={appearances.length <= 1} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
             </div>
             <small className="geometry-semantic-safety">
-              Material ID: {selectedAppearance?.id}. Names are editable labels; Surface links use the stable ID.
+              Visual display only; CFD boundary semantics are assigned separately below. Material ID: {selectedAppearance?.id}.
+              Names are editable labels; Surface links use the stable ID.
             </small>
           </div>
         </details>

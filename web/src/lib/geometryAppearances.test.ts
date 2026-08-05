@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildGeometryEntityAppearances,
+  cfdGeometryAppearancePresets,
   defaultGeometryAppearances,
   loadGeometryAppearanceLibrary,
   loadGeometryAppearanceAssignments,
@@ -48,10 +49,25 @@ describe('geometry appearance persistence', () => {
     expect(loaded.at(-1)).toMatchObject({ id: 'shared', name: 'Shared style' })
   })
 
-  it('does not recreate a deleted seeded material in version 2 storage', () => {
+  it('additively migrates version 2 libraries with CFD presets without overwriting edits', () => {
+    const parsed = parseGeometryAppearanceLibrary(JSON.stringify({
+      version: 2,
+      items: [
+        { id: 'default-cad', name: 'My CAD', color: '#112233', opacity: 0.42 },
+        { id: 'custom', name: 'My style', color: '#334455', opacity: 0.8 },
+      ],
+    }))
+    expect(parsed.find(({ id }) => id === 'default-cad')).toEqual({
+      id: 'default-cad', name: 'My CAD', color: '#112233', opacity: 0.42,
+    })
+    expect(parsed.find(({ id }) => id === 'custom')?.name).toBe('My style')
+    expect(cfdGeometryAppearancePresets.every((preset) => parsed.some(({ id }) => id === preset.id))).toBe(true)
+  })
+
+  it('does not recreate a deleted seeded material after migration to version 3', () => {
     const storage = memoryStorage()
     saveGeometryAppearanceLibrary(defaultGeometryAppearances.filter((item) => item.id !== 'transparent'), storage)
-    expect(loadGeometryAppearanceLibrary(storage).map((item) => item.id)).toEqual(['default-cad', 'rotating'])
+    expect(loadGeometryAppearanceLibrary(storage).some((item) => item.id === 'transparent')).toBe(false)
   })
 
   it('keeps Surface associations stable when a material name changes', () => {

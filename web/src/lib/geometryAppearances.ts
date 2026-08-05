@@ -10,11 +10,33 @@ type StorageLike = Pick<Storage, 'getItem' | 'setItem'>
 const LIBRARY_KEY = 'vibe-flow360.geometry-appearances.v1'
 const assignmentKey = (resourceId: string) => `vibe-flow360.geometry-appearance-assignments.v1:${resourceId}`
 
-export const defaultGeometryAppearances: GeometryAppearance[] = [
+export const generalGeometryAppearancePresets: GeometryAppearance[] = [
   { id: 'default-cad', name: 'Default CAD', color: '#6f8790', opacity: 0.9 },
   { id: 'transparent', name: 'Transparent enclosure', color: '#8fb8c8', opacity: 0.28 },
   { id: 'rotating', name: 'Rotating zone', color: '#d59a2d', opacity: 0.78 },
 ]
+
+export const cfdGeometryAppearancePresets: GeometryAppearance[] = [
+  { id: 'cfd-wall', name: 'Wall', color: '#68737d', opacity: 0.95 },
+  { id: 'cfd-farfield', name: 'Farfield / Freestream', color: '#4da3c7', opacity: 0.22 },
+  { id: 'cfd-inflow', name: 'Inflow', color: '#2563eb', opacity: 0.72 },
+  { id: 'cfd-outflow', name: 'Outflow', color: '#e07a2d', opacity: 0.72 },
+  { id: 'cfd-periodic', name: 'Periodic', color: '#8b5cf6', opacity: 0.65 },
+  { id: 'cfd-symmetry', name: 'Symmetry', color: '#14b8a6', opacity: 0.35 },
+  { id: 'cfd-slip-wall', name: 'Slip wall', color: '#38bdf8', opacity: 0.42 },
+  { id: 'cfd-porous-jump', name: 'Porous jump', color: '#c05a9d', opacity: 0.68 },
+]
+
+export const defaultGeometryAppearances: GeometryAppearance[] = [
+  ...generalGeometryAppearancePresets,
+  ...cfdGeometryAppearancePresets,
+]
+
+const cfdPresetIds = new Set(cfdGeometryAppearancePresets.map(({ id }) => id))
+
+export function isCfdGeometryAppearancePreset(id: string): boolean {
+  return cfdPresetIds.has(id)
+}
 
 function validAppearance(value: unknown): value is GeometryAppearance {
   if (!value || typeof value !== 'object') return false
@@ -28,14 +50,18 @@ export function parseGeometryAppearanceLibrary(raw: string | null): GeometryAppe
   if (!raw) return defaultGeometryAppearances
   try {
     const parsed = JSON.parse(raw) as unknown
+    let stored: GeometryAppearance[] = []
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const versioned = parsed as { version?: number; items?: unknown[] }
-      if (versioned.version === 2 && Array.isArray(versioned.items)) {
+      if (versioned.version === 3 && Array.isArray(versioned.items)) {
         const items = versioned.items.filter(validAppearance)
         return items.length > 0 ? items : defaultGeometryAppearances
       }
+      if (versioned.version === 2 && Array.isArray(versioned.items)) {
+        stored = versioned.items.filter(validAppearance)
+      }
     }
-    const legacy = Array.isArray(parsed) ? parsed.filter(validAppearance) : []
+    const legacy = Array.isArray(parsed) ? parsed.filter(validAppearance) : stored
     const seeded = defaultGeometryAppearances.map((preset) => {
       const override = legacy.find((item) => item.id === preset.id)
       return override ? { ...preset, ...override } : preset
@@ -57,7 +83,7 @@ export function saveGeometryAppearanceLibrary(
   appearances: GeometryAppearance[],
   storage: StorageLike = window.localStorage,
 ) {
-  storage.setItem(LIBRARY_KEY, JSON.stringify({ version: 2, items: appearances }))
+  storage.setItem(LIBRARY_KEY, JSON.stringify({ version: 3, items: appearances }))
 }
 
 export function loadGeometryAppearanceAssignments(
