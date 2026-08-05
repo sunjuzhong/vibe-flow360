@@ -149,6 +149,83 @@ func (c *Client) Projects(ctx context.Context, limit int, folderID string) (json
 	return raw, nil
 }
 
+// FindProjectByName reconciles a Project whose create command completed but
+// returned an incomplete response. The creation-time boundary prevents an old
+// same-name Project from being mistaken for the current request.
+func (c *Client) FindProjectByName(ctx context.Context, folderID, name, sourceType string, notBefore time.Time) (json.RawMessage, error) {
+	raw, err := c.Projects(ctx, 100, folderID)
+	if err != nil {
+		return nil, err
+	}
+	expectedName := strings.TrimSpace(name)
+	expectedType := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(sourceType)), "-", "")
+	var selected map[string]any
+	var selectedAt time.Time
+	for _, record := range collectRecordsFromKeys(raw, "records", "projects", "items") {
+		projectName, _ := record["name"].(string)
+		projectID, _ := record["id"].(string)
+		if strings.TrimSpace(projectName) != expectedName || strings.TrimSpace(projectID) == "" {
+			continue
+		}
+		rootType, _ := record["root_item_type"].(string)
+		if rootType == "" {
+			rootType, _ = record["rootItemType"].(string)
+		}
+		if expectedType != "" && strings.ReplaceAll(strings.ToLower(rootType), "-", "") != expectedType {
+			continue
+		}
+		createdAt, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(stringField(record, "created_at", "createdAt")))
+		if parseErr != nil || (!notBefore.IsZero() && createdAt.Before(notBefore)) {
+			continue
+		}
+		if selected == nil || createdAt.After(selectedAt) {
+			selected = record
+			selectedAt = createdAt
+		}
+	}
+	if selected == nil {
+		return nil, errors.New("matching newly created Flow360 Project was not found")
+	}
+	return json.Marshal(selected)
+}
+
+func collectRecordsFromKeys(raw json.RawMessage, keys ...string) []map[string]any {
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil
+	}
+	var visit func(any) []map[string]any
+	visit = func(value any) []map[string]any {
+		switch typed := value.(type) {
+		case []any:
+			records := make([]map[string]any, 0, len(typed))
+			for _, item := range typed {
+				if record, ok := item.(map[string]any); ok {
+					records = append(records, record)
+				}
+			}
+			return records
+		case map[string]any:
+			for _, key := range keys {
+				if nested, ok := typed[key]; ok {
+					return visit(nested)
+				}
+			}
+		}
+		return nil
+	}
+	return visit(payload)
+}
+
+func stringField(record map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := record[key].(string); ok {
+			return value
+		}
+	}
+	return ""
+}
+
 func (c *Client) Folders(ctx context.Context) (json.RawMessage, error) {
 	return c.jsonCommand(ctx, "folder", "tree")
 }

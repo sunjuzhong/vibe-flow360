@@ -111,6 +111,40 @@ func TestCompactProjectOutputPreservesIDsOutsideFirstJSONValue(t *testing.T) {
 	}
 }
 
+func TestFindProjectByNameReturnsOnlyCurrentMatchingProject(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > %q
+printf '%%s' '{"records":[{"id":"prj-old","name":"Cylinder study","root_item_type":"Geometry","created_at":"2026-08-05T02:00:00Z"},{"id":"prj-wrong-type","name":"Cylinder study","root_item_type":"SurfaceMesh","created_at":"2026-08-05T03:01:00Z"},{"id":"prj-new","name":"Cylinder study","root_item_type":"Geometry","created_at":"2026-08-05T03:02:00Z"}]}'
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	raw, err := client.FindProjectByName(
+		context.Background(), "folder-1", "Cylinder study", "geometry",
+		time.Date(2026, 8, 5, 3, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"id":"prj-new"`) {
+		t.Fatalf("unexpected reconciled Project: %s", raw)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(args)
+	for _, expected := range []string{"project\nlist\n", "--folder-id\nfolder-1\n", "--exclude-subfolders\n"} {
+		if !strings.Contains(got, expected) {
+			t.Errorf("missing %q in command arguments: %q", expected, got)
+		}
+	}
+}
+
 func TestResourceCommandNormalizesTypes(t *testing.T) {
 	tests := map[string]string{
 		"Geometry":    "geometry",

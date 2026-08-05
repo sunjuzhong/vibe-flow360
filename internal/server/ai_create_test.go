@@ -219,6 +219,45 @@ func TestNormalizeAICreateResultRecoversProjectIDFromCLIText(t *testing.T) {
 	}
 }
 
+func TestReconcileAICreateProjectResultRecoversMissingProjectID(t *testing.T) {
+	lookups := 0
+	notBefore := time.Date(2026, 8, 5, 3, 0, 0, 0, time.UTC)
+	lookup := func(_ context.Context, name, sourceType string, boundary time.Time) (json.RawMessage, error) {
+		lookups++
+		if name != "Cylinder study" || sourceType != "geometry" || !boundary.Equal(notBefore) {
+			t.Fatalf("unexpected reconciliation input: %q %q %s", name, sourceType, boundary)
+		}
+		if lookups == 1 {
+			return nil, errors.New("not visible yet")
+		}
+		return json.RawMessage(`{"id":"prj-recovered","name":"Cylinder study","root_item_type":"Geometry"}`), nil
+	}
+	reconciled, err := reconcileAICreateProjectResult(
+		context.Background(), json.RawMessage(`{"result":{"id":null,"type":"Project"}}`),
+		"Cylinder study", "geometry", notBefore, lookup, 3, time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lookups != 2 || findProjectIDFromRaw(reconciled) != "prj-recovered" {
+		t.Fatalf("unexpected reconciliation after %d lookups: %s", lookups, reconciled)
+	}
+}
+
+func TestReconcileAICreateProjectResultKeepsCompleteResponse(t *testing.T) {
+	original := json.RawMessage(`{"id":"prj-complete","type":"Project"}`)
+	reconciled, err := reconcileAICreateProjectResult(
+		context.Background(), original, "ignored", "geometry", time.Time{},
+		func(context.Context, string, string, time.Time) (json.RawMessage, error) {
+			t.Fatal("lookup should not run for a complete response")
+			return nil, nil
+		}, 1, 0,
+	)
+	if err != nil || !bytes.Equal(reconciled, original) {
+		t.Fatalf("complete result changed: %s, %v", reconciled, err)
+	}
+}
+
 func TestNormalizeAICreateResultReportsCreatedProjectWhenRootNeverAppears(t *testing.T) {
 	lookup := func(context.Context, string) (json.RawMessage, error) {
 		return nil, errors.New("not ready")

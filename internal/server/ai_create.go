@@ -23,6 +23,8 @@ import (
 const maxAICreateIntentBytes = 4000
 const maxAICreateRequestBytes = 20 << 10
 const maxAICreateClarificationRounds = 8
+const aiCreateProjectReconcileAttempts = 15
+const aiCreateProjectReconcileDelay = 2 * time.Second
 
 var flow360ProjectIDPattern = regexp.MustCompile(`\bprj-[A-Za-z0-9][A-Za-z0-9-]{7,}\b`)
 
@@ -142,6 +144,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 
+	projectCreateStartedAt := time.Now().UTC()
 	rawResult, err := s.flow360.CreateProjectSync(
 		c.Request.Context(), []string{geometryPath}, "geometry", blueprint.ProjectName,
 		blueprint.Geometry.Unit, "standard", "", session.FolderID, []string{"ai-create", "agent-cad-v1"},
@@ -149,6 +152,21 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateProjectError(err)})
 		return
+	}
+	if findProjectIDFromRaw(rawResult) == "" {
+		reconciled, reconcileErr := reconcileAICreateProjectResult(
+			c.Request.Context(), rawResult, blueprint.ProjectName, "geometry",
+			projectCreateStartedAt.Add(-30*time.Second),
+			func(ctx context.Context, name, sourceType string, notBefore time.Time) (json.RawMessage, error) {
+				return s.flow360.FindProjectByName(ctx, session.FolderID, name, sourceType, notBefore)
+			},
+			aiCreateProjectReconcileAttempts, aiCreateProjectReconcileDelay,
+		)
+		if reconcileErr == nil {
+			rawResult = reconciled
+		} else {
+			log.Printf("AI Create could not reconcile incomplete Flow360 Project response %s: %v", compactAICreateResult(rawResult), reconcileErr)
+		}
 	}
 	normalized, err := s.normalizeAICreateResult(c.Request.Context(), rawResult, "geometry")
 	if err != nil {
@@ -226,6 +244,61 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: stages, Warnings: warnings,
 	})
+}
+
+func reconcileAICreateProjectResult(
+	ctx context.Context,
+	original json.RawMessage,
+	name, sourceType string,
+	notBefore time.Time,
+	lookup func(context.Context, string, string, time.Time) (json.RawMessage, error),
+	attempts int,
+	delay time.Duration,
+) (json.RawMessage, error) {
+	if findProjectIDFromRaw(original) != "" {
+		return original, nil
+	}
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		project, err := lookup(ctx, name, sourceType, notBefore)
+		if err == nil {
+			var record map[string]any
+			if json.Unmarshal(project, &record) == nil {
+				if projectID, _ := record["id"].(string); strings.TrimSpace(projectID) != "" {
+					return json.Marshal(map[string]any{
+						"project_id":         strings.TrimSpace(projectID),
+						"reconciled_project": record,
+						"flow360_result":     json.RawMessage(original),
+					})
+				}
+			}
+			lastErr = errors.New("reconciled Flow360 Project has no ID")
+		} else {
+			lastErr = err
+		}
+		if attempt == attempts-1 {
+			break
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, fmt.Errorf("newly created Flow360 Project was not visible during reconciliation: %w", lastErr)
+}
+
+func compactAICreateResult(raw json.RawMessage) string {
+	value := strings.Join(strings.Fields(string(raw)), " ")
+	if len(value) > 2000 {
+		return value[:2000] + "…"
+	}
+	return value
 }
 
 func aiCreateCompletionStages(plan plans.Plan, draftReady bool) []string {
