@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,16 @@ func TestPlanAssistRepairPromptIncludesExactIssuesAndRemovalSemantics(t *testing
 	}
 }
 
+func TestPlanAssistIssueContextPreservesSchemaPaths(t *testing.T) {
+	context := planAssistIssueContext([]flow360.PreflightIssue{
+		{Path: "meshing.volume_zones", Message: "A required value is missing."},
+		{Message: "The selected model is inconsistent with its entities."},
+	})
+	if len(context) != 2 || context[0] != "meshing.volume_zones: A required value is missing." || context[1] != "The selected model is inconsistent with its entities." {
+		t.Fatalf("preflight evidence lost schema context: %#v", context)
+	}
+}
+
 func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"},"step_size":{"type":"quantity","unit":"s","value_schema":{"type":"number"}},"max_steps":{"type":"json"}}}}}`)
 	composer := planComposerContext{
@@ -95,45 +107,6 @@ func TestPreparePlanAssistProposalRemovesCanonicalReferenceAreaDiscriminator(t *
 	}
 	if len(proposal.ValidationHints) != 1 || !strings.Contains(proposal.ValidationHints[0], "reference_geometry.area.type_name") {
 		t.Fatalf("sanitization was not auditable: %#v", proposal.ValidationHints)
-	}
-}
-
-func TestPrepareAutonomousPlanPreservesRequiredAutomatedFarfield(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"volume_zones":{"type":"array","items":{"type":"json"}}}}}}`)
-	composer := planComposerContext{
-		Request:  planComposerRequest{ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case", Intent: "ready to run", Autonomous: true},
-		Name:     "Geometry",
-		Baseline: json.RawMessage(`{"simulation_params":{"meshing":{"volume_zones":[{"name":"Farfield","type":"AutomatedFarfield","relative_size":50}]}}}`),
-	}
-	action := agent.Action{Proposals: []agent.Proposal{{
-		SourceType: "Geometry", Target: "case", Patch: json.RawMessage(`{"meshing":{"volume_zones":[]}}`),
-	}}}
-	proposal, err := preparePlanAssistProposal(action, composer, schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(proposal.Patch), `"type":"AutomatedFarfield"`) {
-		t.Fatalf("autonomous patch deleted the required Farfield zone: %s", proposal.Patch)
-	}
-	if len(proposal.ValidationHints) != 1 || !strings.Contains(proposal.ValidationHints[0], "Preserved") {
-		t.Fatalf("Farfield preservation was not auditable: %#v", proposal.ValidationHints)
-	}
-}
-
-func TestPrepareInteractivePlanMayExplicitlyReplaceVolumeZones(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"volume_zones":{"type":"array","items":{"type":"json"}}}}}}`)
-	composer := planComposerContext{
-		Request:  planComposerRequest{ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case"},
-		Name:     "Geometry",
-		Baseline: json.RawMessage(`{"meshing":{"volume_zones":[{"type":"AutomatedFarfield"}]}}`),
-	}
-	action := agent.Action{Proposals: []agent.Proposal{{SourceType: "Geometry", Target: "case", Patch: json.RawMessage(`{"meshing":{"volume_zones":[]}}`)}}}
-	proposal, err := preparePlanAssistProposal(action, composer, schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(proposal.Patch), "AutomatedFarfield") {
-		t.Fatalf("interactive edit was unexpectedly overridden: %s", proposal.Patch)
 	}
 }
 
@@ -190,6 +163,70 @@ func TestResolveAutonomousPlanAssistQuestionsContinuesWithRecommendedReynoldsNum
 	}
 }
 
+func TestGenerateSchemaNativePlanRejectsMechanicalQuestionsAndRepairsOnThirdAttempt(t *testing.T) {
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	preflightScript := `#!/bin/sh
+if grep -q '"required_value":true' "$3"; then
+  valid=true
+  issues='[]'
+else
+  valid=false
+  issues='[{"level":"error","code":"missing","path":"required_value","message":"A schema-required value is missing.","stages":["Case"]}]'
+fi
+printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"form_schema":{"type":"object","properties":{"required_value":{"type":"boolean"}}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"required_value":{"type":"boolean"}}},"VolumeMesh":{"type":"object","properties":{"required_value":{"type":"boolean"}}},"Case":{"type":"object","properties":{"required_value":{"type":"boolean"}}}}}' "$valid" "$issues"
+`
+	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+
+	modelCalls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		modelCalls++
+		content := `{"version":"v1","kind":"create-plan","message":"Initial candidate.","proposals":[{"id":"generic","action":"Geometry","target":"case","name":"Generic setup","intent":"ready to run","patch":{"required_value":false},"branch_preview":"generic","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		if modelCalls == 2 || modelCalls == 3 {
+			content = `{"version":"v1","kind":"request-missing-input","message":"Please configure the missing schema field.","questions":[{"field":"required_value","message":"Choose the required configuration value.","urgency":"required"}]}`
+		}
+		if modelCalls == 4 {
+			content = `{"version":"v1","kind":"create-plan","message":"Repaired from schema evidence.","proposals":[{"id":"generic","action":"Geometry","target":"case","name":"Generic setup","intent":"ready to run","patch":{"required_value":true},"branch_preview":"generic","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		}
+		encoded, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer model.Close()
+
+	schema := json.RawMessage(`{"type":"object","properties":{"required_value":{"type":"boolean"}}}`)
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360: &flow360.Client{Binary: "flow360"},
+	}
+	result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case",
+			Intent: "Build a ready-to-run setup.", Prompt: "Complete all configuration autonomously.", Autonomous: true,
+		},
+		Name: "Geometry", Baseline: json.RawMessage(`{}`),
+		Form: flow360.PlanFormSchema{
+			Stages:  []string{"SurfaceMesh", "VolumeMesh", "Case"},
+			Schemas: map[string]json.RawMessage{"SurfaceMesh": schema, "VolumeMesh": schema, "Case": schema},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls != 4 || result.RepairAttempts != 3 {
+		t.Fatalf("expected initial generation plus three bounded repairs, calls=%d repairs=%d", modelCalls, result.RepairAttempts)
+	}
+	if result.Preflight == nil || !result.Preflight.Valid || result.Proposal == nil || !strings.Contains(string(result.Proposal.Patch), `"required_value":true`) {
+		t.Fatalf("third repair did not produce a valid generic setup: %#v", result)
+	}
+	if result.Action.Kind == agent.ActionRequestMissingInput {
+		t.Fatal("schema-mechanical questions escaped to the user")
+	}
+}
+
 func TestPlanAssistFormRepairPromptForbidsCanonicalDiscriminatorEcho(t *testing.T) {
 	prompt := planAssistFormRepairPrompt(
 		planComposerRequest{SourceType: "Geometry", Target: "case", Intent: "basic cylinder flow"},
@@ -243,7 +280,8 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 		"Never invent a nearby field name",
 		"Build a coherent setup across all active stages",
 		"choose defensible reviewable defaults",
-		"do not ask for a physical wind tunnel",
+		"Preserve schema-valid infrastructure and entity assignments",
+		"never ask the user to perform a schema-mechanical correction",
 		"Do not turn every unspecified preference into a blocking question",
 	} {
 		if !strings.Contains(prompt, expected) {

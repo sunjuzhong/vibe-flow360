@@ -351,7 +351,7 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		{Key: "geometry.generator", Value: blueprint.Geometry.Generator, Provenance: "derived", Description: "Constrained CAD program selected by the geometry agent."},
 		{Key: "geometry.operations", Value: len(blueprint.Geometry.Operations), Provenance: "derived", Description: "Validated parametric and boolean CAD operations."},
 		{Key: "geometry.validation", Value: blueprint.Geometry.Validation, Provenance: "derived", Description: "Exact CAD kernel and STEP round-trip validation."},
-		{Key: "models.boundary_semantics", Value: "Named Geometry face groups and Flow360 ghost entities", Provenance: "derived", Description: "Mapped deterministic wall, farfield, periodic, and symmetry intent from the imported CAD entity cache."},
+		{Key: "models.boundary_semantics", Value: "Named Geometry face groups and Flow360 schema evidence", Provenance: "derived", Description: "Mapped explicit CAD face semantics and left remaining entity assignments to schema-driven preflight repair."},
 		{Key: "simulation.parameters", Value: "installed-schema-derived and preflighted", Provenance: "inferred", Description: "The parameter Agent used the installed Flow360 stage schemas and canonical Geometry baseline."},
 		{Key: "simulation.schema_version", Value: assisted.Preflight.SchemaVersion, Provenance: "derived", Description: "Flow360 schema contract used for parameter validation."},
 		{Key: "simulation.repair_attempts", Value: assisted.RepairAttempts, Provenance: "derived", Description: "Bounded schema-driven self-repair attempts before Draft creation."},

@@ -931,51 +931,6 @@ fi
 	}
 }
 
-func TestPlanPreflightRestoresRequiredAutomatedFarfieldBeforeValidation(t *testing.T) {
-	temp := t.TempDir()
-	fakePython := filepath.Join(temp, "python")
-	fakeResult := `#!/bin/sh
-if grep -q '"type":"AutomatedFarfield"' "$3"; then
-  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]}}'
-else
-  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"value_error","path":"meshing.volume_zones","message":"Farfield zone is required in volume_zones.","stages":["VolumeMesh"]}],"form_schema":{"type":"object","properties":{}}}'
-fi
-`
-	if err := os.WriteFile(fakePython, []byte(fakeResult), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
-	store, err := plans.NewStore(filepath.Join(temp, "plans"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := store.Create(plans.CreateInput{
-		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
-		Target: "case", Name: "cylinder", Intent: "Run a cylinder case.",
-		Baseline: json.RawMessage(`{"simulation_params":{"meshing":{"volume_zones":[{"name":"Farfield","type":"AutomatedFarfield","relative_size":50}]},"models":[{"type":"Fluid"}]}}`),
-		Patch:    json.RawMessage(`{"meshing":{"volume_zones":[]}}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := &Server{plans: store, flow360: &flow360.Client{Binary: "flow360"}}
-
-	updated := app.runPlanPreflight(context.Background(), created)
-	if updated.Preflight == nil || !updated.Preflight.Valid {
-		t.Fatalf("required Farfield was not restored before preflight: %#v", updated.Preflight)
-	}
-	if updated.Revision != 2 {
-		t.Fatalf("Farfield repair should create one auditable revision, got %d", updated.Revision)
-	}
-	merged, err := plans.MergedSimulationParams(updated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(merged), `"type":"AutomatedFarfield"`) {
-		t.Fatalf("restored Farfield was not persisted: %s", merged)
-	}
-}
-
 func TestValidateAndApplyInterventionPersistsPatchAndRealPreflight(t *testing.T) {
 	temp := t.TempDir()
 	fakePython := filepath.Join(temp, "python")

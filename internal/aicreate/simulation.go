@@ -98,11 +98,10 @@ func ValidateImportedGeometryContract(baseline json.RawMessage, geometry Geometr
 // CompleteSimulationPatch resolves named CAD faces into schema-supported
 // boundary models. Explicit semantic names produced by the CAD Agent (wall,
 // inlet/outlet/farfield, periodic) take precedence; otherwise a physical CAD
-// surface retains the safe external-body Wall fallback. AutomatedFarfield's
-// symmetric ghost is assigned to SymmetryPlane without asking the user only
-// when the plane actually lies on the Geometry boundary. AutomatedFarfield can
-// expose an interior helper ghost named "symmetric"; assigning that entity as
-// a boundary condition creates an invalid Flow360 model.
+// surface retains the safe external-body Wall fallback. Remaining imported or
+// generated entities are deliberately left to the installed Flow360 schema and
+// preflight-driven parameter Agent; this layer must not infer boundary models
+// from provider-specific ghost names.
 func CompleteSimulationPatch(baseline json.RawMessage, desired map[string]any) (map[string]any, error) {
 	var document map[string]any
 	if !json.Valid(baseline) || json.Unmarshal(baseline, &document) != nil {
@@ -159,13 +158,6 @@ func CompleteSimulationPatch(baseline json.RawMessage, desired map[string]any) (
 			"spec": map[string]any{"type_name": "Translational"},
 		})
 	}
-	if layout.Symmetry != nil {
-		models = append(models, map[string]any{
-			"type": "SymmetryPlane", "name": "Symmetry",
-			"surfaces": map[string]any{"stored_entities": []any{layout.Symmetry}},
-		})
-	}
-
 	patch, err := cloneMap(desired)
 	if err != nil {
 		return nil, err
@@ -178,7 +170,6 @@ type boundaryLayout struct {
 	Wall       []any
 	Freestream []any
 	Periodic   []any
-	Symmetry   map[string]any
 }
 
 func geometryBoundaryLayout(document map[string]any) (boundaryLayout, error) {
@@ -203,14 +194,13 @@ func geometryBoundaryLayout(document map[string]any) (boundaryLayout, error) {
 	}
 
 	layout := boundaryLayout{}
-	layout.Symmetry = exactSymmetryGhost(info)
 	for _, raw := range named {
 		entity, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		name := strings.ToLower(stringValue(entity["name"]))
-		if name == "" || faceCoincidesWithSymmetry(entity, layout.Symmetry) {
+		if name == "" {
 			continue
 		}
 		concrete := concreteFaceEntities(entity)
@@ -252,106 +242,6 @@ func concreteFaceEntities(group map[string]any) []any {
 		return []any{group}
 	}
 	return result
-}
-
-func exactSymmetryGhost(info map[string]any) map[string]any {
-	ghosts, _ := info["ghost_entities"].([]any)
-	for _, raw := range ghosts {
-		ghost, _ := raw.(map[string]any)
-		if strings.EqualFold(stringValue(ghost["name"]), "symmetric") && ghostCoincidesWithGeometryBoundary(info, ghost) {
-			return ghost
-		}
-	}
-	return nil
-}
-
-func ghostCoincidesWithGeometryBoundary(info, ghost map[string]any) bool {
-	normal, normalOK := numberSlice(ghost["normal_axis"])
-	center, centerOK := numberSlice(ghost["center"])
-	bounds, boundsOK := info["global_bounding_box"].([]any)
-	if !normalOK || !centerOK || !boundsOK || len(normal) != 3 || len(center) != 3 || len(bounds) != 2 {
-		return false
-	}
-	low, lowOK := numberSlice(bounds[0])
-	high, highOK := numberSlice(bounds[1])
-	if !lowOK || !highOK || len(low) != 3 || len(high) != 3 {
-		return false
-	}
-	axis := -1
-	for index, value := range normal {
-		if value > 0.5 || value < -0.5 {
-			axis = index
-			break
-		}
-	}
-	if axis < 0 {
-		return false
-	}
-	span := abs(high[axis] - low[axis])
-	tolerance := span * 1e-6
-	if tolerance < 1e-9 {
-		tolerance = 1e-9
-	}
-	return abs(center[axis]-low[axis]) <= tolerance || abs(center[axis]-high[axis]) <= tolerance
-}
-
-func faceCoincidesWithSymmetry(face, ghost map[string]any) bool {
-	if ghost == nil {
-		return false
-	}
-	normal, ok := numberSlice(ghost["normal_axis"])
-	if !ok || len(normal) != 3 {
-		return false
-	}
-	center, ok := numberSlice(ghost["center"])
-	if !ok || len(center) != 3 {
-		return false
-	}
-	attributes, _ := face["private_attributes"].(map[string]any)
-	bounds, _ := attributes["bounding_box"].([]any)
-	if len(bounds) != 2 {
-		return false
-	}
-	low, lowOK := numberSlice(bounds[0])
-	high, highOK := numberSlice(bounds[1])
-	if !lowOK || !highOK || len(low) != 3 || len(high) != 3 {
-		return false
-	}
-	axis := -1
-	for index, value := range normal {
-		if value > 0.5 || value < -0.5 {
-			axis = index
-			break
-		}
-	}
-	if axis < 0 {
-		return false
-	}
-	const tolerance = 1e-9
-	return abs(low[axis]-center[axis]) < tolerance && abs(high[axis]-center[axis]) < tolerance
-}
-
-func numberSlice(value any) ([]float64, bool) {
-	raw, ok := value.([]any)
-	if !ok {
-		return nil, false
-	}
-	result := make([]float64, 0, len(raw))
-	for _, item := range raw {
-		number, ok := item.(float64)
-		if !ok {
-			return nil, false
-		}
-		result = append(result, number)
-	}
-	return result, true
-}
-
-func abs(value float64) float64 {
-	if value < 0 {
-		return -value
-	}
-	return value
 }
 
 func containsAny(value string, candidates ...string) bool {

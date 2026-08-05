@@ -194,6 +194,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			SourceID: composer.Request.SourceID, SourceType: composer.Request.SourceType,
 			SourceName: composer.Name, Target: composer.Request.Target,
 			SimulationParams: merged, FormSchema: repairCatalog,
+			PreflightIssues: planAssistIssueContext(preflight.Issues),
 			ConfirmedInputs: composer.Request.ConfirmedInputs,
 		})
 		if contextErr != nil {
@@ -214,6 +215,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			break
 		}
 		if repairedAction.Kind == agent.ActionRequestMissingInput {
+			if composer.Request.Autonomous {
+				action.Warnings = append(action.Warnings, fmt.Sprintf("The parameter Agent tried to expose a schema-mechanical correction as user input on repair %d; the request was rejected and retried.", agentRepairAttempts))
+				continue
+			}
 			action = repairedAction
 			break
 		}
@@ -238,6 +243,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			autoRepaired = true
 		}
 	}
+	if composer.Request.Autonomous && !preflight.Valid {
+		issues, _ := json.Marshal(preflight.Issues)
+		return planAssistResponse{}, fmt.Errorf("the parameter Agent could not produce a schema-valid Flow360 setup after %d autonomous repairs; remaining preflight issues: %s", maxPlanAssistRepairAttempts, issues)
+	}
 
 	preflight.EditorSchemas = nil
 	if action.Kind == agent.ActionCreatePlan && len(action.Proposals) == 1 {
@@ -247,6 +256,20 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		Action: *action, Proposal: &proposal, Preflight: &preflight,
 		RepairAttempts: repairAttempts, AutoRepaired: autoRepaired,
 	}, nil
+}
+
+func planAssistIssueContext(issues []flow360.PreflightIssue) []string {
+	result := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		path := strings.TrimSpace(issue.Path)
+		message := strings.TrimSpace(issue.Message)
+		if path == "" {
+			result = append(result, message)
+			continue
+		}
+		result = append(result, path+": "+message)
+	}
+	return result
 }
 
 func (s *Server) resolveAutonomousPlanAssistQuestions(ctx context.Context, composer planComposerContext, contextPayload []byte, action *agent.Action) (*agent.Action, error) {
@@ -376,16 +399,6 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 	if strings.TrimSpace(proposal.Name) == "" {
 		proposal.Name = composer.Name + " · " + composer.Request.Target
 	}
-	if composer.Request.Autonomous {
-		preserved, changed, err := preserveRequiredFarfield(composer.Baseline, proposal.Patch)
-		if err != nil {
-			return agent.Proposal{}, err
-		}
-		proposal.Patch = preserved
-		if changed {
-			proposal.ValidationHints = append(proposal.ValidationHints, "Preserved the baseline AutomatedFarfield volume zone required by Flow360.")
-		}
-	}
 	sanitized, removed, err := plans.SanitizeFormValues(schema, proposal.Patch)
 	if err != nil {
 		return agent.Proposal{}, errors.New("AI form values could not be projected onto the active Flow360 schema: " + err.Error())
@@ -399,64 +412,6 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 		return agent.Proposal{}, errors.New("AI form values do not match the active Flow360 schema: " + err.Error())
 	}
 	return proposal, nil
-}
-
-// preserveRequiredFarfield prevents an autonomous Agent patch from deleting
-// the Flow360 infrastructure that was created with the Geometry. Arrays use
-// JSON merge-patch replacement semantics, so returning an empty or partial
-// volume_zones array would otherwise silently remove AutomatedFarfield.
-func preserveRequiredFarfield(baseline, patch json.RawMessage) (json.RawMessage, bool, error) {
-	var baselineDocument map[string]any
-	var patchDocument map[string]any
-	if json.Unmarshal(baseline, &baselineDocument) != nil || json.Unmarshal(patch, &patchDocument) != nil {
-		return nil, false, errors.New("AI parameter patch or Flow360 baseline is invalid")
-	}
-	if wrapped, ok := baselineDocument["simulation_params"].(map[string]any); ok {
-		baselineDocument = wrapped
-	}
-	baselineMeshing, _ := baselineDocument["meshing"].(map[string]any)
-	baselineZones, _ := baselineMeshing["volume_zones"].([]any)
-	required := make([]any, 0, 1)
-	for _, raw := range baselineZones {
-		zone, _ := raw.(map[string]any)
-		if isAutomatedFarfield(zone) {
-			required = append(required, zone)
-		}
-	}
-	if len(required) == 0 {
-		return patch, false, nil
-	}
-	patchMeshing, exists := patchDocument["meshing"].(map[string]any)
-	if !exists {
-		return patch, false, nil
-	}
-	rawZones, explicitlySet := patchMeshing["volume_zones"]
-	if !explicitlySet {
-		return patch, false, nil
-	}
-	patchZones, _ := rawZones.([]any)
-	for _, raw := range patchZones {
-		zone, _ := raw.(map[string]any)
-		if isAutomatedFarfield(zone) {
-			return patch, false, nil
-		}
-	}
-	patchMeshing["volume_zones"] = append(required, patchZones...)
-	updated, err := json.Marshal(patchDocument)
-	if err != nil {
-		return nil, false, errors.New("could not preserve the required AutomatedFarfield volume zone")
-	}
-	return updated, true, nil
-}
-
-func isAutomatedFarfield(zone map[string]any) bool {
-	return zone != nil && (strings.EqualFold(stringValue(zone["type"]), "AutomatedFarfield") ||
-		strings.EqualFold(stringValue(zone["type_name"]), "AutomatedFarfield"))
-}
-
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return text
 }
 
 func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action, validationErr error, attempt int) string {
@@ -592,7 +547,7 @@ Read the schema catalog field-by-field before composing the patch. Each catalog 
 
 Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact. Use sparse merge-patch semantics and include only deliberate changes.
 
-When the user asks for a basic, baseline, demonstration, or first-pass simulation, choose defensible reviewable defaults for missing operating, meshing, physical-model, and steady/unsteady settings when the active schemas support them. Put every inferred value in assumptions and explain the engineering consequence in the message. For external-flow baselines, answer explicitly whether the existing automated farfield/domain treatment is sufficient; do not ask for a physical wind tunnel unless the user requests wall-bounded tunnel effects. Ask a focused question only when the choice would materially change geometry, make the setup invalid, or has no defensible baseline. Do not turn every unspecified preference into a blocking question.
+When the user asks for a basic, baseline, demonstration, or first-pass simulation, choose defensible reviewable defaults for missing operating, meshing, physical-model, and steady/unsteady settings when the active schemas support them. Put every inferred value in assumptions and explain the engineering consequence in the message. Preserve schema-valid infrastructure and entity assignments already supplied by the source resource unless the active schema or a real preflight issue requires changing them. Ask a focused question only when the choice would materially change geometry, make the setup invalid, or has no defensible baseline. Do not turn every unspecified preference into a blocking question, and never ask the user to perform a schema-mechanical correction.
 
 Use the language of the Plan intent and User form instruction for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
 

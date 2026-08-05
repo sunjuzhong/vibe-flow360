@@ -844,16 +844,6 @@ func (s *Server) applyPlanInputs(c *gin.Context) {
 
 func (s *Server) runPlanPreflight(ctx context.Context, plan plans.Plan) plans.Plan {
 	current := plan
-	// Older AI Create plans may already contain an Agent patch that replaced
-	// volume_zones and accidentally removed Geometry's required
-	// AutomatedFarfield. Repair that merge-patch mistake before asking Flow360
-	// to validate, so the generic recovery UI is never used for this mechanical
-	// correction.
-	if preserved, changed, err := preserveRequiredFarfield(current.Baseline, current.Patch); err == nil && changed {
-		if updated, applyErr := s.plans.ApplySchemaInputs(current.ID, current.Revision, preserved); applyErr == nil {
-			current = updated
-		}
-	}
 	const maxSchemaRepairs = 3
 	for attempt := 0; attempt <= maxSchemaRepairs; attempt++ {
 		current = s.runPlanPreflightOnce(ctx, current)
