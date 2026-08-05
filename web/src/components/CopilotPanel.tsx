@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import { api, type AgentAction, type AgentState, type ChatMessage } from '../api/client'
 import { readSSE } from '../lib/sse'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
 
 type Message = ChatMessage & {
   error?: boolean
@@ -38,6 +39,7 @@ export default function CopilotPanel({
   const panelRef = useFocusTrap(open, onClose, 'textarea')
 
   const [converting, setConverting] = useState(false)
+  const [clarificationAction, setClarificationAction] = useState<AgentAction | null>(null)
 
   useEffect(() => {
     api.agentState().then(setAgent).catch(() => setAgent(null))
@@ -51,10 +53,15 @@ export default function CopilotPanel({
     api.agentChatSession(projectId, resourceId)
       .then((session) => {
         if (scopeRef.current === scope) {
-          setMessages(session.messages.map((message) => ({
+          const restored = session.messages.map((message) => ({
             ...message,
             action: message.role === 'assistant' ? extractAction(message.content) ?? undefined : undefined,
-          })))
+          }))
+          setMessages(restored)
+          const latest = restored.at(-1)
+          setClarificationAction(latest?.role === 'assistant' && latest.action?.kind === 'request-missing-input'
+            ? latest.action
+            : null)
         }
       })
       .catch(() => {
@@ -83,6 +90,14 @@ export default function CopilotPanel({
           return parsed as AgentAction
         }
       } catch { /* not JSON */ }
+    }
+    const firstBrace = text.indexOf('{')
+    const lastBrace = text.lastIndexOf('}')
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        const parsed = JSON.parse(text.slice(firstBrace, lastBrace + 1))
+        if (parsed && parsed.kind && parsed.message) return parsed as AgentAction
+      } catch { /* not a complete JSON object */ }
     }
     return null
   }
@@ -117,8 +132,8 @@ export default function CopilotPanel({
     }
   }
 
-  const submit = async () => {
-    const text = input.trim()
+  const submit = async (submittedText?: string) => {
+    const text = (submittedText ?? input).trim()
     if (!text || busy || sessionLoading) return
     const scope = `${projectId}\u0000${resourceId ?? ''}`
     const history = messages.map(({ role, content }) => ({ role, content }))
@@ -148,6 +163,10 @@ export default function CopilotPanel({
             const action = extractAction(accumulated)
             return { role: 'assistant', content: accumulated, action: action ?? undefined }
           }))
+        }
+        if (event.type === 'done') {
+          const action = extractAction(accumulated)
+          setClarificationAction(action?.kind === 'request-missing-input' ? action : null)
         }
         if (event.type === 'error') throw new Error(event.error || 'AI service unavailable')
       })
@@ -224,7 +243,9 @@ export default function CopilotPanel({
             {message.role === 'assistant' && <span className="message-avatar"><Sparkles size={12} /></span>}
             <div className="message-body">
               {message.role === 'assistant'
-                ? message.content
+                ? message.action
+                  ? <ReactMarkdown>{message.action.message}</ReactMarkdown>
+                  : message.content
                   ? <ReactMarkdown>{message.content}</ReactMarkdown>
                   : <div className="thinking"><span /><span /><span /></div>
                 : message.content}
@@ -263,6 +284,11 @@ export default function CopilotPanel({
                   </button>
                 </div>
               )}
+              {message.action?.kind === 'request-missing-input' && Boolean(message.action.questions?.length) && (
+                <button className="action-plan-convert" type="button" onClick={() => setClarificationAction(message.action ?? null)}>
+                  Answer engineering questions
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -278,6 +304,17 @@ export default function CopilotPanel({
         />
         <div><span>Review before running</span><button className="send-button" disabled={!input.trim() || busy || sessionLoading}><ArrowUp size={16} /></button></div>
       </form>
+      <AgentClarificationDialog
+        open={Boolean(clarificationAction?.questions?.length)}
+        message={clarificationAction?.message}
+        questions={clarificationAction?.questions ?? []}
+        busy={busy}
+        onClose={() => setClarificationAction(null)}
+        onSubmit={(_answers: ClarificationAnswers, summary) => {
+          setClarificationAction(null)
+          void submit(summary)
+        }}
+      />
     </aside>
   )
 }

@@ -296,6 +296,7 @@ func (s *Server) routes() {
 		api.POST("/interventions", s.createIntervention)
 		api.POST("/interventions/:intervention_id/diagnose", s.runInterventionDiagnosis)
 		api.POST("/interventions/:intervention_id/proposals", s.generateInterventionProposals)
+		api.POST("/interventions/:intervention_id/answers", s.submitInterventionAnswers)
 		api.POST("/interventions/:intervention_id/select", s.selectInterventionProposal)
 		api.POST("/interventions/:intervention_id/compile", s.compileInterventionPatch)
 		api.POST("/interventions/:intervention_id/validate", s.validateIntervention)
@@ -1129,7 +1130,7 @@ func (s *Server) runInterventionAutoCycle(interventionID string) {
 		}
 
 		switch intervention.State {
-		case agent.InterventionProposal:
+		case agent.InterventionProposal, agent.InterventionMissingInput:
 			return
 		case agent.InterventionUserFeedback:
 			intervention, err = s.interventionEngine.RunEngineStep(interventionID)

@@ -2,10 +2,12 @@ import { AlertCircle, ChevronRight, Loader2, Sparkles, X, CheckCircle2, AlertTri
 import { FormEvent, useEffect, useState } from 'react'
 import { api, type Intervention } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
 
 const stateLabels: Record<string, string> = {
   observation: 'Observing',
   diagnosis: 'Diagnosing',
+  missing_input: 'Needs input',
   proposal: 'Awaiting selection',
   user_feedback: 'Awaiting feedback',
   patch_compile: 'Compiling patch',
@@ -18,6 +20,7 @@ const stateLabels: Record<string, string> = {
 const stateColors: Record<string, string> = {
   observation: 'state-observation',
   diagnosis: 'state-diagnosis',
+  missing_input: 'state-feedback',
   proposal: 'state-proposal',
   user_feedback: 'state-feedback',
   patch_compile: 'state-compile',
@@ -70,6 +73,7 @@ export default function InterventionPanel({
   const [loading, setLoading] = useState(false)
   const [action, setAction] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [clarificationOpen, setClarificationOpen] = useState(false)
   const panelRef = useFocusTrap(open, onClose, 'textarea,button.primary,button:not(.icon-button)')
 
   const loadInterventions = async () => {
@@ -89,6 +93,10 @@ export default function InterventionPanel({
     const timer = window.setInterval(() => void loadInterventions(), 2000)
     return () => window.clearInterval(timer)
   }, [open, projectId, planId])
+
+  useEffect(() => {
+    setClarificationOpen(Boolean(selected?.state === 'missing_input' && selected.pending_questions?.length))
+  }, [selected?.id, selected?.state])
 
   const handleDiagnose = async () => {
     if (!selected || loading) return
@@ -116,6 +124,24 @@ export default function InterventionPanel({
       const result = await api.generateInterventionProposals(selected.id)
       setSelected(result)
       updateIntervention(result)
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setLoading(false)
+      setAction(null)
+    }
+  }
+
+  const handleClarification = async (answers: ClarificationAnswers) => {
+    if (!selected || loading) return
+    setLoading(true)
+    setAction('clarification')
+    setError('')
+    try {
+      const result = await api.answerInterventionQuestions(selected.id, answers)
+      setSelected(result)
+      updateIntervention(result)
+      setClarificationOpen(Boolean(result.state === 'missing_input' && result.pending_questions?.length))
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -309,6 +335,14 @@ export default function InterventionPanel({
                   </section>
                 )}
 
+                {selected.clarification_history?.map((record, index) => (
+                  <section className="intervention-section" key={`${record.created_at}-${index}`}>
+                    <h3>Clarification record</h3>
+                    <pre className="agent-clarification-record">{record.summary}</pre>
+                    <small>{new Date(record.created_at).toLocaleString()}</small>
+                  </section>
+                ))}
+
                 {selected.proposals && selected.proposals.length > 0 && (
                   <section className="intervention-section">
                     <h3><Sparkles size={15} /> Fix Proposals ({selected.proposals.length})</h3>
@@ -426,6 +460,12 @@ export default function InterventionPanel({
                     </button>
                   )}
 
+                  {selected.state === 'missing_input' && (
+                    <button className="primary" disabled={loading} onClick={() => setClarificationOpen(true)}>
+                      <Sparkles size={14} /> Answer engineering questions
+                    </button>
+                  )}
+
                   {selected.state === 'user_feedback' && selected.selected_proposal && (
                     <button
                       className="primary"
@@ -481,6 +521,15 @@ export default function InterventionPanel({
             )}
           </main>
         </div>
+        <AgentClarificationDialog
+          open={clarificationOpen}
+          title="Recovery details required"
+          message={selected?.clarification_message}
+          questions={selected?.pending_questions ?? []}
+          busy={loading && action === 'clarification'}
+          onClose={() => setClarificationOpen(false)}
+          onSubmit={(answers: ClarificationAnswers) => void handleClarification(answers)}
+        />
       </section>
     </div>
   )

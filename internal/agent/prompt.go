@@ -67,6 +67,10 @@ When the user's intent requires a plan or missing engineering input, you MUST re
    - message: what the user needs to provide
    - urgency: required/recommended/optional
    - reason: why this matters
+   - type: text/number/select/boolean (default to text only when a structured type is not possible)
+   - unit, default, min, max, and placeholder when relevant
+   - options: [{"value":"stable-id","label":"Human label"}] for select questions
+   Ask at most six focused questions per turn. Prefer number, select, and boolean controls over free text.
 
 ### Rules:
 - Always distinguish user-provided values from assumptions.
@@ -302,7 +306,8 @@ Analyze the simulation failure and propose structured fix actions.
 	sb.WriteString(`
 ## Task
 Propose fix actions as an AgentAction v1 JSON object with:
-- kind: "create-plan" (for proposing parameter changes)
+- kind: "create-plan" when the available evidence is sufficient
+- kind: "request-missing-input" when a consequential engineering value is unknown; include typed questions for a dynamic form
 - Each proposal should include specific parameter changes in the patch field
 - Include reasoning and confidence in the fields
 - If user feedback is present, use its language for all human-readable text. Otherwise, use the language of the error reason. Keep JSON protocol keys and enum values unchanged.

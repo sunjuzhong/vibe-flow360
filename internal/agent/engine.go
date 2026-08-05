@@ -153,11 +153,35 @@ func (e *Engine) runDiagnosis(intervention Intervention) (Intervention, error) {
 
 // generateProposals creates AI-based fix proposals
 func (e *Engine) generateProposals(intervention Intervention) (Intervention, error) {
-	proposals := e.buildProposalsWithAI(intervention)
+	if e.ai != nil && e.ai.SupportsGeneration() {
+		action, proposals := e.buildRecoveryResponse(intervention)
+		if action != nil && action.Kind == ActionRequestMissingInput && len(action.Questions) > 0 {
+			return e.store.Update(intervention.ID, func(i *Intervention) error {
+				return i.RequestClarification(action.Message, action.Questions)
+			})
+		}
+		if len(proposals) > 0 {
+			return e.store.Update(intervention.ID, func(i *Intervention) error {
+				return i.GenerateProposals(proposals)
+			})
+		}
+	}
+	proposals := e.buildProposals(intervention)
 
 	return e.store.Update(intervention.ID, func(i *Intervention) error {
 		return i.GenerateProposals(proposals)
 	})
+}
+
+// SubmitClarification persists recovery answers and continues proposal generation.
+func (e *Engine) SubmitClarification(interventionID string, answers map[string]any) (Intervention, error) {
+	intervention, err := e.store.Update(interventionID, func(i *Intervention) error {
+		return i.SubmitClarification(answers)
+	})
+	if err != nil {
+		return Intervention{}, err
+	}
+	return e.generateProposals(intervention)
 }
 
 // compilePatch compiles the selected proposal into a patch, merging user feedback
@@ -346,7 +370,7 @@ func (e *Engine) Close(id string) (Intervention, error) {
 // buildProposalsWithAI generates fix proposals using the AI service when available
 func (e *Engine) buildProposalsWithAI(intervention Intervention) []Proposal {
 	if e.ai != nil && e.ai.SupportsGeneration() {
-		proposals := e.buildProposalsFromAI(intervention)
+		_, proposals := e.buildRecoveryResponse(intervention)
 		if len(proposals) > 0 {
 			return proposals
 		}
@@ -359,11 +383,21 @@ func (e *Engine) buildProposalsWithAI(intervention Intervention) []Proposal {
 // groups, and current patch context. The response is validated against the
 // AgentAction v1 contract and repaired once if necessary.
 func (e *Engine) buildProposalsFromAI(intervention Intervention) []Proposal {
+	_, proposals := e.buildRecoveryResponse(intervention)
+	return proposals
+}
+
+func (e *Engine) buildRecoveryResponse(intervention Intervention) (*Action, []Proposal) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	var feedback []string
+	for _, record := range intervention.ClarificationHistory {
+		feedback = append(feedback, record.Summary)
+	}
 	prompt, _ := BuildRecoveryPrompt(RecoveryPromptInput{
-		Intervention: intervention,
+		Intervention:        intervention,
+		UserHistoryFeedback: strings.Join(feedback, "\n\n"),
 	})
 
 	chatReq := ChatRequest{
@@ -374,18 +408,23 @@ func (e *Engine) buildProposalsFromAI(intervention Intervention) []Proposal {
 
 	response, action, err := e.ai.ChatWithValidation(ctx, chatReq)
 	if err != nil || strings.TrimSpace(response) == "" {
-		return nil
+		return nil, nil
 	}
 
-	if action != nil && action.Kind == ActionCreatePlan {
-		return proposalsFromAction(*action, intervention)
+	if action != nil {
+		if action.Kind == ActionCreatePlan {
+			return action, proposalsFromAction(*action, intervention)
+		}
+		if action.Kind == ActionRequestMissingInput {
+			return action, nil
+		}
 	}
 
 	proposals := parseAIProposals(response, intervention)
 	if len(proposals) == 0 {
-		return nil
+		return action, nil
 	}
-	return proposals
+	return action, proposals
 }
 
 // proposalsFromAction converts AgentAction v1 proposals into engine proposals

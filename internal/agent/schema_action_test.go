@@ -275,6 +275,43 @@ func TestParseRequestMissingInputQuestions(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsTypedClarificationQuestion(t *testing.T) {
+	raw := `{
+  "version":"v1",
+  "kind":"request-missing-input",
+  "message":"Choose the turbulence model",
+  "questions":[{
+    "field":"model.turbulence",
+    "message":"Which turbulence model should be used?",
+    "urgency":"required",
+    "type":"select",
+    "options":[{"value":"sa","label":"Spalart-Allmaras"},{"value":"sst","label":"k-omega SST"}],
+    "default":"sa"
+  }]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	question := action.Questions[0]
+	if question.Type != "select" || len(question.Options) != 2 || question.Default != "sa" {
+		t.Fatalf("typed question was not preserved: %#v", question)
+	}
+}
+
+func TestParseRejectsSelectQuestionWithoutOptions(t *testing.T) {
+	raw := `{
+  "version":"v1",
+  "kind":"request-missing-input",
+  "message":"Choose a model",
+  "questions":[{"field":"model","message":"Model?","urgency":"required","type":"select"}]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidQuestion) {
+		t.Fatalf("expected ErrInvalidQuestion, got %v", err)
+	}
+}
+
 func TestParseAcceptsFieldWithoutProvenance(t *testing.T) {
 	raw := `{
   "version": "v1",

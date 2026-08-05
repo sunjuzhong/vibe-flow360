@@ -14,6 +14,7 @@ const (
 	// Intervention states
 	InterventionObservation  = "observation"
 	InterventionDiagnosis    = "diagnosis"
+	InterventionMissingInput = "missing_input"
 	InterventionProposal     = "proposal"
 	InterventionUserFeedback = "user_feedback"
 	InterventionPatchCompile = "patch_compile"
@@ -48,32 +49,42 @@ var (
 
 // Intervention represents an agent-mediated recovery process
 type Intervention struct {
-	ID               string            `json:"id"`
-	ProjectID        string            `json:"project_id"`
-	ProjectName      string            `json:"project_name,omitempty"`
-	ResourceID       string            `json:"resource_id,omitempty"`
-	ResourceType     string            `json:"resource_type,omitempty"`
-	PlanID           string            `json:"plan_id,omitempty"`
-	PlanRevision     int               `json:"plan_revision,omitempty"`
-	Target           string            `json:"target,omitempty"`
-	Type             string            `json:"type"`
-	State            string            `json:"state"`
-	Reason           string            `json:"reason"`
-	Confidence       float64           `json:"confidence"`
-	Impact           string            `json:"impact,omitempty"`
-	Evidence         []Evidence        `json:"evidence,omitempty"`
-	Diagnosis        *Diagnosis        `json:"diagnosis,omitempty"`
-	Proposals        []Proposal        `json:"proposals,omitempty"`
-	SelectedProposal *Proposal         `json:"selected_proposal,omitempty"`
-	UserFeedback     string            `json:"user_feedback,omitempty"`
-	RequiresConfirm  []string          `json:"requires_confirmation,omitempty"`
-	CurrentPatch     json.RawMessage   `json:"current_patch,omitempty"`
-	CompiledPatch    json.RawMessage   `json:"compiled_patch,omitempty"`
-	Validation       *ValidationResult `json:"validation,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
-	ResolvedAt       *time.Time        `json:"resolved_at,omitempty"`
-	ClosedAt         *time.Time        `json:"closed_at,omitempty"`
+	ID                   string                `json:"id"`
+	ProjectID            string                `json:"project_id"`
+	ProjectName          string                `json:"project_name,omitempty"`
+	ResourceID           string                `json:"resource_id,omitempty"`
+	ResourceType         string                `json:"resource_type,omitempty"`
+	PlanID               string                `json:"plan_id,omitempty"`
+	PlanRevision         int                   `json:"plan_revision,omitempty"`
+	Target               string                `json:"target,omitempty"`
+	Type                 string                `json:"type"`
+	State                string                `json:"state"`
+	Reason               string                `json:"reason"`
+	Confidence           float64               `json:"confidence"`
+	Impact               string                `json:"impact,omitempty"`
+	Evidence             []Evidence            `json:"evidence,omitempty"`
+	Diagnosis            *Diagnosis            `json:"diagnosis,omitempty"`
+	Proposals            []Proposal            `json:"proposals,omitempty"`
+	SelectedProposal     *Proposal             `json:"selected_proposal,omitempty"`
+	UserFeedback         string                `json:"user_feedback,omitempty"`
+	ClarificationMessage string                `json:"clarification_message,omitempty"`
+	PendingQuestions     []Question            `json:"pending_questions,omitempty"`
+	ClarificationHistory []ClarificationRecord `json:"clarification_history,omitempty"`
+	RequiresConfirm      []string              `json:"requires_confirmation,omitempty"`
+	CurrentPatch         json.RawMessage       `json:"current_patch,omitempty"`
+	CompiledPatch        json.RawMessage       `json:"compiled_patch,omitempty"`
+	Validation           *ValidationResult     `json:"validation,omitempty"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
+	ResolvedAt           *time.Time            `json:"resolved_at,omitempty"`
+	ClosedAt             *time.Time            `json:"closed_at,omitempty"`
+}
+
+// ClarificationRecord preserves a user's structured answers in the recovery session.
+type ClarificationRecord struct {
+	Answers   map[string]any `json:"answers"`
+	Summary   string         `json:"summary"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 // Evidence represents supporting information for diagnosis
@@ -168,6 +179,73 @@ func (i *Intervention) GenerateProposals(proposals []Proposal) error {
 	return nil
 }
 
+// RequestClarification pauses proposal generation until the user supplies
+// engineering inputs requested by the Agent.
+func (i *Intervention) RequestClarification(message string, questions []Question) error {
+	if i.State != InterventionDiagnosis || len(questions) == 0 {
+		return ErrInvalidInterventionState
+	}
+	i.State = InterventionMissingInput
+	i.ClarificationMessage = message
+	i.PendingQuestions = append([]Question(nil), questions...)
+	i.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// SubmitClarification records structured answers and resumes proposal generation.
+func (i *Intervention) SubmitClarification(answers map[string]any) error {
+	if i.State != InterventionMissingInput {
+		return ErrInvalidInterventionState
+	}
+	for _, question := range i.PendingQuestions {
+		if question.Urgency != "required" {
+			continue
+		}
+		value, ok := answers[question.Field]
+		if !ok || answerIsEmpty(value) {
+			return fmt.Errorf("missing required answer: %s", question.Field)
+		}
+	}
+
+	summaryLines := make([]string, 0, len(i.PendingQuestions)+1)
+	summaryLines = append(summaryLines, "Clarification answers")
+	for _, question := range i.PendingQuestions {
+		value, ok := answers[question.Field]
+		if !ok || answerIsEmpty(value) {
+			continue
+		}
+		label := question.Message
+		if label == "" {
+			label = question.Field
+		}
+		unit := ""
+		if question.Unit != "" {
+			unit = " " + question.Unit
+		}
+		summaryLines = append(summaryLines, fmt.Sprintf("- %s (%s): %v%s", label, question.Field, value, unit))
+	}
+	i.ClarificationHistory = append(i.ClarificationHistory, ClarificationRecord{
+		Answers:   answers,
+		Summary:   strings.Join(summaryLines, "\n"),
+		CreatedAt: time.Now().UTC(),
+	})
+	i.State = InterventionDiagnosis
+	i.ClarificationMessage = ""
+	i.PendingQuestions = nil
+	i.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+func answerIsEmpty(value any) bool {
+	if value == nil {
+		return true
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text) == ""
+	}
+	return false
+}
+
 // SelectProposal selects a proposal and records user feedback
 func (i *Intervention) SelectProposal(proposal Proposal, feedback string) error {
 	if i.State != InterventionProposal && i.State != InterventionUserFeedback {
@@ -255,7 +333,8 @@ func (i *Intervention) IsActive() bool {
 func (i *Intervention) CanTransitionTo(newState string) bool {
 	transitions := map[string][]string{
 		InterventionObservation:  {InterventionDiagnosis, InterventionFailed},
-		InterventionDiagnosis:    {InterventionProposal, InterventionFailed},
+		InterventionDiagnosis:    {InterventionMissingInput, InterventionProposal, InterventionFailed},
+		InterventionMissingInput: {InterventionDiagnosis, InterventionClosed},
 		InterventionProposal:     {InterventionUserFeedback, InterventionClosed},
 		InterventionUserFeedback: {InterventionPatchCompile, InterventionProposal, InterventionClosed},
 		InterventionPatchCompile: {InterventionValidation, InterventionFailed},
@@ -333,7 +412,7 @@ func newInterventionID() (string, error) {
 // ValidState checks if a state is valid
 func ValidState(state string) bool {
 	switch state {
-	case InterventionObservation, InterventionDiagnosis, InterventionProposal,
+	case InterventionObservation, InterventionDiagnosis, InterventionMissingInput, InterventionProposal,
 		InterventionUserFeedback, InterventionPatchCompile, InterventionValidation,
 		InterventionResolved, InterventionFailed, InterventionClosed:
 		return true

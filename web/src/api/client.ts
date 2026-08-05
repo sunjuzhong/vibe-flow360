@@ -124,9 +124,28 @@ export type AgentAction = {
   kind: 'create-plan' | 'request-missing-input'
   message: string
   proposals?: AgentProposal[]
-  questions?: Array<{ field: string; message: string; urgency: string; reason?: string }>
+  questions?: AgentQuestion[]
   warnings?: string[]
   assumptions?: string[]
+}
+
+export type AgentQuestionOption = {
+  value: string
+  label: string
+}
+
+export type AgentQuestion = {
+  field: string
+  message: string
+  urgency: 'required' | 'recommended' | 'optional' | string
+  reason?: string
+  type?: 'text' | 'number' | 'select' | 'boolean'
+  unit?: string
+  options?: AgentQuestionOption[]
+  default?: unknown
+  min?: number
+  max?: number
+  placeholder?: string
 }
 
 export type ActionPlanResultItem = {
@@ -613,6 +632,12 @@ export type InterventionValidation = {
   preflight_id?: string
 }
 
+export type InterventionClarificationRecord = {
+  answers: Record<string, unknown>
+  summary: string
+  created_at: string
+}
+
 export type Intervention = {
   id: string
   project_id: string
@@ -632,6 +657,9 @@ export type Intervention = {
   proposals?: AgentProposal[]
   selected_proposal?: AgentProposal
   user_feedback?: string
+  clarification_message?: string
+  pending_questions?: AgentQuestion[]
+  clarification_history?: InterventionClarificationRecord[]
   requires_confirmation?: string[]
   current_patch?: Record<string, unknown>
   compiled_patch?: Record<string, unknown>
@@ -944,6 +972,8 @@ export const api = {
     mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/diagnose`),
   generateInterventionProposals: (id: string) =>
     mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/proposals`),
+  answerInterventionQuestions: (id: string, answers: Record<string, unknown>) =>
+    mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/answers`, { answers }),
   selectInterventionProposal: (id: string, proposalId: string, feedback?: string) =>
     mutate<Intervention>(`/api/interventions/${encodeURIComponent(id)}/select`, { proposal_id: proposalId, feedback }),
   compileInterventionPatch: (id: string, feedback?: string) =>

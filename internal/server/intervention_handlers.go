@@ -33,6 +33,10 @@ type compileInterventionRequest struct {
 	Feedback string `json:"feedback,omitempty"`
 }
 
+type interventionAnswersRequest struct {
+	Answers map[string]any `json:"answers"`
+}
+
 func (s *Server) listInterventions(c *gin.Context) {
 	projectID := strings.TrimSpace(c.Query("project_id"))
 	resourceID := strings.TrimSpace(c.Query("resource_id"))
@@ -112,6 +116,20 @@ func (s *Server) runInterventionDiagnosis(c *gin.Context) {
 
 func (s *Server) generateInterventionProposals(c *gin.Context) {
 	intervention, err := s.interventionEngine.RunEngineStep(c.Param("intervention_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, intervention)
+}
+
+func (s *Server) submitInterventionAnswers(c *gin.Context) {
+	var req interventionAnswersRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Answers == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid clarification answers"})
+		return
+	}
+	intervention, err := s.interventionEngine.SubmitClarification(c.Param("intervention_id"), req.Answers)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

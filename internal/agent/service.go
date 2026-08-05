@@ -273,7 +273,8 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
 - proposals[].fields: ARRAY of objects shaped exactly as
   {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional"}.
   Never emit fields as an object/map; use [] when empty.
-- questions: array (for request-missing-input)
+- questions: array (for request-missing-input), each with field, message, urgency, reason, type
+  (text|number|select|boolean), and optional unit/options/default/min/max/placeholder.
 - warnings: array of strings
 - assumptions: array of strings
 

@@ -115,10 +115,22 @@ type Field struct {
 }
 
 type Question struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-	Urgency string `json:"urgency"`
-	Reason  string `json:"reason,omitempty"`
+	Field       string           `json:"field"`
+	Message     string           `json:"message"`
+	Urgency     string           `json:"urgency"`
+	Reason      string           `json:"reason,omitempty"`
+	Type        string           `json:"type,omitempty"`
+	Unit        string           `json:"unit,omitempty"`
+	Options     []QuestionOption `json:"options,omitempty"`
+	Default     any              `json:"default,omitempty"`
+	Min         *float64         `json:"min,omitempty"`
+	Max         *float64         `json:"max,omitempty"`
+	Placeholder string           `json:"placeholder,omitempty"`
+}
+
+type QuestionOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
 }
 
 var (
@@ -154,6 +166,10 @@ var validUrgencies = map[string]struct{}{
 	"required":    {},
 	"recommended": {},
 	"optional":    {},
+}
+
+var validQuestionTypes = map[string]struct{}{
+	"text": {}, "number": {}, "select": {}, "boolean": {},
 }
 
 func Parse(raw string) (Action, error) {
@@ -204,6 +220,9 @@ func Parse(raw string) (Action, error) {
 		if len(action.Questions) == 0 {
 			return action, ErrMissingQuestions
 		}
+		if len(action.Questions) > 6 {
+			return action, fmt.Errorf("%w: at most six questions are allowed", ErrInvalidQuestion)
+		}
 		for _, question := range action.Questions {
 			if err := validateQuestion(question); err != nil {
 				return action, err
@@ -222,6 +241,18 @@ func validateQuestion(q Question) error {
 		if _, ok := validUrgencies[strings.ToLower(q.Urgency)]; !ok {
 			return fmt.Errorf("%w: %q", ErrInvalidUrgency, q.Urgency)
 		}
+	}
+	questionType := strings.ToLower(strings.TrimSpace(q.Type))
+	if questionType != "" {
+		if _, ok := validQuestionTypes[questionType]; !ok {
+			return fmt.Errorf("%w: unsupported question type %q", ErrInvalidQuestion, q.Type)
+		}
+		if questionType == "select" && len(q.Options) == 0 {
+			return fmt.Errorf("%w: select question requires options", ErrInvalidQuestion)
+		}
+	}
+	if q.Min != nil && q.Max != nil && *q.Min > *q.Max {
+		return fmt.Errorf("%w: minimum exceeds maximum", ErrInvalidQuestion)
 	}
 	return nil
 }
@@ -251,6 +282,9 @@ func validateActionSelfConsistency(action Action) error {
 	if action.Kind == ActionRequestMissingInput {
 		if len(action.Questions) == 0 {
 			return ErrMissingQuestions
+		}
+		if len(action.Questions) > 6 {
+			return fmt.Errorf("%w: at most six questions are allowed", ErrInvalidQuestion)
 		}
 		for _, q := range action.Questions {
 			if err := validateQuestion(q); err != nil {

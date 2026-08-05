@@ -526,6 +526,41 @@ func TestEngineWithAIKey(t *testing.T) {
 	}
 }
 
+func TestEngineSubmitClarificationContinuesRecovery(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	plan := makeTestPlan("proj-1", "plan-clarify", "vm-1", false, []plans.PreflightIssue{{
+		Code: "ERR_MISSING_VELOCITY", Level: "error", Path: "operating_condition.velocity_magnitude", Message: "velocity is required",
+	}})
+	intervention, err := engine.CreateFromPreflightError(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervention, err = engine.RunEngineStep(intervention.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervention, err = engine.store.Update(intervention.ID, func(current *Intervention) error {
+		return current.RequestClarification("Confirm velocity", []Question{{
+			Field: "operating_condition.velocity_magnitude", Message: "Velocity", Urgency: "required", Type: "number", Unit: "m/s",
+		}})
+	})
+	if err != nil || intervention.State != InterventionMissingInput {
+		t.Fatalf("failed to pause for clarification: state=%s err=%v", intervention.State, err)
+	}
+	intervention, err = engine.SubmitClarification(intervention.ID, map[string]any{
+		"operating_condition.velocity_magnitude": 40.0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intervention.State != InterventionProposal || len(intervention.Proposals) == 0 {
+		t.Fatalf("expected recovery proposal after answers, got state=%s proposals=%d", intervention.State, len(intervention.Proposals))
+	}
+	if len(intervention.ClarificationHistory) != 1 {
+		t.Fatalf("expected persisted clarification history, got %#v", intervention.ClarificationHistory)
+	}
+}
+
 func TestInterventionStoreListWithFilters(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewInterventionStore(dir)

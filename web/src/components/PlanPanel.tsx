@@ -37,6 +37,7 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 import ExecutionMonitor from './ExecutionMonitor'
 import SchemaFormDialog, { SchemaFormFields, serializeValue } from './SchemaForm'
+import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
   Geometry: [
@@ -139,6 +140,8 @@ export default function PlanPanel({
   const [assistAction, setAssistAction] = useState<AgentAction | null>(null)
   const [assistPreflight, setAssistPreflight] = useState<PlanAssistResponse['preflight'] | null>(null)
   const [assistRepair, setAssistRepair] = useState<{ attempts: number; repaired: boolean } | null>(null)
+  const [clarificationAction, setClarificationAction] = useState<AgentAction | null>(null)
+  const [clarificationRecords, setClarificationRecords] = useState<string[]>([])
   const [reviewed, setReviewed] = useState(false)
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -174,6 +177,8 @@ export default function PlanPanel({
     setAssistAction(null)
     setAssistPreflight(null)
     setAssistRepair(null)
+    setClarificationAction(null)
+    setClarificationRecords([])
     setReviewed(false)
     setExecuteConfirmed(false)
     setSchemaFormOpen(false)
@@ -319,7 +324,7 @@ export default function PlanPanel({
     }
   }
 
-  const fillWithAI = async () => {
+  const fillWithAI = async (promptOverride?: string) => {
     if (assistLoading || schemaLoading || !formSchema || !intent.trim()) return
     setAssistLoading(true)
     setAssistAction(null)
@@ -336,10 +341,15 @@ export default function PlanPanel({
         source_name: resource.name,
         target,
         intent,
-        prompt: intent,
+        prompt: promptOverride ?? intent,
         patch: currentPatch,
       })
       setAssistAction(response.action)
+      setClarificationAction(
+        response.action.kind === 'request-missing-input' && response.action.questions?.length
+          ? response.action
+          : null,
+      )
       setAssistPreflight(response.preflight ?? null)
       setAssistRepair({ attempts: response.repair_attempts ?? 0, repaired: response.auto_repaired ?? false })
       if (response.proposal) {
@@ -529,6 +539,8 @@ export default function PlanPanel({
                     setAssistAction(null)
                     setAssistPreflight(null)
                     setAssistRepair(null)
+                    setClarificationAction(null)
+                    setClarificationRecords([])
                   }}>
                     {options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
                   </select>
@@ -562,9 +574,9 @@ export default function PlanPanel({
                       {assistAction.questions?.map((item) => <span key={item.field}>Needs input · {item.message}</span>)}
                       {assistAction.warnings?.map((item) => <span key={item}>Warning · {item}</span>)}
                       {assistAction.kind === 'request-missing-input' && Boolean(assistAction.questions?.length) && (
-                        <em className="needs-input">
-                          Add the requested values to the description above and choose Fill parameters with AI again. You can also compile the current values to inspect the complete Flow360 preflight.
-                        </em>
+                        <button type="button" onClick={() => setClarificationAction(assistAction)}>
+                          Answer engineering questions
+                        </button>
                       )}
                       {assistPreflight && (
                         <em className={assistPreflight.valid ? 'ready' : 'needs-input'}>
@@ -587,6 +599,9 @@ export default function PlanPanel({
                       )}
                     </div>
                   )}
+                  {clarificationRecords.map((record, index) => (
+                    <pre className="agent-clarification-record" key={`${index}-${record}`}>{record}</pre>
+                  ))}
                 </section>
                 <div className="plan-stage-workflow">
                   <div className="plan-stage-workflow-heading">
@@ -993,6 +1008,19 @@ export default function PlanPanel({
             ) : null}
           </main>
         </div>
+        <AgentClarificationDialog
+          open={Boolean(clarificationAction?.questions?.length)}
+          message={clarificationAction?.message}
+          questions={clarificationAction?.questions ?? []}
+          busy={assistLoading}
+          onClose={() => setClarificationAction(null)}
+          onSubmit={(_answers: ClarificationAnswers, summary: string) => {
+            const records = [...clarificationRecords, summary]
+            setClarificationRecords(records)
+            setClarificationAction(null)
+            void fillWithAI([intent, ...records].filter(Boolean).join('\n\n'))
+          }}
+        />
       </section>
     </div>
   )
