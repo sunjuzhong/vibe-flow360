@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
-import { geometryContextId, projectSyncProgress } from './ProjectPage'
+import { geometryContextId, initialProjectPanel, projectSyncProgress } from './ProjectPage'
+
+describe('Project panel defaults', () => {
+  it('opens Project resources on first entry', () => {
+    expect(initialProjectPanel).toBe('resources')
+  })
+})
 
 function manifest(values: Partial<ProjectSyncManifest>): ProjectSyncManifest {
   return {

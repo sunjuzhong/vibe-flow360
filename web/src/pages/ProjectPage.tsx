@@ -61,6 +61,8 @@ import {
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
+export const initialProjectPanel = 'resources' as const
+
 const flow360DomainMap: Record<string, string> = {
   dev: 'flow360.dev-simulation.cloud',
   uat: 'flow360.uat-simulation.cloud',
@@ -150,7 +152,7 @@ export default function ProjectPage() {
   const openedRequestedPlan = useRef('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
-  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'draft' | null>(null)
+  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'draft' | null>(initialProjectPanel)
   const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
