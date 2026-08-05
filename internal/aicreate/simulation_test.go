@@ -28,3 +28,48 @@ func TestCompleteSimulationPatchRejectsMissingGeometryFaces(t *testing.T) {
 		t.Fatal("expected missing Geometry faces to stop AI Create")
 	}
 }
+
+func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
+	baseline := json.RawMessage(`{"models":[
+		{"type":"Wall","entities":{"stored_entities":[{"name":"*"}]}},
+		{"type":"Freestream","entities":{"stored_entities":[{"name":"farfield","private_attribute_entity_type_name":"GhostSphere"}]}},
+		{"type":"Fluid"}
+	],"private_attribute_asset_cache":{"project_entity_info":{
+		"face_group_tag":"faceId",
+		"grouped_faces":[[
+			{"name":"inlet","private_attribute_id":"inlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"outlet","private_attribute_id":"outlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"spanwise_periodic_max","private_attribute_id":"periodic-max","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"spanwise_periodic_min","private_attribute_id":"periodic-min","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"cylinder_wall","private_attribute_id":"wall","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}
+		]],
+		"ghost_entities":[{"name":"symmetric","private_attribute_id":"symmetric","private_attribute_entity_type_name":"GhostCircularPlane"}]
+	}}}`)
+	patch, err := CompleteSimulationPatch(baseline, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := patch["models"].([]any)
+	byType := map[string]map[string]any{}
+	for _, raw := range models {
+		model := raw.(map[string]any)
+		byType[model["type"].(string)] = model
+	}
+	wallEntities := storedBoundaryEntities(byType["Wall"])
+	if len(wallEntities) != 1 || wallEntities[0].(map[string]any)["name"] != "cylinder_wall" {
+		t.Fatalf("semantic Wall mapping failed: %#v", wallEntities)
+	}
+	freestreamEntities := storedBoundaryEntities(byType["Freestream"])
+	if len(freestreamEntities) != 3 {
+		t.Fatalf("expected inherited farfield plus inlet/outlet, got %#v", freestreamEntities)
+	}
+	periodic := byType["Periodic"]
+	pairs := periodic["surface_pairs"].(map[string]any)["items"].([]any)
+	if len(pairs) != 1 || len(pairs[0].(map[string]any)["pair"].([]any)) != 2 {
+		t.Fatalf("periodic pair was not generated: %#v", periodic)
+	}
+	symmetryEntities := storedBoundaryEntities(byType["SymmetryPlane"])
+	if len(symmetryEntities) != 1 || symmetryEntities[0].(map[string]any)["name"] != "symmetric" {
+		t.Fatalf("AutomatedFarfield symmetry mapping failed: %#v", symmetryEntities)
+	}
+}

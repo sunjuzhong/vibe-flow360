@@ -612,8 +612,8 @@ def model_entity_property(model_schema):
         title = str(entity_schema.get("title", ""))
         stored = entity_schema.get("properties", {}).get("stored_entities", {})
         if "EntityList[" in title and "Surface" in title and stored:
-            return name
-    return None
+            return name, title
+    return None, ""
 
 def entity_assignment_schema(issue):
     info = (
@@ -621,7 +621,18 @@ def entity_assignment_schema(issue):
         .get("project_entity_info", {})
     )
     face_ids = info.get("face_ids", [])
-    missing = [name for name in face_ids if name in issue.get("message", "")]
+    message = issue.get("message", "")
+    missing_faces = [name for name in face_ids if name in message]
+    ghost_by_name = {
+        entity.get("name"): entity
+        for entity in info.get("ghost_entities", [])
+        if isinstance(entity, dict) and entity.get("name")
+    }
+    missing_ghosts = [name for name in ghost_by_name if name in message]
+    # A mixed physical-Surface + ghost error cannot safely be assigned to one
+    # model. Resolve physical faces first, then let the bounded repair loop
+    # revalidate and resolve the remaining ghost boundary by its own semantics.
+    missing = missing_faces if missing_faces else missing_ghosts
     if not missing:
         return None
 
@@ -638,9 +649,18 @@ def entity_assignment_schema(issue):
         expanded = dereference(variant)
         type_schema = expanded.get("properties", {}).get("type", {})
         model_type = type_schema.get("const")
-        entity_property = model_entity_property(expanded)
+        entity_property, entity_title = model_entity_property(expanded)
         if model_type and entity_property:
-            variant_by_type[model_type] = (expanded, entity_property)
+            variant_by_type[model_type] = (expanded, entity_property, entity_title)
+
+    entity_types = {
+        ghost_by_name[name].get("private_attribute_entity_type_name", "GhostSurface")
+        if name in ghost_by_name else "Surface"
+        for name in missing
+    }
+
+    def supports_missing(entity_title):
+        return all(entity_type in entity_title for entity_type in entity_types)
 
     choices = []
     wildcard_candidates = []
@@ -648,7 +668,9 @@ def entity_assignment_schema(issue):
         model_type = model.get("type") if isinstance(model, dict) else None
         if model_type not in variant_by_type:
             continue
-        _, entity_property = variant_by_type[model_type]
+        _, entity_property, entity_title = variant_by_type[model_type]
+        if not supports_missing(entity_title):
+            continue
         choices.append({
             "value": f"existing:{index}",
             "label": f"{model.get('name') or model_type} · {model_type}",
@@ -662,7 +684,9 @@ def entity_assignment_schema(issue):
             for entity in legacy_entities
         ):
             wildcard_candidates.append(f"existing:{index}")
-    for model_type, (variant, entity_property) in variant_by_type.items():
+    for model_type, (variant, entity_property, entity_title) in variant_by_type.items():
+        if not supports_missing(entity_title):
+            continue
         choices.append({
             "value": f"new:{model_type}",
             "label": f"New {variant.get('title') or model_type}",
@@ -672,30 +696,44 @@ def entity_assignment_schema(issue):
     if not choices:
         return None
 
-    entities = [{
-        "value": name,
-        "label": name,
-        "payload": {
-            "name": name,
-            "private_attribute_entity_type_name": "Surface",
-            "private_attribute_id": name,
-            "private_attribute_tag_key": "faceId",
-            "private_attribute_sub_components": [name],
-        },
-    } for name in missing]
-    recommended_model = wildcard_candidates[0] if len(wildcard_candidates) == 1 else choices[0]["value"]
-    inherited_wildcard = len(wildcard_candidates) == 1
+    entities = []
+    for name in missing:
+        payload = ghost_by_name.get(name)
+        if payload is None:
+            payload = {
+                "name": name,
+                "private_attribute_entity_type_name": "Surface",
+                "private_attribute_id": name,
+                "private_attribute_tag_key": "faceId",
+                "private_attribute_sub_components": [name],
+            }
+        entities.append({"value": name, "label": name, "payload": payload})
+
+    symmetric_ghosts = bool(missing_ghosts) and all(
+        name.lower().startswith("symmetric") for name in missing
+    )
+    symmetry_choice = next((
+        choice["value"] for choice in choices
+        if choice["model_type"] == "SymmetryPlane"
+    ), None)
+    if symmetric_ghosts and symmetry_choice:
+        recommended_model = symmetry_choice
+    else:
+        recommended_model = wildcard_candidates[0] if len(wildcard_candidates) == 1 else choices[0]["value"]
+    inherited_wildcard = len(wildcard_candidates) == 1 and not symmetric_ghosts
     recommended_choice = next(
         choice for choice in choices if choice["value"] == recommended_model
     )
     reason = (
+        "Flow360 identifies this AutomatedFarfield ghost boundary as a symmetry plane; assign the schema-supported SymmetryPlane model."
+        if symmetric_ghosts and recommended_choice["model_type"] == "SymmetryPlane" else
         f"The existing {recommended_choice['model_type']} model targeted all physical surfaces with '*'. "
         f"After Geometry expansion, Flow360 needs those {len(missing)} concrete surfaces assigned explicitly."
         if inherited_wildcard else
         f"Reuse the existing {recommended_choice['model_type']} boundary model for the unassigned Geometry surfaces."
     )
     evidence = [
-        f"Flow360 reports {len(missing)} unassigned physical surfaces.",
+        f"Flow360 reports {len(missing)} unassigned boundaries.",
         f"Existing model: {recommended_choice['label']}.",
     ]
     if inherited_wildcard:
@@ -709,11 +747,11 @@ def entity_assignment_schema(issue):
         "default_model": recommended_model,
         "default_entities": missing,
         "recommendation": {
-            "title": f"Keep {recommended_choice['model_type']} for all {len(missing)} surfaces",
+            "title": f"Assign {recommended_choice['model_type']} to {len(missing)} boundaries",
             "reason": reason,
-            "confidence": "high" if inherited_wildcard else "medium",
+            "confidence": "high" if inherited_wildcard or symmetric_ghosts else "medium",
             "evidence": evidence,
-            "provenance": "inherited_existing_model",
+            "provenance": "flow360_schema_validation" if symmetric_ghosts else "inherited_existing_model",
         },
     }
 

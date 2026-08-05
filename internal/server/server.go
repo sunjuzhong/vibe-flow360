@@ -840,33 +840,54 @@ func (s *Server) applyPlanInputs(c *gin.Context) {
 }
 
 func (s *Server) runPlanPreflight(ctx context.Context, plan plans.Plan) plans.Plan {
+	current := plan
+	const maxSchemaRepairs = 3
+	for attempt := 0; attempt <= maxSchemaRepairs; attempt++ {
+		current = s.runPlanPreflightOnce(ctx, current)
+		if current.Preflight == nil || current.Preflight.Valid {
+			return current
+		}
+		if attempt == maxSchemaRepairs {
+			break
+		}
+		merged, err := plans.MergedSimulationParams(current)
+		if err != nil {
+			break
+		}
+		repair, applied, err := recommendedPlanAssistPatch(current.Preflight.FormSchema, merged)
+		if err != nil || !applied {
+			break
+		}
+		updated, err := s.plans.ApplySchemaInputs(current.ID, current.Revision, repair)
+		if err != nil {
+			break
+		}
+		current = updated
+	}
+	s.autoCreateInterventionForPreflight(ctx, current)
+	return current
+}
+
+func (s *Server) runPlanPreflightOnce(ctx context.Context, plan plans.Plan) plans.Plan {
 	if len(plan.Baseline) == 0 || plan.Revision == 0 {
 		detail, err := s.flow360.ResourceDetail(ctx, plan.SourceType, plan.SourceID)
 		if err != nil || len(detail.SimulationParams) == 0 {
-			result := s.persistUnavailablePreflight(plan, "Flow360 source SimulationParams are unavailable")
-			s.autoCreateInterventionForPreflight(ctx, result)
-			return result
+			return s.persistUnavailablePreflight(plan, "Flow360 source SimulationParams are unavailable")
 		}
 		updated, err := s.plans.SetBaseline(plan.ID, detail.SimulationParams)
 		if err != nil {
-			result := s.persistUnavailablePreflight(plan, "Could not store the Flow360 SimulationParams baseline")
-			s.autoCreateInterventionForPreflight(ctx, result)
-			return result
+			return s.persistUnavailablePreflight(plan, "Could not store the Flow360 SimulationParams baseline")
 		}
 		plan = updated
 	}
 	merged, err := plans.MergedSimulationParams(plan)
 	if err != nil {
-		result := s.persistUnavailablePreflight(plan, err.Error())
-		s.autoCreateInterventionForPreflight(ctx, result)
-		return result
+		return s.persistUnavailablePreflight(plan, err.Error())
 	}
 	result, err := s.flow360.PreflightSimulationParams(ctx, plan.SourceType, plan.Target, merged)
 	if err != nil {
 		log.Printf("Flow360 schema preflight failed for %s: %v", plan.ID, err)
-		result := s.persistUnavailablePreflight(plan, "Flow360 schema preflight is temporarily unavailable")
-		s.autoCreateInterventionForPreflight(ctx, result)
-		return result
+		return s.persistUnavailablePreflight(plan, "Flow360 schema preflight is temporarily unavailable")
 	}
 	issues := make([]plans.PreflightIssue, 0, len(result.Issues))
 	for _, issue := range result.Issues {
@@ -883,9 +904,6 @@ func (s *Server) runPlanPreflight(ctx context.Context, plan plans.Plan) plans.Pl
 	if err != nil {
 		log.Printf("Could not persist Flow360 schema preflight for %s: %v", plan.ID, err)
 		return plan
-	}
-	if !result.Valid && len(issues) > 0 {
-		s.autoCreateInterventionForPreflight(ctx, updated)
 	}
 	return updated
 }

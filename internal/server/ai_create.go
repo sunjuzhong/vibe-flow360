@@ -211,7 +211,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		{Key: "geometry.generator", Value: blueprint.Geometry.Generator, Provenance: "derived", Description: "Constrained CAD program selected by the geometry agent."},
 		{Key: "geometry.operations", Value: len(blueprint.Geometry.Operations), Provenance: "derived", Description: "Validated parametric and boolean CAD operations."},
 		{Key: "geometry.validation", Value: blueprint.Geometry.Validation, Provenance: "derived", Description: "Exact CAD kernel and STEP round-trip validation."},
-		{Key: "models.Wall.entities", Value: "Geometry face groups", Provenance: "derived", Description: "Resolved from the imported CAD entity cache."},
+		{Key: "models.boundary_semantics", Value: "Named Geometry face groups and Flow360 ghost entities", Provenance: "derived", Description: "Mapped deterministic wall, farfield, periodic, and symmetry intent from the imported CAD entity cache."},
 		{Key: "simulation.parameters", Value: "agent-derived and schema-preflighted", Provenance: "inferred", Description: "Operating, meshing, and solver values interpreted from the request and explicit assumptions."},
 	}
 	plan, err := s.plans.Create(plans.CreateInput{

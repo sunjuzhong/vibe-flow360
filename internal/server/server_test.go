@@ -854,6 +854,51 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 }
 
+func TestPlanPreflightAutomaticallyAppliesHighConfidenceBoundaryRepair(t *testing.T) {
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	fakeResult := `#!/bin/sh
+if grep -q '"type":"SymmetryPlane"' "$3"; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"value_error","path":"models","message":"The following boundaries do not have a boundary condition: symmetric.","stages":["Case"]}],"form_schema":{"type":"object","required":["models"],"properties":{"models":{"type":"entity_assignment","model_choices":[{"value":"new:SymmetryPlane","label":"New SymmetryPlane","model_type":"SymmetryPlane","entity_property":"surfaces"}],"entity_choices":[{"value":"symmetric","label":"symmetric","payload":{"name":"symmetric","private_attribute_id":"symmetric","private_attribute_entity_type_name":"GhostCircularPlane"}}],"default_model":"new:SymmetryPlane","default_entities":["symmetric"],"recommendation":{"confidence":"high","provenance":"flow360_schema_validation"}}}}}'
+fi
+`
+	if err := os.WriteFile(fakePython, []byte(fakeResult), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+	store, err := plans.NewStore(filepath.Join(temp, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(plans.CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "case", Name: "cylinder", Intent: "Run a cylinder case.",
+		Baseline: json.RawMessage(`{"simulation_params":{"version":"test","models":[{"type":"Wall","name":"Wall","surfaces":{"stored_entities":[{"name":"cylinder"}]}},{"type":"Fluid"}]}}`),
+		Patch:    json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{plans: store, flow360: &flow360.Client{Binary: "flow360"}}
+
+	updated := app.runPlanPreflight(context.Background(), created)
+	if updated.Preflight == nil || !updated.Preflight.Valid {
+		t.Fatalf("high-confidence schema repair did not clear preflight: %#v", updated.Preflight)
+	}
+	if updated.Revision != 2 {
+		t.Fatalf("automatic repair should create one reviewed revision, got %d", updated.Revision)
+	}
+	merged, err := plans.MergedSimulationParams(updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(merged), `"type":"SymmetryPlane"`) || !strings.Contains(string(merged), `"name":"symmetric"`) {
+		t.Fatalf("automatic boundary repair was not persisted: %s", merged)
+	}
+}
+
 func TestValidateAndApplyInterventionPersistsPatchAndRealPreflight(t *testing.T) {
 	temp := t.TempDir()
 	fakePython := filepath.Join(temp, "python")
