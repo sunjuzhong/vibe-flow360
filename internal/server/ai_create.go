@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
@@ -41,8 +42,18 @@ type aiCreateSession struct {
 	FolderID  string                        `json:"folder_id"`
 	Rounds    []aicreate.ClarificationRound `json:"rounds"`
 	Pending   []aicreate.ClarificationField `json:"pending,omitempty"`
+	Prepared  *aiCreatePrepared             `json:"prepared,omitempty"`
 	CreatedAt time.Time                     `json:"created_at"`
 	UpdatedAt time.Time                     `json:"updated_at"`
+}
+
+type aiCreatePrepared struct {
+	ProjectID      string             `json:"project_id"`
+	RootResourceID string             `json:"root_resource_id"`
+	GeometryName   string             `json:"geometry_name"`
+	Blueprint      aicreate.Blueprint `json:"blueprint"`
+	Baseline       json.RawMessage    `json:"baseline"`
+	BoundaryPatch  json.RawMessage    `json:"boundary_patch"`
 }
 
 type aiCreateClarificationResponse struct {
@@ -86,6 +97,10 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	session, err := s.advanceAICreateSession(request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if session.Prepared != nil {
+		s.finishAICreateParameters(c, session, *session.Prepared)
 		return
 	}
 
@@ -194,35 +209,104 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		})
 		return
 	}
-	completePatch, err := aicreate.CompleteSimulationPatch(baseline, blueprint.SimulationParams)
+	// Geometry planning emits engineering hints, not authoritative Flow360
+	// paths. Start the parameter phase from canonical Flow360 data plus the
+	// deterministic CAD entity assignments so guessed keys cannot leak into the
+	// Draft before the schema-native Agent runs.
+	completePatch, err := aicreate.CompleteSimulationPatch(baseline, map[string]any{})
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{
 			"error": err.Error(), "project_id": remote.ProjectID,
 		})
 		return
 	}
-	blueprint.SimulationParams = completePatch
-	patch, err := json.Marshal(blueprint.SimulationParams)
+	boundaryPatch, err := json.Marshal(completePatch)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not serialize generated parameters"})
 		return
+	}
+	prepared := aiCreatePrepared{
+		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
+		GeometryName: geometryName, Blueprint: blueprint,
+		Baseline: append(json.RawMessage(nil), baseline...), BoundaryPatch: boundaryPatch,
+	}
+	s.setAICreateSessionPrepared(session.ID, prepared)
+	s.finishAICreateParameters(c, session, prepared)
+}
+
+func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSession, prepared aiCreatePrepared) {
+	boundaryBaseline, err := plans.MergedSimulationParams(plans.Plan{Baseline: prepared.Baseline, Patch: prepared.BoundaryPatch})
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "could not prepare the schema-aware Flow360 baseline", "project_id": prepared.ProjectID})
+		return
+	}
+	form, err := s.flow360.PlanFormSchema(c.Request.Context(), "Geometry", "case", boundaryBaseline)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not load the active Flow360 parameter schemas", "project_id": prepared.ProjectID})
+		return
+	}
+	history, _ := json.Marshal(session.Rounds)
+	composer := planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: prepared.ProjectID, ProjectName: prepared.Blueprint.ProjectName,
+			SourceID: prepared.RootResourceID, SourceType: "Geometry", SourceName: prepared.GeometryName,
+			Target: "case", Intent: session.Intent,
+			Prompt: "Configure a complete, reviewable Flow360 setup that can run without manual parameter editing. Use defensible CFD defaults when the request asks for a basic or introductory case. Confirmed clarification history: " + string(history),
+		},
+		Name: prepared.GeometryName, Baseline: boundaryBaseline, Form: form,
+	}
+	assisted, err := s.generateSchemaNativePlan(c.Request.Context(), composer)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent could not produce a schema-valid Flow360 setup: " + err.Error(), "project_id": prepared.ProjectID})
+		return
+	}
+	if assisted.Action.Kind == agent.ActionRequestMissingInput {
+		fields := aiCreateParameterClarificationFields(assisted.Action.Questions)
+		if len(fields) == 0 {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent requested input without providing usable fields", "project_id": prepared.ProjectID})
+			return
+		}
+		s.setAICreateSessionPending(session.ID, fields)
+		c.JSON(http.StatusOK, aiCreateClarificationResponse{
+			Status: "needs_input", SessionID: session.ID,
+			Message: assisted.Action.Message,
+			Round:   len(session.Rounds) + 1, Fields: fields,
+		})
+		return
+	}
+	if assisted.Proposal == nil || assisted.Preflight == nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent returned an incomplete Flow360 plan", "project_id": prepared.ProjectID})
+		return
+	}
+	patch, err := mergePlanAssistPatches(prepared.BoundaryPatch, assisted.Proposal.Patch)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not combine geometry and simulation parameters", "project_id": prepared.ProjectID})
+		return
+	}
+	blueprint := prepared.Blueprint
+	var finalPatch map[string]any
+	if json.Unmarshal(patch, &finalPatch) == nil {
+		blueprint.SimulationParams = finalPatch
 	}
 	evidence := []plans.Evidence{
 		{Key: "geometry.generator", Value: blueprint.Geometry.Generator, Provenance: "derived", Description: "Constrained CAD program selected by the geometry agent."},
 		{Key: "geometry.operations", Value: len(blueprint.Geometry.Operations), Provenance: "derived", Description: "Validated parametric and boolean CAD operations."},
 		{Key: "geometry.validation", Value: blueprint.Geometry.Validation, Provenance: "derived", Description: "Exact CAD kernel and STEP round-trip validation."},
 		{Key: "models.boundary_semantics", Value: "Named Geometry face groups and Flow360 ghost entities", Provenance: "derived", Description: "Mapped deterministic wall, farfield, periodic, and symmetry intent from the imported CAD entity cache."},
-		{Key: "simulation.parameters", Value: "agent-derived and schema-preflighted", Provenance: "inferred", Description: "Operating, meshing, and solver values interpreted from the request and explicit assumptions."},
+		{Key: "simulation.parameters", Value: "installed-schema-derived and preflighted", Provenance: "inferred", Description: "The parameter Agent used the installed Flow360 stage schemas and canonical Geometry baseline."},
+		{Key: "simulation.schema_version", Value: assisted.Preflight.SchemaVersion, Provenance: "derived", Description: "Flow360 schema contract used for parameter validation."},
+		{Key: "simulation.repair_attempts", Value: assisted.RepairAttempts, Provenance: "derived", Description: "Bounded schema-driven self-repair attempts before Draft creation."},
 	}
 	plan, err := s.plans.Create(plans.CreateInput{
-		ProjectID: remote.ProjectID, ProjectName: blueprint.ProjectName,
-		SourceID: remote.RootResourceID, SourceType: "Geometry", SourceName: geometryName,
+		ProjectID: prepared.ProjectID, ProjectName: blueprint.ProjectName,
+		SourceID: prepared.RootResourceID, SourceType: "Geometry", SourceName: prepared.GeometryName,
 		Target: blueprint.Target, Name: "AI Create · " + blueprint.ProjectName, Intent: session.Intent,
-		Patch: patch, Baseline: baseline, Evidence: evidence, ValidationHints: blueprint.Assumptions,
-		IdempotencyKey: "ai-create:" + remote.ProjectID,
+		Patch: patch, Baseline: prepared.Baseline, Evidence: evidence,
+		ValidationHints: append(append([]string(nil), blueprint.Assumptions...), assisted.Action.Assumptions...),
+		IdempotencyKey:  "ai-create:" + prepared.ProjectID,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "project was created, but its simulation plan could not be saved", "project_id": remote.ProjectID})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "project was created, but its simulation plan could not be saved", "project_id": prepared.ProjectID})
 		return
 	}
 	plan = s.runPlanPreflight(c.Request.Context(), plan)
@@ -240,7 +324,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	s.completeAICreateSession(session.ID)
 
 	c.JSON(http.StatusCreated, aiCreateResponse{
-		ProjectID: remote.ProjectID, DraftID: draftID, RootResourceID: remote.RootResourceID,
+		ProjectID: prepared.ProjectID, DraftID: draftID, RootResourceID: prepared.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: stages, Warnings: warnings,
 	})
@@ -429,6 +513,63 @@ func (s *Server) setAICreateSessionPending(sessionID string, fields []aicreate.C
 	session.Pending = append([]aicreate.ClarificationField(nil), fields...)
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[sessionID] = session
+}
+
+func (s *Server) setAICreateSessionPrepared(sessionID string, prepared aiCreatePrepared) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	copy := prepared
+	copy.Baseline = append(json.RawMessage(nil), prepared.Baseline...)
+	copy.BoundaryPatch = append(json.RawMessage(nil), prepared.BoundaryPatch...)
+	session.Prepared = &copy
+	session.UpdatedAt = time.Now().UTC()
+	s.aiCreateSessions[sessionID] = session
+}
+
+func aiCreateParameterClarificationFields(questions []agent.Question) []aicreate.ClarificationField {
+	fields := make([]aicreate.ClarificationField, 0, min(len(questions), 6))
+	used := map[string]bool{}
+	for index, question := range questions {
+		if len(fields) == 6 {
+			break
+		}
+		identifier := strings.TrimSpace(question.Field)
+		if identifier == "" {
+			identifier = fmt.Sprintf("parameter-%d", index+1)
+		}
+		base := identifier
+		for suffix := 2; used[identifier]; suffix++ {
+			identifier = fmt.Sprintf("%s-%d", base, suffix)
+		}
+		used[identifier] = true
+		fieldType := strings.ToLower(strings.TrimSpace(question.Type))
+		switch fieldType {
+		case "number", "select", "boolean", "text":
+		default:
+			fieldType = "text"
+		}
+		description := strings.TrimSpace(question.Reason)
+		if recommendation := strings.TrimSpace(question.Recommendation); recommendation != "" {
+			if description != "" {
+				description += " "
+			}
+			description += "Recommendation: " + recommendation
+		}
+		options := make([]aicreate.ClarificationOption, 0, len(question.Options))
+		for _, option := range question.Options {
+			options = append(options, aicreate.ClarificationOption{Value: option.Value, Label: option.Label})
+		}
+		fields = append(fields, aicreate.ClarificationField{
+			ID: identifier, Label: question.Message, Description: description,
+			Type: fieldType, Required: question.Urgency == "required", Unit: question.Unit,
+			Options: options, Default: question.Default, Min: question.Min, Max: question.Max,
+		})
+	}
+	return fields
 }
 
 func (s *Server) completeAICreateSession(sessionID string) {

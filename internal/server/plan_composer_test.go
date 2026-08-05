@@ -111,6 +111,9 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 	for _, expected := range []string{
 		"parameter assistance, not geometry generation",
 		"Never claim CAD dimensions",
+		"Read the schema catalog field-by-field",
+		"Never invent a nearby field name",
+		"Build a coherent setup across all active stages",
 		"choose defensible reviewable defaults",
 		"do not ask for a physical wind tunnel",
 		"Do not turn every unspecified preference into a blocking question",
@@ -148,7 +151,7 @@ func TestSchemaPromptCatalogCarriesStageAndFieldPaths(t *testing.T) {
 	form := flow360.PlanFormSchema{
 		Stages: []string{"Case"},
 		Schemas: map[string]json.RawMessage{
-			"Case": json.RawMessage(`{"type":"object","properties":{"operating_condition":{"type":"object","properties":{"alpha":{"type":"quantity","title":"Angle of attack","unit":"degree"}}}}}`),
+			"Case": json.RawMessage(`{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"max_steps":{"type":"integer","title":"Maximum steps"}}},"operating_condition":{"type":"object","properties":{"alpha":{"type":"quantity","title":"Angle of attack","description":"Incoming-flow angle.","required":true,"unit":"degree","unit_options":["degree","radian"],"value_schema":{"type":"number","minimum":-90,"maximum":90}}}}}}`),
 		},
 	}
 	catalog, err := schemaPromptCatalog(form)
@@ -161,7 +164,14 @@ func TestSchemaPromptCatalogCarriesStageAndFieldPaths(t *testing.T) {
 	if err := json.Unmarshal(catalog, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Fields) != 1 || decoded.Fields[0].Stage != "Case" || decoded.Fields[0].Path != "operating_condition.alpha" {
+	if len(decoded.Fields) != 2 || decoded.Fields[0].Stage != "Case" || decoded.Fields[0].Path != "operating_condition.alpha" {
 		t.Fatalf("unexpected catalog: %#v", decoded.Fields)
+	}
+	alpha := decoded.Fields[0]
+	if !alpha.Required || alpha.Description == "" || alpha.Minimum != float64(-90) || alpha.Maximum != float64(90) || len(alpha.UnitOptions) != 2 {
+		t.Fatalf("catalog omitted schema constraints needed by the Agent: %#v", alpha)
+	}
+	if decoded.Fields[1].Path != "time_stepping.max_steps" {
+		t.Fatalf("catalog paths are not deterministic: %#v", decoded.Fields)
 	}
 }

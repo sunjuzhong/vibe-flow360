@@ -16,7 +16,7 @@ const (
 	// source snapshot for plan composition so the Agent does not ask users for
 	// values that are already available on the resource.
 	maxSimulationParamsBytes  = 48000
-	maxSchemaBytes            = 24000
+	maxSchemaBytes            = 65536
 	maxEvidenceBytes          = 4000
 	maxResourceInventoryBytes = 12000
 	maxUserFeedbackBytes      = 2000
@@ -82,6 +82,10 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
 - If unsure, use request-missing-input rather than guessing.
 - Keep the action JSON compact — only include fields that matter.
+- Treat form_schema as the authoritative catalog for the installed Flow360 version. Use only listed SimulationParams paths, exact enum/model values, documented quantity units, and the required {"value": number, "units": "unit"} wire shape. Never translate a human CFD term into a guessed snake_case field.
+- Preserve the supplied SimulationParams as the canonical baseline. Return a sparse merge-patch, not a replacement document. Do not copy private_attribute fields into the patch unless an active schema field explicitly supplies the entity payload.
+- Respect stage ownership: SurfaceMesh fields configure surface meshing, VolumeMesh fields configure volume meshing, and Case fields configure physics, operating condition, time stepping, numerics, and outputs. Do not put a valid concept under the wrong stage path.
+- When a schema field exposes recommendation/default_model/default_entities with high confidence, prefer that evidence-backed value and record it as derived or defaulted. Exact schema and preflight errors override general CFD memory.
 - Match the language of the user's latest request. Use that language for all explanatory text and human-readable string values, including message, questions, warnings, assumptions, and field descriptions. Keep JSON keys, enum values, SimulationParams paths, and protocol identifiers unchanged.
 
 ## Context payload format:

@@ -126,6 +126,8 @@ Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - assumptions: string array in the user's language
 - questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}. Always choose the most specific control type. Whenever project evidence supports a safe engineering recommendation, set default and explain the recommendation in description so the user can confirm it rather than type it manually.
 
+The simulation object records engineering-scale hints only. It is NOT a Flow360 SimulationParams patch: do not invent Flow360 field paths, model discriminators, enum values, or nested parameter objects here. After the exact Geometry exists, a separate parameter Agent will read the installed Flow360 schemas and map the user's intent into canonical SimulationParams.
+
 The deterministic CAD DSL supports:
 - box params: length, width, height
 - cylinder params: radius, height, axis ("x", "y", or "z")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -79,11 +80,23 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
+	result, err := s.generateSchemaNativePlan(c.Request.Context(), composer)
+	if err != nil {
+		status, response := planAssistAgentError(err)
+		c.JSON(status, response)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
 
+// generateSchemaNativePlan is the shared parameter intelligence used by the
+// interactive plan form and AI Create. It grounds the Agent in the installed
+// Flow360 stage schemas, validates the candidate against the real client, and
+// gives the Agent bounded opportunities to repair schema-mechanical failures.
+func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComposerContext) (planAssistResponse, error) {
 	catalog, err := schemaPromptCatalog(composer.Form)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare the active Flow360 schema for the Agent"})
-		return
+		return planAssistResponse{}, errors.New("could not prepare the active Flow360 schema for the Agent")
 	}
 	contextPayload, err := json.Marshal(agent.ChatContextPayload{
 		ProjectID: composer.Request.ProjectID, ProjectName: composer.Request.ProjectName,
@@ -92,36 +105,29 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		SimulationParams: composer.Baseline, FormSchema: catalog,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare the plan context"})
-		return
+		return planAssistResponse{}, errors.New("could not prepare the plan context")
 	}
 	message := planAssistPrompt(composer.Request)
-	_, action, err := s.agent.ChatWithValidation(c.Request.Context(), agent.ChatRequest{
+	_, action, err := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
 		Message: message, Context: string(contextPayload), Session: "web:plan-composer",
 	})
 	if err != nil {
-		status, response := planAssistAgentError(err)
-		c.JSON(status, response)
-		return
+		return planAssistResponse{}, err
 	}
 	if action.Kind == agent.ActionRequestMissingInput {
-		c.JSON(http.StatusOK, planAssistResponse{Action: *action})
-		return
+		return planAssistResponse{Action: *action}, nil
 	}
 	activeSchema, err := combinedPlanFormSchema(composer.Form)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not combine the active Flow360 stage schemas"})
-		return
+		return planAssistResponse{}, errors.New("could not combine the active Flow360 stage schemas")
 	}
 	proposal, err := preparePlanAssistProposal(*action, composer, activeSchema)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
-		return
+		return planAssistResponse{}, err
 	}
-	preflight, merged, err := s.preflightPlanAssistProposal(c.Request.Context(), composer, proposal)
+	preflight, merged, err := s.preflightPlanAssistProposal(ctx, composer, proposal)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "AI form values could not be checked with Flow360: " + err.Error()})
-		return
+		return planAssistResponse{}, errors.New("AI form values could not be checked with Flow360: " + err.Error())
 	}
 
 	const maxRepairAttempts = 2
@@ -133,7 +139,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch)
 			if err == nil {
 				repairAttempts++
-				preflight, merged, err = s.preflightPlanAssistProposal(c.Request.Context(), composer, proposal)
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
 				if err == nil && preflight.Valid {
 					autoRepaired = true
 					break
@@ -142,7 +148,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		}
 		agentRepairAttempts++
 		repairAttempts++
-		repairForm, formErr := s.flow360.PlanFormSchema(c.Request.Context(), proposal.SourceType, proposal.Target, merged)
+		repairForm, formErr := s.flow360.PlanFormSchema(ctx, proposal.SourceType, proposal.Target, merged)
 		if formErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not load the schema for the candidate configuration.")
 			break
@@ -163,7 +169,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 			break
 		}
 		repairMessage := planAssistRepairPrompt(composer.Request, proposal, preflight, agentRepairAttempts)
-		_, repairedAction, repairErr := s.agent.ChatWithValidation(c.Request.Context(), agent.ChatRequest{
+		_, repairedAction, repairErr := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
 			Message: repairMessage, Context: string(repairContext), Session: "web:plan-composer:repair",
 		})
 		if repairErr != nil {
@@ -186,7 +192,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		}
 		action = repairedAction
 		proposal = repairedProposal
-		preflight, merged, err = s.preflightPlanAssistProposal(c.Request.Context(), composer, proposal)
+		preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
 		if err != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not re-run Flow360 validation.")
 			break
@@ -200,10 +206,10 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 	if action.Kind == agent.ActionCreatePlan && len(action.Proposals) == 1 {
 		action.Proposals[0] = proposal
 	}
-	c.JSON(http.StatusOK, planAssistResponse{
+	return planAssistResponse{
 		Action: *action, Proposal: &proposal, Preflight: &preflight,
 		RepairAttempts: repairAttempts, AutoRepaired: autoRepaired,
-	})
+	}, nil
 }
 
 func planAssistAgentError(err error) (int, gin.H) {
@@ -360,6 +366,10 @@ This is parameter assistance, not geometry generation. Never claim CAD dimension
 
 Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
+Read the schema catalog field-by-field before composing the patch. Each catalog entry supplies its owning stage, exact dot path, wire type, constraints, units/options, and sometimes an evidence-backed recommendation. Convert dot paths into nested JSON objects exactly; quantities use {"value":...,"units":"..."}; enum and boundary model values must exactly match the catalog. Never invent a nearby field name from memory. If the intent mentions a parameter absent from the active catalog, preserve the baseline and explain or request input instead of fabricating a key.
+
+Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact. Use sparse merge-patch semantics and include only deliberate changes.
+
 When the user asks for a basic, baseline, demonstration, or first-pass simulation, choose defensible reviewable defaults for missing operating, meshing, physical-model, and steady/unsteady settings when the active schemas support them. Put every inferred value in assumptions and explain the engineering consequence in the message. For external-flow baselines, answer explicitly whether the existing automated farfield/domain treatment is sufficient; do not ask for a physical wind tunnel unless the user requests wall-bounded tunnel effects. Ask a focused question only when the choice would materially change geometry, make the setup invalid, or has no defensible baseline. Do not turn every unspecified preference into a blocking question.
 
 Use the language of the Plan intent and User form instruction for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
@@ -429,12 +439,22 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 }
 
 type promptSchemaField struct {
-	Stage   string `json:"stage"`
-	Path    string `json:"path"`
-	Type    string `json:"type"`
-	Title   string `json:"title,omitempty"`
-	Unit    string `json:"unit,omitempty"`
-	Options []any  `json:"options,omitempty"`
+	Stage           string `json:"stage"`
+	Path            string `json:"path"`
+	Type            string `json:"type"`
+	Title           string `json:"title,omitempty"`
+	Description     string `json:"description,omitempty"`
+	Required        bool   `json:"required,omitempty"`
+	Unit            string `json:"unit,omitempty"`
+	UnitOptions     []any  `json:"unit_options,omitempty"`
+	Options         []any  `json:"options,omitempty"`
+	Default         any    `json:"default,omitempty"`
+	Minimum         any    `json:"minimum,omitempty"`
+	Maximum         any    `json:"maximum,omitempty"`
+	ModelChoices    []any  `json:"model_choices,omitempty"`
+	DefaultModel    string `json:"default_model,omitempty"`
+	DefaultEntities []any  `json:"default_entities,omitempty"`
+	Recommendation  any    `json:"recommendation,omitempty"`
 }
 
 func schemaPromptCatalog(form flow360.PlanFormSchema) (json.RawMessage, error) {
@@ -444,7 +464,7 @@ func schemaPromptCatalog(form flow360.PlanFormSchema) (json.RawMessage, error) {
 		if err := json.Unmarshal(form.Schemas[stage], &root); err != nil {
 			return nil, err
 		}
-		collectPromptSchemaFields(stage, "", root, &fields, 180)
+		collectPromptSchemaFields(stage, "", root, &fields, 320)
 	}
 	return json.Marshal(map[string]any{"stages": form.Stages, "fields": fields})
 }
@@ -499,7 +519,13 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 	}
 	nodeType, _ := node["type"].(string)
 	if properties, ok := node["properties"].(map[string]any); ok {
-		for key, raw := range properties {
+		keys := make([]string, 0, len(properties))
+		for key := range properties {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			raw := properties[key]
 			child, ok := raw.(map[string]any)
 			if !ok {
 				continue
@@ -520,9 +546,33 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 	}
 	field := promptSchemaField{Stage: stage, Path: path, Type: nodeType}
 	field.Title, _ = node["title"].(string)
+	field.Description, _ = node["description"].(string)
+	field.Required, _ = node["required"].(bool)
 	field.Unit, _ = node["unit"].(string)
-	if options, ok := node["options"].([]any); ok && len(options) <= 12 {
+	field.Default = node["default"]
+	field.Minimum = node["minimum"]
+	field.Maximum = node["maximum"]
+	if valueSchema, ok := node["value_schema"].(map[string]any); ok {
+		if field.Minimum == nil {
+			field.Minimum = valueSchema["minimum"]
+		}
+		if field.Maximum == nil {
+			field.Maximum = valueSchema["maximum"]
+		}
+	}
+	if unitOptions, ok := node["unit_options"].([]any); ok && len(unitOptions) <= 20 {
+		field.UnitOptions = unitOptions
+	}
+	if options, ok := node["options"].([]any); ok && len(options) <= 24 {
 		field.Options = options
 	}
+	if choices, ok := node["model_choices"].([]any); ok && len(choices) <= 16 {
+		field.ModelChoices = choices
+	}
+	field.DefaultModel, _ = node["default_model"].(string)
+	if entities, ok := node["default_entities"].([]any); ok && len(entities) <= 40 {
+		field.DefaultEntities = entities
+	}
+	field.Recommendation = node["recommendation"]
 	*fields = append(*fields, field)
 }

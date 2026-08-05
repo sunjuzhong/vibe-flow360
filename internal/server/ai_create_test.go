@@ -48,9 +48,19 @@ func (g *sequenceCADGenerator) Generate(_ context.Context, _ aicreate.Geometry, 
 func TestAICreateProjectGeneratesProjectAndCasePlan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
+	agentCalls := 0
+	agentRequests := make([]string, 0, 2)
 	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agentCalls++
+		body, _ := io.ReadAll(r.Body)
+		agentRequests = append(agentRequests, string(body))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"decision\":\"generate\",\"project_name\":\"Agent Flow Geometry\",\"summary\":\"Agent-designed external-flow geometry.\",\"geometry\":{\"name\":\"agent-body\",\"unit\":\"m\",\"representation\":\"analytic-brep\",\"format\":\"step\",\"generator\":\"cadquery-dsl-v1\",\"operations\":[{\"id\":\"body\",\"op\":\"box\",\"params\":{\"length\":2,\"width\":1,\"height\":0.5}}],\"result\":\"body\"},\"simulation\":{\"velocity_m_s\":10,\"alpha_deg\":0,\"surface_edge_length_m\":0.03,\"first_layer_thickness_m\":0.000025,\"max_steps\":10000},\"assumptions\":[\"Review inferred values.\"],\"questions\":[]}"}}]}`))
+		content := `{"version":"v1","decision":"generate","project_name":"Agent Flow Geometry","summary":"Agent-designed external-flow geometry.","geometry":{"name":"agent-body","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[{"id":"body","op":"box","params":{"length":2,"width":1,"height":0.5}}],"result":"body"},"simulation":{"velocity_m_s":10,"alpha_deg":0,"surface_edge_length_m":0.03,"first_layer_thickness_m":0.000025,"max_steps":10000},"assumptions":["Review inferred values."],"questions":[]}`
+		if agentCalls > 1 {
+			content = "```json\n" + `{"version":"v1","kind":"create-plan","message":"Configured from the installed Flow360 schemas.","proposals":[{"id":"schema-plan","action":"Geometry","target":"case","name":"Schema-native setup","intent":"Create a reviewable baseline","patch":{"time_stepping":{"max_steps":2000}},"branch_preview":"schema-native","fields":[{"key":"time_stepping.max_steps","value":2000,"provenance":"inferred"}]}],"questions":[],"warnings":[],"assumptions":["Used the canonical Geometry baseline."]}` + "\n```"
+		}
+		encoded, _ := json.Marshal(content)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
 	}))
 	defer agentServer.Close()
 	fakeFlow360 := filepath.Join(root, "flow360")
@@ -90,7 +100,7 @@ esac
 		t.Fatal(err)
 	}
 	preflightScript := `#!/bin/sh
-printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{}},"VolumeMesh":{"type":"object","properties":{}},"Case":{"type":"object","properties":{}}}}'
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{}},"VolumeMesh":{"type":"object","properties":{}},"Case":{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"max_steps":{"type":"integer","title":"Maximum steps"}}}}}}}'
 `
 	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
 		t.Fatal(err)
@@ -133,11 +143,17 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	if response.Plan.Preflight == nil || !response.Plan.Preflight.Valid {
 		t.Fatalf("expected schema-valid generated parameters: %#v", response.Plan.Preflight)
 	}
+	if len(agentRequests) < 2 || !strings.Contains(agentRequests[1], "time_stepping.max_steps") {
+		t.Fatalf("parameter Agent did not receive the active Flow360 schema catalog: %#v", agentRequests)
+	}
 	var patch map[string]any
 	if err := json.Unmarshal(response.Plan.Patch, &patch); err != nil {
 		t.Fatal(err)
 	}
 	models := patch["models"].([]any)
+	if patch["time_stepping"].(map[string]any)["max_steps"] != float64(2000) {
+		t.Fatalf("schema-native Agent patch was not persisted: %#v", patch)
+	}
 	wall := models[0].(map[string]any)
 	entities := wall["entities"].(map[string]any)["stored_entities"].([]any)
 	if len(entities) != 1 || entities[0].(map[string]any)["name"] != "cylinder-side" {
@@ -366,6 +382,36 @@ func TestAICreateProjectContinuesThroughStructuredClarificationRounds(t *testing
 	}
 	if len(requests) != 2 || !strings.Contains(requests[1], `\"diameter_m\":0.5`) || !strings.Contains(requests[1], `\"domain_model\":\"periodic\"`) {
 		t.Fatalf("prior answers were not sent to the agent: %s", requests[1])
+	}
+}
+
+func TestAICreateParameterClarificationResumesPreparedProject(t *testing.T) {
+	question := agent.Question{
+		Field: "operating_condition.velocity_magnitude", Message: "Freestream velocity",
+		Urgency: "required", Type: "number", Unit: "m/s", Default: 10.0,
+		Reason: "Sets the Reynolds number.", Recommendation: "Use 10 m/s for the baseline.",
+	}
+	fields := aiCreateParameterClarificationFields([]agent.Question{question})
+	if len(fields) != 1 || fields[0].ID != question.Field || fields[0].Type != "number" || !fields[0].Required {
+		t.Fatalf("parameter question was not preserved as a dynamic field: %#v", fields)
+	}
+	app := &Server{aiCreateSessions: map[string]aiCreateSession{
+		"aic-ready": {
+			ID: "aic-ready", Intent: "Create cylinder flow", FolderID: "folder-1", Pending: fields,
+			Prepared: &aiCreatePrepared{ProjectID: "prj-existing", RootResourceID: "geo-existing"},
+		},
+	}}
+	session, err := app.advanceAICreateSession(aiCreateRequest{
+		SessionID: "aic-ready", Answers: map[string]any{question.Field: 12.5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Prepared == nil || session.Prepared.ProjectID != "prj-existing" || len(session.Rounds) != 1 {
+		t.Fatalf("parameter clarification lost the already-created Project: %#v", session)
+	}
+	if session.Rounds[0].Answers[question.Field] != 12.5 {
+		t.Fatalf("schema-path answer was not retained: %#v", session.Rounds[0].Answers)
 	}
 }
 
