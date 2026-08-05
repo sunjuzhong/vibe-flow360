@@ -1019,13 +1019,27 @@ button { color: inherit; }
   font-size: 10px;
   cursor: pointer;
 }
-.ai-create-progress { display: grid; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none; }
-.ai-create-progress li { display: flex; align-items: center; gap: 8px; color: #9a9e94; font-size: 11px; }
+.ai-create-progress-starting { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: #69764a; font-size: 12px; }
+.ai-create-progress-panel { margin-top: 14px; padding: 13px 14px; border: 1px solid #d4dac3; border-radius: 10px; background: rgba(255,255,255,.72); }
+.ai-create-progress-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-create-progress-heading strong { color: #36421d; font-size: 12px; }
+.ai-create-progress-heading span { color: #788166; font: 10px 'DM Mono', monospace; text-transform: capitalize; }
+.ai-create-progress { display: grid; gap: 7px; margin: 10px 0 0; padding: 0; list-style: none; }
+.ai-create-progress li { display: flex; align-items: center; gap: 8px; color: #92988c; font-size: 12px; line-height: 1.35; }
 .ai-create-progress li > span { width: 10px; height: 10px; margin-left: 1px; border: 1px solid #c9ccc1; border-radius: 50%; }
 .ai-create-progress li.active { color: #39441c; font-weight: 600; }
 .ai-create-progress li.active > span { border-color: #77951c; background: #bde836; box-shadow: 0 0 0 3px rgba(189,232,54,.2); }
 .ai-create-progress li.complete { color: #69764a; }
 .ai-create-progress li.complete svg { color: #789b17; }
+.ai-create-progress li.failed { color: #9b4931; font-weight: 600; }
+.ai-create-progress li.failed svg { color: #c25b3d; }
+.ai-create-progress li.paused { color: #80681d; font-weight: 600; }
+.ai-create-progress li.paused svg { color: #9c7e1f; }
+.ai-create-progress-detail { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid #e2e6d9; color: #5e6752; font-size: 11px; line-height: 1.5; }
+.ai-create-progress-resource { display: block; margin-top: 7px; color: #89907d; font: 9px 'DM Mono', monospace; overflow-wrap: anywhere; }
+.ai-create-progress-panel.status-failed { border-color: #e5c3b6; background: #fff8f5; }
+.ai-create-progress-panel.status-needs_attention,
+.ai-create-progress-panel.status-needs_input { border-color: #dfd09e; background: #fffdf5; }
 .ai-create-error { margin-top: 12px; padding: 9px 11px; border: 1px solid #e5c3b6; border-radius: 7px; color: #9b4931; background: #fff6f2; font-size: 11px; }
 .ai-create-safety { margin: 11px 1px 0; color: #90958a; font-size: 10px; }
 

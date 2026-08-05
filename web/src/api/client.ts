@@ -95,6 +95,18 @@ export type AICreateClarification = {
   fields: AICreateClarificationField[]
 }
 
+export type AICreateProgress = {
+  request_id: string
+  status: 'running' | 'needs_input' | 'needs_attention' | 'completed' | 'failed'
+  stage: number
+  stages: string[]
+  detail?: string
+  project_id?: string
+  resource_id?: string
+  started_at: string
+  updated_at: string
+}
+
 export type AgentProposalField = {
   key: string
   value: unknown
@@ -946,11 +958,11 @@ export const api = {
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run`),
-  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>) => {
+  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string) => {
     const response = await fetch('/api/ai-create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers }),
+      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers, request_id: requestId }),
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
@@ -959,6 +971,8 @@ export const api = {
     }
     return body as AICreateResult | AICreateClarification
   },
+  aiCreateProgress: (requestId: string) =>
+    json<AICreateProgress>(`/api/ai-create/progress/${encodeURIComponent(requestId)}`),
   abortImport: async (id: string) => {
     const response = await fetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' })
     const body = await response.json().catch(() => ({}))

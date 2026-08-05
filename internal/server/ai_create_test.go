@@ -117,7 +117,7 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 		workDir:      root,
 	}
 
-	body := bytes.NewBufferString(`{"intent":"帮我实现一个圆柱扰流的仿真试验","folder_id":"folder-1"}`)
+	body := bytes.NewBufferString(`{"intent":"帮我实现一个圆柱扰流的仿真试验","folder_id":"folder-1","request_id":"aip-integration-123456"}`)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/ai-create", body)
@@ -136,6 +136,13 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	}
 	if response.DraftID != "draft-ai-1" || response.Plan.RemoteIDs == nil || response.Plan.RemoteIDs.DraftID != "draft-ai-1" {
 		t.Fatalf("expected configured remote Draft binding: %#v", response)
+	}
+	progress := app.aiCreateProgress["aip-integration-123456"]
+	if progress.Status != "completed" || progress.Stage != len(progress.Stages) {
+		t.Fatalf("expected real backend progress to complete after Draft setup: %#v", progress)
+	}
+	if progress.ProjectID != response.ProjectID || progress.ResourceID != response.RootResourceID {
+		t.Fatalf("expected progress to expose Flow360 resources: %#v", progress)
 	}
 	if response.Plan.Target != "case" || response.Plan.ProjectID != response.ProjectID || len(response.Plan.Patch) == 0 {
 		t.Fatalf("expected preloaded Case plan: %#v", response.Plan)

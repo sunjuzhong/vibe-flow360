@@ -1,21 +1,13 @@
-import { ArrowRight, CheckCircle2, CircleHelp, Loader2, Sparkles, WandSparkles, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { AlertCircle, ArrowRight, CheckCircle2, CircleHelp, Loader2, PauseCircle, Sparkles, WandSparkles, X } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   api,
   type AICreateClarificationField,
+  type AICreateProgress,
   type AICreateResult,
   type FolderNode,
 } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
-
-const progressStages = [
-  'Understanding the engineering goal',
-  'Designing a parametric CAD program',
-  'Generating and validating exact STEP geometry',
-  'Creating the Flow360 Project',
-  'Loading complete mesh and Case parameters',
-  'Validating all parameters against Flow360',
-]
 
 export const AI_CREATE_INTENT_MAX_CHARACTERS = 4000
 const AI_CREATE_INTENT_WARNING_CHARACTERS = Math.floor(AI_CREATE_INTENT_MAX_CHARACTERS * 0.85)
@@ -32,6 +24,52 @@ export function aiCreateIntentLimit(value: string) {
     nearLimit: characters >= AI_CREATE_INTENT_WARNING_CHARACTERS && characters <= AI_CREATE_INTENT_MAX_CHARACTERS,
     overLimit: characters > AI_CREATE_INTENT_MAX_CHARACTERS,
   }
+}
+
+export function aiCreateProgressStageState(progress: AICreateProgress, index: number) {
+  if (progress.status === 'completed' || index < progress.stage) return 'complete'
+  if (index > progress.stage) return 'pending'
+  if (progress.status === 'failed') return 'failed'
+  if (progress.status === 'needs_input' || progress.status === 'needs_attention') return 'paused'
+  return 'active'
+}
+
+export function AICreateProgressView({ progress }: { progress: AICreateProgress }) {
+  return (
+    <section className={`ai-create-progress-panel status-${progress.status}`} aria-live="polite">
+      <div className="ai-create-progress-heading">
+        <strong>Live backend status</strong>
+        <span>{progress.status === 'running' ? 'In progress' : progress.status.replace('_', ' ')}</span>
+      </div>
+      <ol className="ai-create-progress">
+        {progress.stages.map((stage, index) => {
+          const state = aiCreateProgressStageState(progress, index)
+          return (
+            <li key={stage} className={state}>
+              {state === 'complete' && <CheckCircle2 size={14} />}
+              {state === 'failed' && <AlertCircle size={14} />}
+              {state === 'paused' && <PauseCircle size={14} />}
+              {(state === 'active' || state === 'pending') && <span />}
+              {stage}
+            </li>
+          )
+        })}
+      </ol>
+      {progress.detail && <p className="ai-create-progress-detail">{progress.detail}</p>}
+      {(progress.project_id || progress.resource_id) && (
+        <small className="ai-create-progress-resource">
+          {progress.project_id && `Project · ${progress.project_id}`}
+          {progress.project_id && progress.resource_id && ' · '}
+          {progress.resource_id && `Geometry · ${progress.resource_id}`}
+        </small>
+      )}
+    </section>
+  )
+}
+
+function newAICreateProgressID() {
+  const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `aip-${random}`
 }
 
 type TranscriptItem = { role: 'user' | 'agent'; text: string }
@@ -151,7 +189,7 @@ export default function AICreateModal({
   const [intent, setIntent] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [progress, setProgress] = useState(0)
+  const [progress, setProgress] = useState<AICreateProgress | null>(null)
   const [sessionId, setSessionId] = useState('')
   const [round, setRound] = useState(0)
   const [fields, setFields] = useState<AICreateClarificationField[]>([])
@@ -160,12 +198,6 @@ export default function AICreateModal({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const closeWhenIdle = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
   const modalRef = useFocusTrap<HTMLDivElement>(true, closeWhenIdle, 'textarea,input,select,button')
-
-  useEffect(() => {
-    if (!busy) return
-    const timer = window.setInterval(() => setProgress((current) => Math.min(current + 1, progressStages.length - 1)), 1600)
-    return () => window.clearInterval(timer)
-  }, [busy])
 
   const answerSummary = useMemo(() => fields.map((field) => {
     const value = answers[field.id]
@@ -179,9 +211,21 @@ export default function AICreateModal({
     if (!folder || !intent.trim() || busy || intentLimit.overLimit) return
     setBusy(true)
     setError('')
-    setProgress(0)
+    setProgress(null)
+    const progressID = newAICreateProgressID()
+    let polling = true
+    const refreshProgress = async () => {
+      try {
+        const current = await api.aiCreateProgress(progressID)
+        if (polling) setProgress(current)
+      } catch {
+        // The POST registers the request ID; a 404 before that point is expected.
+      }
+    }
+    const timer = window.setInterval(() => { void refreshProgress() }, 800)
     try {
-      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers)
+      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers, progressID)
+      await refreshProgress()
       if ('status' in result) {
         setSessionId(result.session_id)
         setRound(result.round)
@@ -194,11 +238,13 @@ export default function AICreateModal({
         ])
         return
       }
-      setProgress(progressStages.length)
       onCreated(result)
     } catch (cause) {
+      await refreshProgress()
       setError(String(cause).replace('Error: ', ''))
     } finally {
+      polling = false
+      window.clearInterval(timer)
       setBusy(false)
     }
   }
@@ -286,15 +332,8 @@ export default function AICreateModal({
         )}
 
         {!busy && !intent && <p className="ai-create-example">Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.</p>}
-        {busy && (
-          <ol className="ai-create-progress" aria-live="polite">
-            {progressStages.map((stage, index) => (
-              <li key={stage} className={index < progress ? 'complete' : index === progress ? 'active' : ''}>
-                {index < progress ? <CheckCircle2 size={13} /> : <span />}{stage}
-              </li>
-            ))}
-          </ol>
-        )}
+        {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />Connecting to the AI Create backend…</div>}
+        {progress && (busy || progress.status !== 'completed') && <AICreateProgressView progress={progress} />}
         {error && <div className="ai-create-error" role="alert">{error}</div>}
         <p className="ai-create-safety">The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.</p>
       </div>

@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import AICreateModal, {
   AI_CREATE_INTENT_MAX_CHARACTERS,
   AICreateClarificationForm,
+  AICreateProgressView,
   aiCreateIntentCharacterCount,
   aiCreateIntentLimit,
+  aiCreateProgressStageState,
 } from './AICreateModal'
 
 describe('AICreateModal', () => {
@@ -67,5 +69,43 @@ describe('AICreateModal', () => {
     expect(markup).toContain('Thin periodic')
     expect(markup).toContain('Use a wind tunnel?')
     expect(markup).toContain('Continue with answers')
+  })
+
+  it('renders backend-reported stages without synthesizing progress', () => {
+    const progress = {
+      request_id: 'aip-test-request-1234',
+      status: 'running' as const,
+      stage: 2,
+      stages: ['Design CAD', 'Validate STEP', 'Process Flow360 Project', 'Create Draft'],
+      detail: 'Flow360 is processing the uploaded Geometry.',
+      project_id: 'prj-12345678',
+      resource_id: 'geo-12345678',
+      started_at: '2026-08-05T00:00:00Z',
+      updated_at: '2026-08-05T00:00:01Z',
+    }
+    expect(progress.stages.map((_, index) => aiCreateProgressStageState(progress, index))).toEqual([
+      'complete', 'complete', 'active', 'pending',
+    ])
+
+    const markup = renderToStaticMarkup(<AICreateProgressView progress={progress} />)
+    expect(markup).toContain('Live backend status')
+    expect(markup).toContain('Flow360 is processing the uploaded Geometry.')
+    expect(markup).toContain('Project · prj-12345678')
+    expect(markup).toContain('class="active"')
+  })
+
+  it('shows the current real stage as failed instead of completing later stages', () => {
+    const progress = {
+      request_id: 'aip-test-request-5678',
+      status: 'failed' as const,
+      stage: 1,
+      stages: ['Design CAD', 'Validate STEP', 'Create Project'],
+      detail: 'STEP round-trip validation failed.',
+      started_at: '2026-08-05T00:00:00Z',
+      updated_at: '2026-08-05T00:00:01Z',
+    }
+    expect(progress.stages.map((_, index) => aiCreateProgressStageState(progress, index))).toEqual([
+      'complete', 'failed', 'pending',
+    ])
   })
 })

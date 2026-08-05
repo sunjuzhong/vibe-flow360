@@ -31,10 +31,11 @@ const aiCreateProjectReconcileDelay = 2 * time.Second
 var flow360ProjectIDPattern = regexp.MustCompile(`\bprj-[A-Za-z0-9][A-Za-z0-9-]{7,}\b`)
 
 type aiCreateRequest struct {
-	Intent    string         `json:"intent"`
-	FolderID  string         `json:"folder_id"`
-	SessionID string         `json:"session_id,omitempty"`
-	Answers   map[string]any `json:"answers,omitempty"`
+	Intent     string         `json:"intent"`
+	FolderID   string         `json:"folder_id"`
+	SessionID  string         `json:"session_id,omitempty"`
+	ProgressID string         `json:"request_id,omitempty"`
+	Answers    map[string]any `json:"answers,omitempty"`
 }
 
 type aiCreateSession struct {
@@ -98,6 +99,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.FolderID = strings.TrimSpace(request.FolderID)
 	request.SessionID = strings.TrimSpace(request.SessionID)
+	request.ProgressID = strings.TrimSpace(request.ProgressID)
 	if intentCharacters > maxAICreateIntentCharacters {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
 			"code": "input_too_long", "field": "intent",
@@ -111,12 +113,25 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		})
 		return
 	}
+	if request.ProgressID != "" {
+		if !s.startAICreateProgress(request.ProgressID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid AI Create request ID"})
+			return
+		}
+		c.Set("ai_create_progress_id", request.ProgressID)
+		defer func() {
+			if c.Writer.Status() >= http.StatusBadRequest {
+				s.finishAICreateProgress(request.ProgressID, "failed", "AI Create stopped at this stage. See the reported error for details.", "", "")
+			}
+		}()
+	}
 	session, err := s.advanceAICreateSession(request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if session.Prepared != nil {
+		s.updateAICreateProgress(request.ProgressID, 3, "The existing Flow360 Project and Geometry are ready; loading the active parameter schemas.")
 		s.finishAICreateParameters(c, session, *session.Prepared)
 		return
 	}
@@ -125,6 +140,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	if err != nil {
 		var missing *aicreate.MissingInputError
 		if errors.As(err, &missing) {
+			s.finishAICreateProgress(request.ProgressID, "needs_input", "The Geometry Agent needs an engineering decision before CAD generation can continue.", "", "")
 			s.setAICreateSessionPending(session.ID, missing.Fields)
 			c.JSON(http.StatusOK, aiCreateClarificationResponse{
 				Status: "needs_input", SessionID: session.ID,
@@ -136,6 +152,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateDesignError(err)})
 		return
 	}
+	s.updateAICreateProgress(request.ProgressID, 1, "The CAD plan is ready; CadQuery/OpenCascade is generating and round-trip validating exact STEP geometry.")
 
 	stagingRoot := filepath.Join(s.workDir, "ai-create")
 	if err := os.MkdirAll(stagingRoot, 0o700); err != nil {
@@ -158,6 +175,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	if err != nil {
 		var missing *aicreate.MissingInputError
 		if errors.As(err, &missing) {
+			s.finishAICreateProgress(request.ProgressID, "needs_input", "CAD self-repair needs an engineering decision before it can continue.", "", "")
 			s.setAICreateSessionPending(session.ID, missing.Fields)
 			c.JSON(http.StatusOK, aiCreateClarificationResponse{
 				Status: "needs_input", SessionID: session.ID,
@@ -177,6 +195,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	}
 
 	projectCreateStartedAt := time.Now().UTC()
+	s.updateAICreateProgress(request.ProgressID, 2, "Flow360 is uploading the exact STEP and processing the Project root Geometry (--sync).")
 	rawResult, err := s.flow360.CreateProjectSync(
 		c.Request.Context(), []string{geometryPath}, "geometry", blueprint.ProjectName,
 		blueprint.Geometry.Unit, "standard", "", session.FolderID, []string{"ai-create", "agent-cad-v1"},
@@ -218,7 +237,9 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not read the AI-created project result"})
 		return
 	}
-	baseline, err := s.waitForAICreateSimulationParams(c.Request.Context(), remote.RootResourceID)
+	s.bindAICreateProgressResources(request.ProgressID, remote.ProjectID, remote.RootResourceID)
+	s.updateAICreateProgress(request.ProgressID, 3, "Flow360 Project processing completed; querying Geometry state, canonical SimulationParams, and installed stage schemas.")
+	baseline, err := s.waitForAICreateSimulationParams(c.Request.Context(), remote.RootResourceID, request.ProgressID)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error":      "Project was created, but Flow360 did not finish preparing its simulation parameters",
@@ -252,6 +273,9 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 }
 
 func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSession, prepared aiCreatePrepared) {
+	progressID := aiCreateProgressID(c)
+	s.bindAICreateProgressResources(progressID, prepared.ProjectID, prepared.RootResourceID)
+	s.updateAICreateProgress(progressID, 3, "Querying the installed Flow360 Geometry-to-Case schemas against the Project's canonical SimulationParams.")
 	boundaryBaseline, err := plans.MergedSimulationParams(plans.Plan{Baseline: prepared.Baseline, Patch: prepared.BoundaryPatch})
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "could not prepare the schema-aware Flow360 baseline", "project_id": prepared.ProjectID})
@@ -272,6 +296,7 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		},
 		Name: prepared.GeometryName, Baseline: boundaryBaseline, Form: form,
 	}
+	s.updateAICreateProgress(progressID, 4, "The parameter Agent is filling only schema-allowed fields, then Flow360 preflight will validate the complete setup.")
 	assisted, err := s.generateSchemaNativePlan(c.Request.Context(), composer)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent could not produce a schema-valid Flow360 setup: " + err.Error(), "project_id": prepared.ProjectID})
@@ -283,6 +308,7 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 			c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent requested input without providing usable fields", "project_id": prepared.ProjectID})
 			return
 		}
+		s.finishAICreateProgress(progressID, "needs_input", "The parameter Agent needs an engineering decision before it can complete the schema-valid setup.", prepared.ProjectID, prepared.RootResourceID)
 		s.setAICreateSessionPending(session.ID, fields)
 		c.JSON(http.StatusOK, aiCreateClarificationResponse{
 			Status: "needs_input", SessionID: session.ID,
@@ -330,12 +356,22 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 	draftID := ""
 	warnings := []string(nil)
 	if plan.Preflight != nil && plan.Preflight.Valid {
+		s.updateAICreateProgress(progressID, 5, "Flow360 preflight passed; creating a Draft from the validated parameters and making it the Project's ready-to-review setup.")
 		var draftErr error
 		plan, draftID, draftErr = s.materializeAICreateDraft(c.Request.Context(), plan)
 		if draftErr != nil {
 			log.Printf("AI Create remote Draft setup failed for plan %s: %v", plan.ID, draftErr)
 			warnings = append(warnings, "The Project and reviewed Plan were created, but Flow360 Draft setup needs recovery before approval.")
+			s.finishAICreateProgress(progressID, "needs_attention", "The Project and validated Plan are ready, but Flow360 Draft creation needs recovery.", prepared.ProjectID, prepared.RootResourceID)
 		}
+		if draftErr == nil && draftID == "" {
+			s.finishAICreateProgress(progressID, "needs_attention", "Flow360 accepted the validated Plan but did not return a Draft ID; Draft recovery is required.", prepared.ProjectID, prepared.RootResourceID)
+		}
+	} else {
+		s.finishAICreateProgress(progressID, "needs_attention", "The Project and Plan were created, but Flow360 preflight found inputs that still need review; no Draft was created.", prepared.ProjectID, prepared.RootResourceID)
+	}
+	if draftID != "" {
+		s.finishAICreateProgress(progressID, "completed", "The exact CAD, Flow360 Project, schema-valid parameters, preflight, and configured Draft are all ready for review.", prepared.ProjectID, prepared.RootResourceID)
 	}
 	stages := aiCreateCompletionStages(plan, draftID != "")
 	s.completeAICreateSession(session.ID)
@@ -658,10 +694,15 @@ const (
 	aiCreateParamsLookupDelay    = 500 * time.Millisecond
 )
 
-func (s *Server) waitForAICreateSimulationParams(ctx context.Context, geometryID string) (json.RawMessage, error) {
+func (s *Server) waitForAICreateSimulationParams(ctx context.Context, geometryID, progressID string) (json.RawMessage, error) {
 	var lastErr error
 	for attempt := 0; attempt < aiCreateParamsLookupAttempts; attempt++ {
 		detail, err := s.flow360.ResourceDetail(ctx, "Geometry", geometryID)
+		if err == nil {
+			if remoteDetail := aiCreateGeometryStateDetail(detail.State); remoteDetail != "" {
+				s.updateAICreateProgress(progressID, 3, remoteDetail)
+			}
+		}
 		if err == nil && aiCreateSimulationParamsReady(detail.SimulationParams) {
 			return detail.SimulationParams, nil
 		}
@@ -682,6 +723,28 @@ func (s *Server) waitForAICreateSimulationParams(ctx context.Context, geometryID
 		}
 	}
 	return nil, lastErr
+}
+
+func aiCreateGeometryStateDetail(raw json.RawMessage) string {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return ""
+	}
+	var state map[string]any
+	if json.Unmarshal(raw, &state) != nil {
+		return ""
+	}
+	remoteState := strings.TrimSpace(executionState(state))
+	progress := executionProgress(state)
+	if remoteState == "" && progress == nil {
+		return ""
+	}
+	if remoteState == "" {
+		return fmt.Sprintf("Flow360 Geometry reports %.0f%% complete; waiting for canonical SimulationParams.", *progress)
+	}
+	if progress != nil {
+		return fmt.Sprintf("Flow360 Geometry state: %s (%.0f%%); waiting for canonical SimulationParams.", remoteState, *progress)
+	}
+	return fmt.Sprintf("Flow360 Geometry state: %s; waiting for canonical SimulationParams.", remoteState)
 }
 
 func aiCreateSimulationParamsReady(raw json.RawMessage) bool {

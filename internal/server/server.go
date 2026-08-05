@@ -63,6 +63,8 @@ type Server struct {
 	annotationHandlers *AnnotationHandlers
 	aiCreateMu         sync.Mutex
 	aiCreateSessions   map[string]aiCreateSession
+	aiCreateProgressMu sync.Mutex
+	aiCreateProgress   map[string]aiCreateProgress
 }
 
 type geometryDiagnosticsCacheEntry struct {
@@ -287,6 +289,7 @@ func (s *Server) routes() {
 		api.POST("/imports/:import_id/run", s.runImport)
 		api.DELETE("/imports/:import_id", s.abortImport)
 		api.POST("/ai-create", s.aiCreateProject)
+		api.GET("/ai-create/progress/:request_id", s.aiCreateProgressStatus)
 		api.GET("/agent/state", func(c *gin.Context) {
 			c.JSON(http.StatusOK, s.agent.State())
 		})
