@@ -298,6 +298,48 @@ func TestAICreateProjectRequiresFolder(t *testing.T) {
 	}
 }
 
+func TestAICreateProjectReportsDetailedIntentLimit(t *testing.T) {
+	intent := strings.Repeat("圆", maxAICreateIntentCharacters+17)
+	payload, _ := json.Marshal(aiCreateRequest{Intent: intent, FolderID: "folder-1"})
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/ai-create", bytes.NewReader(payload))
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+	(&Server{}).aiCreateProject(requestContext)
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Code             string `json:"code"`
+		Field            string `json:"field"`
+		ActualCharacters int    `json:"actual_characters"`
+		MaxCharacters    int    `json:"max_characters"`
+		ActualBytes      int    `json:"actual_bytes"`
+		Error            string `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != "input_too_long" || response.Field != "intent" || response.ActualCharacters != maxAICreateIntentCharacters+17 || response.MaxCharacters != maxAICreateIntentCharacters {
+		t.Fatalf("unexpected limit details: %#v", response)
+	}
+	if response.ActualBytes != len(intent) || !strings.Contains(response.Error, "Remove at least 17 characters") {
+		t.Fatalf("limit response is not actionable: %#v", response)
+	}
+}
+
+func TestAICreateProjectReportsDetailedRequestByteLimit(t *testing.T) {
+	payload := `{"intent":"` + strings.Repeat("a", maxAICreateRequestBytes) + `","folder_id":"folder-1"}`
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/ai-create", strings.NewReader(payload))
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+	(&Server{}).aiCreateProject(requestContext)
+	if recorder.Code != http.StatusRequestEntityTooLarge || !strings.Contains(recorder.Body.String(), `"code":"request_too_large"`) || !strings.Contains(recorder.Body.String(), `"max_request_bytes":20480`) {
+		t.Fatalf("unexpected request-size response %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestGenerateAICreateCADRetriesTemporaryRuntimeFailure(t *testing.T) {
 	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("temporary runtime failure")}}}
 	blueprint := aicreate.Blueprint{Geometry: aicreate.Geometry{Name: "body"}}

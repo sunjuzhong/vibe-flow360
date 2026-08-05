@@ -17,6 +17,23 @@ const progressStages = [
   'Validating all parameters against Flow360',
 ]
 
+export const AI_CREATE_INTENT_MAX_CHARACTERS = 4000
+const AI_CREATE_INTENT_WARNING_CHARACTERS = Math.floor(AI_CREATE_INTENT_MAX_CHARACTERS * 0.85)
+
+export function aiCreateIntentCharacterCount(value: string) {
+  return Array.from(value).length
+}
+
+export function aiCreateIntentLimit(value: string) {
+  const characters = aiCreateIntentCharacterCount(value)
+  return {
+    characters,
+    remaining: AI_CREATE_INTENT_MAX_CHARACTERS - characters,
+    nearLimit: characters >= AI_CREATE_INTENT_WARNING_CHARACTERS && characters <= AI_CREATE_INTENT_MAX_CHARACTERS,
+    overLimit: characters > AI_CREATE_INTENT_MAX_CHARACTERS,
+  }
+}
+
 type TranscriptItem = { role: 'user' | 'agent'; text: string }
 
 function initialAnswers(fields: AICreateClarificationField[]) {
@@ -156,8 +173,10 @@ export default function AICreateModal({
     return `${field.label}: ${option?.label ?? String(value)}`
   }).join(' · '), [answers, fields])
 
+  const intentLimit = useMemo(() => aiCreateIntentLimit(intent), [intent])
+
   const runCreate = async (submittedAnswers?: Record<string, unknown>) => {
-    if (!folder || !intent.trim() || busy) return
+    if (!folder || !intent.trim() || busy || intentLimit.overLimit) return
     setBusy(true)
     setError('')
     setProgress(0)
@@ -209,10 +228,33 @@ export default function AICreateModal({
 
         {!sessionId && (
           <form onSubmit={submit}>
-            <textarea ref={inputRef} value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="Describe the geometry, dimensions, flow conditions, and engineering objective." rows={3} disabled={busy} aria-label="Simulation requirement" />
+            <div className={`ai-create-intent-input${intentLimit.overLimit ? ' over-limit' : intentLimit.nearLimit ? ' near-limit' : ''}`}>
+              <textarea
+                ref={inputRef}
+                value={intent}
+                onChange={(event) => {
+                  setIntent(event.target.value)
+                  if (error) setError('')
+                }}
+                placeholder="Describe the geometry, dimensions, flow conditions, and engineering objective."
+                rows={3}
+                disabled={busy}
+                aria-label="Simulation requirement"
+                aria-describedby="ai-create-intent-limit"
+                aria-invalid={intentLimit.overLimit}
+              />
+              <div id="ai-create-intent-limit" className="ai-create-intent-limit" aria-live="polite">
+                <span>{intentLimit.characters.toLocaleString()} / {AI_CREATE_INTENT_MAX_CHARACTERS.toLocaleString()} characters</span>
+                {intentLimit.overLimit
+                  ? <strong>{Math.abs(intentLimit.remaining).toLocaleString()} over the limit — shorten the description to continue.</strong>
+                  : intentLimit.nearLimit
+                    ? <strong>{intentLimit.remaining.toLocaleString()} characters remaining.</strong>
+                    : <small>Include the geometry, flow conditions, and engineering objective.</small>}
+              </div>
+            </div>
             <div className="ai-create-form-footer">
               <span>{folder ? `Destination · ${folder.name}` : 'Select a destination folder first'}</span>
-              <button type="submit" disabled={!folder || !intent.trim() || busy}>
+              <button type="submit" disabled={!folder || !intent.trim() || busy || intentLimit.overLimit}>
                 {busy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
                 {busy ? 'Thinking…' : 'Start with AI'}
                 {!busy && <ArrowRight size={14} />}

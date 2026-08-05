@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import AICreateModal, { AICreateClarificationForm } from './AICreateModal'
+import AICreateModal, {
+  AI_CREATE_INTENT_MAX_CHARACTERS,
+  AICreateClarificationForm,
+  aiCreateIntentCharacterCount,
+  aiCreateIntentLimit,
+} from './AICreateModal'
 
 describe('AICreateModal', () => {
   it('presents natural-language project creation and the approval boundary', () => {
@@ -17,8 +22,21 @@ describe('AICreateModal', () => {
     expect(markup).toContain('Paid remote meshing and solving still require approval')
     expect(markup).toContain('builds the goal over multiple steps')
     expect(markup).toContain('collect missing dimensions and operating decisions step by step')
+    expect(markup).toContain('0 / 4,000 characters')
+    expect(markup).toContain('aria-describedby="ai-create-intent-limit"')
     expect(markup).toContain('role="dialog"')
     expect(markup).not.toMatch(/[\u4e00-\u9fff]/)
+  })
+
+  it('counts Unicode characters and reports near/over-limit states', () => {
+    expect(aiCreateIntentCharacterCount('圆柱😀flow')).toBe(7)
+    expect(aiCreateIntentLimit('a'.repeat(3_500))).toMatchObject({ characters: 3_500, remaining: 500, nearLimit: true, overLimit: false })
+    expect(aiCreateIntentLimit('圆'.repeat(AI_CREATE_INTENT_MAX_CHARACTERS + 25))).toMatchObject({
+      characters: 4_025,
+      remaining: -25,
+      nearLimit: false,
+      overLimit: true,
+    })
   })
 
   it('requires a destination folder', () => {

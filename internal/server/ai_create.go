@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
@@ -21,7 +22,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
 
-const maxAICreateIntentBytes = 4000
+const maxAICreateIntentCharacters = 4000
 const maxAICreateRequestBytes = 20 << 10
 const maxAICreateClarificationRounds = 8
 const aiCreateProjectReconcileAttempts = 15
@@ -81,17 +82,33 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	if err := c.ShouldBindJSON(&request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "simulation requirement is too large"})
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"code": "request_too_large", "field": "intent",
+				"error":             fmt.Sprintf("The AI Create request exceeds the %d-byte request limit. Shorten the simulation description or clarification answers and try again.", maxAICreateRequestBytes),
+				"max_request_bytes": maxAICreateRequestBytes,
+				"request_bytes":     c.Request.ContentLength,
+			})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid AI Create request"})
 		return
 	}
+	intentCharacters := utf8.RuneCountInString(request.Intent)
+	intentBytes := len(request.Intent)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.FolderID = strings.TrimSpace(request.FolderID)
 	request.SessionID = strings.TrimSpace(request.SessionID)
-	if len(request.Intent) > maxAICreateIntentBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "simulation requirement is too large"})
+	if intentCharacters > maxAICreateIntentCharacters {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"code": "input_too_long", "field": "intent",
+			"error": fmt.Sprintf(
+				"Simulation description is %d characters; the maximum is %d. Remove at least %d characters and try again.",
+				intentCharacters, maxAICreateIntentCharacters, intentCharacters-maxAICreateIntentCharacters,
+			),
+			"actual_characters": intentCharacters,
+			"max_characters":    maxAICreateIntentCharacters,
+			"actual_bytes":      intentBytes,
+		})
 		return
 	}
 	session, err := s.advanceAICreateSession(request)

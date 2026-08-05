@@ -966,6 +966,25 @@ button { color: inherit; }
   font-size: 14px;
   line-height: 1.6;
 }
+.ai-create-intent-input { border-bottom: 1px solid #eceee7; }
+.ai-create-intent-limit {
+  display: flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 9px;
+  color: #8a9085;
+  font-size: 10px;
+}
+.ai-create-intent-limit > span { flex: 0 0 auto; font: 10px 'DM Mono', monospace; }
+.ai-create-intent-limit > small { text-align: right; }
+.ai-create-intent-limit > strong { color: #7f681e; font-weight: 600; text-align: right; }
+.ai-create-intent-input.near-limit { background: #fffdf4; }
+.ai-create-intent-input.near-limit .ai-create-intent-limit > span { color: #80681d; }
+.ai-create-intent-input.over-limit { background: #fff7f4; box-shadow: inset 0 0 0 1px #e3a995; }
+.ai-create-intent-input.over-limit .ai-create-intent-limit,
+.ai-create-intent-input.over-limit .ai-create-intent-limit > strong { color: #a34731; }
 .ai-create-form-footer {
   display: flex;
   align-items: center;
