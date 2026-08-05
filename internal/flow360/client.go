@@ -172,6 +172,40 @@ func (c *Client) ProjectDrafts(ctx context.Context, projectID string) (json.RawM
 	return c.jsonCommand(ctx, "draft", "list", "--project-id", projectID)
 }
 
+// CreateDraft creates an editable remote Draft without starting meshing or a
+// solver. Callers should use EnsureDraft when retrying a workflow so an
+// uncertain response cannot create duplicate Drafts.
+func (c *Client) CreateDraft(ctx context.Context, sourceID, name string) (json.RawMessage, error) {
+	if strings.TrimSpace(sourceID) == "" {
+		return nil, errors.New("Draft source ID is required")
+	}
+	args := []string{"draft", "create", strings.TrimSpace(sourceID)}
+	if strings.TrimSpace(name) != "" {
+		args = append(args, "--name", strings.TrimSpace(name))
+	}
+	return c.jsonCommand(ctx, args...)
+}
+
+// EnsureDraft makes Draft creation idempotent by checking the Project-scoped
+// list before creation and reconciling the name again after an uncertain create
+// response. Draft creation is remote but does not start billable execution.
+func (c *Client) EnsureDraft(ctx context.Context, projectID, sourceID, name string) (json.RawMessage, error) {
+	if existing, err := c.FindDraftByName(ctx, projectID, name); err == nil {
+		return existing, nil
+	}
+	created, createErr := c.CreateDraft(ctx, sourceID, name)
+	if createErr == nil && draftIDFromPayload(created) != "" {
+		return created, nil
+	}
+	if recovered, err := c.FindDraftByName(ctx, projectID, name); err == nil {
+		return recovered, nil
+	}
+	if createErr != nil {
+		return nil, createErr
+	}
+	return nil, errors.New("Flow360 created a Draft but did not return its ID")
+}
+
 // SetDraftSimulationParams replaces the editable SimulationParams stored on a
 // Draft, then reads the canonical representation back from Flow360. Using a
 // private temporary file keeps large parameter trees out of process arguments
@@ -470,6 +504,28 @@ func (c *Client) RunDraft(ctx context.Context, sourceID, name, target string, pa
 	return fallback, nil
 }
 
+// RunExistingDraft executes a Draft whose complete SimulationParams were
+// already written and reviewed. It intentionally sends neither a name nor a
+// patch, avoiding creation of another Draft at approval time.
+func (c *Client) RunExistingDraft(ctx context.Context, draftID, target string) (json.RawMessage, error) {
+	if strings.TrimSpace(draftID) == "" {
+		return nil, errors.New("Draft ID is required")
+	}
+	output, err := c.runWithTimeout(ctx, 2*time.Minute, "draft", "run", strings.TrimSpace(draftID), "--up-to", target)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := extractJSON(output)
+	if err == nil {
+		return raw, nil
+	}
+	fallback, marshalErr := json.Marshal(map[string]string{"output": compactOutput(output)})
+	if marshalErr != nil {
+		return nil, marshalErr
+	}
+	return fallback, nil
+}
+
 // FindDraftByName discovers a draft created before a server interruption.
 // It is intentionally read-only and is used to reconcile an uncertain local
 // submission without issuing another billable run.
@@ -498,6 +554,39 @@ func (c *Client) FindDraftByName(ctx context.Context, projectID, name string) (j
 		return result, nil
 	}
 	return nil, errors.New("matching Flow360 draft was not found")
+}
+
+func draftIDFromPayload(raw json.RawMessage) string {
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		return ""
+	}
+	var visit func(any) string
+	visit = func(value any) string {
+		switch typed := value.(type) {
+		case []any:
+			for _, child := range typed {
+				if id := visit(child); id != "" {
+					return id
+				}
+			}
+		case map[string]any:
+			if id, _ := typed["draft_id"].(string); strings.TrimSpace(id) != "" {
+				return strings.TrimSpace(id)
+			}
+			resourceType, _ := typed["type"].(string)
+			if id, _ := typed["id"].(string); strings.EqualFold(strings.TrimSpace(resourceType), "Draft") && strings.TrimSpace(id) != "" {
+				return strings.TrimSpace(id)
+			}
+			for _, child := range typed {
+				if id := visit(child); id != "" {
+					return id
+				}
+			}
+		}
+		return ""
+	}
+	return visit(payload)
 }
 
 // TerminalState represents the current state of a monitored resource

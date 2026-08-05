@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   api,
   type Flow360Status,
@@ -117,6 +117,9 @@ export function geometryContextId(items: ProjectItem[], selectedId: string | nul
 
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
+  const [searchParams] = useSearchParams()
+  const requestedDraftId = searchParams.get('draft')?.trim() ?? ''
+  const requestedPlanId = searchParams.get('plan')?.trim() ?? ''
   const resourceId = projectPath.startsWith('resources/') ? projectPath.slice('resources/'.length) : ''
   const navigate = useNavigate()
   const navigateRef = useRef(navigate)
@@ -144,6 +147,7 @@ export default function ProjectPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [initialPlanId, setInitialPlanId] = useState('')
+  const openedRequestedPlan = useRef('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
   const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'draft' | null>(null)
@@ -158,6 +162,14 @@ export default function ProjectPage() {
   const [syncError, setSyncError] = useState('')
   const [syncNonce, setSyncNonce] = useState(0)
   const annotations = useProjectAnnotations(projectId)
+
+  useEffect(() => {
+    if (!requestedPlanId || openedRequestedPlan.current === requestedPlanId) return
+    openedRequestedPlan.current = requestedPlanId
+    setChatOpen(false)
+    setInitialPlanId(requestedPlanId)
+    setPlanOpen(true)
+  }, [requestedPlanId])
   const closePanel = useCallback(() => setActivePanel(null), [])
   const panelRef = useFocusTrap<HTMLElement>(
     activePanel !== null,
@@ -261,14 +273,16 @@ export default function ProjectPage() {
       const next = draftRecords(response.data)
       setDrafts(next)
       setActiveDraftId((current) => (
-        next.some((draft) => draft.id === current) ? current : next[0]?.id ?? ''
+        next.some((draft) => draft.id === current)
+          ? current
+          : next.some((draft) => draft.id === requestedDraftId) ? requestedDraftId : next[0]?.id ?? ''
       ))
     } catch (cause) {
       setDraftsError(String(cause).replace('Error: ', ''))
     } finally {
       setDraftsLoading(false)
     }
-  }, [projectId])
+  }, [projectId, requestedDraftId])
 
   useEffect(() => {
     void loadDrafts()

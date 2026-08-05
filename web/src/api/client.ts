@@ -27,6 +27,7 @@ export type AgentState = {
 
 export type AICreateResult = {
   project_id: string
+  draft_id?: string
   root_resource_id: string
   root_resource_type: string
   blueprint: {
@@ -56,6 +57,7 @@ export type AICreateResult = {
   }
   plan: SimulationPlan
   stages: string[]
+  warnings?: string[]
 }
 
 export type AICreateClarificationField = {

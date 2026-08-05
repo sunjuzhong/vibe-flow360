@@ -281,6 +281,33 @@ func TestStoreSetRemoteIDsBackfillsWithoutOverwriting(t *testing.T) {
 	if updated.RemoteIDs.DraftID != "dft-1" || updated.RemoteIDs.CaseID != "case-1" || updated.RemoteIDs.MeshID != "vm-1" {
 		t.Fatalf("unexpected merged remote IDs: %#v", updated.RemoteIDs)
 	}
+	if strings.Join(updated.CommandPreview, " ") != "flow360 draft run dft-1 --up-to case" {
+		t.Fatalf("bound Draft was not reflected in command preview: %#v", updated.CommandPreview)
+	}
+}
+
+func TestStoreMarkSubmittedPreservesPreboundDraftID(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry",
+		Target: "case", Name: "AI Create", Intent: "Run case.", Patch: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetRemoteIDs(created.ID, &RemoteIDs{ProjectID: "prj-1", DraftID: "draft-ready", GeometryID: "geo-1"}); err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := store.MarkSubmitted(created.ID, json.RawMessage(`{"result":{"id":"case-1","type":"Case"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submitted.RemoteIDs == nil || submitted.RemoteIDs.DraftID != "draft-ready" || submitted.RemoteIDs.CaseID != "case-1" {
+		t.Fatalf("submission discarded prebound Draft ID: %#v", submitted.RemoteIDs)
+	}
 }
 
 func TestStoreMarkFailedClassifiesError(t *testing.T) {

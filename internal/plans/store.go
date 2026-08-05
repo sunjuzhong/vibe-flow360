@@ -698,7 +698,16 @@ func (s *Store) MarkSubmitted(id string, result json.RawMessage) (Plan, error) {
 		plan.Status = StatusSubmitted
 		plan.CompletedAt = nil
 		plan.Result = result
-		plan.RemoteIDs = remoteIDs
+		if plan.RemoteIDs == nil {
+			plan.RemoteIDs = remoteIDs
+		} else if remoteIDs != nil {
+			mergeRemoteID(&plan.RemoteIDs.ProjectID, remoteIDs.ProjectID)
+			mergeRemoteID(&plan.RemoteIDs.DraftID, remoteIDs.DraftID)
+			mergeRemoteID(&plan.RemoteIDs.GeometryID, remoteIDs.GeometryID)
+			mergeRemoteID(&plan.RemoteIDs.MeshID, remoteIDs.MeshID)
+			mergeRemoteID(&plan.RemoteIDs.CaseID, remoteIDs.CaseID)
+			mergeRemoteID(&plan.RemoteIDs.SolverVersion, remoteIDs.SolverVersion)
+		}
 		plan.Error = ""
 		plan.ErrorCategory = ""
 		return nil
@@ -714,14 +723,17 @@ func (s *Store) SetRemoteIDs(id string, recovered *RemoteIDs) (Plan, error) {
 	return s.Update(id, func(plan *Plan) error {
 		if plan.RemoteIDs == nil {
 			plan.RemoteIDs = recovered
-			return nil
+		} else {
+			mergeRemoteID(&plan.RemoteIDs.ProjectID, recovered.ProjectID)
+			mergeRemoteID(&plan.RemoteIDs.DraftID, recovered.DraftID)
+			mergeRemoteID(&plan.RemoteIDs.GeometryID, recovered.GeometryID)
+			mergeRemoteID(&plan.RemoteIDs.MeshID, recovered.MeshID)
+			mergeRemoteID(&plan.RemoteIDs.CaseID, recovered.CaseID)
+			mergeRemoteID(&plan.RemoteIDs.SolverVersion, recovered.SolverVersion)
 		}
-		mergeRemoteID(&plan.RemoteIDs.ProjectID, recovered.ProjectID)
-		mergeRemoteID(&plan.RemoteIDs.DraftID, recovered.DraftID)
-		mergeRemoteID(&plan.RemoteIDs.GeometryID, recovered.GeometryID)
-		mergeRemoteID(&plan.RemoteIDs.MeshID, recovered.MeshID)
-		mergeRemoteID(&plan.RemoteIDs.CaseID, recovered.CaseID)
-		mergeRemoteID(&plan.RemoteIDs.SolverVersion, recovered.SolverVersion)
+		if plan.RemoteIDs.DraftID != "" && (plan.Status == StatusDraft || plan.Status == StatusApproved || plan.Status == StatusFailed) {
+			plan.CommandPreview = []string{"flow360", "draft", "run", plan.RemoteIDs.DraftID, "--up-to", plan.Target}
+		}
 		return nil
 	})
 }

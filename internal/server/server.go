@@ -948,7 +948,7 @@ func (s *Server) runPlan(c *gin.Context) {
 		return
 	}
 
-	result, runErr := s.flow360.RunDraft(c.Request.Context(), plan.SourceID, plan.Name, plan.Target, plan.Patch)
+	result, runErr := s.submitPlanToFlow360(c.Request.Context(), plan)
 	if runErr != nil {
 		failed, persistErr := s.plans.MarkFailed(plan.ID, publicExecutionError(runErr))
 		if persistErr != nil {
@@ -972,6 +972,20 @@ func (s *Server) runPlan(c *gin.Context) {
 	s.startPlanMonitor(submitted)
 
 	c.JSON(http.StatusOK, submitted)
+}
+
+func (s *Server) submitPlanToFlow360(ctx context.Context, plan plans.Plan) (json.RawMessage, error) {
+	if plan.RemoteIDs == nil || strings.TrimSpace(plan.RemoteIDs.DraftID) == "" {
+		return s.flow360.RunDraft(ctx, plan.SourceID, plan.Name, plan.Target, plan.Patch)
+	}
+	merged, err := plans.MergedSimulationParams(plan)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.flow360.SetDraftSimulationParams(ctx, plan.RemoteIDs.DraftID, merged); err != nil {
+		return nil, err
+	}
+	return s.flow360.RunExistingDraft(ctx, plan.RemoteIDs.DraftID, plan.Target)
 }
 
 func publicExecutionError(err error) error {

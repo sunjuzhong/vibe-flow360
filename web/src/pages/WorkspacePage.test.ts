@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  aiCreateProjectPath,
   findFolderById,
   formatProjectCreatedAt,
   readWorkspaceSelectedFolder,
   workspaceSelectedFolderStorageKey,
   writeWorkspaceSelectedFolder,
 } from './WorkspacePage'
+
+describe('aiCreateProjectPath', () => {
+  it('opens the Project with the configured Flow360 Draft selected', () => {
+    expect(aiCreateProjectPath({ project_id: 'prj 1', draft_id: 'draft/ready', plan: { id: 'plan 1' } }))
+      .toBe('/projects/prj%201?draft=draft%2Fready&plan=plan+1')
+    expect(aiCreateProjectPath({ project_id: 'prj-1' })).toBe('/projects/prj-1')
+  })
+})
 
 describe('formatProjectCreatedAt', () => {
   it('formats a Flow360 creation timestamp for display', () => {

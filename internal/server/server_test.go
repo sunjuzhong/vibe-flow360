@@ -43,6 +43,46 @@ func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 	}
 }
 
+func TestSubmitPlanToFlow360UpdatesAndRunsPreboundDraft(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	paramsPath := filepath.Join(dir, "params.json")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+printf '%s ' "$@" >> "` + argsPath + `"
+printf '\n' >> "` + argsPath + `"
+case "$1 $2 $3" in
+  "draft simulation-params set") cp "$5" "` + paramsPath + `"; printf '{"status":"updated"}' ;;
+  "draft simulation-params get") printf '{"version":"canonical"}' ;;
+  "draft run draft-ready") printf '{"draft":{"id":"draft-ready","type":"Draft"},"result":{"id":"case-1","type":"Case"}}' ;;
+  *) exit 9 ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	plan := plans.Plan{
+		SourceID: "geo-1", Target: "case", Name: "AI Create", Baseline: json.RawMessage(`{"version":"base","operating_condition":{"alpha":0}}`),
+		Patch: json.RawMessage(`{"operating_condition":{"alpha":5}}`), RemoteIDs: &plans.RemoteIDs{DraftID: "draft-ready"},
+	}
+	result, err := app.submitPlanToFlow360(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans.ExtractRemoteIDs(result).CaseID != "case-1" {
+		t.Fatalf("unexpected run result: %s", result)
+	}
+	args, _ := os.ReadFile(argsPath)
+	if !strings.Contains(string(args), "draft run draft-ready --up-to case") || strings.Contains(string(args), "--patch") || strings.Contains(string(args), "--name") {
+		t.Fatalf("bound Draft run issued wrong commands: %s", args)
+	}
+	written, _ := os.ReadFile(paramsPath)
+	if !strings.Contains(string(written), `"alpha":5`) {
+		t.Fatalf("complete parameters were not written before run: %s", written)
+	}
+}
+
 func TestListInterventionsReturnsEmptyJSONArray(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	temp := t.TempDir()
@@ -121,6 +161,15 @@ func TestRecoverPlanCreatesInterventionForPersistedPreflightFailure(t *testing.T
 	if created.PlanID != plan.ID || created.PlanRevision != plan.Revision {
 		t.Fatalf("recovery is not bound to the failed plan revision: %#v", created)
 	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		current, err := interventionStore.Get(created.ID)
+		if err == nil && current.State == agent.InterventionProposal {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("background recovery did not reach a stable proposal state before test cleanup")
 }
 
 func TestCacheableSnapshotRejectsEmptyWorkspaceResponses(t *testing.T) {

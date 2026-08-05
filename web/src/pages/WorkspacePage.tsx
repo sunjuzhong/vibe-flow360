@@ -70,6 +70,14 @@ export function formatProjectCreatedAt(value?: string) {
   }).format(date)
 }
 
+export function aiCreateProjectPath(result: { project_id: string; draft_id?: string; plan?: { id?: string } }) {
+  const base = `/projects/${encodeURIComponent(result.project_id)}`
+  const query = new URLSearchParams()
+  if (result.draft_id) query.set('draft', result.draft_id)
+  if (result.plan?.id) query.set('plan', result.plan.id)
+  return query.size ? `${base}?${query.toString()}` : base
+}
+
 export default function WorkspacePage() {
   const navigate = useNavigate()
   const restoredFolderSelection = useRef(false)
@@ -418,7 +426,7 @@ export default function WorkspacePage() {
       {selectedFolder && aiCreateOpen && <AICreateModal
         folder={selectedFolder}
         onClose={() => setAICreateOpen(false)}
-        onCreated={(result) => navigate(`/projects/${encodeURIComponent(result.project_id)}`)}
+        onCreated={(result) => navigate(aiCreateProjectPath(result))}
       />}
     </div>
   )

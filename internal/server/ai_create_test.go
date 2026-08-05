@@ -71,6 +71,18 @@ case " $* " in
   *" geometry info geometry-ai-1 "*|*" geometry state geometry-ai-1 "*|*" geometry summary geometry-ai-1 "*)
     printf '%s' '{}'
     ;;
+  *" draft list --project-id project-ai-1 "*)
+    printf '%s' '{"records":[]}'
+    ;;
+  *" draft create geometry-ai-1 "*)
+    printf '%s' '{"id":"draft-ai-1","type":"Draft","project_id":"project-ai-1"}'
+    ;;
+  *" draft simulation-params set draft-ai-1 "*)
+    printf '%s' '{"status":"updated"}'
+    ;;
+  *" draft simulation-params get draft-ai-1 "*)
+    printf '%s' '{"version":"25.10.17","models":[{"type":"Wall"},{"type":"Freestream"},{"type":"Fluid"}]}'
+    ;;
   *) exit 8 ;;
 esac
 `
@@ -112,6 +124,9 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	if response.ProjectID != "project-ai-1" || response.RootResourceID != "geometry-ai-1" {
 		t.Fatalf("unexpected remote IDs: %#v", response)
 	}
+	if response.DraftID != "draft-ai-1" || response.Plan.RemoteIDs == nil || response.Plan.RemoteIDs.DraftID != "draft-ai-1" {
+		t.Fatalf("expected configured remote Draft binding: %#v", response)
+	}
 	if response.Plan.Target != "case" || response.Plan.ProjectID != response.ProjectID || len(response.Plan.Patch) == 0 {
 		t.Fatalf("expected preloaded Case plan: %#v", response.Plan)
 	}
@@ -134,12 +149,12 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 }
 
 func TestAICreateCompletionStagesKeepCreatedProjectInAgentRecovery(t *testing.T) {
-	stages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: false}})
+	stages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: false}}, false)
 	if stages[len(stages)-1] != "Opened Agent Recovery for remaining Flow360 parameter issues" {
 		t.Fatalf("created Project did not continue into Agent Recovery: %#v", stages)
 	}
-	validStages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: true}})
-	if validStages[len(validStages)-1] != "Passed Flow360 schema preflight" {
+	validStages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: true}}, true)
+	if validStages[len(validStages)-1] != "Ready for review and approval" {
 		t.Fatalf("valid Project did not report completed preflight: %#v", validStages)
 	}
 }

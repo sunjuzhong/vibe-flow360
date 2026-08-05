@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,11 +53,13 @@ type aiCreateClarificationResponse struct {
 
 type aiCreateResponse struct {
 	ProjectID        string             `json:"project_id"`
+	DraftID          string             `json:"draft_id,omitempty"`
 	RootResourceID   string             `json:"root_resource_id"`
 	RootResourceType string             `json:"root_resource_type"`
 	Blueprint        aicreate.Blueprint `json:"blueprint"`
 	Plan             plans.Plan         `json:"plan"`
 	Stages           []string           `json:"stages"`
+	Warnings         []string           `json:"warnings,omitempty"`
 }
 
 func (s *Server) aiCreateProject(c *gin.Context) {
@@ -205,22 +208,71 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 	plan = s.runPlanPreflight(c.Request.Context(), plan)
-	stages := aiCreateCompletionStages(plan)
+	draftID := ""
+	warnings := []string(nil)
+	if plan.Preflight != nil && plan.Preflight.Valid {
+		var draftErr error
+		plan, draftID, draftErr = s.materializeAICreateDraft(c.Request.Context(), plan)
+		if draftErr != nil {
+			log.Printf("AI Create remote Draft setup failed for plan %s: %v", plan.ID, draftErr)
+			warnings = append(warnings, "The Project and reviewed Plan were created, but Flow360 Draft setup needs recovery before approval.")
+		}
+	}
+	stages := aiCreateCompletionStages(plan, draftID != "")
 	s.completeAICreateSession(session.ID)
 
 	c.JSON(http.StatusCreated, aiCreateResponse{
-		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
+		ProjectID: remote.ProjectID, DraftID: draftID, RootResourceID: remote.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
-		Stages: stages,
+		Stages: stages, Warnings: warnings,
 	})
 }
 
-func aiCreateCompletionStages(plan plans.Plan) []string {
+func aiCreateCompletionStages(plan plans.Plan, draftReady bool) []string {
 	stages := []string{"Agent interpreted requirement", "Agent authored a constrained CAD program", "Generated and validated exact STEP", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters"}
 	if plan.Preflight != nil && plan.Preflight.Valid {
-		return append(stages, "Passed Flow360 schema preflight")
+		stages = append(stages, "Passed Flow360 schema preflight")
+		if draftReady {
+			return append(stages, "Created Flow360 Draft", "Stored canonical Draft SimulationParams", "Ready for review and approval")
+		}
+		return append(stages, "Flow360 Draft setup needs recovery")
 	}
 	return append(stages, "Opened Agent Recovery for remaining Flow360 parameter issues")
+}
+
+func (s *Server) materializeAICreateDraft(ctx context.Context, plan plans.Plan) (plans.Plan, string, error) {
+	merged, err := plans.MergedSimulationParams(plan)
+	if err != nil {
+		return plan, "", err
+	}
+	created, err := s.flow360.EnsureDraft(ctx, plan.ProjectID, plan.SourceID, plan.Name)
+	if err != nil {
+		return plan, "", err
+	}
+	remoteIDs := plans.ExtractRemoteIDs(created)
+	if remoteIDs == nil || strings.TrimSpace(remoteIDs.DraftID) == "" {
+		return plan, "", errors.New("Flow360 Draft creation did not return a Draft ID")
+	}
+	remoteIDs.ProjectID = plan.ProjectID
+	if plan.SourceType == "Geometry" {
+		remoteIDs.GeometryID = plan.SourceID
+	}
+	canonical, err := s.flow360.SetDraftSimulationParams(ctx, remoteIDs.DraftID, merged)
+	if err != nil {
+		canonical, err = s.flow360.SetDraftSimulationParams(ctx, remoteIDs.DraftID, merged)
+	}
+	if err != nil {
+		return plan, remoteIDs.DraftID, err
+	}
+	var canonicalObject map[string]any
+	if json.Unmarshal(canonical, &canonicalObject) != nil || len(canonicalObject) == 0 {
+		return plan, remoteIDs.DraftID, errors.New("Flow360 did not return canonical Draft SimulationParams")
+	}
+	updated, err := s.plans.SetRemoteIDs(plan.ID, remoteIDs)
+	if err != nil {
+		return plan, remoteIDs.DraftID, err
+	}
+	return updated, remoteIDs.DraftID, nil
 }
 
 func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Generator, session aiCreateSession, blueprint aicreate.Blueprint, outputPath string) (aicreate.Blueprint, aicreate.GeometryValidation, error) {

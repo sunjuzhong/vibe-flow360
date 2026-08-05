@@ -157,6 +157,64 @@ printf '{"records":[{"id":"draft-1","name":"Baseline"}]}'
 	}
 }
 
+func TestEnsureDraftCreatesOnceAndReturnsRemoteID(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "count.txt")
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s ' "$@" >> %q
+printf '\n' >> %q
+if [ "$1 $2" = "draft list" ]; then
+  if [ -f %q ]; then printf '{"records":[{"id":"draft-ai-1","type":"Draft","name":"AI Create · Cylinder"}]}'; else printf '{"records":[]}'; fi
+elif [ "$1 $2" = "draft create" ]; then
+  printf x > %q
+  printf '{"id":"draft-ai-1","type":"Draft","name":"AI Create · Cylinder"}'
+fi
+`, argsPath, argsPath, countPath, countPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	first, err := client.EnsureDraft(context.Background(), "prj-1", "geo-1", "AI Create · Cylinder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.EnsureDraft(context.Background(), "prj-1", "geo-1", "AI Create · Cylinder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draftIDFromPayload(first) != "draft-ai-1" || draftIDFromPayload(second) != "draft-ai-1" {
+		t.Fatalf("unexpected Draft results: %s / %s", first, second)
+	}
+	args, _ := os.ReadFile(argsPath)
+	if strings.Count(string(args), "draft create") != 1 {
+		t.Fatalf("EnsureDraft created more than once: %s", args)
+	}
+}
+
+func TestRunExistingDraftDoesNotSendNameOrPatch(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > %q
+printf '{"draft":{"id":"draft-ai-1","type":"Draft"},"result":{"id":"case-1","type":"Case"}}'
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	if _, err := client.RunExistingDraft(context.Background(), "draft-ai-1", "case"); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := os.ReadFile(argsPath)
+	got := string(args)
+	if !strings.Contains(got, "draft\nrun\ndraft-ai-1\n--up-to\ncase\n") || strings.Contains(got, "--name") || strings.Contains(got, "--patch") {
+		t.Fatalf("unexpected existing Draft run arguments: %q", got)
+	}
+}
+
 func TestDraftDetailOmitsUnsupportedSummaryCall(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
