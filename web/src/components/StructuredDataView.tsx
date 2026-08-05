@@ -52,9 +52,9 @@ function primitiveValue(value: unknown): ReactNode {
   return <span className="structured-data-string">{String(value)}</span>
 }
 
-function collectionLabel(value: unknown[] | Record<string, unknown>): string {
-  const count = Array.isArray(value) ? value.length : Object.keys(value).length
-  return `${count} ${Array.isArray(value) ? (count === 1 ? 'item' : 'items') : (count === 1 ? 'property' : 'properties')}`
+function collectionLabel(value: unknown[]): string {
+  const count = value.length
+  return `${count} ${count === 1 ? 'item' : 'items'}`
 }
 
 function StructuredNode({ value, depth, label }: { value: unknown; depth: number; label?: string }) {
@@ -102,12 +102,12 @@ function StructuredNode({ value, depth, label }: { value: unknown; depth: number
     </dl>
   )
 
-  if (depth === 0) return rows
+  if (!Array.isArray(value) || depth === 0) return rows
 
   return (
     <details className="structured-data-group" open={depth < 2}>
       <summary>
-        <span>{label ? humanizeDataKey(label) : Array.isArray(value) ? 'List' : 'Object'}</span>
+        <span>{label ? humanizeDataKey(label) : 'List'}</span>
         <small>{collectionLabel(value)}</small>
       </summary>
       {rows}

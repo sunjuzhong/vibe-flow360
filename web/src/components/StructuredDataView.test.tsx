@@ -23,6 +23,8 @@ describe('StructuredDataView', () => {
     expect(html).toContain('288.15')
     expect(html).toContain('Yes')
     expect(html).not.toContain('&quot;thermal_state&quot;')
+    expect(html).not.toContain('Object')
+    expect(html).not.toContain('properties')
   })
 
   it('compacts value and units objects into one semantic quantity', () => {
@@ -41,13 +43,16 @@ describe('StructuredDataView', () => {
     expect(html).not.toContain('<dt>Units</dt>')
   })
 
-  it('keeps records with extra metadata in the generic tree', () => {
+  it('keeps records with extra metadata in the generic tree without an object summary', () => {
     const value = { value: 288.15, units: 'K', source: 'freestream' }
     const html = renderToStaticMarkup(<StructuredDataView value={{ temperature: value }} />)
 
     expect(semanticDataValue(value)).toBeNull()
-    expect(html).toContain('3 properties')
+    expect(html).toContain('<dt>Value</dt>')
+    expect(html).toContain('<dt>Units</dt>')
     expect(html).toContain('<dt>Source</dt>')
+    expect(html).not.toContain('Object')
+    expect(html).not.toContain('properties')
   })
 
   it('labels arrays and empty data clearly', () => {
