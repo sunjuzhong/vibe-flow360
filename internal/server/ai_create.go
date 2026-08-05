@@ -301,13 +301,14 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not load the active Flow360 parameter schemas", "project_id": prepared.ProjectID})
 		return
 	}
-	history, _ := json.Marshal(session.Rounds)
+	confirmedInputs := aiCreateConfirmedInputPayload(session.Rounds)
 	composer := planComposerContext{
 		Request: planComposerRequest{
 			ProjectID: prepared.ProjectID, ProjectName: prepared.Blueprint.ProjectName,
 			SourceID: prepared.RootResourceID, SourceType: "Geometry", SourceName: prepared.GeometryName,
 			Target: "case", Intent: session.Intent,
-			Prompt: "Configure a complete, reviewable Flow360 setup that can run without manual parameter editing. Act autonomously on configuration-level choices: for a basic, introductory, benchmark, or ready-to-run request, choose canonical defensible CFD defaults for operating conditions, mesh controls, turbulence model, steady versus unsteady solver, time step, and outputs, and record them as assumptions. Request user input only for a physical ambiguity that would materially change the engineering objective; never ask the user to repair CAD topology, entity names, selectors, or schema wiring. Confirmed clarification history: " + string(history),
+			Prompt:          "Configure a complete, reviewable Flow360 setup that can run without manual parameter editing. Act autonomously on configuration-level choices: for a basic, introductory, benchmark, or ready-to-run request, choose canonical defensible CFD defaults for operating conditions, mesh controls, turbulence model, steady versus unsteady solver, time step, and outputs, and record them as assumptions. Request user input only for a physical ambiguity that would materially change the engineering objective; never ask the user to repair CAD topology, entity names, selectors, or schema wiring.",
+			ConfirmedInputs: confirmedInputs, Autonomous: true,
 		},
 		Name: prepared.GeometryName, Baseline: boundaryBaseline, Form: form,
 	}
@@ -396,6 +397,20 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: stages, Warnings: warnings,
 	})
+}
+
+func aiCreateConfirmedInputPayload(rounds []aicreate.ClarificationRound) json.RawMessage {
+	answers := map[string]any{}
+	for _, round := range rounds {
+		for key, value := range round.Answers {
+			answers[key] = value
+		}
+	}
+	payload, err := json.Marshal(answers)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return payload
 }
 
 func (s *Server) importAICreateGeometry(ctx context.Context, folderID string, blueprint aicreate.Blueprint, geometryPath, progressID string) (aiCreateImportedGeometry, error) {

@@ -18,6 +18,7 @@ const (
 	maxSimulationParamsBytes  = 48000
 	maxSchemaBytes            = 65536
 	maxEvidenceBytes          = 4000
+	maxConfirmedInputsBytes   = 12000
 	maxResourceInventoryBytes = 12000
 	maxUserFeedbackBytes      = 2000
 	maxHistoryTurns           = 20
@@ -80,12 +81,14 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - Route a tessellated asset to a SurfaceMesh workflow only when its format, watertightness, boundary semantics, and Flow360 support have been verified.
 - Never claim that a simulation was submitted, run, converged, or completed unless tool evidence is present.
 - You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
-- If unsure, use request-missing-input rather than guessing.
+- If a consequential physical choice remains genuinely unknown after checking confirmed_inputs, the canonical baseline, and schema recommendations, use request-missing-input rather than guessing. Do not use request-missing-input for configuration mechanics or to reconfirm a defensible recommended default in an autonomous basic/ready-to-run workflow.
 - Keep the action JSON compact — only include fields that matter.
 - Treat form_schema as the authoritative catalog for the installed Flow360 version. Use only listed SimulationParams paths, exact enum/model values, documented quantity units, and the required {"value": number, "units": "unit"} wire shape. Never translate a human CFD term into a guessed snake_case field.
 - Preserve the supplied SimulationParams as the canonical baseline. Return a sparse merge-patch, not a replacement document. Do not copy private_attribute fields into the patch unless an active schema field explicitly supplies the entity payload.
+- Canonical SimulationParams can contain internal discriminator keys that the editable form intentionally omits. Do not echo type_name or any other baseline-only child into a quantity/object patch unless that exact child path appears in form_schema.
 - Respect stage ownership: SurfaceMesh fields configure surface meshing, VolumeMesh fields configure volume meshing, and Case fields configure physics, operating condition, time stepping, numerics, and outputs. Do not put a valid concept under the wrong stage path.
 - When a schema field exposes recommendation/default_model/default_entities with high confidence, prefer that evidence-backed value and record it as derived or defaulted. Exact schema and preflight errors override general CFD memory.
+- Treat confirmed_inputs as authoritative. Never ask for a value already present there. In an autonomous AI Create request, select a supplied recommended default yourself for a basic or ready-to-run case; request input only when no defensible default exists and the choice materially changes the engineering objective.
 - Match the language of the user's latest request. Use that language for all explanatory text and human-readable string values, including message, questions, warnings, assumptions, and field descriptions. Keep JSON keys, enum values, SimulationParams paths, and protocol identifiers unchanged.
 
 ## Context payload format:
@@ -115,6 +118,7 @@ type ChatContextPayload struct {
 	ExecutionBoundary    string          `json:"execution_boundary,omitempty"`
 	PreflightIssues      []string        `json:"preflight_issues,omitempty"`
 	FormSchema           json.RawMessage `json:"form_schema,omitempty"`
+	ConfirmedInputs      json.RawMessage `json:"confirmed_inputs,omitempty"`
 	Boundaries           []string        `json:"boundaries,omitempty"`
 	RecentLogs           string          `json:"recent_logs,omitempty"`
 }
@@ -162,6 +166,7 @@ func parseContextPayload(contextStr string) ChatContextPayload {
 	if err := json.Unmarshal([]byte(contextStr), &payload); err == nil {
 		payload.SimulationParams = truncateRaw(payload.SimulationParams, maxSimulationParamsBytes)
 		payload.FormSchema = truncateRaw(payload.FormSchema, maxSchemaBytes)
+		payload.ConfirmedInputs = truncateRaw(payload.ConfirmedInputs, maxConfirmedInputsBytes)
 		payload.ResourceInfo = truncateRaw(payload.ResourceInfo, maxEvidenceBytes)
 		payload.ResourceState = truncateRaw(payload.ResourceState, maxEvidenceBytes)
 		payload.ResourceSummary = truncateRaw(payload.ResourceSummary, maxEvidenceBytes)

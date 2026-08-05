@@ -16,17 +16,20 @@ import (
 )
 
 const maxPlanComposerRequestBytes = 300 << 10
+const maxPlanAssistRepairAttempts = 3
 
 type planComposerRequest struct {
-	ProjectID   string          `json:"project_id"`
-	ProjectName string          `json:"project_name,omitempty"`
-	SourceID    string          `json:"source_id"`
-	SourceType  string          `json:"source_type"`
-	SourceName  string          `json:"source_name,omitempty"`
-	Target      string          `json:"target"`
-	Intent      string          `json:"intent,omitempty"`
-	Prompt      string          `json:"prompt,omitempty"`
-	Patch       json.RawMessage `json:"patch,omitempty"`
+	ProjectID       string          `json:"project_id"`
+	ProjectName     string          `json:"project_name,omitempty"`
+	SourceID        string          `json:"source_id"`
+	SourceType      string          `json:"source_type"`
+	SourceName      string          `json:"source_name,omitempty"`
+	Target          string          `json:"target"`
+	Intent          string          `json:"intent,omitempty"`
+	Prompt          string          `json:"prompt,omitempty"`
+	Patch           json.RawMessage `json:"patch,omitempty"`
+	ConfirmedInputs json.RawMessage `json:"-"`
+	Autonomous      bool            `json:"-"`
 }
 
 type planFormSchemaResponse struct {
@@ -103,6 +106,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		SourceID: composer.Request.SourceID, SourceType: composer.Request.SourceType,
 		SourceName: composer.Name, Target: composer.Request.Target,
 		SimulationParams: composer.Baseline, FormSchema: catalog,
+		ConfirmedInputs: composer.Request.ConfirmedInputs,
 	})
 	if err != nil {
 		return planAssistResponse{}, errors.New("could not prepare the plan context")
@@ -114,6 +118,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	if err != nil {
 		return planAssistResponse{}, err
 	}
+	action, err = s.resolveAutonomousPlanAssistQuestions(ctx, composer, contextPayload, action)
+	if err != nil {
+		return planAssistResponse{}, err
+	}
 	if action.Kind == agent.ActionRequestMissingInput {
 		return planAssistResponse{Action: *action}, nil
 	}
@@ -121,20 +129,43 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	if err != nil {
 		return planAssistResponse{}, errors.New("could not combine the active Flow360 stage schemas")
 	}
+	repairAttempts := 0
 	proposal, err := preparePlanAssistProposal(*action, composer, activeSchema)
+	for err != nil && repairAttempts < maxPlanAssistRepairAttempts {
+		repairAttempts++
+		repairMessage := planAssistFormRepairPrompt(composer.Request, *action, err, repairAttempts)
+		_, repairedAction, repairErr := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
+			Message: repairMessage, Context: string(contextPayload), Session: "web:plan-composer:form-repair",
+		})
+		if repairErr != nil {
+			return planAssistResponse{}, repairErr
+		}
+		repairedAction, repairErr = s.resolveAutonomousPlanAssistQuestions(ctx, composer, contextPayload, repairedAction)
+		if repairErr != nil {
+			return planAssistResponse{}, repairErr
+		}
+		if repairedAction.Kind == agent.ActionRequestMissingInput {
+			if composer.Request.Autonomous {
+				action = repairedAction
+				err = errors.New("the Agent requested user input for a schema-mechanical form correction")
+				continue
+			}
+			return planAssistResponse{Action: *repairedAction, RepairAttempts: repairAttempts}, nil
+		}
+		action = repairedAction
+		proposal, err = preparePlanAssistProposal(*action, composer, activeSchema)
+	}
 	if err != nil {
-		return planAssistResponse{}, err
+		return planAssistResponse{}, fmt.Errorf("AI form values remained outside the active Flow360 schema after %d repairs: %w", repairAttempts, err)
 	}
 	preflight, merged, err := s.preflightPlanAssistProposal(ctx, composer, proposal)
 	if err != nil {
 		return planAssistResponse{}, errors.New("AI form values could not be checked with Flow360: " + err.Error())
 	}
 
-	const maxRepairAttempts = 2
-	repairAttempts := 0
 	agentRepairAttempts := 0
 	autoRepaired := false
-	for !preflight.Valid && agentRepairAttempts < maxRepairAttempts {
+	for !preflight.Valid && agentRepairAttempts < maxPlanAssistRepairAttempts {
 		if recommendedPatch, applied, recommendationErr := recommendedPlanAssistPatch(preflight.FormSchema, merged); recommendationErr == nil && applied {
 			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch)
 			if err == nil {
@@ -163,6 +194,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			SourceID: composer.Request.SourceID, SourceType: composer.Request.SourceType,
 			SourceName: composer.Name, Target: composer.Request.Target,
 			SimulationParams: merged, FormSchema: repairCatalog,
+			ConfirmedInputs: composer.Request.ConfirmedInputs,
 		})
 		if contextErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not prepare the validation context.")
@@ -174,6 +206,11 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		})
 		if repairErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair stopped because the Agent did not return a valid correction.")
+			break
+		}
+		repairedAction, repairErr = s.resolveAutonomousPlanAssistQuestions(ctx, composer, repairContext, repairedAction)
+		if repairErr != nil {
+			action.Warnings = append(action.Warnings, "Automatic parameter repair stopped while applying recommended defaults.")
 			break
 		}
 		if repairedAction.Kind == agent.ActionRequestMissingInput {
@@ -212,6 +249,101 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	}, nil
 }
 
+func (s *Server) resolveAutonomousPlanAssistQuestions(ctx context.Context, composer planComposerContext, contextPayload []byte, action *agent.Action) (*agent.Action, error) {
+	if !composer.Request.Autonomous {
+		return action, nil
+	}
+	const maxAutonomousDefaultRounds = 3
+	for round := 1; action.Kind == agent.ActionRequestMissingInput && round <= maxAutonomousDefaultRounds; round++ {
+		defaults, ok := authoritativeQuestionValues(action.Questions, composer.Request.ConfirmedInputs)
+		if !ok {
+			return action, nil
+		}
+		confirmed, _ := json.Marshal(map[string]any{
+			"prior_user_confirmations":              json.RawMessage(composer.Request.ConfirmedInputs),
+			"autonomously_accepted_recommendations": defaults,
+		})
+		var payload agent.ChatContextPayload
+		if json.Unmarshal(contextPayload, &payload) == nil {
+			payload.ConfirmedInputs = confirmed
+			contextPayload, _ = json.Marshal(payload)
+		}
+		questions, _ := json.Marshal(action.Questions)
+		defaultsJSON, _ := json.Marshal(defaults)
+		message := fmt.Sprintf(`Continue the same autonomous Flow360 plan now. You requested configuration values even though every question supplied a recommended default. For this basic/ready-to-run AI Create workflow, the Agent has authority to accept those recommendations without another user round.
+
+Treat these values as confirmed and authoritative: %s
+Previous questions: %s
+
+Return one complete create-plan proposal using only the active schema catalog. Do not ask for any of these values again.`, defaultsJSON, questions)
+		_, next, err := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
+			Message: message, Context: string(contextPayload), Session: "web:plan-composer:autonomous-defaults",
+		})
+		if err != nil {
+			return nil, err
+		}
+		action = next
+	}
+	return action, nil
+}
+
+func recommendedQuestionDefaults(questions []agent.Question) (map[string]any, bool) {
+	return authoritativeQuestionValues(questions, nil)
+}
+
+func authoritativeQuestionValues(questions []agent.Question, confirmed json.RawMessage) (map[string]any, bool) {
+	if len(questions) == 0 {
+		return nil, false
+	}
+	confirmedValues := map[string]any{}
+	if len(confirmed) > 0 {
+		_ = json.Unmarshal(confirmed, &confirmedValues)
+	}
+	defaults := make(map[string]any, len(questions))
+	for _, question := range questions {
+		field := strings.TrimSpace(question.Field)
+		if field == "" {
+			return nil, false
+		}
+		if value, exists := confirmedValues[field]; exists {
+			defaults[field] = value
+			continue
+		}
+		if question.Default == nil || !validRecommendedQuestionDefault(question) {
+			return nil, false
+		}
+		defaults[field] = question.Default
+	}
+	return defaults, true
+}
+
+func validRecommendedQuestionDefault(question agent.Question) bool {
+	switch strings.ToLower(strings.TrimSpace(question.Type)) {
+	case "select":
+		value, ok := question.Default.(string)
+		if !ok {
+			return false
+		}
+		for _, option := range question.Options {
+			if option.Value == value {
+				return true
+			}
+		}
+		return false
+	case "number":
+		value, ok := question.Default.(float64)
+		return ok && (question.Min == nil || value >= *question.Min) && (question.Max == nil || value <= *question.Max)
+	case "boolean":
+		_, ok := question.Default.(bool)
+		return ok
+	case "text":
+		_, ok := question.Default.(string)
+		return ok
+	default:
+		return false
+	}
+}
+
 func planAssistAgentError(err error) (int, gin.H) {
 	if timeout, timedOut := agent.GenerationTimeout(err); timedOut {
 		return http.StatusGatewayTimeout, gin.H{
@@ -244,10 +376,32 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 	if strings.TrimSpace(proposal.Name) == "" {
 		proposal.Name = composer.Name + " · " + composer.Request.Target
 	}
+	sanitized, removed, err := plans.SanitizeFormValues(schema, proposal.Patch)
+	if err != nil {
+		return agent.Proposal{}, errors.New("AI form values could not be projected onto the active Flow360 schema: " + err.Error())
+	}
+	proposal.Patch = sanitized
+	if len(removed) > 0 {
+		sort.Strings(removed)
+		proposal.ValidationHints = append(proposal.ValidationHints, "Removed non-editable canonical Flow360 fields echoed by the Agent: "+strings.Join(removed, ", "))
+	}
 	if err := plans.ValidateFormValues(schema, proposal.Patch); err != nil {
 		return agent.Proposal{}, errors.New("AI form values do not match the active Flow360 schema: " + err.Error())
 	}
 	return proposal, nil
+}
+
+func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action, validationErr error, attempt int) string {
+	previous, _ := json.Marshal(action)
+	return fmt.Sprintf(`The previous Flow360 form proposal was rejected before preflight because its values do not match the active stage schema.
+This is a schema-mechanical problem. Repair it autonomously; do not ask the user to choose a field name, discriminator, unit wire shape, or model wiring.
+
+Return exactly one create-plan proposal for the same %s-to-%s route. Its patch must use only paths present in the supplied schema catalog. Do not copy internal fields from canonical SimulationParams into an editable patch. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
+
+Original intent: %s
+Repair attempt: %d of %d
+Validation error: %s
+Rejected action: %s`, request.SourceType, request.Target, request.Intent, attempt, maxPlanAssistRepairAttempts, validationErr.Error(), previous)
 }
 
 func (s *Server) preflightPlanAssistProposal(ctx context.Context, composer planComposerContext, proposal agent.Proposal) (flow360.PreflightResult, json.RawMessage, error) {
@@ -366,7 +520,7 @@ This is parameter assistance, not geometry generation. Never claim CAD dimension
 
 Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
-Read the schema catalog field-by-field before composing the patch. Each catalog entry supplies its owning stage, exact dot path, wire type, constraints, units/options, and sometimes an evidence-backed recommendation. Convert dot paths into nested JSON objects exactly; quantities use {"value":...,"units":"..."}; enum and boundary model values must exactly match the catalog. Never invent a nearby field name from memory. If the intent mentions a parameter absent from the active catalog, preserve the baseline and explain or request input instead of fabricating a key.
+Read the schema catalog field-by-field before composing the patch. Each catalog entry supplies its owning stage, exact dot path, wire type, constraints, units/options, union variants, and sometimes an evidence-backed recommendation. Convert dot paths into nested JSON objects exactly; quantities use {"value":...,"units":"..."}; enum and boundary model values must exactly match the catalog. For a union, choose one supplied variant and emit only the child keys that variant declares. Never invent a nearby field name from memory. If the intent mentions a parameter absent from the active catalog, preserve the baseline and explain or request input instead of fabricating a key.
 
 Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact. Use sparse merge-patch semantics and include only deliberate changes.
 
@@ -455,6 +609,7 @@ type promptSchemaField struct {
 	DefaultModel    string `json:"default_model,omitempty"`
 	DefaultEntities []any  `json:"default_entities,omitempty"`
 	Recommendation  any    `json:"recommendation,omitempty"`
+	Variants        []any  `json:"variants,omitempty"`
 }
 
 func schemaPromptCatalog(form flow360.PlanFormSchema) (json.RawMessage, error) {
@@ -565,6 +720,9 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 	}
 	if options, ok := node["options"].([]any); ok && len(options) <= 24 {
 		field.Options = options
+	}
+	if variants, ok := node["variants"].([]any); ok && len(variants) <= 8 {
+		field.Variants = variants
 	}
 	if choices, ok := node["model_choices"].([]any); ok && len(choices) <= 16 {
 		field.ModelChoices = choices

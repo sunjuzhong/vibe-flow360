@@ -40,6 +40,28 @@ func TestValidateFormValuesSupportsSchemaDrivenTypes(t *testing.T) {
 	}
 }
 
+func TestSanitizeFormValuesRemovesCanonicalQuantityDiscriminator(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"reference_geometry":{"type":"object","properties":{"area":{"type":"union","variants":[{"type":"quantity","unit_options":["m**2"],"value_schema":{"type":"number"}},{"type":"string"}]}}}}}`)
+	values := json.RawMessage(`{"reference_geometry":{"area":{"type_name":"number","value":1,"units":"m**2"}}}`)
+	sanitized, removed, err := SanitizeFormValues(schema, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateFormValues(schema, sanitized); err != nil {
+		t.Fatalf("sanitized Flow360 quantity is invalid: %v (%s)", err, sanitized)
+	}
+	if len(removed) != 1 || removed[0] != "reference_geometry.area.type_name" || strings.Contains(string(sanitized), "type_name") {
+		t.Fatalf("unexpected sanitization: removed=%#v values=%s", removed, sanitized)
+	}
+	hallucinated, removed, err := SanitizeFormValues(schema, json.RawMessage(`{"reference_geometry":{"area":{"value":1,"units":"m**2","made_up":true}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 || ValidateFormValues(schema, hallucinated) == nil {
+		t.Fatalf("arbitrary Agent fields must remain visible to strict repair: removed=%#v values=%s", removed, hallucinated)
+	}
+}
+
 func TestQuantityUnitsNormalizeOnlyDeclaredFlow360Aliases(t *testing.T) {
 	schema := json.RawMessage(`{
 		"type":"object","required":["length"],"properties":{

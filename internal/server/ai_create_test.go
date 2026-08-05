@@ -368,6 +368,16 @@ func TestAICreateProjectReportsDetailedRequestByteLimit(t *testing.T) {
 	}
 }
 
+func TestAICreateConfirmedInputsStayCompactAndAuthoritative(t *testing.T) {
+	payload := aiCreateConfirmedInputPayload([]aicreate.ClarificationRound{
+		{Fields: []aicreate.ClarificationField{{ID: "target_reynolds_number", Label: strings.Repeat("long explanation ", 1000)}}, Answers: map[string]any{"target_reynolds_number": "3900"}},
+		{Answers: map[string]any{"target_reynolds_number": "3900", "analysis_mode": "unsteady"}},
+	})
+	if len(payload) > 200 || !strings.Contains(string(payload), `"target_reynolds_number":"3900"`) || !strings.Contains(string(payload), `"analysis_mode":"unsteady"`) || strings.Contains(string(payload), "long explanation") {
+		t.Fatalf("confirmed answers were not compact and authoritative: %s", payload)
+	}
+}
+
 func TestGenerateAICreateCADRetriesTemporaryRuntimeFailure(t *testing.T) {
 	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("temporary runtime failure")}}}
 	blueprint := aicreate.Blueprint{Geometry: validTestFlow360Geometry("body")}

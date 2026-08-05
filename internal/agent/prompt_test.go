@@ -16,6 +16,22 @@ func TestAgentSystemPromptDeclaresAgentActionV1(t *testing.T) {
 	}
 }
 
+func TestBuildChatPromptKeepsConfirmedInputsOutsideTruncatedInstruction(t *testing.T) {
+	contextPayload, err := json.Marshal(ChatContextPayload{
+		ProjectID:       "prj-cylinder",
+		ConfirmedInputs: json.RawMessage(`[{"answers":{"target_reynolds_number":"3900"}}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, payload := BuildChatPrompt(ChatRequest{
+		Message: strings.Repeat("configuration instruction ", 500), Context: string(contextPayload),
+	})
+	if !strings.Contains(prompt, `"target_reynolds_number": "3900"`) || !strings.Contains(string(payload.ConfirmedInputs), "3900") {
+		t.Fatalf("confirmed inputs were lost when the ordinary instruction was truncated: %s", prompt)
+	}
+}
+
 func TestBuildChatPromptInjectsUserMessageAndContext(t *testing.T) {
 	req := ChatRequest{
 		Message: "analyze lift at Mach 0.5",

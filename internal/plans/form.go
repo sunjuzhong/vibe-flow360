@@ -55,6 +55,134 @@ func ValidateFormValues(schema, values json.RawMessage) error {
 	return validateFormValue(root, value, "", 0)
 }
 
+// SanitizeFormValues projects Agent-produced values onto the active Flow360
+// form schema. Canonical SimulationParams may contain internal discriminators
+// (for example reference_geometry.area.type_name) that are intentionally not
+// editable. An Agent can legitimately echo those while changing a sibling
+// value; remove only keys the active schema does not expose, then run the
+// normal strict validator on the result.
+func SanitizeFormValues(schema, values json.RawMessage) (json.RawMessage, []string, error) {
+	if !json.Valid(schema) {
+		return nil, nil, errors.New("dynamic form schema is invalid")
+	}
+	var root formNode
+	var value any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		return nil, nil, errors.New("dynamic form schema is unsupported")
+	}
+	if err := json.Unmarshal(values, &value); err != nil {
+		return nil, nil, errors.New("dynamic form values must be valid JSON")
+	}
+	sanitized, removed, err := sanitizeFormValue(root, value, "", 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	payload, err := json.Marshal(sanitized)
+	if err != nil {
+		return nil, nil, err
+	}
+	return payload, removed, nil
+}
+
+func sanitizeFormValue(schema formNode, value any, path string, depth int) (any, []string, error) {
+	if depth > 32 {
+		return nil, nil, errors.New("dynamic form nesting exceeds the limit")
+	}
+	switch schema.Type {
+	case "object":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return value, nil, nil
+		}
+		result := make(map[string]any, len(object))
+		removed := make([]string, 0)
+		for key, child := range object {
+			childSchema, exists := schema.Properties[key]
+			childPath := joinFormPath(path, key)
+			if !exists {
+				if removableCanonicalFormKey(key) {
+					removed = append(removed, childPath)
+					continue
+				}
+				// Preserve arbitrary unknown keys so strict validation reports the
+				// Agent hallucination and routes it through repair.
+				result[key] = child
+				continue
+			}
+			sanitized, childRemoved, err := sanitizeFormValue(childSchema, child, childPath, depth+1)
+			if err != nil {
+				return nil, nil, err
+			}
+			result[key] = sanitized
+			removed = append(removed, childRemoved...)
+		}
+		return result, removed, nil
+	case "array":
+		array, ok := value.([]any)
+		if !ok || schema.Items == nil {
+			return value, nil, nil
+		}
+		result := make([]any, 0, len(array))
+		removed := make([]string, 0)
+		for index, item := range array {
+			sanitized, childRemoved, err := sanitizeFormValue(*schema.Items, item, fmt.Sprintf("%s.%d", path, index), depth+1)
+			if err != nil {
+				return nil, nil, err
+			}
+			result = append(result, sanitized)
+			removed = append(removed, childRemoved...)
+		}
+		return result, removed, nil
+	case "quantity":
+		return sanitizeFixedFormObject(value, path, map[string]bool{"value": true, "units": true})
+	case "entity_assignment":
+		return sanitizeFixedFormObject(value, path, map[string]bool{"model": true, "entities": true})
+	case "union":
+		var best any
+		var bestRemoved []string
+		bestSize := -1
+		for _, variant := range schema.Variants {
+			candidate, removed, err := sanitizeFormValue(variant, value, path, depth+1)
+			if err != nil || validateFormValue(variant, candidate, path, depth+1) != nil {
+				continue
+			}
+			encoded, _ := json.Marshal(candidate)
+			if len(encoded) > bestSize {
+				best, bestRemoved, bestSize = candidate, removed, len(encoded)
+			}
+		}
+		if bestSize >= 0 {
+			return best, bestRemoved, nil
+		}
+	}
+	return value, nil, nil
+}
+
+func sanitizeFixedFormObject(value any, path string, allowed map[string]bool) (any, []string, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value, nil, nil
+	}
+	result := make(map[string]any, len(object))
+	removed := make([]string, 0)
+	for key, child := range object {
+		if !allowed[key] {
+			if removableCanonicalFormKey(key) {
+				removed = append(removed, joinFormPath(path, key))
+				continue
+			}
+			result[key] = child
+			continue
+		}
+		result[key] = child
+	}
+	return result, removed, nil
+}
+
+func removableCanonicalFormKey(key string) bool {
+	return key == "type_name" || strings.HasPrefix(key, "private_attribute")
+}
+
 func validateFormValue(schema formNode, value any, path string, depth int) error {
 	if depth > 32 {
 		return errors.New("dynamic form nesting exceeds the limit")

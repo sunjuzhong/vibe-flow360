@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +74,92 @@ func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
 	}
 	if !strings.Contains(string(proposal.Patch), `"max_steps":null`) {
 		t.Fatalf("merge-patch removal was lost: %s", proposal.Patch)
+	}
+}
+
+func TestPreparePlanAssistProposalRemovesCanonicalReferenceAreaDiscriminator(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"reference_geometry":{"type":"object","properties":{"area":{"type":"union","variants":[{"type":"quantity","unit_options":["m**2"],"value_schema":{"type":"number"}},{"type":"string"}]}}}}}`)
+	composer := planComposerContext{Request: planComposerRequest{
+		ProjectID: "prj", ProjectName: "Cylinder", SourceID: "geo", SourceType: "Geometry", Target: "case", Intent: "Re=3900 cylinder flow",
+	}, Name: "Geometry"}
+	action := agent.Action{Proposals: []agent.Proposal{{
+		SourceType: "Geometry", Target: "case", Name: "Cylinder", Intent: "Re=3900 cylinder flow",
+		Patch: json.RawMessage(`{"reference_geometry":{"area":{"type_name":"number","value":1,"units":"m**2"}}}`),
+	}}}
+	proposal, err := preparePlanAssistProposal(action, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(proposal.Patch), "type_name") || !strings.Contains(string(proposal.Patch), `"units":"m**2"`) {
+		t.Fatalf("reference area was not projected onto the editable schema: %s", proposal.Patch)
+	}
+	if len(proposal.ValidationHints) != 1 || !strings.Contains(proposal.ValidationHints[0], "reference_geometry.area.type_name") {
+		t.Fatalf("sanitization was not auditable: %#v", proposal.ValidationHints)
+	}
+}
+
+func TestRecommendedQuestionDefaultsLetsAutonomousAICreateAcceptReynoldsNumber(t *testing.T) {
+	defaults, ok := recommendedQuestionDefaults([]agent.Question{{
+		Field: "target_reynolds_number", Message: "Target Reynolds number", Type: "select", Default: "3900",
+		Options: []agent.QuestionOption{{Value: "3900", Label: "Re = 3900"}},
+	}})
+	if !ok || defaults["target_reynolds_number"] != "3900" {
+		t.Fatalf("recommended Reynolds number was not autonomously resolvable: %#v", defaults)
+	}
+	if _, ok := recommendedQuestionDefaults([]agent.Question{{Field: "unknown_physics", Default: nil}}); ok {
+		t.Fatal("a consequential choice without a default must still reach the user")
+	}
+	confirmed, ok := authoritativeQuestionValues(
+		[]agent.Question{{Field: "target_reynolds_number", Type: "select"}},
+		json.RawMessage(`{"target_reynolds_number":"3900"}`),
+	)
+	if !ok || confirmed["target_reynolds_number"] != "3900" {
+		t.Fatalf("an already confirmed Reynolds number was not authoritative: %#v", confirmed)
+	}
+	if _, ok := recommendedQuestionDefaults([]agent.Question{{
+		Field: "target_reynolds_number", Type: "select", Default: "unsupported",
+		Options: []agent.QuestionOption{{Value: "3900", Label: "Re = 3900"}},
+	}}); ok {
+		t.Fatal("an invalid recommended default must not be accepted autonomously")
+	}
+}
+
+func TestResolveAutonomousPlanAssistQuestionsContinuesWithRecommendedReynoldsNumber(t *testing.T) {
+	var requestBody string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		requestBody = string(body)
+		content := `{"version":"v1","kind":"create-plan","message":"Configured Re=3900 autonomously.","proposals":[{"id":"cylinder","action":"Geometry","target":"case","name":"Cylinder","intent":"Run Re=3900","patch":{"time_stepping":{"max_steps":2000}},"branch_preview":"cylinder","fields":[]}],"questions":[],"warnings":[],"assumptions":["Accepted the recommended Re=3900 baseline."]}`
+		encoded, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer model.Close()
+	app := &Server{agent: &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()}}
+	initial := &agent.Action{Version: "v1", Kind: agent.ActionRequestMissingInput, Message: "Confirm Re", Questions: []agent.Question{{
+		Field: "target_reynolds_number", Message: "Target Reynolds number", Urgency: "required", Type: "select", Default: "3900",
+		Options: []agent.QuestionOption{{Value: "3900", Label: "Re = 3900"}},
+	}}}
+	resolved, err := app.resolveAutonomousPlanAssistQuestions(context.Background(), planComposerContext{
+		Request: planComposerRequest{Autonomous: true, SourceType: "Geometry", Target: "case"},
+	}, []byte(`{"form_schema":{"fields":[]}}`), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Kind != agent.ActionCreatePlan || !strings.Contains(requestBody, `target_reynolds_number`) || !strings.Contains(requestBody, `3900`) {
+		t.Fatalf("autonomous continuation did not apply the recommendation: action=%#v request=%s", resolved, requestBody)
+	}
+}
+
+func TestPlanAssistFormRepairPromptForbidsCanonicalDiscriminatorEcho(t *testing.T) {
+	prompt := planAssistFormRepairPrompt(
+		planComposerRequest{SourceType: "Geometry", Target: "case", Intent: "basic cylinder flow"},
+		agent.Action{}, errors.New("reference_geometry.area.type_name is not requested"), 1,
+	)
+	for _, expected := range []string{"schema-mechanical", "do not ask the user", "quantity form values contain only value and units", "reference_geometry.area.type_name", "1 of 3"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("form repair prompt is missing %q: %s", expected, prompt)
+		}
 	}
 }
 
@@ -173,5 +262,24 @@ func TestSchemaPromptCatalogCarriesStageAndFieldPaths(t *testing.T) {
 	}
 	if decoded.Fields[1].Path != "time_stepping.max_steps" {
 		t.Fatalf("catalog paths are not deterministic: %#v", decoded.Fields)
+	}
+}
+
+func TestSchemaPromptCatalogExposesUnionWireVariants(t *testing.T) {
+	form := flow360.PlanFormSchema{Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{
+		"Case": json.RawMessage(`{"type":"object","properties":{"reference_geometry":{"type":"object","properties":{"area":{"type":"union","variants":[{"type":"quantity","unit_options":["m**2"],"value_schema":{"type":"number"}},{"type":"string"}]}}}}}`),
+	}}
+	catalog, err := schemaPromptCatalog(form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Fields []promptSchemaField `json:"fields"`
+	}
+	if err := json.Unmarshal(catalog, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Fields) != 1 || decoded.Fields[0].Path != "reference_geometry.area" || decoded.Fields[0].Type != "union" || len(decoded.Fields[0].Variants) != 2 {
+		t.Fatalf("union wire variants were omitted from the Agent catalog: %s", catalog)
 	}
 }
