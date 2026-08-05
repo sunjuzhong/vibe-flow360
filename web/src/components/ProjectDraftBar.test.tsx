@@ -9,7 +9,7 @@ describe('ProjectDraftBar', () => {
     expect(draftRecords({ records: [{ id: '', name: 'Invalid' }] })).toHaveLength(0)
   })
 
-  it('renders a compound Draft menu with switch and secondary actions', () => {
+  it('renders an inline Draft switcher with external parameter and refresh actions', () => {
     const markup = renderToStaticMarkup(
       <ProjectDraftBar
         drafts={[
@@ -27,13 +27,11 @@ describe('ProjectDraftBar', () => {
       />,
     )
     expect(markup).toContain('aria-label="Project drafts"')
-    expect(markup).toContain('aria-label="Open Draft menu, active Draft High AoA"')
-    expect(markup).toContain('Draft · High AoA')
-    expect(markup).toContain('aria-expanded="false"')
-    expect(markup).toContain('hidden=""')
+    expect(markup).toContain('<strong>Draft</strong>')
     expect(markup).toContain('aria-label="Switch active Draft"')
     expect(markup).toContain('value="draft-2" selected=""')
     expect(markup).toContain('Parameters')
-    expect(markup).toContain('<span>Refresh Drafts</span>')
+    expect(markup).toContain('aria-label="Refresh Drafts"')
+    expect(markup).not.toContain('Draft menu')
   })
 })

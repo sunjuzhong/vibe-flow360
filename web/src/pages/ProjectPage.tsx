@@ -501,6 +501,19 @@ export default function ProjectPage() {
             onClick={() => setActivePanel((panel) => panel === 'resources' ? null : 'resources')}
             aria-expanded={activePanel === 'resources'}
           />
+          {selected && (
+            <ProjectShellAction
+              label="Details"
+              accessibleLabel="Open resource details"
+              icon={<Info size={15} />}
+              className={activePanel === 'details' ? 'active' : ''}
+              onClick={() => {
+                setDetailTab('overview')
+                setActivePanel((panel) => panel === 'details' ? null : 'details')
+              }}
+              aria-expanded={activePanel === 'details'}
+            />
+          )}
           <ProjectShellAction
             label="Annotations"
             icon={<Tags size={15} />}
@@ -512,6 +525,7 @@ export default function ProjectPage() {
             label="Sync"
             accessibleLabel="Synchronize Project"
             icon={<RefreshCw size={15} className={syncing ? 'spin' : ''} />}
+            className="compact-hide"
             onClick={() => setSyncNonce((value) => value + 1)}
             disabled={loading || syncing}
           />
@@ -528,6 +542,7 @@ export default function ProjectPage() {
               label="Compare"
               accessibleLabel="Compare Cases"
               icon={<GitCompare size={15} />}
+              className="compact-hide"
               onClick={() => navigate(`/projects/${projectId}/compare`)}
             />
           )}
@@ -641,10 +656,6 @@ export default function ProjectPage() {
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
                 />
               )}
-              onDetails={() => {
-                setDetailTab('overview')
-                setActivePanel('details')
-              }}
             />
 
             {selected.type === 'Geometry' && (

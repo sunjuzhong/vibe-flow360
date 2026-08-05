@@ -1,4 +1,4 @@
-import { CheckCircle2, Info } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 type Props = {
@@ -11,7 +11,6 @@ type Props = {
   selectedStage: number
   resourceIcon: ReactNode
   draftControls: ReactNode
-  onDetails: () => void
 }
 
 export default function ProjectContextBar({
@@ -24,7 +23,6 @@ export default function ProjectContextBar({
   selectedStage,
   resourceIcon,
   draftControls,
-  onDetails,
 }: Props) {
   return (
     <section className="project-context-bar" aria-label="Project resource context">
@@ -60,9 +58,6 @@ export default function ProjectContextBar({
       </div>
 
       <div className="project-context-draft">{draftControls}</div>
-      <button className="canvas-info-button" onClick={onDetails} aria-label="Open resource details">
-        <Info size={15} /> <span>Details</span>
-      </button>
     </section>
   )
 }
