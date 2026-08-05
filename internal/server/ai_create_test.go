@@ -620,3 +620,18 @@ func TestHumanizeAICreateGenerationErrorDoesNotExposeRuntimePaths(t *testing.T) 
 		t.Fatalf("unexpected generation error: %q", got)
 	}
 }
+
+func TestHumanizeAICreateGenerationErrorExplainsRuntimeDiscoveryAndDependencyFailures(t *testing.T) {
+	missing := &aicreate.GenerationError{Kind: aicreate.GenerationRuntimeFailure, Err: errors.New("CAD runtime uv was not found")}
+	if got := humanizeAICreateGenerationError(missing); !strings.Contains(got, "application directory") || !strings.Contains(got, "VIBESIM_UV_BINARY") {
+		t.Fatalf("missing runtime diagnostic is not actionable: %q", got)
+	}
+	dependency := &aicreate.GenerationError{Kind: aicreate.GenerationRuntimeFailure, Err: errors.New("ModuleNotFoundError: No module named 'cadquery'")}
+	if got := humanizeAICreateGenerationError(dependency); !strings.Contains(got, "make cad-runtime") || !strings.Contains(got, "VIBESIM_UV_CACHE_DIR") {
+		t.Fatalf("dependency diagnostic is not actionable: %q", got)
+	}
+	python := &aicreate.GenerationError{Kind: aicreate.GenerationRuntimeFailure, Err: errors.New("current Python version (3.9.6) does not satisfy Python>=3.10")}
+	if got := humanizeAICreateGenerationError(python); !strings.Contains(got, "Python 3.11") || !strings.Contains(got, "VIBESIM_CAD_PYTHON") {
+		t.Fatalf("Python runtime diagnostic is not actionable: %q", got)
+	}
+}

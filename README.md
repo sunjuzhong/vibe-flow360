@@ -126,7 +126,7 @@ declarative CAD operation graph rather than arbitrary Python; the local
 CadQuery/OpenCascade runtime executes that graph, exports exact STEP, and checks
 that it round-trips as one valid closed solid before anything is sent to
 Flow360. `make install` preloads the pinned CadQuery runtime. Optional runtime
-settings are `VIBESIM_UV_BINARY`, `VIBESIM_UV_CACHE_DIR`,
+settings are `VIBESIM_UV_BINARY`, `VIBESIM_UV_CACHE_DIR`, `VIBESIM_CAD_PYTHON`,
 `VIBESIM_CAD_TIMEOUT_SECONDS`, and `VIBESIM_CAD_OFFLINE=true`.
 
 ## Flow360 configuration

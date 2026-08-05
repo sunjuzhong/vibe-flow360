@@ -948,7 +948,17 @@ func humanizeAICreateGenerationError(err error) string {
 	}
 	switch aicreate.GenerationFailure(err) {
 	case aicreate.GenerationRuntimeFailure:
-		return "The exact CAD runtime is unavailable. Check the local CAD runtime configuration and try again."
+		message := strings.ToLower(err.Error())
+		switch {
+		case strings.Contains(message, "cad runtime") && strings.Contains(message, "not found"):
+			return "The exact CAD runtime could not find uv. The service checked the application directory, user-local tools, standard package-manager locations, and its PATH. Install uv or set VIBESIM_UV_BINARY to its absolute executable path."
+		case strings.Contains(message, "no module named") && strings.Contains(message, "cadquery"):
+			return "The exact CAD runtime found uv but could not load CadQuery 2.6.1. Run `make cad-runtime` to prepare the pinned dependency cache, or check VIBESIM_UV_CACHE_DIR and offline mode."
+		case strings.Contains(message, "no interpreter found"), strings.Contains(message, "does not satisfy python"), strings.Contains(message, "requirements are unsatisfiable"):
+			return "The exact CAD runtime found uv but could not locate a compatible Python. Install Python 3.11 or set VIBESIM_CAD_PYTHON to a supported interpreter/version."
+		default:
+			return "The exact CAD runtime is unavailable: " + lastAICreateDiagnosticLine(err.Error())
+		}
 	case aicreate.GenerationTemporaryFailure:
 		return "The local CAD runtime encountered a temporary problem and could not recover after retrying. Try again shortly."
 	default:

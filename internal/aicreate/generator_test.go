@@ -54,6 +54,35 @@ printf '%s' '{"solid_count":1,"face_count":6,"volume":1,"kernel":"fake"}'
 	}
 }
 
+func TestResolveCADRuntimeFindsExecutableSiblingOutsideServicePath(t *testing.T) {
+	directory := t.TempDir()
+	application := filepath.Join(directory, "vibe-flow360")
+	runtime := filepath.Join(directory, "uv")
+	if err := os.WriteFile(runtime, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	candidates := cadRuntimeCandidates("", application, filepath.Join(directory, "home"))
+	if len(candidates) == 0 || candidates[0] != runtime {
+		t.Fatalf("application-local runtime is not preferred: %#v", candidates)
+	}
+	previousPath := os.Getenv("PATH")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	resolved, err := resolveCADRuntimeBinary(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != runtime {
+		t.Fatalf("resolved %q, want %q (previous PATH %q)", resolved, runtime, previousPath)
+	}
+}
+
+func TestResolveCADRuntimeReportsConfiguredExecutableFailure(t *testing.T) {
+	_, err := resolveCADRuntimeBinary(filepath.Join(t.TempDir(), "missing-uv"))
+	if err == nil || !strings.Contains(err.Error(), "VIBESIM_UV_BINARY") || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("runtime diagnostic is not actionable: %v", err)
+	}
+}
+
 func TestGenerationFailureClassifiesTypedAndUnknownErrors(t *testing.T) {
 	temporary := &GenerationError{Kind: GenerationTemporaryFailure, Err: context.DeadlineExceeded}
 	if GenerationFailure(temporary) != GenerationTemporaryFailure {
@@ -70,6 +99,9 @@ func TestClassifyCADExecutionFailureSeparatesInfrastructureFromGeometry(t *testi
 	}
 	if got := classifyCADExecutionFailure("ModuleNotFoundError: No module named 'cadquery'"); got != GenerationRuntimeFailure {
 		t.Fatalf("missing CadQuery classified as %q", got)
+	}
+	if got := classifyCADExecutionFailure("current Python version (3.9.6) does not satisfy Python>=3.10; requirements are unsatisfiable"); got != GenerationRuntimeFailure {
+		t.Fatalf("unsupported Python classified as %q", got)
 	}
 	if got := classifyCADExecutionFailure("Traceback: ValueError: Boolean operation produced an empty solid"); got != GenerationGeometryFailure {
 		t.Fatalf("geometry construction failure classified as %q", got)

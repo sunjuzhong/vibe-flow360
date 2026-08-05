@@ -15,7 +15,7 @@ build: web
 	go build -buildvcs=false -o vibe-flow360 ./cmd/server
 
 cad-runtime:
-	uv run --no-project --with cadquery==2.6.1 python -c 'import cadquery; print("CadQuery runtime ready:", cadquery.__version__)'
+	uv run --no-project --python 3.11 --with cadquery==2.6.1 python -c 'import cadquery; print("CadQuery runtime ready:", cadquery.__version__)'
 
 install: build cad-runtime
 	install -d /Users/juzhongsun/.local/bin

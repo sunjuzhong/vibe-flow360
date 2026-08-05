@@ -62,6 +62,7 @@ func GenerationFailure(err error) GenerationFailureKind {
 
 type CadQueryGenerator struct {
 	UVBinary string
+	Python   string
 	CacheDir string
 	Timeout  time.Duration
 	Offline  bool
@@ -81,7 +82,10 @@ func NewCadQueryGenerator() *CadQueryGenerator {
 		}
 	}
 	return &CadQueryGenerator{
-		UVBinary: firstNonEmpty(os.Getenv("VIBESIM_UV_BINARY"), "uv"),
+		// An empty value enables deterministic runtime discovery. Services such
+		// as launchd commonly have a narrower PATH than an interactive shell.
+		UVBinary: strings.TrimSpace(os.Getenv("VIBESIM_UV_BINARY")),
+		Python:   firstConfigured(os.Getenv("VIBESIM_CAD_PYTHON"), "3.11"),
 		CacheDir: cacheDir,
 		Timeout:  timeout,
 		Offline:  strings.EqualFold(strings.TrimSpace(os.Getenv("VIBESIM_CAD_OFFLINE")), "true"),
@@ -101,14 +105,9 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("resolve CAD output path: %w", err)}
 	}
 	outputPath = filepath.Clean(absoluteOutputPath)
-	uvBinary, err := exec.LookPath(g.UVBinary)
+	uvBinary, err := resolveCADRuntimeBinary(g.UVBinary)
 	if err != nil {
-		return validation, &GenerationError{Kind: GenerationRuntimeFailure, Err: fmt.Errorf("CAD runtime %q was not found; install uv or configure VIBESIM_UV_BINARY", g.UVBinary)}
-	}
-	if strings.ContainsRune(uvBinary, filepath.Separator) {
-		if absoluteUV, absoluteErr := filepath.Abs(uvBinary); absoluteErr == nil {
-			uvBinary = absoluteUV
-		}
+		return validation, &GenerationError{Kind: GenerationRuntimeFailure, Err: err}
 	}
 	directory, err := os.MkdirTemp("", "vibesim-cad-runtime-")
 	if err != nil {
@@ -134,7 +133,8 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	if g.Offline {
 		args = append(args, "--offline")
 	}
-	args = append(args, "--with", "cadquery==2.6.1", "python", scriptPath, recipePath, outputPath)
+	python := firstConfigured(g.Python, "3.11")
+	args = append(args, "--python", python, "--with", "cadquery==2.6.1", "python", scriptPath, recipePath, outputPath)
 	command := exec.CommandContext(runCtx, uvBinary, args...)
 	command.Dir = directory
 	command.Env = []string{
@@ -172,6 +172,52 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	return validation, nil
 }
 
+func resolveCADRuntimeBinary(configured string) (string, error) {
+	executablePath, _ := os.Executable()
+	userHome, _ := os.UserHomeDir()
+	candidates := cadRuntimeCandidates(configured, executablePath, userHome)
+	for _, candidate := range candidates {
+		resolved, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		absolute, absoluteErr := filepath.Abs(resolved)
+		if absoluteErr == nil {
+			return absolute, nil
+		}
+		return resolved, nil
+	}
+	if strings.TrimSpace(configured) != "" {
+		return "", fmt.Errorf("configured CAD runtime %q was not found or is not executable; set VIBESIM_UV_BINARY to an absolute uv executable", configured)
+	}
+	return "", errors.New("CAD runtime uv was not found in the application directory, user-local tools, standard package-manager locations, or service PATH; install uv or set VIBESIM_UV_BINARY to an absolute executable")
+}
+
+func cadRuntimeCandidates(configured, executablePath, userHome string) []string {
+	if configured = strings.TrimSpace(configured); configured != "" {
+		return []string{configured}
+	}
+	candidates := make([]string, 0, 5)
+	if executablePath != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(executablePath), "uv"))
+	}
+	if userHome != "" {
+		candidates = append(candidates, filepath.Join(userHome, ".local", "bin", "uv"))
+	}
+	candidates = append(candidates, "/opt/homebrew/bin/uv", "/usr/local/bin/uv", "uv")
+	result := make([]string, 0, len(candidates))
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if candidate == "." || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		result = append(result, candidate)
+	}
+	return result
+}
+
 func classifyCADExecutionFailure(stderr string) GenerationFailureKind {
 	message := strings.ToLower(stderr)
 	switch {
@@ -181,15 +227,17 @@ func classifyCADExecutionFailure(stderr string) GenerationFailureKind {
 		return GenerationTemporaryFailure
 	case strings.Contains(message, "no module named") && strings.Contains(message, "cadquery"):
 		return GenerationRuntimeFailure
+	case strings.Contains(message, "no interpreter found"), strings.Contains(message, "does not satisfy python"), strings.Contains(message, "requirements are unsatisfiable"):
+		return GenerationRuntimeFailure
 	default:
 		return GenerationGeometryFailure
 	}
 }
 
-func firstNonEmpty(values ...string) string {
+func firstConfigured(values ...string) string {
 	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
+		if value = strings.TrimSpace(value); value != "" {
+			return value
 		}
 	}
 	return ""
