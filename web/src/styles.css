@@ -4068,7 +4068,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   display: grid;
   min-height: 62px;
   flex: 0 0 auto;
-  grid-template-columns: minmax(190px, .8fr) minmax(320px, 1.3fr) minmax(380px, 1fr) auto;
+  grid-template-columns: minmax(190px, .8fr) minmax(320px, 1.3fr) minmax(170px, 240px) auto;
   align-items: center;
   gap: 16px;
   padding: 8px 13px;
@@ -4082,22 +4082,50 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   font-style: normal;
 }
 
-.project-context-draft { min-width: 0; }
-
-.project-draft-bar {
-  display: grid;
+.project-context-draft {
+  width: 100%;
   min-width: 0;
-  grid-template-columns: auto minmax(120px, 1fr) auto;
+  justify-self: end;
+}
+
+.project-draft-menu {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.project-draft-trigger {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid #bdc8a0;
+  border-radius: 9px;
+  color: #475532;
+  background: rgba(255, 255, 255, .9);
+  text-align: left;
+  cursor: pointer;
 }
 
-.project-draft-heading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.project-draft-trigger:hover,
+.project-draft-trigger[aria-expanded='true'] {
+  border-color: #91a94d;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(145, 169, 77, .1);
 }
-.project-draft-heading > span {
+
+.project-draft-trigger:focus-visible,
+.project-draft-popover button:focus-visible,
+.project-draft-popover select:focus-visible {
+  outline: 2px solid rgba(126, 151, 44, .5);
+  outline-offset: 1px;
+}
+
+.project-draft-trigger-icon {
   display: grid;
   width: 28px;
   height: 28px;
@@ -4107,12 +4135,81 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   color: #465f0f;
   background: #c4e35b;
 }
-.project-draft-heading strong { color: #34421e; font-size: 10px; }
+
+.project-draft-trigger-copy { display: block; min-width: 0; }
+.project-draft-trigger-copy strong,
+.project-draft-trigger-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-draft-trigger-copy strong { color: #34421e; font-size: 10px; }
+.project-draft-trigger-copy small {
+  margin-top: 2px;
+  color: #858d7a;
+  font: 8px 'DM Mono';
+  text-transform: capitalize;
+}
+.project-draft-trigger-chevron { transition: transform 120ms ease; }
+.project-draft-trigger[aria-expanded='true'] .project-draft-trigger-chevron { transform: rotate(180deg); }
+
+.project-draft-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 300px;
+  max-width: calc(100vw - 20px);
+  padding: 11px;
+  border: 1px solid #ced6b8;
+  border-radius: 10px;
+  background: #fbfcf7;
+  box-shadow: 0 14px 34px rgba(48, 55, 36, .18);
+}
+.project-draft-popover[hidden] { display: none; }
+
+.project-draft-active {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  padding: 0 1px 9px;
+  border-bottom: 1px solid #e4e8db;
+}
+.project-draft-active > span {
+  grid-column: 1 / -1;
+  color: #7c8572;
+  font: 8px 'DM Mono';
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.project-draft-active strong {
+  overflow: hidden;
+  color: #394431;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-draft-active small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #68745c;
+  font: 8px 'DM Mono';
+  text-transform: capitalize;
+}
+.project-draft-active small i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9eb542;
+}
 
 .project-draft-select {
   display: grid;
   min-width: 0;
   gap: 2px;
+  margin-top: 9px;
 }
 .project-draft-select > span {
   color: #7c8572;
@@ -4121,18 +4218,24 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .project-draft-select select {
   width: 100%;
-  height: 30px;
+  height: 34px;
   min-width: 0;
   padding: 0 25px 0 8px;
   border: 1px solid #d1d7c3;
   border-radius: 7px;
   color: #455137;
   background: #fff;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 650;
 }
 
-.project-draft-actions { display: flex; align-items: center; gap: 6px; }
+.project-draft-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+}
 .project-draft-actions > button {
   display: inline-flex;
   height: 34px;
@@ -4144,7 +4247,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   border-radius: 8px;
   color: #475532;
   background: rgba(255,255,255,.85);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -4886,11 +4989,10 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .project-shell-actions > button span { display: none; }
   .project-shell-actions > button { width: 34px; padding: 0; }
   .project-context-bar {
-    grid-template-columns: minmax(145px, .8fr) minmax(250px, 1.2fr) minmax(280px, 1fr) auto;
+    grid-template-columns: minmax(145px, .8fr) minmax(250px, 1.2fr) minmax(175px, 210px) auto;
     gap: 8px;
     padding-inline: 9px;
   }
-  .project-draft-heading strong { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -4913,13 +5015,9 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
     padding: 7px 9px;
   }
   .project-context-bar .canvas-resource-title > em,
-  .project-draft-heading { display: none; }
-  .project-draft-bar { grid-template-columns: minmax(100px, 1fr) auto; gap: 5px; }
-  .project-draft-select > span { display: none; }
-  .project-draft-actions > button:first-child span { display: none; }
-  .project-draft-actions > button:first-child { width: 34px; padding: 0; }
-  .project-draft-actions > button:last-child span { display: none; }
-  .project-draft-actions > button:last-child { width: 34px; padding: 0; }
+  .project-draft-trigger-copy small { display: none; }
+  .project-draft-trigger { min-height: 38px; padding-block: 4px; }
+  .project-draft-trigger-icon { width: 26px; height: 26px; }
   .canvas-info-button span { display: none; }
   .canvas-info-button { width: 34px; padding: 0; justify-content: center; }
   .canvas-resource-title small { max-width: 180px; }

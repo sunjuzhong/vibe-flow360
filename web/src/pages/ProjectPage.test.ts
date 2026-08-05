@@ -4,7 +4,7 @@ import { geometryContextId, initialProjectPanel, projectSyncProgress, resourceCo
 
 describe('Project panel defaults', () => {
   it('opens Project resources on first entry', () => {
-    expect(initialProjectPanel).toBe('resources')
+    expect(initialProjectPanel).toBeNull()
   })
 })
 

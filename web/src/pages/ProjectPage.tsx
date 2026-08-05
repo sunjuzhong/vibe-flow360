@@ -60,7 +60,7 @@ import {
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
-export const initialProjectPanel = 'resources' as const
+export const initialProjectPanel = null
 
 const flow360DomainMap: Record<string, string> = {
   dev: 'flow360.dev-simulation.cloud',
