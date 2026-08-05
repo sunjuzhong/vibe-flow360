@@ -1,4 +1,4 @@
-import { AlertTriangle, FolderInput, FolderPlus, Loader2, Pencil, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, FolderInput, FolderPlus, Loader2, Pencil, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { api, type FolderMutationResult, type FolderNode } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -9,17 +9,90 @@ export type FolderOption = {
   id: string
   name: string
   depth: number
+  path: string
 }
 
 export function folderOptions(root: FolderNode, excludeSubtreeId = ''): FolderOption[] {
   const options: FolderOption[] = []
-  const walk = (node: FolderNode, depth: number) => {
+  const walk = (node: FolderNode, depth: number, parentPath: string) => {
     if (node.id === excludeSubtreeId) return
-    options.push({ id: node.id, name: node.name, depth })
-    node.subfolders.forEach((child) => walk(child, depth + 1))
+    const path = parentPath ? `${parentPath} / ${node.name}` : node.name
+    options.push({ id: node.id, name: node.name, depth, path })
+    node.subfolders.forEach((child) => walk(child, depth + 1, path))
   }
-  walk(root, 0)
+  walk(root, 0, '')
   return options
+}
+
+export function filterFolderOptions(options: FolderOption[], query: string) {
+  const normalized = query.trim().toLocaleLowerCase()
+  if (!normalized) return options
+  return options.filter((option) => option.path.toLocaleLowerCase().includes(normalized))
+}
+
+function ParentFolderPicker({
+  options,
+  value,
+  onChange,
+}: {
+  options: FolderOption[]
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const selected = options.find((option) => option.id === value) ?? options[0]
+  const filtered = useMemo(() => filterFolderOptions(options, query), [options, query])
+
+  return (
+    <div className="folder-parent-picker">
+      <button
+        type="button"
+        className="folder-parent-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{selected?.path || 'Choose a parent folder'}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="folder-parent-popover">
+          <div className="folder-parent-search">
+            <Search size={13} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search parent folders…"
+              aria-label="Search parent folders"
+              autoFocus
+            />
+          </div>
+          <div className="folder-parent-options" role="listbox" aria-label="Parent folder">
+            {filtered.map((option) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={option.id === value}
+                key={option.id}
+                onClick={() => {
+                  onChange(option.id)
+                  setOpen(false)
+                  setQuery('')
+                }}
+                style={{ paddingLeft: 10 + option.depth * 14 }}
+                title={option.path}
+              >
+                <span>{option.name}</span>
+                {option.id === value && <Check size={13} />}
+              </button>
+            ))}
+            {!filtered.length && <div className="folder-parent-empty">No matching folders</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const modeCopy: Record<FolderMutationMode, {
@@ -148,14 +221,10 @@ export default function FolderMutationDialog({
           )}
 
           {(mode === 'create' || mode === 'move') && (
-            <label>
-              Parent folder
-              <select value={parentId} onChange={(event) => setParentId(event.target.value)}>
-                {destinations.map((option) => (
-                  <option key={option.id} value={option.id}>{`${'— '.repeat(option.depth)}${option.name}`}</option>
-                ))}
-              </select>
-            </label>
+            <div className="folder-dialog-field">
+              <span>Parent folder</span>
+              <ParentFolderPicker options={destinations} value={parentId} onChange={setParentId} />
+            </div>
           )}
 
           {mode === 'create' && (

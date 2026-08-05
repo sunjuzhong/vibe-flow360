@@ -255,7 +255,7 @@ export default function WorkspacePage() {
         )}
         {folderRoot && (
           <FolderTree
-            folders={folderRoot.subfolders}
+            root={folderRoot}
             selected={selectedFolder?.id ?? ''}
             onSelect={(folder) => void loadProjects(folder)}
             onCreateRoot={() => setFolderMutation({ mode: 'create', folder: folderRoot })}

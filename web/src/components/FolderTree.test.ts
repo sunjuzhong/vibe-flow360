@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { folderAncestorIds } from './FolderTree'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createElement } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import FolderTree, { folderAncestorIds } from './FolderTree'
 
 describe('folderAncestorIds', () => {
   const folders = [{
@@ -19,5 +21,22 @@ describe('folderAncestorIds', () => {
   it('does not expand the selected folder itself or unrelated branches', () => {
     expect(folderAncestorIds(folders, 'root-child')).toEqual([])
     expect(folderAncestorIds(folders, 'missing')).toEqual([])
+  })
+
+  it('renders the workspace root as the first selectable tree node', () => {
+    const root = { id: 'ROOT.FLOW360', name: 'My workspace', subfolders: folders }
+    const markup = renderToStaticMarkup(createElement(FolderTree, {
+      root,
+      selected: '',
+      onSelect: vi.fn(),
+      onCreateRoot: vi.fn(),
+      onCreateChild: vi.fn(),
+      onRename: vi.fn(),
+      onMove: vi.fn(),
+      onDelete: vi.fn(),
+    }))
+
+    expect(markup).toContain('>My workspace<')
+    expect(markup.indexOf('>My workspace<')).toBeLessThan(markup.indexOf('>Root child<'))
   })
 })

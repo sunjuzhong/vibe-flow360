@@ -32,6 +32,7 @@ function hasMatchingDescendant(node: FolderNode, query: string): boolean {
 function Branch({
   node,
   depth,
+  isRoot = false,
   selected,
   expanded,
   onToggle,
@@ -46,6 +47,7 @@ function Branch({
 }: {
   node: FolderNode
   depth: number
+  isRoot?: boolean
   selected: string
   expanded: Set<string>
   onToggle: (id: string) => void
@@ -88,9 +90,9 @@ function Branch({
       {menuFor === node.id && (
         <div className="folder-actions-menu" role="menu" aria-label={`Folder actions for ${node.name}`}>
           <button role="menuitem" onClick={() => onCreateChild(node)}><FolderPlus size={13} /> New subfolder</button>
-          <button role="menuitem" onClick={() => onRename(node)}><Pencil size={13} /> Rename</button>
-          <button role="menuitem" onClick={() => onMove(node)}><FolderInput size={13} /> Move</button>
-          <button role="menuitem" className="danger" onClick={() => onDelete(node)}><Trash2 size={13} /> Delete</button>
+          {!isRoot && <button role="menuitem" onClick={() => onRename(node)}><Pencil size={13} /> Rename</button>}
+          {!isRoot && <button role="menuitem" onClick={() => onMove(node)}><FolderInput size={13} /> Move</button>}
+          {!isRoot && <button role="menuitem" className="danger" onClick={() => onDelete(node)}><Trash2 size={13} /> Delete</button>}
         </div>
       )}
       {hasChildren && (isExpanded || searchQuery) && node.subfolders.map((child) => (
@@ -116,7 +118,7 @@ function Branch({
 }
 
 export default function FolderTree({
-  folders,
+  root,
   selected,
   onSelect,
   onCreateRoot,
@@ -125,7 +127,7 @@ export default function FolderTree({
   onMove,
   onDelete,
 }: {
-  folders: FolderNode[]
+  root: FolderNode
   selected: string
   onSelect: (node: FolderNode) => void
   onCreateRoot: () => void
@@ -134,7 +136,7 @@ export default function FolderTree({
   onMove: (node: FolderNode) => void
   onDelete: (node: FolderNode) => void
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set([root.id]))
   const [query, setQuery] = useState('')
   const [menuFor, setMenuFor] = useState('')
 
@@ -145,7 +147,7 @@ export default function FolderTree({
 
   useEffect(() => {
     if (!selected) return
-    const ancestors = folderAncestorIds(folders, selected)
+    const ancestors = folderAncestorIds([root], selected)
     if (!ancestors.length) return
     setExpanded((current) => {
       const next = new Set(current)
@@ -157,7 +159,7 @@ export default function FolderTree({
       })
       return changed ? next : current
     })
-  }, [folders, selected])
+  }, [root, selected])
 
   const toggle = (id: string) => {
     setExpanded((current) => {
@@ -174,9 +176,9 @@ export default function FolderTree({
       count += nodes.length
       nodes.forEach((n) => walk(n.subfolders))
     }
-    walk(folders)
+    walk(root.subfolders)
     return count
-  }, [folders])
+  }, [root])
 
   return (
     <div className="workspace-folder-tree">
@@ -193,24 +195,22 @@ export default function FolderTree({
         <span>{totalFolders} folders</span>
         <button onClick={onCreateRoot} aria-label="Create top-level folder"><FolderPlus size={12} /> New</button>
       </div>
-      {folders.map((folder) => (
-        <Branch
-          key={folder.id}
-          node={folder}
-          depth={0}
-          selected={selected}
-          expanded={expanded}
-          onToggle={toggle}
-          onSelect={onSelect}
-          menuFor={menuFor}
-          onToggleMenu={(id) => setMenuFor((current) => current === id ? '' : id)}
-          onCreateChild={runAction(onCreateChild)}
-          onRename={runAction(onRename)}
-          onMove={runAction(onMove)}
-          onDelete={runAction(onDelete)}
-          searchQuery={query}
-        />
-      ))}
+      <Branch
+        node={root}
+        depth={0}
+        isRoot
+        selected={selected}
+        expanded={expanded}
+        onToggle={toggle}
+        onSelect={onSelect}
+        menuFor={menuFor}
+        onToggleMenu={(id) => setMenuFor((current) => current === id ? '' : id)}
+        onCreateChild={runAction(onCreateChild)}
+        onRename={runAction(onRename)}
+        onMove={runAction(onMove)}
+        onDelete={runAction(onDelete)}
+        searchQuery={query}
+      />
       {query && <div className="folder-search-hint">Showing folders matching "{query}"</div>}
     </div>
   )

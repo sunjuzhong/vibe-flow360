@@ -770,7 +770,7 @@ button { color: inherit; }
 }
 .folder-dialog {
   width: min(470px, 94vw);
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid #d7d9d0;
   border-radius: 14px;
   background: #f9f9f5;
@@ -797,10 +797,72 @@ button { color: inherit; }
 .folder-dialog-target code { overflow: hidden; color: #878c82; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .folder-dialog form > label { display: grid; gap: 6px; margin-top: 14px; color: #656b60; font-size: 8px; font-weight: 700; }
 .folder-dialog form > label > small { color: #969b91; font-weight: 400; }
+.folder-dialog-field { display: grid; gap: 6px; margin-top: 14px; color: #656b60; font-size: 8px; font-weight: 700; }
 .folder-dialog input:not([type="checkbox"]),
 .folder-dialog select { width: 100%; height: 38px; padding: 0 10px; border: 1px solid #cfd2c8; border-radius: 7px; outline: 0; color: #3f443b; background: #fff; font: 10px inherit; }
 .folder-dialog input:focus,
 .folder-dialog select:focus { border-color: #9bb454; box-shadow: 0 0 0 3px rgba(155,180,84,.15); }
+.folder-parent-picker { position: relative; font-weight: 400; }
+.folder-parent-trigger {
+  display: flex;
+  width: 100%;
+  height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid #cfd2c8;
+  border-radius: 7px;
+  color: #3f443b;
+  background: #fff;
+  font: 10px inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.folder-parent-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-parent-trigger svg { flex: 0 0 auto; color: #858b80; transition: transform .15s ease; }
+.folder-parent-trigger[aria-expanded="true"] { border-color: #9bb454; box-shadow: 0 0 0 3px rgba(155,180,84,.15); }
+.folder-parent-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.folder-parent-popover {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  padding: 6px;
+  border: 1px solid #d5d8ce;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 14px 36px rgba(28,32,24,.2);
+}
+.folder-parent-search { display: flex; height: 34px; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid #d8dbd1; border-radius: 6px; background: #f7f8f3; }
+.folder-parent-search svg { flex: 0 0 auto; color: #8d9387; }
+.folder-parent-search input { height: auto !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; font-size: 9px !important; }
+.folder-parent-options { max-height: min(240px, 38vh); margin-top: 5px; overflow-y: auto; overscroll-behavior: contain; }
+.folder-parent-options button {
+  display: flex;
+  width: 100%;
+  min-height: 31px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 5px;
+  padding-right: 9px;
+  padding-bottom: 5px;
+  border: 0;
+  border-radius: 5px;
+  color: #555b50;
+  background: transparent;
+  font: 9px inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.folder-parent-options button:hover,
+.folder-parent-options button[aria-selected="true"] { color: #40530b; background: #eef3df; }
+.folder-parent-options button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-parent-options button svg { flex: 0 0 auto; color: #6f891f; }
+.folder-parent-empty { padding: 18px 10px; color: #94998f; font-size: 9px; text-align: center; }
 .folder-delete-confirm { display: flex !important; align-items: flex-start; gap: 9px !important; padding: 12px; border: 1px solid #e3bdb2; border-radius: 8px; color: #8d4434 !important; background: #fff2ee; cursor: pointer; }
 .folder-delete-confirm input { margin-top: 2px; }
 .folder-delete-confirm span { display: flex; align-items: center; gap: 7px; line-height: 1.45; }

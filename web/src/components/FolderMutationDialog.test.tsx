@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import FolderMutationDialog, { folderOptions } from './FolderMutationDialog'
+import FolderMutationDialog, { filterFolderOptions, folderOptions } from './FolderMutationDialog'
 
 const root = {
   id: 'ROOT.FLOW360',
-  name: 'Workspace',
+  name: 'My workspace',
   subfolders: [{
     id: 'folder-a',
     name: 'A',
@@ -18,6 +18,11 @@ describe('folderOptions', () => {
       'ROOT.FLOW360',
       'folder-b',
     ])
+  })
+
+  it('searches by the complete folder path', () => {
+    const options = folderOptions(root)
+    expect(filterFolderOptions(options, 'my workspace / a / child').map((option) => option.id)).toEqual(['folder-child'])
   })
 })
 
@@ -37,5 +42,21 @@ describe('FolderMutationDialog', () => {
     expect(markup).toContain('permanently deletes “A”')
     expect(markup).toContain('disabled=""')
     expect(markup).toContain('Delete folder')
+  })
+
+  it('uses a bounded custom parent picker instead of a native select', () => {
+    const markup = renderToStaticMarkup(
+      <FolderMutationDialog
+        mode="create"
+        folder={root}
+        root={root}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+
+    expect(markup).toContain('aria-haspopup="listbox"')
+    expect(markup).toContain('My workspace')
+    expect(markup).not.toContain('<select')
   })
 })
