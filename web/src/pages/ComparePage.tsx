@@ -18,6 +18,7 @@ import {
   type SweepResult,
 } from '../api/client'
 import TopBar from '../components/TopBar'
+import Flow360IdLink from '../components/Flow360IdLink'
 
 function valueText(value: unknown) {
   if (value === undefined) return '—'
@@ -141,15 +142,18 @@ export default function ComparePage() {
             </div>
             <div className="compare-case-list">
               {cases.map((item) => (
-                <label key={item.id} className={selectedIds.includes(item.id) ? 'selected' : ''}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(item.id)}
-                    onChange={() => toggleCase(item.id)}
-                  />
-                  <span><strong>{item.name}</strong><small>{item.id}</small></span>
+                <div key={item.id} className={`compare-case-option ${selectedIds.includes(item.id) ? 'selected' : ''}`}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(item.id)}
+                      onChange={() => toggleCase(item.id)}
+                    />
+                    <span><strong>{item.name}</strong></span>
+                  </label>
+                  <Flow360IdLink environment={status?.environment} projectId={projectId} resourceId={item.id} resourceType="Case" />
                   {selectedIds[0] === item.id && <em>Baseline</em>}
-                </label>
+                </div>
               ))}
               {!cases.length && <div className="detail-empty">This Project has no Cases.</div>}
             </div>
@@ -178,6 +182,7 @@ export default function ComparePage() {
                     <article key={item.id}>
                       <span>{index === 0 ? 'BASELINE' : 'CANDIDATE'}</span>
                       <h3>{item.name}</h3>
+                      <Flow360IdLink environment={status?.environment} projectId={projectId} resourceId={item.id} resourceType="Case" />
                       <small>{item.status}</small>
                       <div className={`convergence-banner convergence-${item.convergence?.status ?? 'insufficient-data'}`}>
                         <BarChart3 size={15} />

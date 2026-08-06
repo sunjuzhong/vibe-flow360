@@ -95,7 +95,8 @@ describe('AICreateModal', () => {
     const markup = renderToStaticMarkup(<AICreateProgressView progress={progress} />)
     expect(markup).toContain('Live backend status')
     expect(markup).toContain('Flow360 is processing the uploaded Geometry.')
-    expect(markup).toContain('Project · prj-12345678')
+    expect(markup).toContain('Project · <a class="id-link"')
+    expect(markup).toContain('workbench/prj-12345678?id=geo-12345678&amp;type=Geometry')
     expect(markup).toContain('class="active"')
   })
 

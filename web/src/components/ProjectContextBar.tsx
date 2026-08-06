@@ -1,11 +1,13 @@
 import { CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import Flow360IdLink from './Flow360IdLink'
 
 type Props = {
   resourceName: string
   resourceType: string
   resourceId: string
-  resourceUrl: string
+  environment?: string
+  projectId: string
   status: string
   stages: string[]
   selectedStage: number
@@ -17,7 +19,8 @@ export default function ProjectContextBar({
   resourceName,
   resourceType,
   resourceId,
-  resourceUrl,
+  environment,
+  projectId,
   status,
   stages,
   selectedStage,
@@ -34,15 +37,7 @@ export default function ProjectContextBar({
           <strong>{resourceName}</strong>
           <small>
             {resourceType} ·{' '}
-            <a
-              className="id-link"
-              href={resourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              title="Open in Flow360 workbench"
-            >
-              {resourceId}
-            </a>
+            <Flow360IdLink environment={environment} projectId={projectId} resourceId={resourceId} resourceType={resourceType} />
           </small>
         </div>
         <em className={`status-pill status-${status.toLowerCase()}`}>{status}</em>

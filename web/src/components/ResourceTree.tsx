@@ -1,6 +1,7 @@
 import { Activity, Box, Boxes, ChevronDown, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectItem, ResourceNode } from '../api/client'
+import Flow360IdLink from './Flow360IdLink'
 import {
   RESOURCE_TYPES,
   buildDescendantCount,
@@ -23,11 +24,15 @@ export default function ResourceTree({
   root,
   items,
   selected,
+  environment,
+  projectId,
   onSelect,
 }: {
   root: ResourceNode
   items: ProjectItem[]
   selected: string
+  environment?: string
+  projectId: string
   onSelect: (node: ResourceNode | ProjectItem) => void
 }) {
   // Start collapsed except for the root — expanding everything by default
@@ -186,27 +191,37 @@ export default function ResourceTree({
 
   const grouped = useMemo(() => groupByType(items), [items])
 
+  const renderSearchResult = (item: ProjectItem, showType = true) => (
+    <div
+      key={item.id}
+      ref={(el) => setLineRef(item.id, el)}
+      className={`resource-search-result ${selected === item.id ? 'selected' : ''}`}
+      onFocus={() => (activeRowIdRef.current = item.id)}
+      role="treeitem"
+      aria-selected={selected === item.id}
+      tabIndex={selected === item.id ? 0 : -1}
+    >
+      <button type="button" className="resource-search-select" onClick={() => onSelect(item)} tabIndex={-1}>
+        {showType && <span className={`resource-type-icon type-${item.type.toLowerCase()}`}><ResourceIcon type={item.type} /></span>}
+        <span><strong>{item.name}</strong><small>{showType ? `${item.type} · ` : ''}</small></span>
+      </button>
+      <Flow360IdLink
+        className="resource-search-id"
+        environment={environment}
+        projectId={projectId}
+        resourceId={item.id}
+        resourceType={item.type}
+      />
+    </div>
+  )
+
   const renderFlatList = () => {
     const filtered = items.filter((it) =>
       (typesFilter.size === RESOURCE_TYPES.length || typesFilter.has(it.type))
       && (!query.trim() || matches.some((m) => m.id === it.id)),
     )
     if (!filtered.length) return <div className="resource-tree-empty">No matching resources</div>
-    return filtered.map((item) => (
-      <button
-        key={item.id}
-        ref={(el) => setLineRef(item.id, el)}
-        className={`resource-search-result ${selected === item.id ? 'selected' : ''}`}
-        onFocus={() => (activeRowIdRef.current = item.id)}
-        onClick={() => onSelect(item)}
-        role="treeitem"
-        aria-selected={selected === item.id}
-        tabIndex={selected === item.id ? 0 : -1}
-      >
-        <span className={`resource-type-icon type-${item.type.toLowerCase()}`}><ResourceIcon type={item.type} /></span>
-        <span><strong>{item.name}</strong><small>{item.type} · {item.id}</small></span>
-      </button>
-    ))
+    return filtered.map((item) => renderSearchResult(item))
   }
 
   const renderGroupedList = () => {
@@ -228,20 +243,7 @@ export default function ResourceTree({
                 <strong>{type}</strong>
                 <span>{list.length}</span>
               </div>
-              {list.map((item) => (
-                <button
-                  key={item.id}
-                  ref={(el) => setLineRef(item.id, el)}
-                  className={`resource-search-result ${selected === item.id ? 'selected' : ''}`}
-                  onFocus={() => (activeRowIdRef.current = item.id)}
-                  onClick={() => onSelect(item)}
-                  role="treeitem"
-                  aria-selected={selected === item.id}
-                  tabIndex={selected === item.id ? 0 : -1}
-                >
-                  <span><strong>{item.name}</strong><small>{item.id}</small></span>
-                </button>
-              ))}
+              {list.map((item) => renderSearchResult(item, false))}
             </div>
           )
         })}
@@ -252,21 +254,7 @@ export default function ResourceTree({
   const renderTree = () => {
     if (query.trim()) {
       if (!matches.length) return <div className="resource-tree-empty">No matching resources</div>
-      return matches.map((item) => (
-        <button
-          key={item.id}
-          ref={(el) => setLineRef(item.id, el)}
-          className={`resource-search-result ${selected === item.id ? 'selected' : ''}`}
-          onFocus={() => (activeRowIdRef.current = item.id)}
-          onClick={() => onSelect(item)}
-          role="treeitem"
-          aria-selected={selected === item.id}
-          tabIndex={selected === item.id ? 0 : -1}
-        >
-          <span className={`resource-type-icon type-${item.type.toLowerCase()}`}><ResourceIcon type={item.type} /></span>
-          <span><strong>{item.name}</strong><small>{item.type} · {item.id}</small></span>
-        </button>
-      ))
+      return matches.map((item) => renderSearchResult(item))
     }
     return rows.map(({ node, depth, hasChildren }) => {
       const isOpen = expanded.has(node.id)

@@ -26,6 +26,7 @@ import ImportPanel from '../components/ImportPanel'
 import ProjectActions, { type ProjectMutationMode } from '../components/ProjectActions'
 import ProjectMutationDialog from '../components/ProjectMutationDialog'
 import TopBar from '../components/TopBar'
+import Flow360IdLink from '../components/Flow360IdLink'
 
 function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
@@ -372,21 +373,20 @@ export default function WorkspacePage() {
                 </div>
                 {filteredProjects.map((project) => (
                   <div className="project-table-row" key={project.id}>
-                    <Link className="project-table-row-link" to={`/projects/${project.id}`}>
-                      <span className="project-primary">
-                        <span className="project-type-mark"><Box size={16} /></span>
-                        <span><strong>{project.name}</strong><small>{project.id}</small></span>
-                      </span>
-                      <span><span className="type-badge">{project.root_item_type}</span></span>
-                      <span className="resource-counts">
-                        <small>G {projectCount(project, 'geometry')}</small>
-                        <small>SM {projectCount(project, 'surface_mesh')}</small>
-                        <small>VM {projectCount(project, 'volume_mesh')}</small>
-                        <small>C {projectCount(project, 'case')}</small>
-                      </span>
-                      <time className="project-created" dateTime={project.created_at}>{formatProjectCreatedAt(project.created_at)}</time>
-                      <span className="solver-label">{project.solver_version}</span>
-                    </Link>
+                    <Link className="project-table-row-link" to={`/projects/${project.id}`} aria-label={`Open ${project.name}`} />
+                    <span className="project-primary">
+                      <span className="project-type-mark"><Box size={16} /></span>
+                      <span><strong>{project.name}</strong><small><Flow360IdLink environment={flowStatus?.environment} projectId={project.id} /></small></span>
+                    </span>
+                    <span className="project-workflow"><span className="type-badge">{project.root_item_type}</span></span>
+                    <span className="resource-counts">
+                      <small>G {projectCount(project, 'geometry')}</small>
+                      <small>SM {projectCount(project, 'surface_mesh')}</small>
+                      <small>VM {projectCount(project, 'volume_mesh')}</small>
+                      <small>C {projectCount(project, 'case')}</small>
+                    </span>
+                    <time className="project-created" dateTime={project.created_at}>{formatProjectCreatedAt(project.created_at)}</time>
+                    <span className="solver-label">{project.solver_version}</span>
                     <ProjectActions project={project} onAction={(mode, target) => setProjectMutation({ mode, project: target })} />
                   </div>
                 ))}
@@ -395,32 +395,31 @@ export default function WorkspacePage() {
               <div className="project-card-grid">
                 {filteredProjects.map((project) => (
                   <div className="project-card" key={project.id}>
-                    <Link className="project-card-link" to={`/projects/${project.id}`}>
-                      <div className={`project-card-visual type-${project.root_item_type.toLowerCase()}`} aria-hidden="true">
-                        <Box size={31} strokeWidth={1.25} />
-                        <span>{project.root_item_type}</span>
+                    <Link className="project-card-link" to={`/projects/${project.id}`} aria-label={`Open ${project.name}`} />
+                    <div className={`project-card-visual type-${project.root_item_type.toLowerCase()}`} aria-hidden="true">
+                      <Box size={31} strokeWidth={1.25} />
+                      <span>{project.root_item_type}</span>
+                    </div>
+                    <div className="project-card-body">
+                      <div className="project-card-heading">
+                        <div><strong>{project.name}</strong><small><Flow360IdLink environment={flowStatus?.environment} projectId={project.id} /></small></div>
+                        <ChevronRight size={16} />
                       </div>
-                      <div className="project-card-body">
-                        <div className="project-card-heading">
-                          <div><strong>{project.name}</strong><small>{project.id}</small></div>
-                          <ChevronRight size={16} />
-                        </div>
-                        {project.description && <p>{project.description}</p>}
-                        <div className="project-card-meta">
-                          <span className="type-badge">{project.root_item_type}</span>
-                          <span className="solver-label">{project.solver_version}</span>
-                        </div>
-                        <div className="resource-counts">
-                          <small>G {projectCount(project, 'geometry')}</small>
-                          <small>SM {projectCount(project, 'surface_mesh')}</small>
-                          <small>VM {projectCount(project, 'volume_mesh')}</small>
-                          <small>C {projectCount(project, 'case')}</small>
-                        </div>
-                        <time className="project-card-created" dateTime={project.created_at}>
-                          <Clock3 size={12} /> Created {formatProjectCreatedAt(project.created_at)}
-                        </time>
+                      {project.description && <p>{project.description}</p>}
+                      <div className="project-card-meta">
+                        <span className="type-badge">{project.root_item_type}</span>
+                        <span className="solver-label">{project.solver_version}</span>
                       </div>
-                    </Link>
+                      <div className="resource-counts">
+                        <small>G {projectCount(project, 'geometry')}</small>
+                        <small>SM {projectCount(project, 'surface_mesh')}</small>
+                        <small>VM {projectCount(project, 'volume_mesh')}</small>
+                        <small>C {projectCount(project, 'case')}</small>
+                      </div>
+                      <time className="project-card-created" dateTime={project.created_at}>
+                        <Clock3 size={12} /> Created {formatProjectCreatedAt(project.created_at)}
+                      </time>
+                    </div>
                     <ProjectActions project={project} onAction={(mode, target) => setProjectMutation({ mode, project: target })} />
                   </div>
                 ))}
@@ -452,6 +451,7 @@ export default function WorkspacePage() {
 }} />}
       {selectedFolder && aiCreateOpen && <AICreateModal
         folder={selectedFolder}
+        environment={flowStatus?.environment}
         onClose={() => setAICreateOpen(false)}
         onCreated={(result) => navigate(aiCreateProjectPath(result))}
       />}

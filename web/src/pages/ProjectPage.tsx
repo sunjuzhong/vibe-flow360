@@ -34,6 +34,7 @@ import PlanPanel from '../components/PlanPanel'
 import { ProjectShellAction } from '../components/ProjectShellAction'
 import ProjectContextBar from '../components/ProjectContextBar'
 import ProjectDraftBar, { draftRecords } from '../components/ProjectDraftBar'
+import Flow360IdLink from '../components/Flow360IdLink'
 import ResourceDetailPanel, {
   resourceStatus,
   type ResourceDetailTab,
@@ -61,23 +62,6 @@ import {
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
 export const initialProjectPanel = null
-
-const flow360DomainMap: Record<string, string> = {
-  dev: 'flow360.dev-simulation.cloud',
-  uat: 'flow360.uat-simulation.cloud',
-  prod: 'flow360.simulation.cloud',
-  production: 'flow360.simulation.cloud',
-}
-
-function getFlow360Domain(environment?: string): string {
-  const key = (environment || 'prod').toLowerCase().trim()
-  return flow360DomainMap[key] ?? flow360DomainMap.prod
-}
-
-function buildWorkbenchUrl(environment: string | undefined, projectId: string, resourceId: string, resourceType: string): string {
-  const domain = getFlow360Domain(environment)
-  return `https://${domain}/workbench/${projectId}?id=${resourceId}&type=${resourceType}`
-}
 
 export function resourceContextLabel(projectName: string, resourceName: string, resourceType: string): string {
   return projectName.trim().toLocaleLowerCase() === resourceName.trim().toLocaleLowerCase()
@@ -645,7 +629,14 @@ export default function ProjectPage() {
               <GitBranch size={15} /><span>Project resources</span>
               <button onClick={closePanel} aria-label="Close resources"><X size={15} /></button>
             </div>
-            <ResourceTree root={root} items={items} selected={selected.id} onSelect={selectResource} />
+            <ResourceTree
+              root={root}
+              items={items}
+              selected={selected.id}
+              environment={flowStatus?.environment}
+              projectId={projectId}
+              onSelect={selectResource}
+            />
           </aside>
           )}
 
@@ -654,7 +645,8 @@ export default function ProjectPage() {
               resourceName={resourceContextLabel(project.name, selected.name, selected.type)}
               resourceType={selected.type}
               resourceId={selected.id}
-              resourceUrl={buildWorkbenchUrl(flowStatus?.environment, projectId, selected.id, selected.type)}
+              environment={flowStatus?.environment}
+              projectId={projectId}
               status={resourceStatus(detail)}
               stages={stages}
               selectedStage={selectedStage}
@@ -824,17 +816,11 @@ export default function ProjectPage() {
                 <div><dt>Name</dt><dd>{selected.name}</dd></div>
                 <div><dt>Type</dt><dd><span className="type-badge">{selected.type}</span></dd></div>
                 <div><dt>ID</dt><dd className="mono-value">
-                  <a
-                    className="id-link"
-                    href={buildWorkbenchUrl(flowStatus?.environment, projectId, selected.id, selected.type)}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Open in Flow360 workbench"
-                  >
-                    {selected.id}
-                  </a>
+                  <Flow360IdLink environment={flowStatus?.environment} projectId={projectId} resourceId={selected.id} resourceType={selected.type} />
                 </dd></div>
-                <div><dt>Parent</dt><dd>{parentItem?.type || 'None'}</dd></div>
+                <div><dt>Parent</dt><dd>{parentItem
+                  ? <Flow360IdLink environment={flowStatus?.environment} projectId={projectId} resourceId={parentItem.id} resourceType={parentItem.type}>{parentItem.type} · {parentItem.id}</Flow360IdLink>
+                  : 'None'}</dd></div>
                 <div><dt>Children</dt><dd>{selected.children.length}</dd></div>
                 <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>{resourceStatus(detail)}</span></dd></div>
               </dl>
@@ -842,6 +828,7 @@ export default function ProjectPage() {
             <div className="inspector-section">
               <p className="eyebrow">PROJECT</p>
               <dl>
+                <div><dt>ID</dt><dd className="mono-value"><Flow360IdLink environment={flowStatus?.environment} projectId={projectId} /></dd></div>
                 <div><dt>Solver</dt><dd>{project.solver_version}</dd></div>
                 <div><dt>Root type</dt><dd>{project.root_item.type}</dd></div>
                 <div><dt>Tags</dt><dd>{project.tags.length ? project.tags.join(', ') : 'None'}</dd></div>
@@ -852,7 +839,7 @@ export default function ProjectPage() {
                 <p className="eyebrow">ACTIVE DRAFT</p>
                 <dl>
                   <div><dt>Name</dt><dd>{activeDraft.name || 'Untitled Draft'}</dd></div>
-                  <div><dt>ID</dt><dd className="mono-value">{activeDraft.id}</dd></div>
+                  <div><dt>ID</dt><dd className="mono-value"><Flow360IdLink environment={flowStatus?.environment} projectId={projectId} resourceId={activeDraft.id} resourceType="Draft" /></dd></div>
                   <div><dt>Source</dt><dd>{String(activeDraft.source_type || draftDetail?.info?.source_type || 'Project resource')}</dd></div>
                   <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(draftDetail).toLowerCase()}`}>{resourceStatus(draftDetail)}</span></dd></div>
                 </dl>
@@ -864,6 +851,9 @@ export default function ProjectPage() {
               error={detailError}
               resourceType={selected.type}
               resourceId={selected.id}
+              environment={flowStatus?.environment}
+              projectId={projectId}
+              resourceItems={items}
               onRetry={() => void loadDetail(false)}
               dataSource={detailDataSource}
               cachedAt={detailCachedAt}

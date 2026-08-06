@@ -9,6 +9,7 @@ import {
   type FolderNode,
 } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import Flow360IdLink from './Flow360IdLink'
 
 export const AI_CREATE_INTENT_MAX_CHARACTERS = 4000
 const AI_CREATE_INTENT_WARNING_CHARACTERS = Math.floor(AI_CREATE_INTENT_MAX_CHARACTERS * 0.85)
@@ -35,7 +36,7 @@ export function aiCreateProgressStageState(progress: AICreateProgress, index: nu
   return 'active'
 }
 
-export function AICreateProgressView({ progress }: { progress: AICreateProgress }) {
+export function AICreateProgressView({ progress, environment }: { progress: AICreateProgress; environment?: string }) {
   return (
     <section className={`ai-create-progress-panel status-${progress.status}`} aria-live="polite">
       <div className="ai-create-progress-heading">
@@ -59,9 +60,9 @@ export function AICreateProgressView({ progress }: { progress: AICreateProgress 
       {progress.detail && <p className="ai-create-progress-detail">{progress.detail}</p>}
       {(progress.project_id || progress.resource_id) && (
         <small className="ai-create-progress-resource">
-          {progress.project_id && `Project · ${progress.project_id}`}
+          {progress.project_id && <>Project · <Flow360IdLink environment={environment} projectId={progress.project_id} /></>}
           {progress.project_id && progress.resource_id && ' · '}
-          {progress.resource_id && `Geometry · ${progress.resource_id}`}
+          {progress.project_id && progress.resource_id && <Flow360IdLink environment={environment} projectId={progress.project_id} resourceId={progress.resource_id} resourceType="Geometry">Geometry · {progress.resource_id}</Flow360IdLink>}
         </small>
       )}
     </section>
@@ -190,10 +191,12 @@ export function AICreateClarificationForm({
 
 export default function AICreateModal({
   folder,
+  environment,
   onClose,
   onCreated,
 }: {
   folder: FolderNode | null
+  environment?: string
   onClose: () => void
   onCreated: (result: AICreateResult) => void
 }) {
@@ -383,7 +386,7 @@ export default function AICreateModal({
 
         {!busy && !intent && <p className="ai-create-example">Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.</p>}
         {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />Connecting to the AI Create backend…</div>}
-        {progress && (busy || progress.status !== 'completed') && <AICreateProgressView progress={progress} />}
+        {progress && (busy || progress.status !== 'completed') && <AICreateProgressView progress={progress} environment={environment} />}
         {error && <div className="ai-create-error" role="alert">{error}</div>}
         <p className="ai-create-safety">The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.</p>
       </div>

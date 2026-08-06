@@ -12,11 +12,12 @@ import {
   GitCompare,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, type ResourceDetail } from '../api/client'
+import { api, type ProjectItem, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import DraftParameterEditor from './DraftParameterEditor'
 import { ResultTablePreview } from './ResultTablePreview'
 import { StructuredDataView } from './StructuredDataView'
+import Flow360IdLink from './Flow360IdLink'
 
 export type ResourceDetailTab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
 
@@ -28,6 +29,9 @@ type Props = {
   error: string
   resourceType: string
   resourceId: string
+  environment?: string
+  projectId: string
+  resourceItems?: ProjectItem[]
   onRetry: () => void
   dataSource?: 'live' | 'cache'
   cachedAt?: string
@@ -95,6 +99,9 @@ export default function ResourceDetailPanel({
   error,
   resourceType,
   resourceId,
+  environment,
+  projectId,
+  resourceItems = [],
   onRetry,
   dataSource = 'live',
   cachedAt = '',
@@ -257,6 +264,15 @@ export default function ResourceDetailPanel({
               {infoEntries.map(([key, value]) => {
                 const formatted = formatValue(value, key)
                 if (formatted === '—' && key === 'tags') return null
+                if (typeof value === 'string' && key === 'project_id') {
+                  return <div key={key}><dt>{humanize(key)}</dt><dd><Flow360IdLink environment={environment} projectId={value} /></dd></div>
+                }
+                if (typeof value === 'string' && key === 'parent_id') {
+                  const parent = resourceItems.find((item) => item.id === value)
+                  if (parent) {
+                    return <div key={key}><dt>{humanize(key)}</dt><dd><Flow360IdLink environment={environment} projectId={projectId} resourceId={parent.id} resourceType={parent.type} /></dd></div>
+                  }
+                }
                 return <div key={key}><dt>{humanize(key)}</dt><dd>{formatted}</dd></div>
               })}
             </dl>

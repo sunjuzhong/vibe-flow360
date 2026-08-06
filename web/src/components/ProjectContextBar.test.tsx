@@ -9,7 +9,8 @@ describe('ProjectContextBar', () => {
         resourceName="Wing"
         resourceType="Geometry"
         resourceId="geo-1"
-        resourceUrl="https://example.com/geo-1"
+        environment="dev"
+        projectId="project-1"
         status="Processed"
         stages={['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']}
         selectedStage={0}
@@ -21,6 +22,7 @@ describe('ProjectContextBar', () => {
     expect(markup.match(/<strong>Wing<\/strong>/g)).toHaveLength(1)
     expect(markup).toContain('aria-label="Simulation stages"')
     expect(markup).toContain('Draft controls')
+    expect(markup).toContain('flow360.dev-simulation.cloud/workbench/project-1?id=geo-1&amp;type=Geometry')
     expect(markup).not.toContain('aria-label="Open resource details"')
   })
 })
