@@ -40,8 +40,8 @@ func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
 		"grouped_faces":[[
 			{"name":"inlet","private_attribute_id":"inlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
 			{"name":"outlet","private_attribute_id":"outlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
-			{"name":"spanwise_periodic_max","private_attribute_id":"periodic-max","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
-			{"name":"spanwise_periodic_min","private_attribute_id":"periodic-min","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"spanwise_symmetry_max","private_attribute_id":"symmetry-max","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"spanwise_symmetry_min","private_attribute_id":"symmetry-min","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
 			{"name":"cylinder_wall","private_attribute_id":"wall","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}
 		]],
 		"ghost_entities":[{"name":"provider-helper","private_attribute_id":"provider-helper","private_attribute_entity_type_name":"GhostCircularPlane"}]
@@ -64,13 +64,13 @@ func TestCompleteSimulationPatchMapsNamedBoundarySemantics(t *testing.T) {
 	if len(freestreamEntities) != 3 {
 		t.Fatalf("expected inherited farfield plus inlet/outlet, got %#v", freestreamEntities)
 	}
-	periodic := byType["Periodic"]
-	pairs := periodic["surface_pairs"].(map[string]any)["items"].([]any)
-	if len(pairs) != 1 || len(pairs[0].(map[string]any)["pair"].([]any)) != 2 {
-		t.Fatalf("periodic pair was not generated: %#v", periodic)
+	symmetry := byType["SymmetryPlane"]
+	symmetryEntities := storedBoundaryEntities(symmetry)
+	if len(symmetryEntities) != 2 {
+		t.Fatalf("explicit spanwise symmetry faces were not assigned: %#v", symmetry)
 	}
-	if _, exists := byType["SymmetryPlane"]; exists {
-		t.Fatal("provider ghost names must not synthesize boundary models before Flow360 preflight")
+	if _, exists := byType["Periodic"]; exists {
+		t.Fatal("AI Create must not infer a periodic boundary before VolumeMesh conformity is established")
 	}
 }
 
@@ -82,8 +82,8 @@ func TestCompleteSimulationPatchDoesNotInterpretProviderGhostNames(t *testing.T)
 	],"private_attribute_asset_cache":{"project_entity_info":{
 		"face_group_tag":"faceId",
 		"grouped_faces":[[
-			{"name":"spanwise_periodic_min","private_attribute_id":"periodic-min","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
-			{"name":"spanwise_periodic_max","private_attribute_id":"periodic-max","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"inlet","private_attribute_id":"inlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
+			{"name":"outlet","private_attribute_id":"outlet","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"},
 			{"name":"cylinder_wall","private_attribute_id":"wall","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}
 		]],
 		"ghost_entities":[

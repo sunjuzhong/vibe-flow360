@@ -1129,6 +1129,40 @@ func TestDeterministicRemoteRecoveryCanAutoAdvance(t *testing.T) {
 	}
 }
 
+func TestSelectRecoveryProposalIsIdempotentAfterAutomaticClose(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store, err := agent.NewInterventionStore(filepath.Join(t.TempDir(), "interventions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervention, err := agent.NewIntervention(agent.InterventionInput{
+		ProjectID: "prj-1", PlanID: "plan-1", Type: agent.TypeRemoteError, Reason: "remote failure",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervention.Proposals = []agent.Proposal{{ID: "repair-1", Name: "repair"}}
+	intervention.Validation = &agent.ValidationResult{Valid: true}
+	if err := intervention.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(intervention); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{interventions: store, interventionEngine: agent.NewEngine(store, nil, nil)}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/interventions/"+intervention.ID+"/select", bytes.NewBufferString(`{"proposal_id":"repair-1"}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "intervention_id", Value: intervention.ID}}
+
+	app.selectInterventionProposal(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"state":"closed"`) {
+		t.Fatalf("a stale proposal click should return the completed recovery, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestEmptyPreflightSchemaDoesNotConsumeCompiledPatchAsFormValues(t *testing.T) {
 	if schemaHasEditableProperties(json.RawMessage(`{"type":"object","properties":{}}`)) {
 		t.Fatal("empty preflight schema must not discard a compiled SimulationParams patch")

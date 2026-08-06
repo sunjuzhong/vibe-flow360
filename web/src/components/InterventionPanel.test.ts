@@ -38,6 +38,22 @@ describe('chooseIntervention', () => {
     expect(chooseIntervention(items, 'plan-a', 'intv-b')?.id).toBe('intv-b')
   })
 
+  it('leaves a closed history item for the active recovery of the same plan', () => {
+    const items = [
+      intervention('intv-closed', 'plan-a', 'closed'),
+      intervention('intv-active', 'plan-a', 'diagnosis'),
+    ]
+    expect(chooseIntervention(items, 'plan-a', 'intv-closed')?.id).toBe('intv-active')
+  })
+
+  it('keeps explicitly selected history when another plan is recovering', () => {
+    const items = [
+      intervention('intv-closed', 'plan-a', 'closed'),
+      intervention('intv-active', 'plan-b', 'diagnosis'),
+    ]
+    expect(chooseIntervention(items, undefined, 'intv-closed')?.id).toBe('intv-closed')
+  })
+
   it('prefers an active recovery over resolved history', () => {
     const items = [
       intervention('intv-resolved', 'plan-a', 'resolved'),

@@ -463,7 +463,7 @@ func TestAICreateProjectContinuesThroughStructuredClarificationRounds(t *testing
 	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		requests = append(requests, string(body))
-		content := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"Cylinder diameter","description":"Reference diameter","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"Domain model","type":"select","required":true,"options":[{"value":"periodic","label":"Thin periodic"},{"value":"finite","label":"Finite span"}]}]}`
+		content := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"Cylinder diameter","description":"Reference diameter","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"Domain model","type":"select","required":true,"options":[{"value":"symmetry","label":"Spanwise symmetry"},{"value":"finite","label":"Finite span"}]}]}`
 		if len(requests) == 2 {
 			content = `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"velocity_m_s","label":"Freestream velocity","type":"number","required":true,"unit":"m/s","min":0.01,"max":1000}]}`
 		}
@@ -492,7 +492,7 @@ func TestAICreateProjectContinuesThroughStructuredClarificationRounds(t *testing
 
 	secondBody, _ := json.Marshal(aiCreateRequest{
 		Intent: "Create cylinder flow", FolderID: "folder-1", SessionID: firstResponse.SessionID,
-		Answers: map[string]any{"diameter_m": 0.5, "domain_model": "periodic"},
+		Answers: map[string]any{"diameter_m": 0.5, "domain_model": "symmetry"},
 	})
 	second := httptest.NewRecorder()
 	secondContext, _ := gin.CreateTestContext(second)
@@ -509,7 +509,7 @@ func TestAICreateProjectContinuesThroughStructuredClarificationRounds(t *testing
 	if secondResponse.Round != 2 || len(secondResponse.Fields) != 1 || secondResponse.Fields[0].ID != "velocity_m_s" {
 		t.Fatalf("unexpected second clarification: %#v", secondResponse)
 	}
-	if len(requests) != 2 || !strings.Contains(requests[1], `\"diameter_m\":0.5`) || !strings.Contains(requests[1], `\"domain_model\":\"periodic\"`) {
+	if len(requests) != 2 || !strings.Contains(requests[1], `\"diameter_m\":0.5`) || !strings.Contains(requests[1], `\"domain_model\":\"symmetry\"`) {
 		t.Fatalf("prior answers were not sent to the agent: %s", requests[1])
 	}
 }

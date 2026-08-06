@@ -144,14 +144,51 @@ func (s *Server) selectInterventionProposal(c *gin.Context) {
 		return
 	}
 
-	intervention, err := s.interventionEngine.SelectProposalAndAdvance(
-		c.Param("intervention_id"),
-		req.ProposalID,
-		req.Feedback,
-	)
+	intervention, err := s.interventionEngine.Get(c.Param("intervention_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
+	}
+	switch intervention.State {
+	case agent.InterventionProposal:
+		intervention, err = s.interventionEngine.SelectProposalAndAdvance(
+			intervention.ID, req.ProposalID, req.Feedback,
+		)
+	case agent.InterventionUserFeedback, agent.InterventionPatchCompile, agent.InterventionValidation:
+		if intervention.SelectedProposal == nil || intervention.SelectedProposal.ID != req.ProposalID {
+			err = errors.New("another recovery proposal is already being applied")
+		}
+	case agent.InterventionResolved, agent.InterventionClosed:
+		// Idempotent response for a stale browser click that raced the automatic
+		// recovery cycle. Never expose an invalid transition after the repair is
+		// already complete.
+		c.JSON(http.StatusOK, intervention)
+		return
+	default:
+		err = errors.New("the Agent is still preparing a repair proposal")
+	}
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	// Selecting a repair authorizes only a local Plan edit. Compile the patch,
+	// run the real Flow360 preflight, and return the reviewable repaired Plan in
+	// one operation; remote execution still requires the normal Plan approval.
+	if intervention.State == agent.InterventionUserFeedback {
+		intervention, err = s.interventionEngine.RunEngineStep(intervention.ID)
+	}
+	if err == nil && intervention.State == agent.InterventionPatchCompile {
+		intervention, err = s.interventionEngine.RunEngineStep(intervention.ID)
+	}
+	if err == nil && intervention.State == agent.InterventionValidation {
+		intervention, err = s.validateAndApplyIntervention(intervention.ID)
+	}
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "the Agent repair could not be compiled and validated: " + err.Error()})
+		return
+	}
+	if intervention.State == agent.InterventionObservation {
+		go s.runInterventionAutoCycle(intervention.ID)
 	}
 	c.JSON(http.StatusOK, intervention)
 }

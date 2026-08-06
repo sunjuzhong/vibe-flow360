@@ -339,6 +339,7 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 		"Preserve schema-valid infrastructure and entity assignments",
 		"never ask the user to perform a schema-mechanical correction",
 		"Do not turn every unspecified preference into a blocking question",
+		"reviewed conformal VolumeMesh with identical node counts",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("plan assist prompt is missing %q: %s", expected, prompt)

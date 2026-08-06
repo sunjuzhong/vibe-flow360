@@ -142,7 +142,7 @@ The deterministic CAD DSL supports:
 - union/cut/intersect params: left, right
 - fillet params: source, radius
 
-Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, and %TORUS. Design the final exact BREP for Flow360, not merely for CAD validity: every face of every result must be selected exactly once, with no unnamed faces and no selector overlap. Give every result a descriptive body name and use stable semantic boundary names such as inlet, outlet, cylinder_wall, symmetry, blade, or farfield. Periodic faces must be emitted as complementary pairs sharing a base name and ending in _min and _max, for example spanwise_periodic_min and spanwise_periodic_max. A selector may match multiple faces; they are exported with deterministic numeric suffixes. Ensure obstacle cuts fully span the intended fluid domain where the requested topology requires that; do not leave accidental internal caps, partial wall coverage, or coincident unlabelled faces.
+Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, and %TORUS. Design the final exact BREP for Flow360, not merely for CAD validity: every face of every result must be selected exactly once, with no unnamed faces and no selector overlap. Give every result a descriptive body name and use stable semantic boundary names such as inlet, outlet, cylinder_wall, spanwise_symmetry_min, spanwise_symmetry_max, blade, or farfield. Geometry-to-Case AI Create MUST NOT emit periodic face names or offer a periodic-domain choice: Flow360 periodic boundaries require a conformal paired VolumeMesh with identical node counts, which exact CAD validation and SimulationParams preflight cannot prove. Use symmetry planes for a safe finite-span baseline; periodic studies must start from a reviewed compatible VolumeMesh. A selector may match multiple faces; they are exported with deterministic numeric suffixes. Ensure obstacle cuts fully span the intended fluid domain where the requested topology requires that; do not leave accidental internal caps, partial wall coverage, or coincident unlabelled faces.
 
 All dimensions are finite metres and all angles are degrees. Use multiple operations, bodies, and booleans when the requested geometry requires them. Every result must contain one or more closed solids suitable for exact STEP export. Do not emit Python, file paths, shell commands, STL, meshes, external URLs, or unsupported operations.
 
@@ -376,6 +376,9 @@ func parseClarificationFields(raw json.RawMessage) ([]ClarificationField, error)
 				if option.Value == "" || option.Label == "" || optionValues[option.Value] {
 					return nil, fmt.Errorf("select field %s contains an invalid option", field.ID)
 				}
+				if strings.Contains(strings.ToLower(option.Value+" "+option.Label), "periodic") {
+					return nil, fmt.Errorf("select field %s offers unsupported periodic Geometry-to-Case generation; use a symmetry or finite-span baseline", field.ID)
+				}
 				optionValues[option.Value] = true
 			}
 		default:
@@ -451,43 +454,18 @@ func ValidateFlow360GeometryContract(geometry Geometry) error {
 	if len(geometry.Results) == 0 {
 		return &GenerationError{Kind: GenerationGeometryFailure, Err: errors.New("Flow360-ready CAD requires named results with semantic face assignments; legacy unnamed result is not sufficient")}
 	}
-	periodic := map[string]map[string]bool{}
 	for _, result := range geometry.Results {
 		if len(result.Faces) == 0 {
 			return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("Flow360-ready result %s has no semantic face assignments", result.Name)}
 		}
 		for _, face := range result.Faces {
 			name := strings.ToLower(face.Name)
-			if !strings.Contains(name, "periodic") {
-				continue
+			if strings.Contains(name, "periodic") {
+				return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("periodic boundary %s is unsafe for autonomous Geometry-to-Case generation because paired VolumeMesh node conformity is not established; use spanwise symmetry boundaries", face.Name)}
 			}
-			base, side, ok := periodicBoundaryPair(name)
-			if !ok {
-				return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("periodic boundary %s must end in _min and _max as a stable complementary pair", face.Name)}
-			}
-			if periodic[base] == nil {
-				periodic[base] = map[string]bool{}
-			}
-			periodic[base][side] = true
-		}
-	}
-	for base, sides := range periodic {
-		if !sides["min"] || !sides["max"] || len(sides) != 2 {
-			return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("periodic boundary pair %s must contain exactly one _min and one _max assignment", base)}
 		}
 	}
 	return nil
-}
-
-func periodicBoundaryPair(name string) (string, string, bool) {
-	for _, suffix := range []string{"_min", "-min", "_max", "-max"} {
-		if strings.HasSuffix(name, suffix) {
-			side := strings.TrimPrefix(suffix, "_")
-			side = strings.TrimPrefix(side, "-")
-			return strings.TrimSuffix(name, suffix), side, true
-		}
-	}
-	return "", "", false
 }
 
 func validateOperation(operation Operation, available map[string]bool) error {

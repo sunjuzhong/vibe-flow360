@@ -997,6 +997,11 @@ export default function ProjectPage() {
           projectId={project.id}
           resourceId={selected?.id}
           planId={interventionPlanId}
+          onOpenPlan={(planId) => {
+            setInterventionOpen(false)
+            setInitialPlanId(planId)
+            setPlanOpen(true)
+          }}
         />
       )}
     </div>

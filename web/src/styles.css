@@ -3911,6 +3911,14 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .intervention-overlay .proposal-fields { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; }
 .intervention-overlay .field-chip { padding: 3px 6px; border-radius: 999px; background: #eef3de; font-size: 8px; }
 .intervention-overlay textarea { box-sizing: border-box; width: 100%; min-height: 90px; }
+.intervention-auto-progress,.intervention-repaired-plan { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; padding: 12px; border: 1px solid #d8dfc5; border-radius: 9px; background: #f4f7ea; color: #53651f; }
+.intervention-auto-progress > svg,.intervention-repaired-plan > svg { flex: 0 0 auto; margin-top: 1px; }
+.intervention-auto-progress > span,.intervention-repaired-plan > span { min-width: 0; flex: 1; }
+.intervention-auto-progress strong,.intervention-auto-progress small,.intervention-repaired-plan strong,.intervention-repaired-plan small { display: block; }
+.intervention-auto-progress strong,.intervention-repaired-plan strong { font-size: 10px; }
+.intervention-auto-progress small,.intervention-repaired-plan small { margin-top: 3px; color: #747b69; font-size: 9px; line-height: 1.5; }
+.intervention-repaired-plan { align-items: center; border-color: #c8d99e; background: #edf4dc; }
+.intervention-repaired-plan button { flex: 0 0 auto; min-height: 32px; padding: 0 11px; border: 1px solid #a6c047; border-radius: 7px; background: #b7d74f; color: #202719; font-size: 9px; font-weight: 700; cursor: pointer; }
 
 .state-observation { color: #7b6225; background: #f2e8ca; }
 .state-diagnosis { color: #3a6b82; background: #e0ecf3; }

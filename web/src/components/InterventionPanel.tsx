@@ -1,5 +1,5 @@
-import { AlertCircle, ChevronRight, Loader2, Sparkles, X, CheckCircle2, AlertTriangle, RefreshCw, Send } from 'lucide-react'
-import { FormEvent, useEffect, useState } from 'react'
+import { AlertCircle, Loader2, Sparkles, X, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { api, type Intervention } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
@@ -44,12 +44,16 @@ export function chooseIntervention(
   currentId?: string,
 ): Intervention | null {
   if (!interventions?.length) return null
+  const active = interventions.filter((item) => item.state !== 'resolved' && item.state !== 'closed')
+  const current = currentId ? interventions.find((item) => item.id === currentId) : undefined
   if (currentId) {
-    const current = interventions.find((item) => item.id === currentId)
-    if (current) return current
+    if (current && current.state !== 'resolved' && current.state !== 'closed') return current
   }
-  return interventions.find((item) => item.plan_id === planId)
-    ?? interventions.find((item) => item.state !== 'resolved' && item.state !== 'closed')
+  const relevantPlanId = planId || current?.plan_id
+  return active.find((item) => item.plan_id === relevantPlanId)
+    ?? current
+    ?? active[0]
+    ?? interventions.find((item) => item.plan_id === planId)
     ?? interventions[0]
     ?? null
 }
@@ -60,16 +64,17 @@ export default function InterventionPanel({
   projectId,
   resourceId,
   planId,
+  onOpenPlan,
 }: {
   open: boolean
   onClose: () => void
   projectId: string
   resourceId?: string
   planId?: string
+  onOpenPlan: (planId: string) => void
 }) {
   const [interventions, setInterventions] = useState<Intervention[]>([])
   const [selected, setSelected] = useState<Intervention | null>(null)
-  const [feedback, setFeedback] = useState('')
   const [loading, setLoading] = useState(false)
   const [action, setAction] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -98,40 +103,6 @@ export default function InterventionPanel({
     setClarificationOpen(Boolean(selected?.state === 'missing_input' && selected.pending_questions?.length))
   }, [selected?.id, selected?.state])
 
-  const handleDiagnose = async () => {
-    if (!selected || loading) return
-    setLoading(true)
-    setAction('diagnose')
-    setError('')
-    try {
-      const result = await api.diagnoseIntervention(selected.id)
-      setSelected(result)
-      updateIntervention(result)
-    } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
-    } finally {
-      setLoading(false)
-      setAction(null)
-    }
-  }
-
-  const handleGenerateProposals = async () => {
-    if (!selected || loading) return
-    setLoading(true)
-    setAction('proposals')
-    setError('')
-    try {
-      const result = await api.generateInterventionProposals(selected.id)
-      setSelected(result)
-      updateIntervention(result)
-    } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
-    } finally {
-      setLoading(false)
-      setAction(null)
-    }
-  }
-
   const handleClarification = async (answers: ClarificationAnswers) => {
     if (!selected || loading) return
     setLoading(true)
@@ -156,43 +127,7 @@ export default function InterventionPanel({
     setAction('select')
     setError('')
     try {
-      const result = await api.selectInterventionProposal(selected.id, proposalId, feedback)
-      setSelected(result)
-      updateIntervention(result)
-      setFeedback('')
-    } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
-    } finally {
-      setLoading(false)
-      setAction(null)
-    }
-  }
-
-  const handleCompile = async () => {
-    if (!selected || loading) return
-    setLoading(true)
-    setAction('compile')
-    setError('')
-    try {
-      const result = await api.compileInterventionPatch(selected.id, feedback)
-      setSelected(result)
-      updateIntervention(result)
-      setFeedback('')
-    } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
-    } finally {
-      setLoading(false)
-      setAction(null)
-    }
-  }
-
-  const handleValidate = async () => {
-    if (!selected || loading) return
-    setLoading(true)
-    setAction('validate')
-    setError('')
-    try {
-      const result = await api.validateIntervention(selected.id)
+      const result = await api.selectInterventionProposal(selected.id, proposalId)
       setSelected(result)
       updateIntervention(result)
       window.dispatchEvent(new Event('vibesim:plans-refresh'))
@@ -221,10 +156,6 @@ export default function InterventionPanel({
 
   const updateIntervention = (updated: Intervention) => {
     setInterventions((current) => current.map((item) => item.id === updated.id ? updated : item))
-  }
-
-  const onFeedbackSubmit = (event: FormEvent) => {
-    event.preventDefault()
   }
 
   if (!open) return null
@@ -370,15 +301,17 @@ export default function InterventionPanel({
                               ))}
                             </div>
                           )}
-                          <button
-                            className="primary"
-                            disabled={loading}
-                            onClick={() => handleSelectProposal(proposal.id)}
-                          >
-                            {loading && action === 'select'
-                              ? <><Loader2 size={14} className="spin" /> Selecting...</>
-                              : <><ChevronRight size={14} /> Select this proposal</>}
-                          </button>
+                          {selected.state === 'proposal' && (
+                            <button
+                              className="primary"
+                              disabled={loading}
+                              onClick={() => handleSelectProposal(proposal.id)}
+                            >
+                              {loading && action === 'select'
+                                ? <><Loader2 size={14} className="spin" /> Applying and validating…</>
+                                : <><Sparkles size={14} /> Apply this repair to Plan</>}
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -393,19 +326,6 @@ export default function InterventionPanel({
                         <li key={index}>{req}</li>
                       ))}
                     </ul>
-                  </section>
-                )}
-
-                {selected.state === 'user_feedback' && (
-                  <section className="intervention-section">
-                    <h3>Your Feedback</h3>
-                    <form onSubmit={onFeedbackSubmit}>
-                      <textarea
-                        value={feedback}
-                        onChange={(event) => setFeedback(event.target.value)}
-                        placeholder="Add feedback or modification requests..."
-                      />
-                    </form>
                   </section>
                 )}
 
@@ -435,58 +355,28 @@ export default function InterventionPanel({
 
                 {error && <div className="error-message"><AlertCircle size={14} />{error}</div>}
 
+                {['observation', 'diagnosis', 'user_feedback', 'patch_compile', 'validation'].includes(selected.state) && (
+                  <div className="intervention-auto-progress" role="status">
+                    <Loader2 size={15} className="spin" />
+                    <span>
+                      <strong>Agent Recovery is working automatically</strong>
+                      <small>Diagnosing the failure, preparing a parameter patch, and running Flow360 preflight. No action is required from you yet.</small>
+                    </span>
+                  </div>
+                )}
+
+                {(selected.state === 'resolved' || selected.state === 'closed') && selected.validation?.valid && selected.plan_id && (
+                  <div className="intervention-repaired-plan">
+                    <CheckCircle2 size={16} />
+                    <span><strong>Repair applied and locally validated</strong><small>Review the exact parameter diff before approving another Flow360 run.</small></span>
+                    <button className="primary" onClick={() => onOpenPlan(selected.plan_id!)}>Review repaired Plan</button>
+                  </div>
+                )}
+
                 <div className="intervention-actions">
-                  {selected.state === 'observation' && (
-                    <button
-                      className="primary"
-                      disabled={loading}
-                      onClick={() => void handleDiagnose()}
-                    >
-                      {loading && action === 'diagnose'
-                        ? <><Loader2 size={14} className="spin" /> Diagnosing...</>
-                        : <><Sparkles size={14} /> Start Diagnosis</>}
-                    </button>
-                  )}
-
-                  {selected.state === 'diagnosis' && (
-                    <button
-                      className="primary"
-                      disabled={loading}
-                      onClick={() => void handleGenerateProposals()}
-                    >
-                      {loading && action === 'proposals'
-                        ? <><Loader2 size={14} className="spin" /> Generating proposals...</>
-                        : <><Sparkles size={14} /> Generate Fix Proposals</>}
-                    </button>
-                  )}
-
                   {selected.state === 'missing_input' && (
                     <button className="primary" disabled={loading} onClick={() => setClarificationOpen(true)}>
                       <Sparkles size={14} /> Answer engineering questions
-                    </button>
-                  )}
-
-                  {selected.state === 'user_feedback' && selected.selected_proposal && (
-                    <button
-                      className="primary"
-                      disabled={loading}
-                      onClick={() => void handleCompile()}
-                    >
-                      {loading && action === 'compile'
-                        ? <><Loader2 size={14} className="spin" /> Compiling patch...</>
-                        : <><Send size={14} /> Compile & Validate</>}
-                    </button>
-                  )}
-
-                  {selected.state === 'patch_compile' && (
-                    <button
-                      className="primary"
-                      disabled={loading}
-                      onClick={() => void handleValidate()}
-                    >
-                      {loading && action === 'validate'
-                        ? <><Loader2 size={14} className="spin" /> Validating...</>
-                        : <><RefreshCw size={14} /> Run Validation</>}
                     </button>
                   )}
 
@@ -499,7 +389,7 @@ export default function InterventionPanel({
                     </button>
                   )}
 
-                  {(selected.state === 'user_feedback' || selected.state === 'proposal') && (
+                  {selected.state === 'proposal' && (
                     <button onClick={() => void handleClose()} disabled={loading}>
                       Dismiss
                     </button>

@@ -97,7 +97,7 @@ func ValidateImportedGeometryContract(baseline json.RawMessage, geometry Geometr
 
 // CompleteSimulationPatch resolves named CAD faces into schema-supported
 // boundary models. Explicit semantic names produced by the CAD Agent (wall,
-// inlet/outlet/farfield, periodic) take precedence; otherwise a physical CAD
+// inlet/outlet/farfield, symmetry) take precedence; otherwise a physical CAD
 // surface retains the safe external-body Wall fallback. Remaining imported or
 // generated entities are deliberately left to the installed Flow360 schema and
 // preflight-driven parameter Agent; this layer must not infer boundary models
@@ -122,6 +122,7 @@ func CompleteSimulationPatch(baseline json.RawMessage, desired map[string]any) (
 
 	foundWall := false
 	foundFreestream := false
+	foundSymmetry := false
 	for _, item := range models {
 		model, ok := item.(map[string]any)
 		if !ok {
@@ -135,6 +136,9 @@ func CompleteSimulationPatch(baseline json.RawMessage, desired map[string]any) (
 			existing := storedBoundaryEntities(model)
 			setBoundaryEntities(model, append(existing, layout.Freestream...))
 			foundFreestream = true
+		case strings.EqualFold(stringValue(model["type"]), "SymmetryPlane"):
+			setBoundaryEntities(model, layout.Symmetry)
+			foundSymmetry = true
 		}
 	}
 	if !foundWall {
@@ -144,6 +148,12 @@ func CompleteSimulationPatch(baseline json.RawMessage, desired map[string]any) (
 		models = append(models, map[string]any{
 			"type": "Freestream", "name": "Freestream",
 			"surfaces": map[string]any{"stored_entities": layout.Freestream},
+		})
+	}
+	if len(layout.Symmetry) > 0 && !foundSymmetry {
+		models = append(models, map[string]any{
+			"type": "SymmetryPlane", "name": "Spanwise symmetry",
+			"surfaces": map[string]any{"stored_entities": layout.Symmetry},
 		})
 	}
 	if len(layout.Periodic) != 0 {
@@ -170,6 +180,7 @@ type boundaryLayout struct {
 	Wall       []any
 	Freestream []any
 	Periodic   []any
+	Symmetry   []any
 }
 
 func geometryBoundaryLayout(document map[string]any) (boundaryLayout, error) {
@@ -207,13 +218,15 @@ func geometryBoundaryLayout(document map[string]any) (boundaryLayout, error) {
 		switch {
 		case strings.Contains(name, "periodic"):
 			layout.Periodic = append(layout.Periodic, concrete...)
+		case containsAny(name, "symmetry", "symmetryplane", "slip"):
+			layout.Symmetry = append(layout.Symmetry, concrete...)
 		case containsAny(name, "inlet", "outlet", "farfield", "freestream", "outer"):
 			layout.Freestream = append(layout.Freestream, concrete...)
 		default:
 			layout.Wall = append(layout.Wall, concrete...)
 		}
 	}
-	if len(layout.Wall)+len(layout.Freestream)+len(layout.Periodic) == 0 {
+	if len(layout.Wall)+len(layout.Freestream)+len(layout.Periodic)+len(layout.Symmetry) == 0 {
 		return boundaryLayout{}, errors.New("Flow360 Geometry did not expose named CAD faces for boundary assignment")
 	}
 	return layout, nil

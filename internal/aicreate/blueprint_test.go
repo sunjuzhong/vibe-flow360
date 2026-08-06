@@ -2,6 +2,7 @@ package aicreate
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -83,7 +84,7 @@ func TestDesignReturnsAgentQuestionsForUnsupportedShape(t *testing.T) {
 }
 
 func TestDesignReturnsStructuredClarificationFields(t *testing.T) {
-	raw := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"圆柱直径","description":"用于定义几何和雷诺数","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"计算域类型","type":"select","required":true,"options":[{"value":"periodic","label":"薄周期域"},{"value":"finite","label":"有限跨度"}]}]}`
+	raw := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"圆柱直径","description":"用于定义几何和雷诺数","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"计算域类型","type":"select","required":true,"options":[{"value":"symmetry","label":"展向对称面"},{"value":"finite","label":"有限跨度"}]}]}`
 	_, err := Design(context.Background(), staticCompleter(raw), "创建圆柱绕流")
 	missing, ok := err.(*MissingInputError)
 	if !ok {
@@ -195,7 +196,7 @@ func TestDesignRejectsUnknownFaceSelector(t *testing.T) {
 	}
 }
 
-func TestValidateFlow360GeometryContractRequiresNamedFacesAndPeriodicPairs(t *testing.T) {
+func TestValidateFlow360GeometryContractRejectsPeriodicGeometryToCase(t *testing.T) {
 	legacy := Geometry{Result: "body"}
 	if err := ValidateFlow360GeometryContract(legacy); err == nil {
 		t.Fatal("legacy unnamed result must not enter Flow360 AI Create")
@@ -203,11 +204,18 @@ func TestValidateFlow360GeometryContractRequiresNamedFacesAndPeriodicPairs(t *te
 	geometry := Geometry{Results: []GeometryResult{{Name: "fluid", Faces: []FaceLabel{
 		{Name: "spanwise_periodic_min", Selector: "<Z"},
 	}}}}
-	if err := ValidateFlow360GeometryContract(geometry); err == nil || !strings.Contains(err.Error(), "exactly one _min and one _max") {
-		t.Fatalf("unpaired periodic boundary was not rejected: %v", err)
+	if err := ValidateFlow360GeometryContract(geometry); err == nil || !strings.Contains(err.Error(), "node conformity") {
+		t.Fatalf("periodic boundary without a reviewed conformal VolumeMesh was not rejected: %v", err)
 	}
 	geometry.Results[0].Faces = append(geometry.Results[0].Faces, FaceLabel{Name: "spanwise_periodic_max", Selector: ">Z"})
-	if err := ValidateFlow360GeometryContract(geometry); err != nil {
-		t.Fatalf("valid periodic pair was rejected: %v", err)
+	if err := ValidateFlow360GeometryContract(geometry); err == nil {
+		t.Fatal("CAD pairing alone must not claim that the generated VolumeMesh will have matching periodic nodes")
+	}
+}
+
+func TestClarificationRejectsPeriodicGeometryToCaseChoice(t *testing.T) {
+	raw := json.RawMessage(`[{"id":"domain","label":"Domain","type":"select","required":true,"options":[{"value":"periodic","label":"Thin periodic"},{"value":"finite","label":"Finite span"}]}]`)
+	if _, err := parseClarificationFields(raw); err == nil || !strings.Contains(err.Error(), "unsupported periodic") {
+		t.Fatalf("periodic option should be repaired before reaching the user: %v", err)
 	}
 }
