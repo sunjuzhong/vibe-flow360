@@ -2,6 +2,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, CircleHelp, Loader2, PauseCircle
 import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   api,
+  type AICreateClarification,
   type AICreateClarificationField,
   type AICreateProgress,
   type AICreateResult,
@@ -30,7 +31,7 @@ export function aiCreateProgressStageState(progress: AICreateProgress, index: nu
   if (progress.status === 'completed' || index < progress.stage) return 'complete'
   if (index > progress.stage) return 'pending'
   if (progress.status === 'failed') return 'failed'
-  if (progress.status === 'needs_input' || progress.status === 'needs_attention') return 'paused'
+  if (progress.status === 'recovering' || progress.status === 'needs_input' || progress.status === 'needs_attention') return 'paused'
   return 'active'
 }
 
@@ -70,6 +71,16 @@ export function AICreateProgressView({ progress }: { progress: AICreateProgress 
 function newAICreateProgressID() {
   const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `aip-${random}`
+}
+
+const AI_CREATE_RECONNECT_ATTEMPTS = 900
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+export function errorMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 type TranscriptItem = { role: 'user' | 'agent'; text: string }
@@ -212,7 +223,7 @@ export default function AICreateModal({
     setBusy(true)
     setError('')
     setProgress(null)
-    const progressID = newAICreateProgressID()
+    let progressID = newAICreateProgressID()
     let polling = true
     const refreshProgress = async () => {
       try {
@@ -222,10 +233,32 @@ export default function AICreateModal({
         // The POST registers the request ID; a 404 before that point is expected.
       }
     }
-    const timer = window.setInterval(() => { void refreshProgress() }, 800)
-    try {
-      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers, progressID)
-      await refreshProgress()
+
+    const recoverDisconnectedRequest = async (): Promise<AICreateResult | AICreateClarification> => {
+      let resumed = false
+      for (let attempt = 0; attempt < AI_CREATE_RECONNECT_ATTEMPTS; attempt += 1) {
+        await delay(attempt < 10 ? 500 : 1_000)
+        try {
+          const current = await api.aiCreateProgress(progressID)
+          if (polling) setProgress(current)
+          if (current.response) return current.response
+          if (current.status === 'recovering' && current.session_id && !resumed) {
+            resumed = true
+            const resumedProgressID = newAICreateProgressID()
+            progressID = resumedProgressID
+            const result = await api.aiCreate(intent.trim(), folder.id, current.session_id, undefined, resumedProgressID)
+            return result
+          }
+          if (current.status === 'failed') throw new Error(current.detail || 'AI Create stopped before it could finish.')
+        } catch (recoveryCause) {
+          const message = errorMessage(recoveryCause)
+          if (!/failed to fetch|progress is not available|network/i.test(message)) throw recoveryCause
+        }
+      }
+      throw new Error('The AI Create backend did not reconnect within 15 minutes. The existing Flow360 Project was preserved; reopen AI Create to resume it.')
+    }
+
+    const acceptResult = (result: AICreateResult | AICreateClarification) => {
       if ('status' in result) {
         setSessionId(result.session_id)
         setRound(result.round)
@@ -239,9 +272,26 @@ export default function AICreateModal({
         return
       }
       onCreated(result)
-    } catch (cause) {
+    }
+    const timer = window.setInterval(() => { void refreshProgress() }, 800)
+    try {
+      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers, progressID)
       await refreshProgress()
-      setError(String(cause).replace('Error: ', ''))
+      acceptResult(result)
+    } catch (cause) {
+      const message = errorMessage(cause)
+      if (/failed to fetch|network/i.test(message)) {
+        try {
+          const recovered = await recoverDisconnectedRequest()
+          acceptResult(recovered)
+          return
+        } catch (recoveryCause) {
+          setError(errorMessage(recoveryCause))
+        }
+      } else {
+        await refreshProgress()
+        setError(message)
+      }
     } finally {
       polling = false
       window.clearInterval(timer)

@@ -97,12 +97,14 @@ export type AICreateClarification = {
 
 export type AICreateProgress = {
   request_id: string
-  status: 'running' | 'needs_input' | 'needs_attention' | 'completed' | 'failed'
+  status: 'running' | 'recovering' | 'needs_input' | 'needs_attention' | 'completed' | 'failed'
   stage: number
   stages: string[]
   detail?: string
   project_id?: string
   resource_id?: string
+  session_id?: string
+  response?: AICreateResult | AICreateClarification
   started_at: string
   updated_at: string
 }

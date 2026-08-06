@@ -28,6 +28,7 @@ const maxAICreateClarificationRounds = 8
 const maxAICreateCADRepairAttempts = 3
 const aiCreateProjectReconcileAttempts = 15
 const aiCreateProjectReconcileDelay = 2 * time.Second
+const aiCreateOperationTimeout = 45 * time.Minute
 
 var flow360ProjectIDPattern = regexp.MustCompile(`\bprj-[A-Za-z0-9][A-Za-z0-9-]{7,}\b`)
 
@@ -132,11 +133,18 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 			}
 		}()
 	}
+	// Project creation is an idempotent, resumable backend operation. A browser
+	// navigation or a brief local service transition must not cancel it midway
+	// after Flow360 has already accepted the Geometry.
+	operationContext, cancelOperation := context.WithTimeout(context.WithoutCancel(c.Request.Context()), aiCreateOperationTimeout)
+	defer cancelOperation()
+	c.Request = c.Request.WithContext(operationContext)
 	session, err := s.advanceAICreateSession(request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	s.bindAICreateProgressSession(request.ProgressID, session.ID)
 	if session.Prepared != nil {
 		s.updateAICreateProgress(request.ProgressID, 3, "The existing Flow360 Project and Geometry are ready; loading the active parameter schemas.")
 		s.finishAICreateParameters(c, session, *session.Prepared)
@@ -149,11 +157,13 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		if errors.As(err, &missing) {
 			s.finishAICreateProgress(request.ProgressID, "needs_input", "The Geometry Agent needs an engineering decision before CAD generation can continue.", "", "")
 			s.setAICreateSessionPending(session.ID, missing.Fields)
-			c.JSON(http.StatusOK, aiCreateClarificationResponse{
+			response := aiCreateClarificationResponse{
 				Status: "needs_input", SessionID: session.ID,
 				Message: "I need a few engineering decisions before I can create reliable CAD and complete Flow360 parameters.",
 				Round:   len(session.Rounds) + 1, Fields: missing.Fields,
-			})
+			}
+			s.storeAICreateProgressResponse(request.ProgressID, response)
+			c.JSON(http.StatusOK, response)
 			return
 		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateDesignError(err)})
@@ -184,11 +194,13 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		if errors.As(err, &missing) {
 			s.finishAICreateProgress(request.ProgressID, "needs_input", "CAD self-repair needs an engineering decision before it can continue.", "", "")
 			s.setAICreateSessionPending(session.ID, missing.Fields)
-			c.JSON(http.StatusOK, aiCreateClarificationResponse{
+			response := aiCreateClarificationResponse{
 				Status: "needs_input", SessionID: session.ID,
 				Message: "The Agent found a CAD construction issue and needs an engineering decision to continue self-repair.",
 				Round:   len(session.Rounds) + 1, Fields: missing.Fields,
-			})
+			}
+			s.storeAICreateProgressResponse(request.ProgressID, response)
+			c.JSON(http.StatusOK, response)
 			return
 		}
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeAICreateGenerationError(err)})
@@ -326,11 +338,13 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		}
 		s.finishAICreateProgress(progressID, "needs_input", "The parameter Agent needs an engineering decision before it can complete the schema-valid setup.", prepared.ProjectID, prepared.RootResourceID)
 		s.setAICreateSessionPending(session.ID, fields)
-		c.JSON(http.StatusOK, aiCreateClarificationResponse{
+		response := aiCreateClarificationResponse{
 			Status: "needs_input", SessionID: session.ID,
 			Message: assisted.Action.Message,
 			Round:   len(session.Rounds) + 1, Fields: fields,
-		})
+		}
+		s.storeAICreateProgressResponse(progressID, response)
+		c.JSON(http.StatusOK, response)
 		return
 	}
 	if assisted.Proposal == nil || assisted.Preflight == nil {
@@ -392,11 +406,13 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 	stages := aiCreateCompletionStages(plan, draftID != "")
 	s.completeAICreateSession(session.ID)
 
-	c.JSON(http.StatusCreated, aiCreateResponse{
+	response := aiCreateResponse{
 		ProjectID: prepared.ProjectID, DraftID: draftID, RootResourceID: prepared.RootResourceID,
 		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
 		Stages: stages, Warnings: warnings,
-	})
+	}
+	s.storeAICreateProgressResponse(progressID, response)
+	c.JSON(http.StatusCreated, response)
 }
 
 func aiCreateConfirmedInputPayload(rounds []aicreate.ClarificationRound) json.RawMessage {
@@ -659,11 +675,15 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 			CreatedAt: now, UpdatedAt: now,
 		}
 		s.aiCreateSessions[session.ID] = session
+		s.persistAICreateSessionsLocked()
 		return session, nil
 	}
 	session, ok := s.aiCreateSessions[request.SessionID]
 	if !ok {
 		return aiCreateSession{}, errors.New("AI Create session expired; start again with the original request")
+	}
+	if session.Prepared != nil && len(session.Pending) == 0 {
+		return session, nil
 	}
 	if len(session.Rounds) >= maxAICreateClarificationRounds {
 		return aiCreateSession{}, errors.New("AI Create reached the clarification limit; revise the original request or attach exact CAD")
@@ -679,6 +699,7 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 	session.Pending = nil
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[session.ID] = session
+	s.persistAICreateSessionsLocked()
 	return session, nil
 }
 
@@ -692,6 +713,7 @@ func (s *Server) setAICreateSessionPending(sessionID string, fields []aicreate.C
 	session.Pending = append([]aicreate.ClarificationField(nil), fields...)
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
 }
 
 func (s *Server) setAICreateSessionPrepared(sessionID string, prepared aiCreatePrepared) {
@@ -707,6 +729,7 @@ func (s *Server) setAICreateSessionPrepared(sessionID string, prepared aiCreateP
 	session.Prepared = &copy
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
 }
 
 func aiCreateParameterClarificationFields(questions []agent.Question) []aicreate.ClarificationField {
@@ -755,6 +778,7 @@ func (s *Server) completeAICreateSession(sessionID string) {
 	s.aiCreateMu.Lock()
 	defer s.aiCreateMu.Unlock()
 	delete(s.aiCreateSessions, sessionID)
+	s.persistAICreateSessionsLocked()
 }
 
 func validateAICreateAnswers(fields []aicreate.ClarificationField, supplied map[string]any) (map[string]any, error) {

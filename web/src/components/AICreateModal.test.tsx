@@ -7,6 +7,7 @@ import AICreateModal, {
   aiCreateIntentCharacterCount,
   aiCreateIntentLimit,
   aiCreateProgressStageState,
+  errorMessage,
 } from './AICreateModal'
 
 describe('AICreateModal', () => {
@@ -39,6 +40,10 @@ describe('AICreateModal', () => {
       nearLimit: false,
       overLimit: true,
     })
+  })
+
+  it('shows the actual browser network error without mangling its type name', () => {
+    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Failed to fetch')
   })
 
   it('requires a destination folder', () => {
@@ -107,5 +112,19 @@ describe('AICreateModal', () => {
     expect(progress.stages.map((_, index) => aiCreateProgressStageState(progress, index))).toEqual([
       'complete', 'failed', 'pending',
     ])
+  })
+
+  it('pauses the real stage while a persisted backend request is recovering', () => {
+    const progress = {
+      request_id: 'aip-test-request-recovery',
+      status: 'recovering' as const,
+      stage: 4,
+      stages: ['Design CAD', 'Validate STEP', 'Create Project', 'Load schemas', 'Create setup', 'Create Draft'],
+      detail: 'The local backend restarted.',
+      session_id: 'aic-recovery-session',
+      started_at: '2026-08-05T00:00:00Z',
+      updated_at: '2026-08-05T00:00:01Z',
+    }
+    expect(aiCreateProgressStageState(progress, 4)).toBe('paused')
   })
 })

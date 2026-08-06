@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"strings"
@@ -23,15 +24,17 @@ var aiCreateProgressStages = []string{
 }
 
 type aiCreateProgress struct {
-	RequestID  string    `json:"request_id"`
-	Status     string    `json:"status"`
-	Stage      int       `json:"stage"`
-	Stages     []string  `json:"stages"`
-	Detail     string    `json:"detail,omitempty"`
-	ProjectID  string    `json:"project_id,omitempty"`
-	ResourceID string    `json:"resource_id,omitempty"`
-	StartedAt  time.Time `json:"started_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	RequestID  string          `json:"request_id"`
+	Status     string          `json:"status"`
+	Stage      int             `json:"stage"`
+	Stages     []string        `json:"stages"`
+	Detail     string          `json:"detail,omitempty"`
+	ProjectID  string          `json:"project_id,omitempty"`
+	ResourceID string          `json:"resource_id,omitempty"`
+	SessionID  string          `json:"session_id,omitempty"`
+	Response   json.RawMessage `json:"response,omitempty"`
+	StartedAt  time.Time       `json:"started_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
 func (s *Server) startAICreateProgress(requestID string) bool {
@@ -56,6 +59,7 @@ func (s *Server) startAICreateProgress(requestID string) bool {
 		Detail:    "The Agent is reading the request and deciding the exact CAD construction.",
 		StartedAt: now, UpdatedAt: now,
 	}
+	s.persistAICreateProgressLocked()
 	return true
 }
 
@@ -75,6 +79,7 @@ func (s *Server) updateAICreateProgress(requestID string, stage int, detail stri
 	item.Detail = strings.TrimSpace(detail)
 	item.UpdatedAt = time.Now().UTC()
 	s.aiCreateProgress[requestID] = item
+	s.persistAICreateProgressLocked()
 }
 
 func (s *Server) finishAICreateProgress(requestID, status, detail, projectID, resourceID string) {
@@ -100,6 +105,7 @@ func (s *Server) finishAICreateProgress(requestID, status, detail, projectID, re
 	}
 	item.UpdatedAt = time.Now().UTC()
 	s.aiCreateProgress[requestID] = item
+	s.persistAICreateProgressLocked()
 }
 
 func (s *Server) bindAICreateProgressResources(requestID, projectID, resourceID string) {
@@ -120,6 +126,43 @@ func (s *Server) bindAICreateProgressResources(requestID, projectID, resourceID 
 	}
 	item.UpdatedAt = time.Now().UTC()
 	s.aiCreateProgress[requestID] = item
+	s.persistAICreateProgressLocked()
+}
+
+func (s *Server) bindAICreateProgressSession(requestID, sessionID string) {
+	if requestID == "" || strings.TrimSpace(sessionID) == "" {
+		return
+	}
+	s.aiCreateProgressMu.Lock()
+	defer s.aiCreateProgressMu.Unlock()
+	item, ok := s.aiCreateProgress[requestID]
+	if !ok {
+		return
+	}
+	item.SessionID = strings.TrimSpace(sessionID)
+	item.UpdatedAt = time.Now().UTC()
+	s.aiCreateProgress[requestID] = item
+	s.persistAICreateProgressLocked()
+}
+
+func (s *Server) storeAICreateProgressResponse(requestID string, response any) {
+	if requestID == "" {
+		return
+	}
+	payload, err := json.Marshal(response)
+	if err != nil {
+		return
+	}
+	s.aiCreateProgressMu.Lock()
+	defer s.aiCreateProgressMu.Unlock()
+	item, ok := s.aiCreateProgress[requestID]
+	if !ok {
+		return
+	}
+	item.Response = payload
+	item.UpdatedAt = time.Now().UTC()
+	s.aiCreateProgress[requestID] = item
+	s.persistAICreateProgressLocked()
 }
 
 func (s *Server) aiCreateProgressStatus(c *gin.Context) {

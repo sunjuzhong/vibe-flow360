@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,5 +64,62 @@ func TestAICreateGeometryStateDetailUsesFlow360Payload(t *testing.T) {
 	}
 	if got := aiCreateGeometryStateDetail(json.RawMessage(`{}`)); got != "" {
 		t.Fatalf("empty Flow360 state must not synthesize progress: %q", got)
+	}
+}
+
+func TestAICreateProgressAndPreparedSessionSurviveBackendRestart(t *testing.T) {
+	root := t.TempDir()
+	requestID := "aip-restart-test-1234"
+	sessionID := "aic-restart-test-1234"
+	app := &Server{
+		workDir: root,
+		aiCreateSessions: map[string]aiCreateSession{
+			sessionID: {
+				ID: sessionID, Intent: "Create a benchmark", FolderID: "folder-1",
+				Prepared:  &aiCreatePrepared{ProjectID: "prj-restart", RootResourceID: "geo-restart"},
+				CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+			},
+		},
+	}
+	app.persistAICreateSessionsLocked()
+	if !app.startAICreateProgress(requestID) {
+		t.Fatal("expected valid progress ID")
+	}
+	app.bindAICreateProgressSession(requestID, sessionID)
+	app.bindAICreateProgressResources(requestID, "prj-restart", "geo-restart")
+	app.updateAICreateProgress(requestID, 4, "Generating setup")
+
+	restarted := &Server{workDir: root}
+	restarted.loadAICreateState()
+	progress := restarted.aiCreateProgress[requestID]
+	if progress.Status != "recovering" || progress.SessionID != sessionID || progress.ProjectID != "prj-restart" {
+		t.Fatalf("restart did not expose a resumable request: %#v", progress)
+	}
+	session, err := restarted.advanceAICreateSession(aiCreateRequest{SessionID: sessionID})
+	if err != nil || session.Prepared == nil || session.Prepared.RootResourceID != "geo-restart" {
+		t.Fatalf("prepared session could not resume after restart: %#v, %v", session, err)
+	}
+}
+
+func TestAICreateProgressPersistsTerminalResponseForDisconnectedBrowser(t *testing.T) {
+	root := t.TempDir()
+	requestID := "aip-response-test-1234"
+	app := &Server{workDir: root}
+	if !app.startAICreateProgress(requestID) {
+		t.Fatal("expected valid progress ID")
+	}
+	response := aiCreateClarificationResponse{Status: "needs_input", SessionID: "aic-response", Message: "Choose a target", Round: 1}
+	app.finishAICreateProgress(requestID, "needs_input", "Waiting for input", "prj-response", "geo-response")
+	app.storeAICreateProgressResponse(requestID, response)
+
+	restarted := &Server{workDir: root}
+	restarted.loadAICreateState()
+	progress := restarted.aiCreateProgress[requestID]
+	if progress.Status != "needs_input" || len(progress.Response) == 0 {
+		t.Fatalf("terminal response was not persisted: %#v", progress)
+	}
+	var restored aiCreateClarificationResponse
+	if err := json.Unmarshal(progress.Response, &restored); err != nil || restored.SessionID != response.SessionID {
+		t.Fatalf("unexpected restored response: %#v, %v", restored, err)
 	}
 }

@@ -13,12 +13,14 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -148,6 +150,7 @@ func New() *Server {
 		geometryJobSlots:   make(chan struct{}, 2),
 		annotationHandlers: NewAnnotationHandlers(annotationStore),
 	}
+	app.loadAICreateState()
 	app.routes()
 
 	go app.startImportCleanupLoop()
@@ -226,7 +229,25 @@ func (s *Server) startImportCleanupLoop() {
 }
 
 func (s *Server) Run(addr string) error {
-	return s.router.Run(addr)
+	listener, err := listenForServer(addr, time.Second)
+	if err != nil {
+		return err
+	}
+	return s.router.RunListener(listener)
+}
+
+func listenForServer(addr string, retryDelay time.Duration) (net.Listener, error) {
+	for {
+		listener, err := net.Listen("tcp", addr)
+		if err == nil {
+			return listener, nil
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			return nil, err
+		}
+		log.Printf("Vibe Flow360 port %s is held by an existing process; waiting to take over instead of restarting", addr)
+		time.Sleep(retryDelay)
+	}
 }
 
 func (s *Server) routes() {
