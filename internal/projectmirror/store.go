@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,6 @@ const (
 	SchemaVersion                       = 3
 	ArtifactPolicyMetadataOnly          = "metadata-only"
 	ArtifactPolicyMetadataVisualization = "metadata+geometry-visualization"
-	maxGeometryVisualizationFileSize    = 128 * 1024 * 1024
 
 	StatusSyncing   = "syncing"
 	StatusCompleted = "completed"
@@ -199,6 +199,42 @@ func (s *Store) PutResourceVisualization(
 	bins map[string][]byte,
 	lod int,
 ) (map[string]ArtifactStatus, error) {
+	return s.putResourceVisualization(projectID, resourceType, resourceID, manifest, bins, nil, lod)
+}
+
+func (s *Store) PutResourceVisualizationFiles(
+	projectID string,
+	resourceType string,
+	resourceID string,
+	manifest json.RawMessage,
+	files map[string]string,
+	lod int,
+) (map[string]ArtifactStatus, error) {
+	return s.putResourceVisualization(projectID, resourceType, resourceID, manifest, nil, files, lod)
+}
+
+func (s *Store) PutResourceVisualizationAsset(resourceType, resourceID, relative, source string) error {
+	clean, err := validateVisualizationPath(relative, ".bin")
+	if err != nil {
+		return err
+	}
+	manifest, err := s.findResourceVisualizationFile(resourceType, resourceID, "manifest.json")
+	if err != nil {
+		return err
+	}
+	target := filepath.Join(filepath.Dir(manifest), filepath.FromSlash(clean))
+	return copyRegularFile(target, source)
+}
+
+func (s *Store) putResourceVisualization(
+	projectID string,
+	resourceType string,
+	resourceID string,
+	manifest json.RawMessage,
+	bins map[string][]byte,
+	files map[string]string,
+	lod int,
+) (map[string]ArtifactStatus, error) {
 	if err := validateID(projectID); err != nil {
 		return nil, err
 	}
@@ -253,22 +289,38 @@ func (s *Store) PutResourceVisualization(
 		manifestChecksum,
 		SyncStatusMetadata,
 	)
-	for relative, payload := range bins {
-		if len(payload) > maxGeometryVisualizationFileSize {
-			return nil, errors.New("resource visualization asset exceeds the size limit")
-		}
+	writeAsset := func(relative string, payload []byte, source string) error {
 		clean, err := validateVisualizationPath(relative, ".bin")
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if err := s.writeBytes(filepath.Join(manifestDir, filepath.FromSlash(clean)), payload); err != nil {
-			return nil, err
+		target := filepath.Join(manifestDir, filepath.FromSlash(clean))
+		if source != "" {
+			if err := copyRegularFile(target, source); err != nil {
+				return err
+			}
+		} else if err := s.writeBytes(target, payload); err != nil {
+			return err
 		}
 		localRelative := filepath.ToSlash(filepath.Join(
 			"resources", resourceType, resourceID, "visualize", "manifest", filepath.FromSlash(clean),
 		))
-		checksum := sha256Sum(payload)
-		addArtifact("visualize/manifest/"+clean, localRelative, int64(len(payload)), checksum, SyncStatusPreview)
+		info, err := os.Stat(target)
+		if err != nil {
+			return err
+		}
+		addArtifact("visualize/manifest/"+clean, localRelative, info.Size(), sha256File(target), SyncStatusPreview)
+		return nil
+	}
+	for relative, payload := range bins {
+		if err := writeAsset(relative, payload, ""); err != nil {
+			return nil, err
+		}
+	}
+	for relative, source := range files {
+		if err := writeAsset(relative, nil, source); err != nil {
+			return nil, err
+		}
 	}
 
 	target := filepath.Join(resourceDir, "visualize")
@@ -361,28 +413,40 @@ func (s *Store) GeometryVisualizationManifest(resourceID string) (json.RawMessag
 }
 
 func (s *Store) ResourceVisualizationFile(resourceType, resourceID, relative string) ([]byte, error) {
+	file, _, err := s.OpenResourceVisualizationFile(resourceType, resourceID, relative)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return io.ReadAll(file)
+}
+
+func (s *Store) OpenResourceVisualizationFile(resourceType, resourceID, relative string) (*os.File, os.FileInfo, error) {
 	if !validResourceType(resourceType) {
-		return nil, errors.New("unsupported resource type for visualization")
+		return nil, nil, errors.New("unsupported resource type for visualization")
 	}
 	clean, err := validateVisualizationPath(relative, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	target, err := s.findResourceVisualizationFile(resourceType, resourceID, clean)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	info, err := os.Lstat(target)
+	file, err := os.Open(target)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New("resource visualization asset must be a regular file")
+		file.Close()
+		return nil, nil, errors.New("resource visualization asset must be a regular file")
 	}
-	if info.Size() > maxGeometryVisualizationFileSize {
-		return nil, errors.New("resource visualization asset exceeds the size limit")
-	}
-	return os.ReadFile(target)
+	return file, info, nil
 }
 
 // GeometryVisualizationFile is retained for backward compatibility.
@@ -491,6 +555,42 @@ func (s *Store) writeBytes(target string, payload []byte) error {
 		return err
 	}
 	if _, err := temp.Write(payload); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempName, target)
+}
+
+func copyRegularFile(target, source string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("resource visualization source must be a regular file")
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	temp, err := os.CreateTemp(filepath.Dir(target), ".mirror-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempName := temp.Name()
+	defer os.Remove(tempName)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := io.Copy(temp, input); err != nil {
 		_ = temp.Close()
 		return err
 	}

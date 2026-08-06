@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,14 +20,15 @@ import (
 )
 
 type fakeProjectSyncClient struct {
-	mu                   sync.Mutex
-	details              map[string]flow360.ResourceDetail
-	failures             map[string]error
-	visualizationFailure error
-	visualization        *flow360.ResourceVisualization
-	visualizationCalls   int
-	calls                map[string]int
-	delay                time.Duration
+	mu                      sync.Mutex
+	details                 map[string]flow360.ResourceDetail
+	failures                map[string]error
+	visualizationFailure    error
+	visualization           *flow360.ResourceVisualization
+	visualizationCalls      int
+	visualizationAssetCalls int
+	calls                   map[string]int
+	delay                   time.Duration
 }
 
 func (f *fakeProjectSyncClient) ResourceVisualization(_ context.Context, resourceType, resourceID string) (flow360.ResourceVisualization, error) {
@@ -46,6 +48,27 @@ func (f *fakeProjectSyncClient) ResourceVisualization(_ context.Context, resourc
 		]`),
 		Bins: map[string][]byte{"body.bin": {1, 2, 3}},
 	}, nil
+}
+
+func (f *fakeProjectSyncClient) ResourceVisualizationAsset(_ context.Context, _, _ string, relative string) (flow360.VisualizationFile, error) {
+	f.mu.Lock()
+	f.visualizationAssetCalls++
+	f.mu.Unlock()
+	if f.visualizationFailure != nil {
+		return flow360.VisualizationFile{}, f.visualizationFailure
+	}
+	if f.visualization == nil {
+		return flow360.VisualizationFile{}, os.ErrNotExist
+	}
+	payload, ok := f.visualization.Bins[relative]
+	if !ok {
+		return flow360.VisualizationFile{}, os.ErrNotExist
+	}
+	path := filepath.Join(os.TempDir(), "vibesim-test-"+filepath.Base(relative))
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		return flow360.VisualizationFile{}, err
+	}
+	return flow360.VisualizationFile{Path: path}, nil
 }
 
 func (f *fakeProjectSyncClient) ProjectInfo(context.Context, string) (json.RawMessage, error) {
@@ -309,7 +332,7 @@ func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 	}
 }
 
-func TestResourceMeshPreviewRepairsIncompleteLODCache(t *testing.T) {
+func TestResourceVisualizationAssetDownloadsMissingLODOnDemand(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	manifest := json.RawMessage(`[
 		{"id":"body-1","type":"SolidGeometry","properties":{"boundsMin":[-1,-1,-1],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"lod","default":1,"levels":[
@@ -357,19 +380,28 @@ func TestResourceMeshPreviewRepairsIncompleteLODCache(t *testing.T) {
 		app.flow360ResourceMeshPreview(requestContext)
 		return recorder
 	}
-	if repaired := requestPreview(); repaired.Code != http.StatusOK {
-		t.Fatalf("repair preview got %d: %s", repaired.Code, repaired.Body)
+	if preview := requestPreview(); preview.Code != http.StatusOK {
+		t.Fatalf("preview got %d: %s", preview.Code, preview.Body)
 	}
-	if cached := requestPreview(); cached.Code != http.StatusOK {
-		t.Fatalf("cached preview got %d: %s", cached.Code, cached.Body)
+	assetRecorder := httptest.NewRecorder()
+	assetContext, _ := gin.CreateTestContext(assetRecorder)
+	assetContext.Request = httptest.NewRequest(http.MethodGet, "/asset", nil)
+	assetContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "geo-1"},
+		{Key: "asset_path", Value: "/body-high.bin"},
+	}
+	app.flow360ResourceVisualizationAsset(assetContext)
+	if assetRecorder.Code != http.StatusOK || !bytes.Equal(assetRecorder.Body.Bytes(), []byte{4, 5, 6}) {
+		t.Fatalf("high precision asset got %d: %v", assetRecorder.Code, assetRecorder.Body.Bytes())
 	}
 	if payload, err := app.mirror.ResourceVisualizationFile("Geometry", "geo-1", "body-high.bin"); err != nil || len(payload) == 0 {
 		t.Fatalf("high precision LOD was not repaired: payload=%v err=%v", payload, err)
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if client.visualizationCalls != 1 {
-		t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+	if client.visualizationCalls != 0 || client.visualizationAssetCalls != 1 {
+		t.Fatalf("downloads: visualization=%d asset=%d, want 0 and 1", client.visualizationCalls, client.visualizationAssetCalls)
 	}
 }
 

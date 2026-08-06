@@ -15,16 +15,35 @@ import (
 
 const (
 	maxTessellationManifestSize = 2 * 1024 * 1024
-	maxTessellationBinSize      = 128 * 1024 * 1024
-	maxTessellationTotalSize    = 256 * 1024 * 1024
 	maxTessellationFiles        = 64
-	visualizationTimeout        = 180 * time.Second
+	visualizationTimeout        = 30 * time.Minute
 )
 
 type ResourceVisualization struct {
 	Manifest json.RawMessage
 	Bins     map[string][]byte
+	Files    map[string]string
 	Catalog  VisualizationCatalog
+	cleanup  func()
+}
+
+type VisualizationFile struct {
+	Path    string
+	cleanup func()
+}
+
+func (f *VisualizationFile) Close() {
+	if f.cleanup != nil {
+		f.cleanup()
+		f.cleanup = nil
+	}
+}
+
+func (v *ResourceVisualization) Close() {
+	if v.cleanup != nil {
+		v.cleanup()
+		v.cleanup = nil
+	}
 }
 
 type VisualizationCatalog struct {
@@ -78,6 +97,59 @@ func (c *Client) GeometryVisualization(ctx context.Context, resourceID string) (
 	return c.ResourceVisualization(ctx, "Geometry", resourceID)
 }
 
+func (c *Client) ResourceVisualizationAsset(
+	ctx context.Context,
+	resourceType string,
+	resourceID string,
+	relative string,
+) (VisualizationFile, error) {
+	if err := ValidateResourcePath(resourceType, resourceID); err != nil {
+		return VisualizationFile{}, visualizationError(VisualizationInvalid, resourceType, err)
+	}
+	clean, err := ValidateVisualizationBufferPath(relative)
+	if err != nil {
+		return VisualizationFile{}, visualizationError(VisualizationInvalid, resourceType, err)
+	}
+	python, err := c.flow360Python()
+	if err != nil {
+		return VisualizationFile{}, visualizationError(VisualizationUnavailable, resourceType, err)
+	}
+	staging, err := os.MkdirTemp("", "vibesim-visualization-asset-*")
+	if err != nil {
+		return VisualizationFile{}, visualizationError(VisualizationDownload, resourceType, err)
+	}
+	runCtx, cancel := context.WithTimeout(ctx, visualizationTimeout)
+	defer cancel()
+	command := exec.CommandContext(
+		runCtx, python, "-c", resourceVisualizationAssetBridge,
+		resourceType, resourceID, staging, strings.TrimSpace(c.Environment), clean,
+	)
+	command.Env = append(os.Environ(), "SIMCLOUD_PROFILE="+strings.TrimSpace(c.Profile))
+	if c.APIKey != "" {
+		command.Env = append(command.Env, "FLOW360_APIKEY="+c.APIKey)
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if _, err := command.Output(); err != nil {
+		_ = os.RemoveAll(staging)
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return VisualizationFile{}, visualizationError(VisualizationTimeout, resourceType, errors.New("download timed out"))
+		}
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return VisualizationFile{}, visualizationError(VisualizationDownload, resourceType, errors.New(compactOutput([]byte(message))))
+	}
+	path := filepath.Join(staging, filepath.FromSlash(clean))
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		_ = os.RemoveAll(staging)
+		return VisualizationFile{}, visualizationError(VisualizationMalformed, resourceType, errors.New("downloaded buffer is not a regular file"))
+	}
+	return VisualizationFile{Path: path, cleanup: func() { _ = os.RemoveAll(staging) }}, nil
+}
+
 func (c *Client) ResourceVisualization(
 	ctx context.Context,
 	resourceType string,
@@ -98,7 +170,12 @@ func (c *Client) ResourceVisualization(
 			fmt.Errorf("create visualization staging directory: %w", err),
 		)
 	}
-	defer os.RemoveAll(staging)
+	keepStaging := false
+	defer func() {
+		if !keepStaging {
+			_ = os.RemoveAll(staging)
+		}
+	}()
 
 	runCtx, cancel := context.WithTimeout(ctx, visualizationTimeout)
 	defer cancel()
@@ -146,7 +223,7 @@ func (c *Client) ResourceVisualization(
 			fmt.Errorf("read manifest: %w", err),
 		)
 	}
-	binPaths, err := TessellationBinPaths(manifest)
+	binPaths, err := TessellationDefaultBinPaths(manifest)
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
 	}
@@ -154,28 +231,33 @@ func (c *Client) ResourceVisualization(
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
 	}
-	bins := make(map[string][]byte, len(binPaths))
-	var totalSize int
+	files := make(map[string]string, len(binPaths))
 	for _, relative := range binPaths {
-		payload, err := readLimitedRegularFile(filepath.Join(staging, filepath.FromSlash(relative)), maxTessellationBinSize)
+		path := filepath.Join(staging, filepath.FromSlash(relative))
+		info, err := os.Lstat(path)
 		if err != nil {
 			return ResourceVisualization{}, visualizationError(
 				VisualizationMalformed,
 				resourceType,
-				fmt.Errorf("read buffer %q: %w", relative, err),
+				fmt.Errorf("inspect buffer %q: %w", relative, err),
 			)
 		}
-		totalSize += len(payload)
-		if totalSize > maxTessellationTotalSize {
+		if !info.Mode().IsRegular() {
 			return ResourceVisualization{}, visualizationError(
 				VisualizationMalformed,
 				resourceType,
-				fmt.Errorf("visualization buffers exceed %d byte limit", maxTessellationTotalSize),
+				fmt.Errorf("buffer %q is not a regular file", relative),
 			)
 		}
-		bins[relative] = payload
+		files[relative] = path
 	}
-	return ResourceVisualization{Manifest: manifest, Bins: bins, Catalog: catalog}, nil
+	keepStaging = true
+	return ResourceVisualization{
+		Manifest: manifest,
+		Files:    files,
+		Catalog:  catalog,
+		cleanup:  func() { _ = os.RemoveAll(staging) },
+	}, nil
 }
 
 func visualizationError(
@@ -415,19 +497,27 @@ func collectTessellationPath(paths map[string]struct{}, value any) error {
 	if !ok {
 		return errors.New("Geometry visualization buffer path is missing")
 	}
+	clean, err := ValidateVisualizationBufferPath(path)
+	if err != nil {
+		return err
+	}
+	paths[clean] = struct{}{}
+	return nil
+}
+
+func ValidateVisualizationBufferPath(path string) (string, error) {
 	if strings.Contains(path, "\\") {
-		return errors.New("Geometry visualization buffer path must use forward slashes")
+		return "", errors.New("Geometry visualization buffer path must use forward slashes")
 	}
 	path = strings.TrimSpace(path)
 	clean := filepath.ToSlash(filepath.Clean(path))
 	if path == "" || clean != path || strings.HasPrefix(clean, "/") || strings.Contains(clean, "..") {
-		return errors.New("Geometry visualization buffer path is unsafe")
+		return "", errors.New("Geometry visualization buffer path is unsafe")
 	}
 	if !strings.HasSuffix(strings.ToLower(clean), ".bin") {
-		return errors.New("Geometry visualization buffer must use the .bin extension")
+		return "", errors.New("Geometry visualization buffer must use the .bin extension")
 	}
-	paths[clean] = struct{}{}
-	return nil
+	return clean, nil
 }
 
 func readLimitedRegularFile(path string, limit int) ([]byte, error) {
@@ -510,7 +600,7 @@ for entry in entries:
         default = buffers.get("default", 0)
         if type(default) is not int or default < 0 or default >= len(levels):
             raise ValueError("invalid default visualization LOD")
-        candidates = levels
+        candidates = [levels[default]]
     else:
         candidates = [buffers]
     for candidate in candidates:
@@ -534,4 +624,47 @@ for value in sorted(paths):
     )
 
 print(json.dumps({"manifest": manifest_remote, "buffers": sorted(paths)}))
+`
+
+const resourceVisualizationAssetBridge = `
+import sys
+from pathlib import Path, PurePosixPath
+
+from flow360.cloud.environment import Env, EnvironmentConfig
+from flow360.cloud.webapi import CaseWebApi, GeometryWebApi, SurfaceMeshWebApi, VolumeMeshWebApi
+
+resource_type, resource_id, output_dir, environment, relative = sys.argv[1:6]
+normalized = environment.strip().lower()
+if normalized in ("", "default", "prod", "production"):
+    Env.prod.active()
+elif normalized == "dev":
+    Env.dev.active()
+elif normalized == "uat":
+    Env.uat.active()
+elif normalized == "preprod":
+    Env.preprod.active()
+else:
+    EnvironmentConfig.from_config(environment).active()
+
+api_classes = {
+    "Geometry": GeometryWebApi,
+    "SurfaceMesh": SurfaceMeshWebApi,
+    "VolumeMesh": VolumeMeshWebApi,
+    "Case": CaseWebApi,
+}
+try:
+    api_class = api_classes[resource_type]
+except KeyError as exc:
+    raise ValueError("unsupported visualization resource type") from exc
+
+pure = PurePosixPath(relative)
+if pure.is_absolute() or ".." in pure.parts or pure.suffix.lower() != ".bin":
+    raise ValueError("unsafe visualization buffer path")
+target = Path(output_dir).joinpath(*pure.parts)
+target.parent.mkdir(parents=True, exist_ok=True)
+api_class(resource_id).download_file(
+    "visualize/manifest/" + pure.as_posix(),
+    to_file=str(target),
+    overwrite=True,
+)
 `

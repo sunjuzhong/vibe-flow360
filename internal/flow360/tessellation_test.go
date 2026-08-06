@@ -120,6 +120,15 @@ func TestResourceVisualizationRejectsUnsupportedTypeWithTypedError(t *testing.T)
 	}
 }
 
+func TestResourceVisualizationAssetRejectsUnsafePathBeforeDownload(t *testing.T) {
+	client := &Client{}
+	for _, path := range []string{"../secret.bin", "/tmp/body.bin", "body.json", `nested\body.bin`} {
+		if _, err := client.ResourceVisualizationAsset(context.Background(), "SurfaceMesh", "sm-1", path); err == nil {
+			t.Fatalf("expected unsafe path %q to be rejected", path)
+		}
+	}
+}
+
 func TestResourceVisualizationLive(t *testing.T) {
 	resourceType := os.Getenv("VIBESIM_LIVE_RESOURCE_TYPE")
 	resourceID := os.Getenv("VIBESIM_LIVE_RESOURCE_ID")
@@ -134,11 +143,12 @@ func TestResourceVisualizationLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer visualization.Close()
 	if !json.Valid(visualization.Manifest) {
 		t.Fatal("downloaded manifest is invalid")
 	}
-	if len(visualization.Bins) == 0 {
-		t.Fatal("downloaded visualization has no default-LOD buffers")
+	if len(visualization.Files) == 0 {
+		t.Fatal("downloaded visualization has no LOD buffer files")
 	}
 }
 

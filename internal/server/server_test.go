@@ -1563,6 +1563,19 @@ func TestGeometryVisualizationAssetServesOnlyManifestAndBins(t *testing.T) {
 		!bytes.Equal(recorder.Body.Bytes(), []byte{1, 2, 3}) {
 		t.Fatalf("bin response %d %v", recorder.Code, recorder.Body.Bytes())
 	}
+	rangeRecorder := httptest.NewRecorder()
+	rangeContext, _ := gin.CreateTestContext(rangeRecorder)
+	rangeContext.Request = httptest.NewRequest(http.MethodGet, "/asset", nil)
+	rangeContext.Request.Header.Set("Range", "bytes=1-2")
+	rangeContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "geo-1"},
+		{Key: "asset_path", Value: "/nested/body.bin"},
+	}
+	app.flow360ResourceVisualizationAsset(rangeContext)
+	if rangeRecorder.Code != http.StatusPartialContent || !bytes.Equal(rangeRecorder.Body.Bytes(), []byte{2, 3}) {
+		t.Fatalf("range response %d %v", rangeRecorder.Code, rangeRecorder.Body.Bytes())
+	}
 	for _, path := range []string{"../manifest.json", "detail.json", "/tmp/body.bin"} {
 		if recorder := call(path); recorder.Code == http.StatusOK {
 			t.Fatalf("unsafe path %q was served", path)

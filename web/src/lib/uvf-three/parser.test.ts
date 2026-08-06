@@ -70,7 +70,7 @@ describe('Flow360 UVF Three.js library', () => {
     }
   })
 
-  it('accepts multi-slice manifests while preserving file-count and total-byte limits', () => {
+  it('accepts multi-slice and multi-gigabyte manifests while preserving structural limits', () => {
     expect(() => validateUVFBufferFileCount(
       Array.from({ length: 37 }, (_, index) => `slice-${index}.bin`),
     )).not.toThrow()
@@ -78,9 +78,9 @@ describe('Flow360 UVF Three.js library', () => {
       Array.from({ length: 65 }, (_, index) => `slice-${index}.bin`),
     )).toThrow('too many buffers')
 
-    const limit = 256 * 1024 * 1024
-    expect(accumulateUVFBufferBytes(limit - 1, 1)).toBe(limit)
-    expect(() => accumulateUVFBufferBytes(limit, 1)).toThrow('total size limit')
+    const multiGigabyteTotal = 6 * 1024 * 1024 * 1024
+    expect(accumulateUVFBufferBytes(multiGigabyteTotal - 1, 1)).toBe(multiGigabyteTotal)
+    expect(() => accumulateUVFBufferBytes(Number.MAX_SAFE_INTEGER, 1)).toThrow('total size limit')
   })
 
   it('extracts field catalog from non-structural sections', () => {

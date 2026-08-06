@@ -5,9 +5,9 @@ import { normalizeFieldValue } from './fieldScale'
 import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
-const maxBufferBytes = 128 * 1024 * 1024
+const maxBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_BUFFER_BYTES)
 const maxBufferFiles = 64
-const maxTotalBufferBytes = 256 * 1024 * 1024
+const maxTotalBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_TOTAL_BUFFER_BYTES)
 
 const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
 
@@ -67,6 +67,12 @@ export function accumulateUVFBufferBytes(loadedBytes: number, nextBufferBytes: n
     throw new Error('UVF buffers exceed the total size limit')
   }
   return total
+}
+
+function configuredByteLimit(value: string | undefined): number {
+  if (!value?.trim()) return Number.POSITIVE_INFINITY
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.POSITIVE_INFINITY
 }
 
 export function extractFieldCatalog(entries: UVFEntry[], lodLevel?: number): UVFFieldInfo[] {

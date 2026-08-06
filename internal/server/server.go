@@ -1625,14 +1625,18 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 					resourceID,
 				)
 				if visualizationErr == nil {
-					if _, persistErr := s.mirror.PutResourceVisualization(
-						projectID,
-						resourceType,
-						resourceID,
-						visualization.Manifest,
-						visualization.Bins,
-						0,
-					); persistErr == nil {
+					defer visualization.Close()
+					var persistErr error
+					if len(visualization.Files) > 0 {
+						_, persistErr = s.mirror.PutResourceVisualizationFiles(
+							projectID, resourceType, resourceID, visualization.Manifest, visualization.Files, 0,
+						)
+					} else {
+						_, persistErr = s.mirror.PutResourceVisualization(
+							projectID, resourceType, resourceID, visualization.Manifest, visualization.Bins, 0,
+						)
+					}
+					if persistErr == nil {
 						if preview, previewErr := flow360.GeometryUVFPreview(resourceID, visualization.Manifest, assetURL); previewErr == nil {
 							c.Header("Cache-Control", "private, max-age=60")
 							c.JSON(http.StatusOK, preview)
@@ -1672,14 +1676,16 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 }
 
 func (s *Server) resourceVisualizationComplete(resourceType, resourceID string, manifest json.RawMessage) bool {
-	paths, err := flow360.TessellationBinPaths(manifest)
+	paths, err := flow360.TessellationDefaultBinPaths(manifest)
 	if err != nil {
 		return false
 	}
 	for _, path := range paths {
-		if _, err := s.mirror.ResourceVisualizationFile(resourceType, resourceID, path); err != nil {
+		file, _, err := s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, path)
+		if err != nil {
 			return false
 		}
+		_ = file.Close()
 	}
 	return true
 }
@@ -1831,7 +1837,18 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 		return
 	}
 	relative := strings.TrimPrefix(c.Param("asset_path"), "/")
-	payload, err := s.mirror.ResourceVisualizationFile(resourceType, resourceID, relative)
+	file, info, err := s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, relative)
+	if errors.Is(err, os.ErrNotExist) && relative != "manifest.json" && s.projectSyncClient != nil && s.visualizationReferencesAsset(resourceType, resourceID, relative) {
+		downloaded, downloadErr := s.projectSyncClient.ResourceVisualizationAsset(
+			c.Request.Context(), resourceType, resourceID, relative,
+		)
+		if downloadErr == nil {
+			defer downloaded.Close()
+			if persistErr := s.mirror.PutResourceVisualizationAsset(resourceType, resourceID, relative, downloaded.Path); persistErr == nil {
+				file, info, err = s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, relative)
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "visualization asset is unavailable"})
@@ -1840,13 +1857,32 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	defer file.Close()
 	contentType := "application/octet-stream"
 	if relative == "manifest.json" {
 		contentType = "application/json; charset=utf-8"
 	}
 	c.Header("Cache-Control", "private, max-age=3600")
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Data(http.StatusOK, contentType, payload)
+	c.Header("Content-Type", contentType)
+	http.ServeContent(c.Writer, c.Request, relative, info.ModTime(), file)
+}
+
+func (s *Server) visualizationReferencesAsset(resourceType, resourceID, relative string) bool {
+	manifest, err := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
+	if err != nil {
+		return false
+	}
+	paths, err := flow360.TessellationBinPaths(manifest)
+	if err != nil {
+		return false
+	}
+	for _, path := range paths {
+		if path == relative {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) flow360CaseConvergence(c *gin.Context) {

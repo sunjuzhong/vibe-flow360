@@ -26,6 +26,14 @@ precision selector must only expose the intersection supported by all
 multi-level solid entities; single-buffer entities remain unchanged at every
 selection.
 
+Binary buffers are not subject to a small built-in byte ceiling. Deployments
+that need a device-specific guard may set `VITE_UVF_MAX_BUFFER_BYTES` and
+`VITE_UVF_MAX_TOTAL_BUFFER_BYTES` to positive byte counts at build time. The
+server stores downloaded buffers as files, serves HTTP byte ranges, and fetches
+non-default LOD files only when the viewer requests them. A monolithic buffer
+must still fit the browser and GPU resources needed by Three.js; genuinely
+out-of-core rendering requires a chunked manifest rather than a larger limit.
+
 Wire display is implemented as disposable `LineSegments` layered over each
 face. It never switches the fill material into Three.js `wireframe` mode, so
 entity color or field coloring remains visible underneath.

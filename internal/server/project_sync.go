@@ -24,6 +24,7 @@ type projectSyncClient interface {
 	ProjectItems(context.Context, string) (json.RawMessage, error)
 	ResourceDetail(context.Context, string, string) (flow360.ResourceDetail, error)
 	ResourceVisualization(context.Context, string, string) (flow360.ResourceVisualization, error)
+	ResourceVisualizationAsset(context.Context, string, string, string) (flow360.VisualizationFile, error)
 }
 
 type projectSyncItem struct {

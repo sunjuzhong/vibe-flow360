@@ -148,7 +148,7 @@ func TestStoreRejectsUnsafeGeometryVisualizationPaths(t *testing.T) {
 	}
 }
 
-func TestStoreRejectsOversizedGeometryVisualizationFile(t *testing.T) {
+func TestStoreOpensMultiGigabyteVisualizationFileWithoutReadingIt(t *testing.T) {
 	store, err := New(t.TempDir(), "production-default")
 	if err != nil {
 		t.Fatal(err)
@@ -168,11 +168,17 @@ func TestStoreRejectsOversizedGeometryVisualizationFile(t *testing.T) {
 	target := filepath.Join(
 		projectDir, "resources", "Geometry", "geo-1", "visualize", "manifest", "body.bin",
 	)
-	if err := os.Truncate(target, maxGeometryVisualizationFileSize+1); err != nil {
+	const largeSize = int64(3 * 1024 * 1024 * 1024)
+	if err := os.Truncate(target, largeSize); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.GeometryVisualizationFile("geo-1", "body.bin"); err == nil {
-		t.Fatal("expected oversized visualization file to be rejected")
+	file, info, err := store.OpenResourceVisualizationFile("Geometry", "geo-1", "body.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if info.Size() != largeSize {
+		t.Fatalf("size = %d, want %d", info.Size(), largeSize)
 	}
 }
 
@@ -318,5 +324,30 @@ func TestStoreResourceVisualizationChecksumIsDeterministic(t *testing.T) {
 		if first[key].Checksum != second[key].Checksum {
 			t.Fatalf("checksum mismatch for %q: %s vs %s", key, first[key].Checksum, second[key].Checksum)
 		}
+	}
+}
+
+func TestStorePutResourceVisualizationFilesCopiesDiskBackedBuffers(t *testing.T) {
+	store, err := New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "large.bin")
+	if err := os.WriteFile(source, []byte{1, 2, 3, 4, 5}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage(`[{"type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"large.bin"}}}]`)
+	if _, err := store.PutResourceVisualizationFiles(
+		"prj-1", "SurfaceMesh", "sm-1", manifest, map[string]string{"large.bin": source}, 0,
+	); err != nil {
+		t.Fatal(err)
+	}
+	file, info, err := store.OpenResourceVisualizationFile("SurfaceMesh", "sm-1", "large.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if info.Size() != 5 {
+		t.Fatalf("copied size = %d, want 5", info.Size())
 	}
 }
