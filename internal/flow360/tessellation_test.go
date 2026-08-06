@@ -1,9 +1,12 @@
 package flow360
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -129,6 +132,95 @@ func TestResourceVisualizationAssetRejectsUnsafePathBeforeDownload(t *testing.T)
 	}
 }
 
+func TestSynthesizeSurfaceMeshVisualizationAssetFromBinarySTL(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, "manifest.json")
+	stlPath := filepath.Join(root, "surfaceAll.stl")
+	target := filepath.Join(root, "defaultBody.bin")
+	manifest := `[{"type":"SolidGeometry","resources":{"buffers":{"type":"lod","levels":[{"path":"defaultBody.bin","sections":[` +
+		`{"name":"position","dType":"float32","dimension":3,"offset":0,"length":36},` +
+		`{"name":"Area","dType":"float32","dimension":1,"offset":36,"length":12},` +
+		`{"name":"Aspect Ratio","dType":"float32","dimension":1,"offset":48,"length":12},` +
+		`{"name":"Incircle/Circumcircle Radius Ratio Quality","dType":"float32","dimension":1,"offset":60,"length":12},` +
+		`{"name":"Maximum Angle","dType":"float32","dimension":1,"offset":72,"length":12},` +
+		`{"name":"Minimum Angle","dType":"float32","dimension":1,"offset":84,"length":12},` +
+		`{"name":"Minimum Edge Length","dType":"float32","dimension":1,"offset":96,"length":12},` +
+		`{"name":"Skewness Quality","dType":"float32","dimension":1,"offset":108,"length":12}` +
+		`] }]}}}]`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stl bytes.Buffer
+	stl.Write(make([]byte, 80))
+	if err := binary.Write(&stl, binary.LittleEndian, uint32(1)); err != nil {
+		t.Fatal(err)
+	}
+	triangle := []float32{
+		0, 0, 1,
+		0, 0, 0,
+		1, 0, 0,
+		0.5, float32(math.Sqrt(3) / 2), 0,
+	}
+	if err := binary.Write(&stl, binary.LittleEndian, triangle); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(&stl, binary.LittleEndian, uint16(0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stlPath, stl.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := synthesizeSurfaceMeshVisualizationAsset(manifestPath, stlPath, "defaultBody.bin", target); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) != 120 {
+		t.Fatalf("got %d synthesized bytes, want 120", len(payload))
+	}
+	readFloat := func(offset int) float64 {
+		return float64(math.Float32frombits(binary.LittleEndian.Uint32(payload[offset : offset+4])))
+	}
+	for _, check := range []struct {
+		offset int
+		want   float64
+	}{
+		{36, math.Sqrt(3) / 4},
+		{48, 1},
+		{60, 1},
+		{72, 60},
+		{84, 60},
+		{96, 1},
+		{108, 1},
+	} {
+		if got := readFloat(check.offset); math.Abs(got-check.want) > 1e-5 {
+			t.Fatalf("field at %d = %g, want %g", check.offset, got, check.want)
+		}
+	}
+}
+
+func TestSynthesizeSurfaceMeshVisualizationAssetRejectsMismatchedManifest(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, "manifest.json")
+	stlPath := filepath.Join(root, "surfaceAll.stl")
+	manifest := `[{"type":"SolidGeometry","resources":{"buffers":{"path":"body.bin","sections":[` +
+		`{"name":"position","dType":"float32","dimension":3,"offset":0,"length":72}` +
+		`]}}}]`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stl := make([]byte, 84+50)
+	binary.LittleEndian.PutUint32(stl[80:84], 1)
+	if err := os.WriteFile(stlPath, stl, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := synthesizeSurfaceMeshVisualizationAsset(manifestPath, stlPath, "body.bin", filepath.Join(root, "body.bin")); err == nil {
+		t.Fatal("expected mismatched position section to be rejected")
+	}
+}
+
 func TestResourceVisualizationLive(t *testing.T) {
 	resourceType := os.Getenv("VIBESIM_LIVE_RESOURCE_TYPE")
 	resourceID := os.Getenv("VIBESIM_LIVE_RESOURCE_ID")
@@ -149,6 +241,29 @@ func TestResourceVisualizationLive(t *testing.T) {
 	}
 	if len(visualization.Files) == 0 {
 		t.Fatal("downloaded visualization has no LOD buffer files")
+	}
+}
+
+func TestResourceVisualizationAssetLive(t *testing.T) {
+	resourceType := os.Getenv("VIBESIM_LIVE_RESOURCE_TYPE")
+	resourceID := os.Getenv("VIBESIM_LIVE_RESOURCE_ID")
+	assetPath := os.Getenv("VIBESIM_LIVE_VISUALIZATION_ASSET")
+	if resourceType == "" || resourceID == "" || assetPath == "" {
+		t.Skip("set VIBESIM_LIVE_RESOURCE_TYPE, VIBESIM_LIVE_RESOURCE_ID, and VIBESIM_LIVE_VISUALIZATION_ASSET for a read-only Flow360 probe")
+	}
+	asset, err := NewClient().ResourceVisualizationAsset(
+		context.Background(), resourceType, resourceID, assetPath,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer asset.Close()
+	info, err := os.Stat(asset.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		t.Fatalf("downloaded visualization asset is invalid: mode=%s size=%d", info.Mode(), info.Size())
 	}
 }
 

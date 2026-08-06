@@ -3,9 +3,11 @@ package flow360
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 const (
 	maxTessellationManifestSize = 2 * 1024 * 1024
 	maxTessellationFiles        = 64
+	maxSurfaceMeshFallbackSize  = 512 * 1024 * 1024
 	visualizationTimeout        = 30 * time.Minute
 )
 
@@ -131,15 +134,18 @@ func (c *Client) ResourceVisualizationAsset(
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	if _, err := command.Output(); err != nil {
-		_ = os.RemoveAll(staging)
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			_ = os.RemoveAll(staging)
 			return VisualizationFile{}, visualizationError(VisualizationTimeout, resourceType, errors.New("download timed out"))
 		}
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {
 			message = err.Error()
 		}
-		return VisualizationFile{}, visualizationError(VisualizationDownload, resourceType, errors.New(compactOutput([]byte(message))))
+		if resourceType != "SurfaceMesh" || c.rebuildSurfaceMeshVisualizationAsset(runCtx, python, resourceID, staging, clean) != nil {
+			_ = os.RemoveAll(staging)
+			return VisualizationFile{}, visualizationError(VisualizationDownload, resourceType, errors.New(compactOutput([]byte(message))))
+		}
 	}
 	path := filepath.Join(staging, filepath.FromSlash(clean))
 	info, err := os.Lstat(path)
@@ -148,6 +154,239 @@ func (c *Client) ResourceVisualizationAsset(
 		return VisualizationFile{}, visualizationError(VisualizationMalformed, resourceType, errors.New("downloaded buffer is not a regular file"))
 	}
 	return VisualizationFile{Path: path, cleanup: func() { _ = os.RemoveAll(staging) }}, nil
+}
+
+func (c *Client) rebuildSurfaceMeshVisualizationAsset(
+	ctx context.Context,
+	python string,
+	resourceID string,
+	staging string,
+	relative string,
+) error {
+	command := exec.CommandContext(
+		ctx,
+		python,
+		"-c",
+		surfaceMeshVisualizationSourceBridge,
+		resourceID,
+		staging,
+		strings.TrimSpace(c.Environment),
+	)
+	command.Env = append(os.Environ(), "SIMCLOUD_PROFILE="+strings.TrimSpace(c.Profile))
+	if c.APIKey != "" {
+		command.Env = append(command.Env, "FLOW360_APIKEY="+c.APIKey)
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if _, err := command.Output(); err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return errors.New(compactOutput([]byte(message)))
+	}
+	return synthesizeSurfaceMeshVisualizationAsset(
+		filepath.Join(staging, "fallback-manifest.json"),
+		filepath.Join(staging, "surfaceAll.stl"),
+		relative,
+		filepath.Join(staging, filepath.FromSlash(relative)),
+	)
+}
+
+type visualizationBufferSection struct {
+	Name      string `json:"name"`
+	DType     string `json:"dType"`
+	Dimension int    `json:"dimension"`
+	Length    int64  `json:"length"`
+	Offset    int64  `json:"offset"`
+}
+
+type visualizationBufferDescriptor struct {
+	Path     string                       `json:"path"`
+	Sections []visualizationBufferSection `json:"sections"`
+}
+
+func synthesizeSurfaceMeshVisualizationAsset(manifestPath, stlPath, relative, target string) error {
+	manifest, err := readLimitedRegularFile(manifestPath, maxTessellationManifestSize)
+	if err != nil {
+		return fmt.Errorf("read fallback manifest: %w", err)
+	}
+	descriptor, err := visualizationDescriptorForPath(manifest, relative)
+	if err != nil {
+		return err
+	}
+	stl, err := readLimitedRegularFile(stlPath, maxSurfaceMeshFallbackSize)
+	if err != nil {
+		return fmt.Errorf("read SurfaceMesh STL: %w", err)
+	}
+	if len(stl) < 84 {
+		return errors.New("SurfaceMesh STL is not a binary STL")
+	}
+	triangleCount := uint64(binary.LittleEndian.Uint32(stl[80:84]))
+	expectedSTLBytes := uint64(84) + triangleCount*50
+	if expectedSTLBytes != uint64(len(stl)) {
+		return errors.New("SurfaceMesh STL is malformed or is not binary")
+	}
+	if triangleCount > uint64(maxSurfaceMeshFallbackSize/50) {
+		return errors.New("SurfaceMesh STL has too many triangles")
+	}
+
+	var outputBytes int64
+	for _, section := range descriptor.Sections {
+		if section.Offset < 0 || section.Length <= 0 || section.Offset > int64(maxSurfaceMeshFallbackSize)-section.Length {
+			return fmt.Errorf("invalid UVF section %q", section.Name)
+		}
+		if end := section.Offset + section.Length; end > outputBytes {
+			outputBytes = end
+		}
+	}
+	if outputBytes <= 0 || outputBytes > int64(maxSurfaceMeshFallbackSize) {
+		return errors.New("synthesized UVF buffer size is invalid")
+	}
+	output := make([]byte, int(outputBytes))
+	expectedPositionBytes := int64(triangleCount * 9 * 4)
+	expectedScalarBytes := int64(triangleCount * 3 * 4)
+
+	for _, section := range descriptor.Sections {
+		switch {
+		case section.Name == "position":
+			if section.DType != "float32" || section.Dimension != 3 || section.Length != expectedPositionBytes {
+				return errors.New("SurfaceMesh STL does not match the UVF position section")
+			}
+			for triangle := uint64(0); triangle < triangleCount; triangle++ {
+				source := 84 + triangle*50 + 12
+				destination := uint64(section.Offset) + triangle*36
+				copy(output[destination:destination+36], stl[source:source+36])
+			}
+		case surfaceMeshQualityField(section.Name):
+			if section.DType != "float32" || section.Dimension != 1 || section.Length != expectedScalarBytes {
+				return fmt.Errorf("SurfaceMesh STL does not match UVF field %q", section.Name)
+			}
+			for triangle := uint64(0); triangle < triangleCount; triangle++ {
+				value := surfaceMeshTriangleMetric(stl, triangle, section.Name)
+				for vertex := uint64(0); vertex < 3; vertex++ {
+					offset := uint64(section.Offset) + (triangle*3+vertex)*4
+					binary.LittleEndian.PutUint32(output[offset:offset+4], math.Float32bits(float32(value)))
+				}
+			}
+		default:
+			return fmt.Errorf("cannot rebuild SurfaceMesh UVF section %q", section.Name)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(target, output, 0o600); err != nil {
+		return fmt.Errorf("write synthesized SurfaceMesh UVF: %w", err)
+	}
+	return nil
+}
+
+func visualizationDescriptorForPath(manifest json.RawMessage, relative string) (visualizationBufferDescriptor, error) {
+	var entries []struct {
+		Type      string `json:"type"`
+		Resources struct {
+			Buffers struct {
+				Type     string                          `json:"type"`
+				Path     string                          `json:"path"`
+				Sections []visualizationBufferSection    `json:"sections"`
+				Levels   []visualizationBufferDescriptor `json:"levels"`
+			} `json:"buffers"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(manifest, &entries); err != nil {
+		return visualizationBufferDescriptor{}, errors.New("fallback visualization manifest is invalid")
+	}
+	for _, entry := range entries {
+		if entry.Type != "SolidGeometry" {
+			continue
+		}
+		if entry.Resources.Buffers.Type == "lod" {
+			for _, level := range entry.Resources.Buffers.Levels {
+				if level.Path == relative {
+					return level, nil
+				}
+			}
+			continue
+		}
+		if entry.Resources.Buffers.Path == relative {
+			return visualizationBufferDescriptor{
+				Path: relative, Sections: entry.Resources.Buffers.Sections,
+			}, nil
+		}
+	}
+	return visualizationBufferDescriptor{}, fmt.Errorf("visualization manifest does not describe %q", relative)
+}
+
+func surfaceMeshQualityField(name string) bool {
+	switch name {
+	case "Area", "Aspect Ratio", "Incircle/Circumcircle Radius Ratio Quality",
+		"Maximum Angle", "Minimum Angle", "Minimum Edge Length", "Skewness Quality":
+		return true
+	default:
+		return false
+	}
+}
+
+func surfaceMeshTriangleMetric(stl []byte, triangle uint64, name string) float64 {
+	base := 84 + triangle*50 + 12
+	point := func(index uint64) [3]float64 {
+		offset := base + index*12
+		return [3]float64{
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(stl[offset : offset+4]))),
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(stl[offset+4 : offset+8]))),
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(stl[offset+8 : offset+12]))),
+		}
+	}
+	p0, p1, p2 := point(0), point(1), point(2)
+	distance := func(a, b [3]float64) float64 {
+		x, y, z := a[0]-b[0], a[1]-b[1], a[2]-b[2]
+		return math.Sqrt(x*x + y*y + z*z)
+	}
+	a, b, c := distance(p1, p2), distance(p2, p0), distance(p0, p1)
+	minimumEdge := math.Min(a, math.Min(b, c))
+	maximumEdge := math.Max(a, math.Max(b, c))
+	x1, y1, z1 := p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]
+	x2, y2, z2 := p2[0]-p0[0], p2[1]-p0[1], p2[2]-p0[2]
+	crossX, crossY, crossZ := y1*z2-z1*y2, z1*x2-x1*z2, x1*y2-y1*x2
+	area := 0.5 * math.Sqrt(crossX*crossX+crossY*crossY+crossZ*crossZ)
+	semiPerimeter := (a + b + c) / 2
+	if area <= 0 || semiPerimeter <= 0 || minimumEdge <= 0 {
+		if name == "Aspect Ratio" {
+			return math.MaxFloat32
+		}
+		return 0
+	}
+	angle := func(opposite, adjacent1, adjacent2 float64) float64 {
+		cosine := (adjacent1*adjacent1 + adjacent2*adjacent2 - opposite*opposite) / (2 * adjacent1 * adjacent2)
+		cosine = math.Max(-1, math.Min(1, cosine))
+		return math.Acos(cosine) * 180 / math.Pi
+	}
+	angleA, angleB, angleC := angle(a, b, c), angle(b, c, a), angle(c, a, b)
+	minimumAngle := math.Min(angleA, math.Min(angleB, angleC))
+	maximumAngle := math.Max(angleA, math.Max(angleB, angleC))
+	inradius := area / semiPerimeter
+	circumradius := a * b * c / (4 * area)
+	skewness := 1 - math.Max((maximumAngle-60)/120, (60-minimumAngle)/60)
+	skewness = math.Max(0, math.Min(1, skewness))
+	switch name {
+	case "Area":
+		return area
+	case "Aspect Ratio":
+		return maximumEdge / (2 * math.Sqrt(3) * inradius)
+	case "Incircle/Circumcircle Radius Ratio Quality":
+		return 2 * inradius / circumradius
+	case "Maximum Angle":
+		return maximumAngle
+	case "Minimum Angle":
+		return minimumAngle
+	case "Minimum Edge Length":
+		return minimumEdge
+	case "Skewness Quality":
+		return skewness
+	default:
+		return 0
+	}
 }
 
 func (c *Client) ResourceVisualization(
@@ -630,8 +869,13 @@ const resourceVisualizationAssetBridge = `
 import sys
 from pathlib import Path, PurePosixPath
 
-from flow360.cloud.environment import Env, EnvironmentConfig
-from flow360.cloud.webapi import CaseWebApi, GeometryWebApi, SurfaceMeshWebApi, VolumeMeshWebApi
+from flow360.component.simulation.web.asset_webapi import (
+    CaseWebApi,
+    GeometryWebApi,
+    SurfaceMeshWebApi,
+    VolumeMeshWebApi,
+)
+from flow360.environment import Env, EnvironmentConfig
 
 resource_type, resource_id, output_dir, environment, relative = sys.argv[1:6]
 normalized = environment.strip().lower()
@@ -665,6 +909,41 @@ target.parent.mkdir(parents=True, exist_ok=True)
 api_class(resource_id).download_file(
     "visualize/manifest/" + pure.as_posix(),
     to_file=str(target),
+    overwrite=True,
+)
+`
+
+const surfaceMeshVisualizationSourceBridge = `
+import sys
+from pathlib import Path
+
+from flow360.component.simulation.web.asset_webapi import SurfaceMeshWebApi
+from flow360.environment import Env, EnvironmentConfig
+
+resource_id, output_dir, environment = sys.argv[1:4]
+normalized = environment.strip().lower()
+if normalized in ("", "default", "prod", "production"):
+    Env.prod.active()
+elif normalized == "dev":
+    Env.dev.active()
+elif normalized == "uat":
+    Env.uat.active()
+elif normalized == "preprod":
+    Env.preprod.active()
+else:
+    EnvironmentConfig.from_config(environment).active()
+
+root = Path(output_dir)
+root.mkdir(parents=True, exist_ok=True)
+api = SurfaceMeshWebApi(resource_id)
+api.download_file(
+    "visualize/manifest/manifest.json",
+    to_file=str(root / "fallback-manifest.json"),
+    overwrite=True,
+)
+api.download_file(
+    "surfaceAll.stl",
+    to_file=str(root / "surfaceAll.stl"),
     overwrite=True,
 )
 `
