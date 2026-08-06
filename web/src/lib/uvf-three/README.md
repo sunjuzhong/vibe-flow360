@@ -38,6 +38,10 @@ out-of-core rendering requires a chunked manifest rather than a larger limit.
 Wire display is implemented as disposable `LineSegments` layered over each
 face. It never switches the fill material into Three.js `wireframe` mode, so
 entity color or field coloring remains visible underneath.
+Dense wire overlays are screen-space adaptive: they remain hidden while
+individual triangles are sub-pixel at an overview scale and fade in as the
+camera moves close enough to resolve them. This prevents distant mesh edges
+from producing moiré or camouflage patterns.
 
 ## Consumer responsibilities
 

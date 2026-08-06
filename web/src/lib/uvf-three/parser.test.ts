@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
     expect(wireframeOpacityForTriangleCount(100)).toBeGreaterThan(0.35)
     expect(wireframeOpacityForTriangleCount(90_000)).toBeLessThan(0.2)
     expect(wireframeOpacityForTriangleCount(1_000_000)).toBe(0.16)
+    expect(wireframeOpacityForScreenDensity(0.32, 1)).toBe(0)
+    expect(wireframeOpacityForScreenDensity(0.32, 7)).toBeCloseTo(0.16)
+    expect(wireframeOpacityForScreenDensity(0.32, 20)).toBe(0.32)
   })
 
   it('decodes indexed faces and edge positions', () => {

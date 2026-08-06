@@ -13,6 +13,8 @@ export {
   setFieldFilterOverlay,
   wireframeOpacityForTriangleCount,
   wireframeOverlayOpacity,
+  wireframeOpacityForScreenDensity,
+  updateWireframeOverlayForCamera,
   setEntityVisibility,
   setGroupVisibility,
   validateUVFBufferFileCount,

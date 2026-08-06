@@ -572,6 +572,7 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
       overlay.name = `${face.name || face.uuid} wire overlay`
       overlay.userData.uvfWireframeOverlay = true
       overlay.userData.uvfWireframeOpacity = overlayOpacity
+      overlay.userData.uvfWireframeTriangleCount = Math.floor(indexCount / 3)
       overlay.userData.uvfType = 'WireframeOverlay'
       overlay.renderOrder = face.renderOrder + 1
       face.add(overlay)
@@ -716,6 +717,45 @@ export function wireframeOverlayOpacity(object: THREE.Object3D, selected = false
   const stored = object.userData.uvfWireframeOpacity
   const base = typeof stored === 'number' && Number.isFinite(stored) ? stored : 0.32
   return selected ? Math.max(base, 0.48) : base
+}
+
+export function wireframeOpacityForScreenDensity(baseOpacity: number, pixelAreaPerTriangle: number): number {
+  if (!Number.isFinite(baseOpacity) || baseOpacity <= 0) return 0
+  if (!Number.isFinite(pixelAreaPerTriangle) || pixelAreaPerTriangle <= 2) return 0
+  if (pixelAreaPerTriangle >= 12) return baseOpacity
+  return baseOpacity * (pixelAreaPerTriangle - 2) / 10
+}
+
+export function updateWireframeOverlayForCamera(
+  asset: UVFAsset,
+  camera: THREE.PerspectiveCamera,
+  viewportHeight: number,
+): void {
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return
+  const focalPixels = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
+  asset.object.updateMatrixWorld(true)
+  asset.object.traverse((object) => {
+    if (!(object instanceof THREE.LineSegments) || object.userData.uvfWireframeOverlay !== true) return
+    const triangleCount = Number(object.userData.uvfWireframeTriangleCount)
+    if (!Number.isFinite(triangleCount) || triangleCount <= 0) return
+    if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere()
+    const sphere = object.geometry.boundingSphere
+    if (!sphere) return
+    const center = sphere.center.clone().applyMatrix4(object.matrixWorld)
+    const scale = object.matrixWorld.getMaxScaleOnAxis()
+    const distance = Math.max(camera.position.distanceTo(center), camera.near)
+    const projectedRadius = sphere.radius * scale / distance * focalPixels
+    const pixelAreaPerTriangle = Math.PI * projectedRadius * projectedRadius / triangleCount
+    const baseOpacity = wireframeOverlayOpacity(object, object.userData.uvfWireframeSelected === true) ?? 0
+    const opacity = wireframeOpacityForScreenDensity(baseOpacity, pixelAreaPerTriangle)
+    object.visible = opacity > 0.01
+    const materials = Array.isArray(object.material) ? object.material : [object.material]
+    materials.forEach((material) => {
+      if (!(material instanceof THREE.LineBasicMaterial)) return
+      material.opacity = opacity
+      material.needsUpdate = true
+    })
+  })
 }
 
 export function setEntityVisibility(asset: UVFAsset, entityId: string, visible: boolean): void {

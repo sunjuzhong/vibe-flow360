@@ -4,7 +4,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
@@ -468,6 +468,9 @@ export function Viewer3D({
       if (camera && controls && cameraBoundsRadiusRef.current) {
         updatePerspectiveCameraClipping(camera, controls.target, cameraBoundsRadiusRef.current)
       }
+      if (camera && uvfAssetRef.current) {
+        updateWireframeOverlayForCamera(uvfAssetRef.current, camera, renderer.domElement.clientHeight)
+      }
       if (camera) renderer.render(scene, camera)
     }
     animate()
@@ -609,6 +612,8 @@ export function Viewer3D({
     if (!asset) return
     asset.object.traverse((object) => {
       if (!(object instanceof THREE.Line)) return
+      if (object.userData.uvfFieldFilterOverlay === true) return
+      if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = false
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((material) => {
         if (!(material instanceof THREE.LineBasicMaterial)) return
@@ -619,6 +624,8 @@ export function Viewer3D({
     })
     asset.getEntityObject(selection.groupId ?? '')?.traverse((object) => {
       if (!(object instanceof THREE.Line)) return
+      if (object.userData.uvfFieldFilterOverlay === true) return
+      if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = true
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((material) => {
         if (!(material instanceof THREE.LineBasicMaterial)) return
