@@ -9,6 +9,8 @@ import type {
 } from '../lib/uvf-three'
 import {
   buildVolumeZoneInventory,
+  buildBoundaryLayerReview,
+  classifyBoundaryLayerEvidenceFields,
   classifyVolumeMeshQualityFields,
   volumeMeshCapabilities,
   volumeMeshParameterSummary,
@@ -23,6 +25,7 @@ export type VolumeMeshReviewState = {
   visibility: Record<string, boolean>
   allFields: UVFFieldInfo[]
   qualityFields: UVFFieldInfo[]
+  boundaryLayerFields: UVFFieldInfo[]
   selectedField: string | null
   range: [number, number] | null
   histogram: UVFFieldHistogram | null
@@ -57,6 +60,7 @@ export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
   visibility: {},
   allFields: [],
   qualityFields: [],
+  boundaryLayerFields: [],
   selectedField: null,
   range: null,
   histogram: null,
@@ -82,6 +86,7 @@ export function reduceVolumeMeshReviewState(
         visibility: Object.fromEntries(action.groups.map((group) => [group.id, group.visible])),
         allFields: [],
         qualityFields: [],
+        boundaryLayerFields: [],
         selectedField: null,
         range: null,
         histogram: null,
@@ -89,13 +94,22 @@ export function reduceVolumeMeshReviewState(
         probe: null,
         focusTarget: null,
       }
-    case 'mode':
+    case 'mode': {
+      const allowedFields = action.mode === 'quality'
+        ? state.qualityFields
+        : action.mode === 'boundary-layer' ? state.boundaryLayerFields : []
+      const selected = allowedFields.find((field) => field.name === state.selectedField) ?? null
       return {
         ...state,
         mode: action.mode,
         clipEnabled: action.mode === 'slices',
-        probe: action.mode === 'quality' ? state.probe : null,
+        selectedField: selected?.name ?? null,
+        range: selected ? [selected.min, selected.max] : null,
+        histogram: selected ? state.histogram : null,
+        extrema: selected ? state.extrema : null,
+        probe: selected ? state.probe : null,
       }
+    }
     case 'selection':
       return { ...state, selection: { groupId: action.groupId } }
     case 'visibility':
@@ -110,11 +124,13 @@ export function reduceVolumeMeshReviewState(
       }
     case 'fields': {
       const fields = classifyVolumeMeshQualityFields(action.fields)
-      const selected = fields.find((field) => field.name === state.selectedField) ?? null
+      const boundaryLayerFields = classifyBoundaryLayerEvidenceFields(action.fields)
+      const selected = [...fields, ...boundaryLayerFields].find((field) => field.name === state.selectedField) ?? null
       return {
         ...state,
         allFields: action.fields,
         qualityFields: fields,
+        boundaryLayerFields,
         selectedField: selected?.name ?? null,
         range: selected ? [selected.min, selected.max] : null,
         histogram: null,
@@ -123,7 +139,8 @@ export function reduceVolumeMeshReviewState(
       }
     }
     case 'field': {
-      const selected = state.qualityFields.find((field) => field.name === action.fieldName) ?? null
+      const selected = [...state.qualityFields, ...state.boundaryLayerFields]
+        .find((field) => field.name === action.fieldName) ?? null
       return {
         ...state,
         selectedField: selected?.name ?? null,
@@ -176,6 +193,11 @@ export function useVolumeMeshReview({
     ? groups.map((group) => ({ ...group, zoneType: 'unknown' as const, typeProvenance: 'unknown' as const }))
     : buildVolumeZoneInventory(groups, detail), [detail, groups, previewSource])
   const parameters = useMemo(() => volumeMeshParameterSummary(detail?.simulation_params), [detail?.simulation_params])
+  const boundaryLayer = useMemo(() => buildBoundaryLayerReview({
+    simulationParams: detail?.simulation_params,
+    groups,
+    fields: state.allFields,
+  }), [detail?.simulation_params, groups, state.allFields])
   const capabilities = useMemo(() => volumeMeshCapabilities({
     detail,
     previewSource,
@@ -184,7 +206,9 @@ export function useVolumeMeshReview({
   }), [detail, groups, previewSource, state.allFields])
   const selectedZone = zones.find((zone) => zone.id === state.selection.groupId)
   const qualityFieldNames = state.qualityFields.map((field) => field.name)
-  const selectedFieldInfo = state.qualityFields.find((field) => field.name === state.selectedField)
+  const boundaryLayerFieldNames = state.boundaryLayerFields.map((field) => field.name)
+  const selectedFieldInfo = [...state.qualityFields, ...state.boundaryLayerFields]
+    .find((field) => field.name === state.selectedField)
   const clipBounds = useMemo(() => axisBounds(boundingBox, state.clipAxis), [boundingBox, state.clipAxis])
   const clipPlane = useMemo<ViewerClipPlane | null>(() => {
     if (!state.clipEnabled || previewSource !== 'primary') return null
@@ -228,9 +252,11 @@ export function useVolumeMeshReview({
     ...state,
     zones,
     parameters,
+    boundaryLayer,
     capabilities,
     selectedZone,
     qualityFieldNames,
+    boundaryLayerFieldNames,
     selectedFieldInfo,
     clipBounds,
     clipPlane,

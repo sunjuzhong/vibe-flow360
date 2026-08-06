@@ -32,6 +32,7 @@ import { VolumeQualityInspector } from './volume-mesh/VolumeQualityInspector'
 import { VolumeSliceInspector } from './volume-mesh/VolumeSliceInspector'
 import { VolumeViewModeToolbar } from './volume-mesh/VolumeViewModeToolbar'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
+import { BoundaryLayerInspector } from './volume-mesh/BoundaryLayerInspector'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -193,19 +194,19 @@ export default function VolumeMeshWorkspace({
             onSelectionChange={review.setSelection}
             entityVisibility={review.visibility}
             onEntityVisibilityChange={review.setVisibility}
-            selectedField={review.mode === 'quality' ? review.selectedField : null}
+            selectedField={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.selectedField : null}
             onSelectedFieldChange={review.setSelectedField}
             onFieldsDiscovered={review.handleFieldsDiscovered}
-            fieldNames={review.qualityFieldNames}
-            fieldRange={review.mode === 'quality' ? review.range : null}
+            fieldNames={review.mode === 'boundary-layer' ? review.boundaryLayerFieldNames : review.qualityFieldNames}
+            fieldRange={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.range : null}
             onFieldHistogramChange={review.setHistogram}
             onFieldExtremaChange={review.setExtrema}
-            onFieldProbe={review.mode === 'quality' ? review.setProbe : undefined}
+            onFieldProbe={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.setProbe : undefined}
             fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
             onFieldFilterMatchCount={qualityFilter.setMatchCount}
             focusTarget={review.focusTarget}
             clipPlane={review.mode === 'slices' ? review.clipPlane : null}
-            showFieldPanel={review.mode === 'quality'}
+            showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}
             showEntityLegend={false}
             showWarnings={previewSource !== 'fallback'}
             projectId={projectId}
@@ -276,6 +277,17 @@ export default function VolumeMeshWorkspace({
                 elementLabel="Cell"
               />
             </section>
+          ) : review.mode === 'boundary-layer' ? (
+            <BoundaryLayerInspector
+              review={review.boundaryLayer}
+              field={review.selectedFieldInfo}
+              histogram={review.histogram}
+              extrema={review.extrema}
+              probe={review.probe}
+              entityNames={entityNames}
+              onSelectTarget={(groupId) => review.setSelection({ groupId })}
+              onLocateExtreme={review.locateExtreme}
+            />
           ) : review.mode === 'slices' ? (
             <VolumeSliceInspector
               enabled={review.clipEnabled}

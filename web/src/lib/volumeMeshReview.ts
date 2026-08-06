@@ -7,12 +7,12 @@ import {
   valueAtPath,
 } from './planStages'
 
-export type VolumeViewMode = 'overview' | 'zones' | 'quality' | 'slices'
+export type VolumeViewMode = 'overview' | 'zones' | 'quality' | 'boundary-layer' | 'slices'
 
 export type VolumeCapabilityStatus = 'available' | 'proxy' | 'unavailable'
 
 export type VolumeCapability = {
-  key: 'asset' | 'zones' | 'quality' | 'slices' | 'parameters'
+  key: 'asset' | 'zones' | 'quality' | 'boundary-layer' | 'slices' | 'parameters'
   label: string
   status: VolumeCapabilityStatus
   detail: string
@@ -38,7 +38,42 @@ export type VolumeReadinessCheck = {
   hint: string
 }
 
+export type BoundaryLayerDefaults = {
+  firstLayerThickness?: string
+  growthRate?: string
+  layerCount?: string
+  layerCountMode: 'fixed' | 'automatic' | 'unknown'
+}
+
+export type BoundaryLayerTarget = {
+  key: string
+  name: string
+  matchedGroupId?: string
+  match: 'id' | 'name' | 'pattern' | 'unmatched'
+}
+
+export type BoundaryLayerRule = {
+  id: string
+  name: string
+  kind: 'boundary-layer' | 'passive-spacing'
+  behavior: 'grow' | 'projected' | 'unchanged'
+  firstLayerThickness?: string
+  growthRate?: string
+  targets: BoundaryLayerTarget[]
+}
+
+export type BoundaryLayerReview = {
+  defaults: BoundaryLayerDefaults
+  rules: BoundaryLayerRule[]
+  evidenceFields: UVFFieldInfo[]
+  configured: boolean
+  targetCount: number
+  matchedTargetCount: number
+  unmatchedTargetCount: number
+}
+
 const qualityFieldPattern = /(?:^|[_\s-])(aspect(?:[_\s-]*ratio)?|edge(?:[_\s-]*length)?|cell(?:[_\s-]*volume)?|volume|jacobian|orthog(?:onality)?|skew(?:ness)?|quality|non[_\s-]*orthogonal)(?:$|[_\s-])/i
+const boundaryLayerFieldPattern = /(?:^|[_\s-])(boundary[_\s-]*layer|first[_\s-]*(?:layer[_\s-]*)?(?:height|thickness)|prism|layer[_\s-]*(?:count|height|thickness|growth)|wall[_\s-]*spacing)(?:$|[_\s-])/i
 
 const parameterPaths: Array<Pick<VolumeParameterRow, 'path' | 'section'>> = [
   { path: 'meshing.defaults.boundary_layer_first_layer_thickness', section: 'Boundary layer' },
@@ -55,6 +90,62 @@ const parameterPaths: Array<Pick<VolumeParameterRow, 'path' | 'section'>> = [
 
 export function classifyVolumeMeshQualityFields(fields: UVFFieldInfo[]): UVFFieldInfo[] {
   return fields.filter((field) => field.kind === 'scalar' && qualityFieldPattern.test(normalizeFieldName(field.name)))
+}
+
+export function classifyBoundaryLayerEvidenceFields(fields: UVFFieldInfo[]): UVFFieldInfo[] {
+  return fields.filter((field) => field.kind === 'scalar' && boundaryLayerFieldPattern.test(normalizeFieldName(field.name)))
+}
+
+export function buildBoundaryLayerReview({
+  simulationParams,
+  groups,
+  fields,
+}: {
+  simulationParams: unknown
+  groups: MeshGroupData[]
+  fields: UVFFieldInfo[]
+}): BoundaryLayerReview {
+  const params = unwrapSimulationParams(simulationParams)
+  const firstLayer = valueAtPath(params, 'meshing.defaults.boundary_layer_first_layer_thickness')
+  const growthRate = valueAtPath(params, 'meshing.defaults.boundary_layer_growth_rate')
+  const layerCount = valueAtPath(params, 'meshing.defaults.number_of_boundary_layers')
+  const refinements = [
+    valueAtPath(params, 'meshing.refinements'),
+    valueAtPath(params, 'meshing.volume_meshing.refinements'),
+  ].find(Array.isArray) as unknown[] | undefined
+  const rules = (refinements ?? []).flatMap((candidate, index) => {
+    if (!isRecord(candidate)) return []
+    const kind = boundaryRuleKind(candidate)
+    if (!kind) return []
+    const behavior = kind === 'boundary-layer'
+      ? 'grow' as const
+      : stringValue(candidate.type) === 'projected' ? 'projected' as const : 'unchanged' as const
+    const targets = extractBoundaryTargets(candidate, groups)
+    return [{
+      id: stringValue(candidate.id) ?? `boundary-rule-${index + 1}`,
+      name: stringValue(candidate.name) ?? (kind === 'boundary-layer' ? 'Boundary layer refinement' : 'Passive spacing'),
+      kind,
+      behavior,
+      firstLayerThickness: valueText(candidate.first_layer_thickness),
+      growthRate: valueText(candidate.growth_rate),
+      targets,
+    }]
+  })
+  const targets = rules.flatMap((rule) => rule.targets)
+  return {
+    defaults: {
+      firstLayerThickness: valueText(firstLayer),
+      growthRate: valueText(growthRate),
+      layerCount: valueText(layerCount),
+      layerCountMode: layerCount !== undefined && layerCount !== null ? 'fixed' : firstLayer !== undefined ? 'automatic' : 'unknown',
+    },
+    rules,
+    evidenceFields: classifyBoundaryLayerEvidenceFields(fields),
+    configured: firstLayer !== undefined || growthRate !== undefined || layerCount !== undefined || rules.length > 0,
+    targetCount: targets.length,
+    matchedTargetCount: targets.filter((target) => target.match !== 'unmatched').length,
+    unmatchedTargetCount: targets.filter((target) => target.match === 'unmatched').length,
+  }
 }
 
 export function volumeQualityRiskDirection(fieldName: string): 'min' | 'max' {
@@ -107,6 +198,11 @@ export function volumeMeshCapabilities({
 }): VolumeCapability[] {
   const qualityFields = classifyVolumeMeshQualityFields(fields)
   const parameters = volumeMeshParameterSummary(detail?.simulation_params)
+  const boundaryLayer = buildBoundaryLayerReview({
+    simulationParams: detail?.simulation_params,
+    groups,
+    fields,
+  })
   const aggregateQuality = findMetric(
     [detail?.summary, detail?.state],
     ['minimum_orthogonality', 'min_orthogonality', 'max_skewness', 'maximum_skewness', 'min_cell_size', 'minimum_cell_size'],
@@ -140,6 +236,20 @@ export function volumeMeshCapabilities({
         : isReported(aggregateQuality)
           ? 'Aggregate quality metrics are reported, but no spatial cell-quality field is available.'
           : 'No aspect ratio, edge length, cell volume, Jacobian, orthogonality, or skewness field is present.',
+    },
+    {
+      key: 'boundary-layer',
+      label: 'Boundary-layer review',
+      status: boundaryLayer.configured && boundaryLayer.evidenceFields.length > 0
+        ? 'available'
+        : boundaryLayer.configured || boundaryLayer.evidenceFields.length > 0 ? 'proxy' : 'unavailable',
+      detail: boundaryLayer.configured
+        ? boundaryLayer.evidenceFields.length > 0
+          ? `${boundaryLayer.rules.length} local rule(s) and ${boundaryLayer.evidenceFields.length} generated evidence field(s) are available.`
+          : 'Meshing intent is available, but generated prism-layer evidence is not present in the asset.'
+        : boundaryLayer.evidenceFields.length > 0
+          ? 'Generated layer fields exist, but the source meshing intent is unavailable.'
+          : 'No boundary-layer defaults, local rules, or generated evidence fields were found.',
     },
     {
       key: 'slices',
@@ -180,6 +290,12 @@ export function computeVolumeReadiness({
   const zones = capabilities.find((capability) => capability.key === 'zones')!
   const quality = capabilities.find((capability) => capability.key === 'quality')!
   const parameters = capabilities.find((capability) => capability.key === 'parameters')!
+  const boundaryLayer = capabilities.find((capability) => capability.key === 'boundary-layer')!
+  const boundaryLayerReview = buildBoundaryLayerReview({
+    simulationParams: detail?.simulation_params,
+    groups,
+    fields,
+  })
   const noErrors = !detail?.errors || Object.keys(detail.errors).length === 0
   return [
     {
@@ -215,11 +331,89 @@ export function computeVolumeReadiness({
       hint: parameters.detail,
     },
     {
+      label: 'Boundary-layer intent is traceable',
+      status: boundaryLayerReview.configured ? 'ready' : boundaryLayer.status === 'proxy' ? 'warning' : 'missing',
+      hint: boundaryLayer.detail,
+    },
+    {
       label: 'No partial Flow360 reads were reported',
       status: noErrors ? 'ready' : 'warning',
       hint: noErrors ? 'All resource reads succeeded.' : `${Object.keys(detail?.errors ?? {}).length} partial read(s) require review.`,
     },
   ]
+}
+
+function boundaryRuleKind(candidate: Record<string, unknown>): BoundaryLayerRule['kind'] | null {
+  const discriminator = [
+    candidate.refinement_type,
+    candidate.model_type,
+    candidate.private_attribute_constructor,
+    candidate.kind,
+    candidate._type,
+    candidate.type,
+    candidate.name,
+  ].map((value) => typeof value === 'string' ? normalizeKey(value) : '').join(' ')
+  if (discriminator.includes('boundarylayer') || discriminator.includes('boundary layer')) return 'boundary-layer'
+  if (discriminator.includes('passivespacing') || discriminator.includes('passive spacing')) return 'passive-spacing'
+  if ((candidate.type === 'projected' || candidate.type === 'unchanged') && hasEntityContainer(candidate)) return 'passive-spacing'
+  if ('first_layer_thickness' in candidate && hasEntityContainer(candidate)) return 'boundary-layer'
+  return null
+}
+
+function hasEntityContainer(candidate: Record<string, unknown>): boolean {
+  return 'entities' in candidate || 'faces' in candidate || 'surfaces' in candidate
+}
+
+function extractBoundaryTargets(candidate: Record<string, unknown>, groups: MeshGroupData[]): BoundaryLayerTarget[] {
+  const container = candidate.entities ?? candidate.faces ?? candidate.surfaces
+  const entities = entityArray(container)
+  const keys = entities.flatMap((entity) => {
+    if (typeof entity === 'string') return [entity]
+    if (!isRecord(entity)) return []
+    const primary = [entity.private_attribute_id, entity.id, entity.name]
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    return [
+      primary,
+      ...(Array.isArray(entity.private_attribute_sub_components) ? entity.private_attribute_sub_components : []),
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  })
+  return Array.from(new Set(keys)).flatMap((key) => matchBoundaryTargets(key, groups))
+}
+
+function entityArray(container: unknown): unknown[] {
+  if (Array.isArray(container)) return container
+  if (!isRecord(container)) return []
+  for (const key of ['stored_entities', 'entities', 'items']) {
+    if (Array.isArray(container[key])) return container[key] as unknown[]
+  }
+  return []
+}
+
+function matchBoundaryTargets(key: string, groups: MeshGroupData[]): BoundaryLayerTarget[] {
+  const normalized = normalizeKey(key)
+  const idMatch = groups.find((group) => normalizeKey(group.id) === normalized)
+  if (idMatch) return [{ key, name: idMatch.name, matchedGroupId: idMatch.id, match: 'id' }]
+  const nameMatch = groups.find((group) => normalizeKey(group.name) === normalized)
+  if (nameMatch) return [{ key, name: nameMatch.name, matchedGroupId: nameMatch.id, match: 'name' }]
+  if (key.includes('*')) {
+    const expression = new RegExp(`^${escapeRegExp(key).replaceAll('\\*', '.*')}$`, 'i')
+    const patternMatches = groups.filter((group) => expression.test(group.name) || expression.test(group.id))
+    if (patternMatches.length > 0) return patternMatches.map((group) => ({ key, name: group.name, matchedGroupId: group.id, match: 'pattern' as const }))
+  }
+  return [{ key, name: key, match: 'unmatched' }]
+}
+
+function valueText(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  return compactParameterValue(value)
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function collectProvidedZoneTypes(detail: ResourceDetail | null): Map<string, VolumeZoneType> {

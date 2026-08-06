@@ -51,4 +51,21 @@ describe('VolumeMesh review store', () => {
     expect(refreshed.selection.groupId).toBe('fluid')
     expect(refreshed.visibility).toEqual({ fluid: true, solid: false })
   })
+
+  it('keeps boundary-layer evidence separate from general quality fields', () => {
+    const discovered = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, {
+      type: 'fields',
+      fields: [
+        { name: 'aspect_ratio', kind: 'scalar', min: 1, max: 60 },
+        { name: 'prism_layer_count', kind: 'scalar', min: 0, max: 20 },
+      ],
+    })
+    expect(discovered.qualityFields.map((field) => field.name)).toEqual(['aspect_ratio'])
+    expect(discovered.boundaryLayerFields.map((field) => field.name)).toEqual(['prism_layer_count'])
+
+    const layerMode = reduceVolumeMeshReviewState(discovered, { type: 'mode', mode: 'boundary-layer' })
+    const selected = reduceVolumeMeshReviewState(layerMode, { type: 'field', fieldName: 'prism_layer_count' })
+    expect(selected.selectedField).toBe('prism_layer_count')
+    expect(selected.range).toEqual([0, 20])
+  })
 })

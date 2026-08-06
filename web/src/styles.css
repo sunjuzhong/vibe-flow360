@@ -4629,6 +4629,66 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .volume-parameter-summary dl > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 4px 0; border-top: 1px solid #ece8df; }
 .volume-parameter-summary dt { overflow: hidden; color: #746d62; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .volume-parameter-summary dd { margin: 0; color: #514a40; font: 8px 'DM Mono'; }
+.boundary-layer-inspector {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #dfd9ce;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .7);
+}
+.boundary-layer-defaults {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 7px;
+}
+.boundary-layer-defaults > div {
+  min-width: 0;
+  padding: 6px;
+  border-radius: 5px;
+  background: #f2eee6;
+}
+.boundary-layer-defaults span,
+.boundary-layer-defaults strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boundary-layer-defaults span { color: #81786b; font-size: 8px; }
+.boundary-layer-defaults strong { margin-top: 2px; color: #554c3e; font: 9px 'DM Mono'; }
+.boundary-layer-provenance { margin: 5px 0 0; color: #8b7c67; font-size: 8px; line-height: 1.4; }
+.boundary-layer-tools { display: grid; grid-template-columns: minmax(0, 1fr) 116px; gap: 4px; margin-top: 8px; }
+.boundary-layer-tools label { display: flex; min-width: 0; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid #ddd7cc; border-radius: 5px; color: #82796d; background: #fff; }
+.boundary-layer-tools input,
+.boundary-layer-tools select { min-width: 0; height: 28px; border: 0; color: #5e5549; background: transparent; font-size: 9px; outline: 0; }
+.boundary-layer-tools input { width: 100%; }
+.boundary-layer-tools select { padding: 0 4px; border: 1px solid #ddd7cc; border-radius: 5px; background: #fff; }
+.boundary-layer-target-list { display: grid; gap: 3px; margin-top: 6px; }
+.boundary-layer-target-list > p { margin: 5px 0; color: #837a6d; font-size: 9px; }
+.boundary-layer-target { display: grid; grid-template-columns: minmax(0, 1fr) 28px; overflow: hidden; border: 1px solid #e4dfd5; border-radius: 5px; background: #faf9f6; }
+.boundary-layer-target.grow { box-shadow: inset 3px 0 #ba7734; }
+.boundary-layer-target.projected { box-shadow: inset 3px 0 #4e8898; }
+.boundary-layer-target.unchanged { box-shadow: inset 3px 0 #8b8d82; }
+.boundary-layer-target.unmatched { border-color: #e2c99b; background: #fbf5e9; }
+.boundary-layer-target > button { display: grid; min-width: 0; padding: 6px 8px; border: 0; color: #554d42; background: transparent; text-align: left; cursor: pointer; }
+.boundary-layer-target > button:disabled { cursor: default; }
+.boundary-layer-target > button span,
+.boundary-layer-target > button small,
+.boundary-layer-target > button em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boundary-layer-target > button span { font-size: 10px; font-weight: 650; }
+.boundary-layer-target > button small { margin-top: 2px; color: #7d756a; font-size: 8px; }
+.boundary-layer-target > button em { margin-top: 2px; color: #997145; font: 8px 'DM Mono'; font-style: normal; }
+.boundary-layer-match { display: grid; place-items: center; border-left: 1px solid #e3ddd2; color: #5d7d50; }
+.boundary-layer-match.unmatched { color: #b07537; }
+.boundary-layer-coverage { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; color: #7d7468; font: 8px 'DM Mono'; }
+.boundary-layer-warning { display: flex; align-items: flex-start; gap: 5px; margin-top: 6px; padding: 6px; border-radius: 5px; color: #8d672f; background: #f8efdf; font-size: 8px; line-height: 1.4; }
+.boundary-layer-evidence { margin-top: 8px; padding-top: 7px; border-top: 1px solid #e6e0d6; }
+.boundary-layer-evidence > p { margin: 5px 0 0; color: #82796d; font-size: 9px; line-height: 1.4; }
+.boundary-layer-field { display: flex; justify-content: space-between; gap: 7px; margin-top: 6px; color: #5c5245; font-size: 9px; }
+.boundary-layer-field span { color: #8a7c6a; font-family: 'DM Mono'; }
+.boundary-layer-histogram { display: flex; height: 42px; align-items: flex-end; gap: 1px; margin-top: 5px; }
+.boundary-layer-histogram i { min-width: 1px; flex: 1; border-radius: 1px 1px 0 0; background: #bd7b38; }
+.boundary-layer-extrema { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 5px; }
+.boundary-layer-extrema button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 5px; border: 1px solid #dcc8ac; border-radius: 5px; color: #745125; background: #fbf5eb; font-size: 8px; cursor: pointer; }
+.boundary-layer-extrema button:disabled { opacity: .45; cursor: default; }
+.boundary-layer-probe { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 6px; margin-top: 5px; padding: 6px; border-radius: 5px; background: #f2eee6; color: #5c5347; font-size: 8px; }
+.boundary-layer-probe small { grid-column: 1 / -1; color: #887e71; font-family: 'DM Mono'; }
 .surface-combined-toolbar { display: flex; gap: 4px; }
 .surface-view-modes button {
   display: inline-flex;

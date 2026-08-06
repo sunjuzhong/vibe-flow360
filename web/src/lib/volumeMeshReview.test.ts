@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
 import {
   buildVolumeZoneInventory,
+  buildBoundaryLayerReview,
+  classifyBoundaryLayerEvidenceFields,
   classifyVolumeMeshQualityFields,
   computeVolumeReadiness,
   volumeMeshCapabilities,
@@ -102,5 +104,78 @@ describe('VolumeMesh review business adapter', () => {
       fields: [{ name: 'aspect_ratio', kind: 'scalar', min: 1, max: 40 }],
     })
     expect(checks.every((check) => check.status === 'ready')).toBe(true)
+  })
+
+  it('parses global and per-surface boundary-layer intent with stable entity matching', () => {
+    const review = buildBoundaryLayerReview({
+      simulationParams: {
+        meshing: {
+          defaults: {
+            boundary_layer_first_layer_thickness: { value: 0.00001, units: 'meter' },
+            boundary_layer_growth_rate: 1.2,
+            number_of_boundary_layers: 12,
+          },
+          refinements: [
+            {
+              refinement_type: 'BoundaryLayer',
+              name: 'Rotor walls',
+              entities: { stored_entities: [{ private_attribute_id: 'rotor' }] },
+              first_layer_thickness: { value: 0.000005, units: 'meter' },
+              growth_rate: 1.15,
+            },
+            {
+              refinement_type: 'PassiveSpacing',
+              name: 'Farfield spacing',
+              type: 'projected',
+              entities: { stored_entities: [{ name: 'Farfield' }] },
+            },
+          ],
+        },
+      },
+      groups,
+      fields: [{ name: 'first_layer_height', kind: 'scalar', min: 1e-6, max: 1e-4 }],
+    })
+
+    expect(review.defaults).toEqual({
+      firstLayerThickness: '0.00001 meter',
+      growthRate: '1.2',
+      layerCount: '12',
+      layerCountMode: 'fixed',
+    })
+    expect(review.rules).toHaveLength(2)
+    expect(review.rules[0]).toMatchObject({ kind: 'boundary-layer', behavior: 'grow' })
+    expect(review.rules[0].targets[0]).toMatchObject({ matchedGroupId: 'rotor', match: 'id' })
+    expect(review.rules[1]).toMatchObject({ kind: 'passive-spacing', behavior: 'projected' })
+    expect(review.rules[1].targets[0]).toMatchObject({ matchedGroupId: 'farfield', match: 'id' })
+    expect(review.evidenceFields.map((field) => field.name)).toEqual(['first_layer_height'])
+  })
+
+  it('keeps unmatched and wildcard surface references visible without inventing generated layers', () => {
+    const review = buildBoundaryLayerReview({
+      simulationParams: {
+        meshing: {
+          defaults: { boundary_layer_first_layer_thickness: { value: 1e-5, units: 'm' } },
+          refinements: [{
+            refinement_type: 'BoundaryLayer',
+            faces: [{ name: 'Rotor*' }, { name: 'missing-wall' }],
+            first_layer_thickness: { value: 5e-6, units: 'm' },
+          }],
+        },
+      },
+      groups,
+      fields: [{ name: 'pressure', kind: 'scalar', min: 0, max: 1 }],
+    })
+    expect(review.matchedTargetCount).toBe(1)
+    expect(review.unmatchedTargetCount).toBe(1)
+    expect(review.rules[0].targets.map((target) => target.match)).toEqual(['pattern', 'unmatched'])
+    expect(review.evidenceFields).toEqual([])
+  })
+
+  it('classifies only scalar generated boundary-layer evidence', () => {
+    expect(classifyBoundaryLayerEvidenceFields([
+      { name: 'prism_layer_count', kind: 'scalar', min: 0, max: 20 },
+      { name: 'boundary_layer_vector', kind: 'vector', min: 0, max: 1 },
+      { name: 'pressure', kind: 'scalar', min: -1, max: 1 },
+    ]).map((field) => field.name)).toEqual(['prism_layer_count'])
   })
 })
