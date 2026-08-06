@@ -45,6 +45,11 @@ from producing moiré or camouflage patterns. The overlay remains hidden while
 the average projected triangle is too small to resolve, and fades in only after
 zooming close enough for its three edges to be visually distinct.
 
+Indexed geometry derives its render normals from topology instead of trusting
+triangle-local source normals. This keeps lighting continuous across a smooth
+surface while retaining the source positions, indices, fields, and entity
+boundaries used by selection and engineering overlays.
+
 ## Consumer responsibilities
 
 Consumers decide what an entity or field means. For example, the Surface Mesh

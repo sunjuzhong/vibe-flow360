@@ -68,6 +68,57 @@ describe('Flow360 UVF Three.js library', () => {
     asset.dispose()
   })
 
+  it('derives stable render normals from indexed topology', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['face-1'] },
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [
+              { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 24 },
+              { name: 'position', dType: 'float32', dimension: 3, offset: 24, length: 48 },
+              { name: 'normal', dType: 'float32', dimension: 3, offset: 72, length: 48 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'face-1',
+        type: 'Face',
+        properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 6 }] } },
+      },
+    ])
+    const data = new ArrayBuffer(120)
+    new Uint32Array(data, 0, 6).set([0, 1, 2, 0, 2, 3])
+    new Float32Array(data, 24, 12).set([
+      0, 0, 0,
+      1, 0, 0,
+      1, 1, 0,
+      0, 1, 0,
+    ])
+    new Float32Array(data, 72, 12).set([
+      1, 0, 0,
+      -1, 0, 0,
+      0, 1, 0,
+      0, -1, 0,
+    ])
+
+    const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
+    const face = asset.getEntityObject('face-1') as THREE.Mesh<THREE.BufferGeometry>
+    const renderNormals = face.geometry.getAttribute('normal') as THREE.BufferAttribute
+    expect(renderNormals.count).toBe(4)
+    for (let index = 0; index < renderNormals.count; index++) {
+      expect(renderNormals.getX(index)).toBeCloseTo(0)
+      expect(renderNormals.getY(index)).toBeCloseTo(0)
+      expect(renderNormals.getZ(index)).toBeCloseTo(1)
+    }
+    asset.dispose()
+  })
+
   it('rejects traversal and unsupported buffers', () => {
     for (const path of ['../body.bin', '/body.bin', 'body.glb', 'nested//body.bin', String.raw`nested\body.bin`]) {
       expect(() => safeUVFBufferPath(path)).toThrow()

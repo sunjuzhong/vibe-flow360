@@ -179,6 +179,7 @@ export function buildUVFAsset(
     const elementGroupIds = elementGroupSection ? uintSection(raw, elementGroupSection) : null
     vertices += positions.length / 3
     const vertexCount = positions.length / 3
+    const renderNormals = deriveRenderNormals(positions, indices, normals)
     const fieldAttributes = new Map<string, THREE.BufferAttribute>()
     for (const section of bufferInfo.sections) {
       if (STRUCTURAL_SECTIONS.has(section.name) || section.dType !== 'float32') continue
@@ -215,11 +216,7 @@ export function buildUVFAsset(
       const faceIndices = indices ? resolveFaceIndices(indices, ranges, solid.id, face.id) : undefined
       const geometry = new THREE.BufferGeometry()
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      if (normals && normals.length === positions.length) {
-        geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
-      } else {
-        geometry.computeVertexNormals()
-      }
+      geometry.setAttribute('normal', renderNormals)
       if (faceIndices) geometry.setIndex(new THREE.BufferAttribute(faceIndices, 1))
       for (const [name, attribute] of fieldAttributes) {
         geometry.setAttribute(name, attribute)
@@ -318,6 +315,28 @@ export function buildUVFAsset(
       })
     },
   }
+}
+
+function deriveRenderNormals(
+  positions: Float32Array,
+  indices: Uint32Array | null,
+  sourceNormals: Float32Array | null,
+): THREE.BufferAttribute {
+  // Some exporters emit triangle-local or inconsistent normals for indexed
+  // meshes. Lighting those values directly makes a smooth face look like
+  // dark/light camouflage. Indexed topology is the stable rendering source.
+  if (!indices && sourceNormals?.length === positions.length) {
+    return new THREE.BufferAttribute(sourceNormals, 3)
+  }
+
+  const topology = new THREE.BufferGeometry()
+  topology.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  if (indices) topology.setIndex(new THREE.BufferAttribute(indices, 1))
+  topology.computeVertexNormals()
+  const derived = topology.getAttribute('normal') as THREE.BufferAttribute
+  topology.deleteAttribute('normal')
+  topology.dispose()
+  return derived
 }
 
 export function applyFieldColoring(
