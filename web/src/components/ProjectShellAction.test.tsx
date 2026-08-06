@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ProjectShellAction } from './ProjectShellAction'
 
 describe('ProjectShellAction', () => {
-  it.each(['Resources', 'Details', 'Plan', 'Ask AI'])(
+  it.each(['Resources', 'Details', 'Ask AI'])(
     'keeps the visible label and accessible name for %s',
     (label) => {
       const markup = renderToStaticMarkup(

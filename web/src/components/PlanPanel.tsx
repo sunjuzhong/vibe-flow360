@@ -104,6 +104,7 @@ export default function PlanPanel({
   project,
   resource,
   detail,
+  draftId,
   initialPlanId,
   onSubmitted,
 }: {
@@ -112,6 +113,7 @@ export default function PlanPanel({
   project: ProjectInfo
   resource: ResourceNode
   detail: ResourceDetail | null
+  draftId?: string
   initialPlanId?: string
   onSubmitted: () => void
 }) {
@@ -152,13 +154,16 @@ export default function PlanPanel({
   const loadPlans = useCallback(async () => {
     try {
       const response = await api.plans(project.id, resource.id)
-      setPlans(response.plans)
-      return response.plans
+      const matching = draftId
+        ? response.plans.filter((plan) => plan.remote_ids?.draft_id === draftId)
+        : response.plans
+      setPlans(matching)
+      return matching
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
       return []
     }
-  }, [project.id, resource.id])
+  }, [draftId, project.id, resource.id])
 
   useEffect(() => {
     if (!open) return
@@ -307,6 +312,7 @@ export default function PlanPanel({
         name,
         intent,
         patch: parsedPatch,
+        draft_id: draftId,
       })
       setSelected(plan)
       setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)])
@@ -476,7 +482,7 @@ export default function PlanPanel({
     if (!selected || !executeConfirmed || loading || submittingAction) return
     if (selected.status !== 'approved' && selected.status !== 'failed') return
     if (selected.submission_id && selected.status !== 'failed') {
-      setError('This plan has already been submitted to Flow360 and is protected from double-submit.')
+      setError('This Draft revision has already been submitted to Flow360 and is protected from double-submit.')
       return
     }
     setRunConfirmationOpen(true)
@@ -524,20 +530,20 @@ export default function PlanPanel({
         className="plan-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Simulation execution plan"
+        aria-label="Draft review and execution"
       >
         <header className="plan-header">
           <span className="plan-header-icon"><GitPullRequestDraft size={18} /></span>
-          <div><strong>Simulation plan</strong><span>{resource.type} · {resource.name}</span></div>
-          <button className="icon-button" onClick={onClose} aria-label="Close plan"><X size={18} /></button>
+          <div><strong>Draft workspace</strong><span>{resource.type} · {resource.name}</span></div>
+          <button className="icon-button" onClick={onClose} aria-label="Close Draft workspace"><X size={18} /></button>
         </header>
 
         <div className="plan-layout">
           <aside className="plan-history">
             <button className={showForm ? 'active' : ''} onClick={() => { setShowForm(true); setSelected(null) }}>
-              <span><CircleDot size={13} /> New plan</span><ArrowRight size={12} />
+              <span><CircleDot size={13} /> New revision</span><ArrowRight size={12} />
             </button>
-            <p>LOCAL PLANS</p>
+            <p>REVIEW HISTORY</p>
             {plans.map((plan) => (
               <button
                 className={!showForm && selected?.id === plan.id ? 'active' : ''}
@@ -555,15 +561,15 @@ export default function PlanPanel({
                 <span className={`plan-status-dot status-${plan.status}`} />
               </button>
             ))}
-            {!plans.length && <div className="plan-history-empty">No plans for this resource.</div>}
+            {!plans.length && <div className="plan-history-empty">No reviewed Draft revisions yet.</div>}
           </aside>
 
           <main className="plan-main">
             {showForm ? (
               <form className="plan-form" onSubmit={createPlan}>
-                <div className="plan-step-heading"><span>1</span><div><strong>Define an auditable change</strong><small>Nothing is sent to Flow360 in this step.</small></div></div>
+                <div className="plan-step-heading"><span>1</span><div><strong>Configure this Draft</strong><small>Review and validation do not start meshing or a solver run.</small></div></div>
                 <label>
-                  <span>Plan / run name</span>
+                  <span>Draft / run name</span>
                   <input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required />
                 </label>
                 <label>
@@ -602,11 +608,11 @@ export default function PlanPanel({
                       title={!intent.trim() ? 'Describe the simulation goal to use AI parameter fill.' : undefined}
                     >
                       {assistLoading ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
-                      {assistLoading ? 'Filling…' : 'Fill plan parameters with AI'}
+                      {assistLoading ? 'Filling…' : 'Fill Draft parameters with AI'}
                     </button>
                   </div>
                   {assistLoading && (
-                    <small role="status">Codex is checking the active multi-stage Flow360 schemas. Complex plans can take a few minutes.</small>
+                    <small role="status">Codex is checking the active multi-stage Flow360 schemas. Complex Drafts can take a few minutes.</small>
                   )}
                   {assistAction && (
                     <div className="plan-ai-form-result">
@@ -794,9 +800,9 @@ export default function PlanPanel({
               </form>
             ) : selected ? (
               <div className="plan-review">
-                <button className="plan-back" onClick={() => setShowForm(true)}><ChevronLeft size={13} /> New plan</button>
+                <button className="plan-back" onClick={() => setShowForm(true)}><ChevronLeft size={13} /> New revision</button>
                 <div className="plan-review-title">
-                  <div><p className="eyebrow">PLAN {selected.id}</p><h2>{selected.name}</h2><p>{selected.intent}</p></div>
+                  <div><p className="eyebrow">DRAFT REVIEW {selected.id}</p><h2>{selected.name}</h2><p>{selected.intent}</p></div>
                   <span className={`plan-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
                 </div>
 
@@ -845,7 +851,7 @@ export default function PlanPanel({
                                 : `${preflightErrors.length} incompatible setting${preflightErrors.length === 1 ? '' : 's'} · no value entry is required`
                               : hasStructuredInputs && !preflightReady
                               ? `${preflightErrors.length} required value${preflightErrors.length === 1 ? '' : 's'} · no safe default will be guessed`
-                              : `Flow360 schema ${selected.preflight.validator_version || 'installed'} · plan revision ${selected.revision}`}
+                              : `Flow360 schema ${selected.preflight.validator_version || 'installed'} · Draft revision ${selected.revision}`}
                           </small>
                         </span>
                         <button
@@ -915,7 +921,7 @@ export default function PlanPanel({
                     </>
                   ) : (
                     <div className="plan-neutral preflight-not-run">
-                      <span>Preflight has not run for this plan.</span>
+                      <span>Preflight has not run for this Draft revision.</span>
                       <button type="button" onClick={() => void refreshPreflight()} disabled={preflightLoading}>
                         Run preflight
                       </button>
@@ -992,7 +998,7 @@ export default function PlanPanel({
                     >
                       {loading && submittingAction === 'approve'
                         ? <RefreshCw size={14} className="spin" />
-                        : <Check size={14} />} Approve this exact plan
+                        : <Check size={14} />} Approve this Draft revision
                     </button>
                   </div>
                 )}
@@ -1000,7 +1006,7 @@ export default function PlanPanel({
                 {(selected.status === 'approved' || selected.status === 'failed') && preflightReady && (
                   <div className="execution-card">
                     <div><Play size={17} /><span><strong>Remote execution</strong><small>This calls Flow360 and may create billable cloud resources.</small></span></div>
-                    <label><input type="checkbox" checked={executeConfirmed} onChange={(event) => setExecuteConfirmed(event.target.checked)} /><span>I understand this will submit the approved plan.</span></label>
+                    <label><input type="checkbox" checked={executeConfirmed} onChange={(event) => setExecuteConfirmed(event.target.checked)} /><span>I understand this will run the approved Draft revision.</span></label>
                     <button
                       className="execute"
                       disabled={!executeConfirmed || loading || !!submittingAction}
@@ -1029,9 +1035,9 @@ export default function PlanPanel({
                 <Flow360ConfirmationDialog
                   open={runConfirmationOpen}
                   eyebrow="Flow360 · Remote execution"
-                  title="Submit the approved plan?"
-                  description="This is the final handoff from local review to Flow360. Vibe Flow360 will submit only the validated plan shown behind this dialog."
-                  targetLabel="Approved simulation plan"
+                  title="Run the approved Draft?"
+                  description="This is the final handoff from review to Flow360. Vibe Flow360 will run only the validated Draft revision shown behind this dialog. The Draft remains available after the run."
+                  targetLabel="Approved Draft revision"
                   targetName={selected.name}
                   details={[
                     { label: 'Source', value: `${resource.type} · ${resource.name}` },
@@ -1041,7 +1047,7 @@ export default function PlanPanel({
                     },
                   ]}
                   risk="Flow360 may create new mesh or case resources and usage charges may apply. Closing this dialog makes no remote changes."
-                  confirmLabel="Submit approved plan"
+                  confirmLabel="Run approved Draft"
                   busy={loading && submittingAction === 'run'}
                   onCancel={() => setRunConfirmationOpen(false)}
                   onConfirm={() => void run()}

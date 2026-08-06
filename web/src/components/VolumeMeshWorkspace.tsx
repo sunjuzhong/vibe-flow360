@@ -153,7 +153,7 @@ export default function VolumeMeshWorkspace({
   const blockedCount = checks.filter((check) => check.status === 'blocked').length
   const reviewLevel = blockedCount > 0 ? 'blocked' : warningCount > 0 ? 'warning' : 'ready'
   const reviewLabel = reviewLevel === 'ready'
-    ? 'Ready for Case planning'
+    ? 'Ready for a Case Draft'
     : reviewLevel === 'blocked' ? 'Resolve volume mesh blockers' : 'Engineering review required'
   const selectedZone = review.selectedZone
   const entityNames = Object.fromEntries(review.zones.map((zone) => [zone.id, zone.name]))
@@ -234,7 +234,7 @@ export default function VolumeMeshWorkspace({
             <p>{reviewLevel === 'ready'
               ? 'Lifecycle, zones, quality evidence, and parameters are available for downstream review.'
               : reviewLevel === 'blocked'
-                ? 'The volume mesh failed. Review logs and meshing inputs before planning a Case.'
+                ? 'The volume mesh failed. Review logs and meshing inputs before creating a Case Draft.'
                 : 'Missing data remains visible as missing or proxy evidence; review it before relying on this mesh.'}</p>
             <div className="geometry-readiness-counts">
               {blockedCount > 0 && <span className="blocked">{blockedCount} blocker{blockedCount === 1 ? '' : 's'}</span>}
@@ -336,8 +336,8 @@ export default function VolumeMeshWorkspace({
           {review.parameters.length > 0 && <VolumeParameterSummary parameters={review.parameters} />}
 
           <div className="geometry-plan-action-stack">
-            <button className="geometry-plan-action" onClick={onPlanCase} disabled={failed} title={failed ? 'Cannot plan a Case from a failed volume mesh' : 'Plan a Case using this volume mesh'}>
-              <GitPullRequestDraft size={15} /> Plan Case
+            <button className="geometry-plan-action" onClick={onPlanCase} disabled={failed} title={failed ? 'Cannot create a Case Draft from a failed volume mesh' : 'Configure a Case Draft using this volume mesh'}>
+              <GitPullRequestDraft size={15} /> Configure Case Draft
             </button>
             {failed && onShowLogs && <button className="secondary-action" onClick={onShowLogs}><Activity size={14} /> View Logs</button>}
             <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>

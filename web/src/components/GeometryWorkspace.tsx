@@ -950,9 +950,9 @@ export default function GeometryWorkspace({
             disabled={semanticBusy || assignmentList.length === 0 || bodyIntent === 'undecided'}
             onClick={() => void createSemanticPlan()}
           >
-            <GitPullRequestDraft size={13} /> {semanticBusy ? 'Creating review plan…' : 'Create AI review plan'}
+            <GitPullRequestDraft size={13} /> {semanticBusy ? 'Creating Draft review…' : 'Create AI Draft review'}
           </button>
-          <small className="geometry-semantic-safety">Creates a local plan and preflight; no remote resource is changed.</small>
+          <small className="geometry-semantic-safety">Creates a Draft review and preflight; no mesh or solver run is started.</small>
           </div>
         </details>
 
@@ -1123,7 +1123,7 @@ export default function GeometryWorkspace({
                 disabled={advancedPlanBusy}
                 onClick={() => void createAdvancedPlan()}
               >
-                <GitPullRequestDraft size={13} /> {advancedPlanBusy ? 'Creating advanced review…' : 'Create advanced review plan'}
+                <GitPullRequestDraft size={13} /> {advancedPlanBusy ? 'Creating advanced Draft review…' : 'Create advanced Draft review'}
               </button>
             </>
           )}
@@ -1159,10 +1159,10 @@ export default function GeometryWorkspace({
           className="geometry-plan-action"
           onClick={onPlanSurfaceMesh}
           disabled={review.readiness === 'blocked'}
-          title={review.readiness === 'blocked' ? 'Resolve Geometry blockers before planning the Surface Mesh' : ''}
+          title={review.readiness === 'blocked' ? 'Resolve Geometry blockers before configuring the Surface Mesh Draft' : ''}
         >
           <GitPullRequestDraft size={15} />
-          {review.readiness === 'blocked' ? 'Resolve blockers first' : 'Plan Surface Mesh'}
+          {review.readiness === 'blocked' ? 'Resolve blockers first' : 'Configure Surface Mesh Draft'}
         </button>
       </aside>
     </section>

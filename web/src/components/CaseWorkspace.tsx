@@ -602,12 +602,12 @@ export default function CaseWorkspace({
               className="geometry-plan-action"
               onClick={onPlanCase}
               disabled={viewModel.status === 'failed'}
-              title={viewModel.status === 'failed' ? 'Cannot plan a variation from a failed Case' : 'Plan a Case variation'}
+              title={viewModel.status === 'failed' ? 'Cannot create a Draft from a failed Case' : 'Configure a Case Draft variation'}
             >
-              <GitPullRequestDraft size={14} /> Plan variation
+              <GitPullRequestDraft size={14} /> Draft variation
             </button>
           </div>
-          <small className="readiness-summary">Variations are staged as auditable plans before Flow360 submission.</small>
+          <small className="readiness-summary">Variations are staged as auditable Draft revisions before Flow360 execution.</small>
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}

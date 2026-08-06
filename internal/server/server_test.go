@@ -1722,3 +1722,18 @@ func TestKPIsFromConvergenceUsesForceHistory(t *testing.T) {
 		t.Fatalf("expected converged KPI: %#v", kpis[1])
 	}
 }
+
+func TestFindDraftInPayloadSupportsProjectDraftEnvelopes(t *testing.T) {
+	payload := json.RawMessage(`{"records":[{"id":"dft-1","source_item_id":"geo-1"},{"id":"dft-2","source_id":"sm-1"}]}`)
+
+	record, ok := findDraftInPayload(payload, "dft-2")
+	if !ok {
+		t.Fatal("expected Draft to be found")
+	}
+	if got := firstStringField(record, "source_id", "source_item_id"); got != "sm-1" {
+		t.Fatalf("got source %q, want sm-1", got)
+	}
+	if _, ok := findDraftInPayload(payload, "dft-missing"); ok {
+		t.Fatal("did not expect an unknown Draft to be found")
+	}
+}

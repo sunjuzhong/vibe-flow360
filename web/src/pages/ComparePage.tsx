@@ -196,7 +196,7 @@ export default function ComparePage() {
                         ))}
                       </dl>
                       <Link to={`/projects/${projectId}/resources/${item.id}`}>
-                        <GitPullRequestDraft size={13} /> Open to plan variation
+                        <GitPullRequestDraft size={13} /> Open Draft variation
                       </Link>
                     </article>
                   ))}
@@ -220,7 +220,7 @@ export default function ComparePage() {
                 <div>
                   <p className="eyebrow">REVIEWED VARIATIONS</p>
                   <h2>Parameter Sweep</h2>
-                  <p>Creates local draft plans only. Every plan still requires individual approval before Flow360 execution.</p>
+                  <p>Creates review revisions for each Draft. Every revision still requires individual approval before Flow360 execution.</p>
                 </div>
                 <label>
                   SimulationParams path
@@ -235,20 +235,20 @@ export default function ComparePage() {
                 </button>
                 {sweep && (
                   <div className={`sweep-review ${sweep.plan.over_budget ? 'blocked' : ''}`}>
-                    <strong>{sweep.plan.total_cases} review plans</strong>
+                    <strong>{sweep.plan.total_cases} Draft reviews</strong>
                     <span>Recommended maximum: {sweep.plan.max_recommended}</span>
                     {(sweep.warnings ?? []).map((warning) => <p key={warning}><AlertCircle size={13} />{warning}</p>)}
                     {(sweep.plans ?? []).length > 0 && (
-                      <p><CheckCircle2 size={14} /> {(sweep.plans ?? []).length} idempotent draft plans created.</p>
+                      <p><CheckCircle2 size={14} /> {(sweep.plans ?? []).length} idempotent Draft reviews created.</p>
                     )}
                     {!sweep.plan.over_budget && (sweep.plans ?? []).length === 0 && (
                       <>
                         <label className="sweep-confirm">
                           <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-                          I confirm the combination count and want to create local review plans.
+                          I confirm the combination count and want to create Draft reviews.
                         </label>
                         <button className="geometry-plan-action" disabled={!confirmed || sweepLoading} onClick={() => previewSweep(true)}>
-                          <GitPullRequestDraft size={14} /> Create review plans
+                          <GitPullRequestDraft size={14} /> Create Draft reviews
                         </button>
                       </>
                     )}

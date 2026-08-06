@@ -4,7 +4,6 @@ import {
   Cloud,
   GitBranch,
   GitCompare,
-  GitPullRequestDraft,
   Info,
   MessageSquareText,
   PanelLeftOpen,
@@ -87,10 +86,10 @@ export function resourceContextLabel(projectName: string, resourceName: string, 
 }
 
 const resourceSuggestions: Record<string, string[]> = {
-  Geometry: ['Review this Geometry’s modeling assumptions', 'Plan a Surface Mesh', 'What inputs still need confirmation?'],
-  SurfaceMesh: ['Assess the current surface mesh settings', 'Plan a Volume Mesh', 'Explain the mesh parameter summary'],
-  VolumeMesh: ['Plan a baseline Case', 'Check the domain and boundary conditions', 'Give me a pre-solve checklist'],
-  Case: ['Assess this Case setup', 'Are these results trustworthy?', 'Plan a parameter variation'],
+  Geometry: ['Review this Geometry’s modeling assumptions', 'Configure a Surface Mesh Draft', 'What inputs still need confirmation?'],
+  SurfaceMesh: ['Assess the current surface mesh settings', 'Configure a Volume Mesh Draft', 'Explain the mesh parameter summary'],
+  VolumeMesh: ['Configure a baseline Case Draft', 'Check the domain and boundary conditions', 'Give me a pre-solve checklist'],
+  Case: ['Assess this Case setup', 'Are these results trustworthy?', 'Configure a Draft variation'],
 }
 
 function descendants(node: ResourceNode): number {
@@ -549,14 +548,6 @@ export default function ProjectPage() {
             onClick={() => setSyncNonce((value) => value + 1)}
             disabled={loading || syncing}
           />
-          {selected && (
-            <ProjectShellAction
-              label="Plan"
-              icon={<GitPullRequestDraft size={15} />}
-              className="primary"
-              onClick={() => { setChatOpen(false); setInitialPlanId(''); setPlanOpen(true) }}
-            />
-          )}
           {items.some((item) => item.type === 'Case') && (
             <ProjectShellAction
               label="Compare"
@@ -682,6 +673,11 @@ export default function ProjectPage() {
                     setPlanOpen(true)
                   }}
                   onInspect={() => setActivePanel('parameters')}
+                  onReview={() => {
+                    setChatOpen(false)
+                    setInitialPlanId('')
+                    setPlanOpen(true)
+                  }}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
                 />
               )}
@@ -699,7 +695,7 @@ export default function ProjectPage() {
                   .filter((item) => item.type === 'Geometry')
                   .map((item) => ({ id: item.id, name: item.name }))}
                 onCreateSemanticPlan={async (draft: GeometrySemanticDraft) => {
-                  if (!project) throw new Error('Project context is required to create a Geometry semantic review plan.')
+                  if (!project) throw new Error('Project context is required to create a Geometry Draft review.')
                   const result = await api.planFromAction(geometrySemanticAgentAction({
                     project,
                     geometryId: selected.id,
@@ -707,7 +703,7 @@ export default function ProjectPage() {
                     draft,
                   }))
                   const plan = result.results.find((item) => item.plan)?.plan
-                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')
+                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Draft review creation failed')
                   setInitialPlanId(plan.id)
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -717,7 +713,7 @@ export default function ProjectPage() {
                   comparison: GeometryComparison | null,
                   templateId: GeometryReviewTemplateId,
                 ) => {
-                  if (!project) throw new Error('Project context is required to create an advanced Geometry review plan.')
+                  if (!project) throw new Error('Project context is required to create an advanced Geometry Draft review.')
                   const result = await api.planFromAction(geometryDiagnosticAgentAction({
                     project,
                     geometryId: selected.id,
@@ -727,7 +723,7 @@ export default function ProjectPage() {
                     templateId,
                   }))
                   const plan = result.results.find((item) => item.plan)?.plan
-                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')
+                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Draft review creation failed')
                   setInitialPlanId(plan.id)
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -751,7 +747,7 @@ export default function ProjectPage() {
                 versions={surfaceMeshVersions}
                 onCreateRemediationPlan={async (recommendation: SurfaceRemediationRecommendation) => {
                   if (!project || !contextGeometryId) {
-                    throw new Error('The parent Geometry is required to create a SurfaceMesh remediation plan.')
+                    throw new Error('The parent Geometry is required to create a SurfaceMesh Draft repair.')
                   }
                   const geometry = items.find((item) => item.id === contextGeometryId)
                   const result = await api.planFromAction(remediationAgentAction({
@@ -761,7 +757,7 @@ export default function ProjectPage() {
                     geometryName: geometry?.name ?? 'Geometry',
                   }))
                   const plan = result.results.find((item) => item.plan)?.plan
-                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Plan creation failed')
+                  if (!plan) throw new Error(result.results.find((item) => item.error)?.error ?? 'Draft review creation failed')
                   setInitialPlanId(plan.id)
                   setChatOpen(false)
                   setPlanOpen(true)
@@ -960,7 +956,7 @@ export default function ProjectPage() {
           project_resource_count: items.length,
           project_draft_count: drafts.length,
           branch_resource_count: selected ? descendants(selected) + 1 : undefined,
-          execution_boundary: 'Read-only workbench. Propose plans and validation, but do not claim execution.',
+          execution_boundary: 'Read-only workbench. Propose Draft changes and validation, but do not claim execution.',
         })}
         suggestions={selected ? resourceSuggestions[selected.type] ?? [] : []}
       />
@@ -973,10 +969,11 @@ export default function ProjectPage() {
           }}
           project={project}
           resource={selected}
-          detail={detail}
+          detail={draftMode ? draftDetail : detail}
+          draftId={draftMode ? activeDraft?.id : undefined}
           initialPlanId={initialPlanId}
           onSubmitted={() => {
-            void loadProject()
+            void Promise.all([loadProject(), loadDrafts()])
           }}
         />
       )}

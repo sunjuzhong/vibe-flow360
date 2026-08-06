@@ -34,6 +34,7 @@ describe('ProjectDraftBar', () => {
         onExit={() => undefined}
         onCreate={() => undefined}
         onInspect={() => undefined}
+        onReview={() => undefined}
         onRefresh={() => undefined}
       />,
     )
@@ -65,6 +66,7 @@ describe('ProjectDraftBar', () => {
         onExit={() => undefined}
         onCreate={() => undefined}
         onInspect={() => undefined}
+        onReview={() => undefined}
         onRefresh={() => undefined}
       />,
     )
@@ -75,6 +77,8 @@ describe('ProjectDraftBar', () => {
     expect(markup).toContain('aria-label="Switch active Draft"')
     expect(markup).toContain('value="draft-2" selected=""')
     expect(markup).toContain('Parameters')
+    expect(markup).toContain('Review &amp; Run')
+    expect(markup).toContain('Validate, review, and run this Draft')
     expect(markup).toContain('aria-label="Refresh Drafts"')
     expect(markup).not.toContain('Active Draft')
     expect(markup).not.toContain('Draft menu')

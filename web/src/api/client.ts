@@ -924,6 +924,7 @@ export const api = {
     source_id: string
     source_type: string
     source_name: string
+    draft_id?: string
     target: string
     name: string
     intent: string

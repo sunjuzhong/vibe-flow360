@@ -737,6 +737,7 @@ type createPlanRequest struct {
 	SourceID    string          `json:"source_id"`
 	SourceType  string          `json:"source_type"`
 	SourceName  string          `json:"source_name"`
+	DraftID     string          `json:"draft_id"`
 	Target      string          `json:"target"`
 	Name        string          `json:"name"`
 	Intent      string          `json:"intent"`
@@ -766,6 +767,24 @@ func (s *Server) createPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "source resource does not belong to this project"})
 		return
 	}
+	draftID := strings.TrimSpace(request.DraftID)
+	if draftID != "" {
+		drafts, listErr := s.flow360.ProjectDrafts(c.Request.Context(), request.ProjectID)
+		if listErr != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify the selected Flow360 Draft"})
+			return
+		}
+		draft, ok := findDraftInPayload(drafts, draftID)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "selected Draft does not belong to this project"})
+			return
+		}
+		draftSource := firstStringField(draft, "source_id", "source_item_id")
+		if draftSource != "" && draftSource != request.SourceID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "selected Draft is not based on this source resource"})
+			return
+		}
+	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: request.ProjectID, ProjectName: request.ProjectName,
 		SourceID: request.SourceID, SourceType: detail.Type, SourceName: info.Name,
@@ -776,8 +795,62 @@ func (s *Server) createPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if draftID != "" {
+		remoteIDs := &plans.RemoteIDs{ProjectID: request.ProjectID, DraftID: draftID}
+		switch detail.Type {
+		case "Geometry":
+			remoteIDs.GeometryID = request.SourceID
+		case "SurfaceMesh", "VolumeMesh":
+			remoteIDs.MeshID = request.SourceID
+		case "Case":
+			remoteIDs.CaseID = request.SourceID
+		}
+		plan, err = s.plans.SetRemoteIDs(plan.ID, remoteIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not bind the Draft review state"})
+			return
+		}
+	}
 	plan = s.runPlanPreflight(c.Request.Context(), plan)
 	c.JSON(http.StatusCreated, plan)
+}
+
+func findDraftInPayload(raw json.RawMessage, draftID string) (map[string]any, bool) {
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil, false
+	}
+	var visit func(any) (map[string]any, bool)
+	visit = func(value any) (map[string]any, bool) {
+		switch typed := value.(type) {
+		case []any:
+			for _, child := range typed {
+				if found, ok := visit(child); ok {
+					return found, true
+				}
+			}
+		case map[string]any:
+			if firstStringField(typed, "id", "draft_id") == draftID {
+				return typed, true
+			}
+			for _, child := range typed {
+				if found, ok := visit(child); ok {
+					return found, true
+				}
+			}
+		}
+		return nil, false
+	}
+	return visit(payload)
+}
+
+func firstStringField(record map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := record[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *Server) listPlans(c *gin.Context) {

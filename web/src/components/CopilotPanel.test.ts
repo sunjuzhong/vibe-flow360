@@ -38,6 +38,6 @@ describe('Ask AI plan conversion feedback', () => {
   it('produces a visible local-plan completion summary', () => {
     expect(actionPlanConversionSummary({
       message: 'ready', results: [], total: 2, created: 1, failed: 1,
-    })).toBe('1/2 local plans ready')
+    })).toBe('1/2 Draft reviews ready')
   })
 })

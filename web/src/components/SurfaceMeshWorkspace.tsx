@@ -365,7 +365,7 @@ export default function SurfaceMeshWorkspace({
           />
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
-            Plan Volume Mesh
+            Configure Volume Mesh Draft
           </button>
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>

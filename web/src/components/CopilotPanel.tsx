@@ -20,7 +20,7 @@ export function shouldShowCopilotClarification(panelOpen: boolean, action: Agent
 export const copilotHorizontalContainment = { overflowX: 'hidden' } as const
 
 export function actionPlanConversionSummary(result: ActionPlanResult) {
-  return `${result.created}/${result.total} local plan${result.total === 1 ? '' : 's'} ready`
+  return `${result.created}/${result.total} Draft review${result.total === 1 ? '' : 's'} ready`
 }
 
 export type CopilotScopeType = 'project' | 'resource' | 'draft'
@@ -289,7 +289,7 @@ export default function CopilotPanel({
               {message.action && message.action.kind === 'create-plan' && (
                 <div className="action-plan-card">
                   <div className="action-plan-header">
-                    <strong>📋 Simulation plan</strong>
+                    <strong>📋 Draft proposal</strong>
                     <span className="action-plan-count">{message.action.proposals?.length ?? 0} proposals</span>
                   </div>
                   {message.action.warnings && message.action.warnings.length > 0 && (
@@ -318,20 +318,20 @@ export default function CopilotPanel({
                         {message.conversion.failed ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
                         <span>
                           <strong>{actionPlanConversionSummary(message.conversion)}</strong>
-                          <small>Nothing was submitted to Flow360. Open a plan to validate and review it.</small>
+                          <small>Nothing was run in Flow360. Open a Draft to validate and review it.</small>
                         </span>
                       </div>
                       <div className="action-plan-conversion-results">
                         {message.conversion.results.map((item) => item.plan ? (
                           <button type="button" key={item.id} onClick={() => onOpenPlan(item.plan!)}>
                             <CheckCircle2 size={14} />
-                            <span><strong>{item.plan.name}</strong><small>Local draft plan · review required</small></span>
+                            <span><strong>{item.plan.name}</strong><small>Draft review · approval required</small></span>
                             <ChevronRight size={14} />
                           </button>
                         ) : (
                           <div className="failed" key={item.id}>
                             <AlertCircle size={14} />
-                            <span><strong>{item.id}</strong><small>{item.error || 'Plan conversion failed'}</small></span>
+                            <span><strong>{item.id}</strong><small>{item.error || 'Draft conversion failed'}</small></span>
                           </div>
                         ))}
                       </div>
@@ -339,14 +339,14 @@ export default function CopilotPanel({
                   ) : (
                     <>
                       {message.conversionError && (
-                        <div className="action-plan-conversion-error"><AlertCircle size={14} /><span><strong>Could not create the local plan</strong><small>{message.conversionError}</small></span></div>
+                        <div className="action-plan-conversion-error"><AlertCircle size={14} /><span><strong>Could not create the Draft review</strong><small>{message.conversionError}</small></span></div>
                       )}
                       <button
                         className="action-plan-convert"
                         disabled={convertingIndex !== null}
                         onClick={() => convertToPlans(index)}
                       >
-                        {convertingIndex === index ? <><Loader2 className="spin" size={14} /> Creating local plans…</> : <><ChevronRight size={14} /> {message.conversionError ? 'Try conversion again' : 'Convert to plans'}</>}
+                        {convertingIndex === index ? <><Loader2 className="spin" size={14} /> Creating Draft reviews…</> : <><ChevronRight size={14} /> {message.conversionError ? 'Try conversion again' : 'Convert to Draft'}</>}
                       </button>
                     </>
                   )}

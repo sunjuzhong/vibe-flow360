@@ -1,4 +1,4 @@
-import { ArrowLeft, Braces, ChevronRight, GitPullRequestDraft, Plus, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Braces, ChevronRight, GitPullRequestDraft, Play, Plus, RefreshCw } from 'lucide-react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 
@@ -16,6 +16,7 @@ type Props = {
   onExit: () => void
   onCreate: () => void
   onInspect: () => void
+  onReview: () => void
   onRefresh: () => void
 }
 
@@ -53,6 +54,7 @@ export default function ProjectDraftBar({
   onExit,
   onCreate,
   onInspect,
+  onReview,
   onRefresh,
 }: Props) {
   if (mode === 'resource') {
@@ -129,6 +131,15 @@ export default function ProjectDraftBar({
       </label>
 
       <div className="project-draft-actions">
+        <button
+          type="button"
+          onClick={onReview}
+          disabled={!selectedId || detailLoading}
+          title="Validate, review, and run this Draft"
+        >
+          <Play size={14} />
+          <span>Review &amp; Run</span>
+        </button>
         <button
           type="button"
           onClick={onInspect}

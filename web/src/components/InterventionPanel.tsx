@@ -309,7 +309,7 @@ export default function InterventionPanel({
                             >
                               {loading && action === 'select'
                                 ? <><Loader2 size={14} className="spin" /> Applying and validating…</>
-                                : <><Sparkles size={14} /> Apply this repair to Plan</>}
+                                : <><Sparkles size={14} /> Apply this repair to Draft</>}
                             </button>
                           )}
                         </div>
@@ -369,7 +369,7 @@ export default function InterventionPanel({
                   <div className="intervention-repaired-plan">
                     <CheckCircle2 size={16} />
                     <span><strong>Repair applied and locally validated</strong><small>Review the exact parameter diff before approving another Flow360 run.</small></span>
-                    <button className="primary" onClick={() => onOpenPlan(selected.plan_id!)}>Review repaired Plan</button>
+                    <button className="primary" onClick={() => onOpenPlan(selected.plan_id!)}>Review repaired Draft</button>
                   </div>
                 )}
 
