@@ -147,6 +147,7 @@ export function ViewerToolsDock({
         className={`viewer-tools-launcher ${model.panelOpen ? 'active' : ''}`}
         aria-expanded={open}
         aria-controls={menuId}
+        title="Open measurement and annotation tools"
         onClick={() => setOpen((value) => !value)}
       >
         <Wrench size={13} /> Tools <ChevronDown size={12} />

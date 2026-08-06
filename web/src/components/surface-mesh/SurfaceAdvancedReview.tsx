@@ -21,11 +21,12 @@ export function SurfaceAdvancedToolbar({
         type="button"
         className={clipping ? 'active' : ''}
         aria-pressed={clipping}
+        title="Toggle clipping plane"
         onClick={onToggleClipping}
       >
         <Scissors size={11} /> Clip
       </button>
-      <button type="button" onClick={onCapture}>
+      <button type="button" onClick={onCapture} title="Export the current view as PNG">
         <Camera size={11} /> Export PNG
       </button>
     </div>

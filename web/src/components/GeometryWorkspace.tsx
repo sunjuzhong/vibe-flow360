@@ -76,7 +76,6 @@ import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
-import { ViewerToolbarSections } from './viewer/ViewerToolbarSections'
 
 const readinessCopy = {
   ready: { label: 'Ready', detail: 'Available geometry evidence passes preflight.' },
@@ -734,8 +733,7 @@ export default function GeometryWorkspace({
           showEntityLegend={false}
           showFieldPanel={false}
           cameraCommand={cameraCommand}
-          toolbar={(
-            <ViewerToolbarSections actions={(
+          topToolbar={(
               <div className="geometry-camera-toolbar" aria-label="Geometry actions">
                 <button
                   className={clipEnabled ? 'active' : ''}
@@ -754,7 +752,6 @@ export default function GeometryWorkspace({
                   <Camera size={13} /> PNG
                 </button>
               </div>
-            )} />
           )}
         />
         <ViewerToolPanel model={tools} />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import { Eye, EyeOff, Focus, View } from 'lucide-react'
+import { Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
@@ -85,41 +85,93 @@ export type ViewerClipPlane = {
 }
 
 export type ViewerCameraCommand = {
-  type: 'fit' | 'fit-selection' | 'x' | 'y' | 'z' | 'iso'
+  type: 'fit' | 'fit-selection' | 'x' | '-x' | 'y' | '-y' | 'z' | '-z' | 'iso'
   nonce: number
 }
 
 export type ViewerOverlayContent = Omit<ViewerOverlayFrame, 'resourceRef' | 'assetWorldMatrix'>
 
+export function createEngineeringLightRig() {
+  const rig = new THREE.Group()
+  rig.name = 'engineering-viewer-light-rig'
+
+  // CFD review needs readable geometry from every direction. The hemisphere
+  // light keeps normals legible without flattening them, while the low fill
+  // prevents the underside from becoming a black silhouette.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.25)
+  ambient.name = 'ambient-fill'
+  rig.add(ambient)
+
+  const hemisphere = new THREE.HemisphereLight(0xffffff, 0xd9e2e8, 0.7)
+  hemisphere.name = 'sky-ground-fill'
+  rig.add(hemisphere)
+
+  const key = new THREE.DirectionalLight(0xffffff, 0.55)
+  key.name = 'upper-key'
+  key.position.set(5, 8, 10)
+  rig.add(key)
+
+  const lowerFill = new THREE.DirectionalLight(0xe8f1ff, 0.4)
+  lowerFill.name = 'lower-fill'
+  lowerFill.position.set(-4, -6, -5)
+  rig.add(lowerFill)
+
+  const rim = new THREE.DirectionalLight(0xf4f7ff, 0.25)
+  rim.name = 'side-rim'
+  rim.position.set(-7, 4, 2)
+  rig.add(rim)
+
+  return rig
+}
+
 export function ViewerNavCube({
-  hasSelection,
   onCommand,
 }: {
-  hasSelection: boolean
   onCommand: (type: ViewerCameraCommand['type']) => void
 }) {
   return (
     <div className="viewer-navigation" aria-label="3D view navigation">
       <div className="viewer-navcube" role="group" aria-label="NavCube orientation controls">
-        <div className="viewer-navcube-cube">
-          <button className="viewer-navcube-face front" type="button" onClick={() => onCommand('y')} aria-label="View from positive Y">Y</button>
-          <button className="viewer-navcube-face right" type="button" onClick={() => onCommand('x')} aria-label="View from positive X">X</button>
-          <button className="viewer-navcube-face top" type="button" onClick={() => onCommand('z')} aria-label="View from positive Z">Z</button>
-        </div>
-        <button className="viewer-navcube-iso" type="button" onClick={() => onCommand('iso')} aria-label="Isometric view">ISO</button>
-      </div>
-      <div className="viewer-fit-controls" role="group" aria-label="Fit controls">
-        <button type="button" onClick={() => onCommand('fit')} title="Fit all">
-          <Focus size={13} /> <span>Fit</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onCommand('fit-selection')}
-          disabled={!hasSelection}
-          title="Fit selected entity"
-        >
-          <View size={13} /> <span>Selection</span>
-        </button>
+        <svg viewBox="0 0 166 132" aria-hidden="true">
+          <defs>
+            <linearGradient id="navcube-top" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#f7f8f5" />
+              <stop offset="1" stopColor="#dfe2dc" />
+            </linearGradient>
+            <linearGradient id="navcube-left" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#eef0eb" />
+              <stop offset="1" stopColor="#cfd3cc" />
+            </linearGradient>
+            <linearGradient id="navcube-right" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#e8ebe5" />
+              <stop offset="1" stopColor="#c4c9c1" />
+            </linearGradient>
+            <marker id="navcube-x-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#e53935" /></marker>
+            <marker id="navcube-y-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#12b82e" /></marker>
+            <marker id="navcube-z-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#1748e8" /></marker>
+          </defs>
+          <g className="viewer-navcube-body">
+            <path className="viewer-navcube-panel top" d="M50 20 Q47 20 44 24 L35 42 68 57 123 53 108 29 Q106 26 102 26Z" />
+            <path className="viewer-navcube-panel left" d="M35 42 68 57 66 102 Q65 106 61 105 L35 94 Q31 92 31 88 L31 51 Q31 46 35 42Z" />
+            <path className="viewer-navcube-panel right" d="M68 57 123 53 119 93 Q118 99 112 101 L66 102Z" />
+            <text x="73" y="40" className="viewer-navcube-face-label z">Z</text>
+            <text x="43" y="77" className="viewer-navcube-face-label">+X</text>
+            <text x="88" y="79" className="viewer-navcube-face-label">−Y</text>
+          </g>
+          <g className="viewer-navcube-axes">
+            <circle cx="65" cy="104" r="3.5" />
+            <line x1="65" y1="104" x2="147" y2="111" className="axis-x" markerEnd="url(#navcube-x-arrow)" />
+            <line x1="65" y1="104" x2="14" y2="71" className="axis-y" markerEnd="url(#navcube-y-arrow)" />
+            <line x1="65" y1="104" x2="65" y2="29" className="axis-z" markerEnd="url(#navcube-z-arrow)" />
+            <text x="151" y="119" className="axis-x-label">X</text>
+            <text x="3" y="69" className="axis-y-label">Y</text>
+            <text x="69" y="20" className="axis-z-label">Z</text>
+          </g>
+        </svg>
+        <button className="viewer-navcube-hit top viewer-icon-tooltip" data-tooltip="Top view (+Z)" title="Top view (+Z)" type="button" onClick={() => onCommand('z')} aria-label="View from positive Z" />
+        <button className="viewer-navcube-hit left viewer-icon-tooltip" data-tooltip="Left face view (+X)" title="Left face view (+X)" type="button" onClick={() => onCommand('x')} aria-label="View from positive X" />
+        <button className="viewer-navcube-hit right viewer-icon-tooltip" data-tooltip="Right face view (−Y)" title="Right face view (−Y)" type="button" onClick={() => onCommand('-y')} aria-label="View from negative Y" />
+        <button className="viewer-navcube-iso viewer-icon-tooltip" data-tooltip="Isometric view" title="Isometric view" type="button" onClick={() => onCommand('iso')} aria-label="Isometric view">ISO</button>
       </div>
     </div>
   )
@@ -189,6 +241,7 @@ type Props = {
   showEntityLegend?: boolean
   showWarnings?: boolean
   toolbar?: React.ReactNode
+  topToolbar?: React.ReactNode
   cameraCommand?: ViewerCameraCommand | null
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
@@ -226,6 +279,7 @@ export function Viewer3D({
   showEntityLegend = true,
   showWarnings = true,
   toolbar,
+  topToolbar,
   cameraCommand,
   showNormals = false,
   entityAppearances = {},
@@ -376,11 +430,7 @@ export function Viewer3D({
     controls.dampingFactor = 0.08
     controls.screenSpacePanning = true
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6)
-    scene.add(ambient)
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8)
-    dir.position.set(5, 10, 7)
-    scene.add(dir)
+    scene.add(createEngineeringLightRig())
 
     sceneRef.current = scene
     cameraRef.current = camera
@@ -565,28 +615,28 @@ export function Viewer3D({
         if (selectedEntity?.visible) box.expandByObject(selectedEntity)
       }
       for (const mesh of meshesRef.current.values()) {
-        if (selectedIds.includes(mesh.userData.groupId) && mesh.visible) {
-          box.expandByObject(mesh)
-        }
+        if (selectedIds.includes(mesh.userData.groupId) && mesh.visible) box.expandByObject(mesh)
       }
     }
     if (box.isEmpty()) box.setFromObject(asset)
     const center = box.getCenter(new THREE.Vector3())
     const size = box.getSize(new THREE.Vector3())
     const radius = Math.max(size.length() / 2, 0.001)
-    const currentDirection = camera.position.clone().sub(controls.target).normalize()
-    const directions: Record<'x' | 'y' | 'z' | 'iso', THREE.Vector3> = {
+    const directions: Record<Exclude<ViewerCameraCommand['type'], 'fit' | 'fit-selection'>, THREE.Vector3> = {
       x: new THREE.Vector3(1, 0, 0),
+      '-x': new THREE.Vector3(-1, 0, 0),
       y: new THREE.Vector3(0, 1, 0),
+      '-y': new THREE.Vector3(0, -1, 0),
       z: new THREE.Vector3(0, 0, 1),
+      '-z': new THREE.Vector3(0, 0, -1),
       iso: new THREE.Vector3(1, 1, 1).normalize(),
     }
     const direction = type === 'fit-selection'
-      ? currentDirection
+      ? camera.position.clone().sub(controls.target).normalize()
       : directions[type]
     const distance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.25
     camera.up.set(0, 0, 1)
-    if (type === 'z') camera.up.set(0, 1, 0)
+    if (type === 'z' || type === '-z') camera.up.set(0, 1, 0)
     camera.position.copy(center).add(direction.multiplyScalar(distance))
     controls.target.copy(center)
     cameraBoundsRadiusRef.current = radius
@@ -1124,10 +1174,19 @@ export function Viewer3D({
       )}
       {visibleState.status === 'ready' && (
         <>
-          <ViewerNavCube
-            hasSelection={Boolean(selection?.groupId)}
-            onCommand={applyCameraCommand}
-          />
+          <ViewerNavCube onCommand={applyCameraCommand} />
+          <div className="viewer-top-toolbar" role="toolbar" aria-label="Common viewer actions">
+            <button
+              className="viewer-top-toolbar-fit viewer-icon-tooltip"
+              data-tooltip="Fit the complete model in the viewport"
+              type="button"
+              onClick={() => applyCameraCommand('fit')}
+              aria-label="Fit complete model"
+            >
+              <Focus size={14} /> <span>Fit</span>
+            </button>
+            {topToolbar}
+          </div>
           {assetStats && (
             <div className="viewer-asset-stats">
               <span>{assetStats.faces} faces</span>

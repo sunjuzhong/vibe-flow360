@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { precisionFallbackNotice, Viewer3D, ViewerNavCube } from './Viewer3D'
+import { createEngineeringLightRig, precisionFallbackNotice, Viewer3D, ViewerNavCube } from './Viewer3D'
 
 describe('Viewer3D layout state', () => {
   it('marks the container as loading without rendering the controls gutter content', () => {
@@ -40,18 +41,30 @@ describe('Viewer3D layout state', () => {
 
   it('renders the shared camera controls for every ready 3D workspace', () => {
     const html = renderToStaticMarkup(
-      <ViewerNavCube hasSelection={false} onCommand={() => undefined} />,
+      <ViewerNavCube onCommand={() => undefined} />,
     )
 
     expect(html).toContain('aria-label="3D view navigation"')
     expect(html).toContain('aria-label="NavCube orientation controls"')
-    expect(html).toContain('title="Fit all"')
-    expect(html).toContain('title="Fit selected entity"')
     expect(html).toContain('aria-label="View from positive X"')
-    expect(html).toContain('aria-label="View from positive Y"')
+    expect(html).toContain('aria-label="View from negative Y"')
     expect(html).toContain('aria-label="View from positive Z"')
     expect(html).toContain('aria-label="Isometric view"')
-    expect(html).toContain('disabled=""')
+    expect(html).toContain('data-tooltip="Top view (+Z)"')
+    expect(html).not.toContain('Fit selected')
+  })
+
+  it('uses balanced engineering lighting with an explicit underside fill', () => {
+    const rig = createEngineeringLightRig()
+    const lights = rig.children.filter((child): child is THREE.Light => child instanceof THREE.Light)
+    const directionalLights = lights.filter(
+      (light): light is THREE.DirectionalLight => light instanceof THREE.DirectionalLight,
+    )
+
+    expect(lights.some((light) => light instanceof THREE.HemisphereLight)).toBe(true)
+    expect(lights.some((light) => light instanceof THREE.AmbientLight)).toBe(true)
+    expect(directionalLights.some((light) => light.position.z > 0)).toBe(true)
+    expect(directionalLights.some((light) => light.position.z < 0)).toBe(true)
   })
 
   it('explains an unavailable explicit LOD and the restored manifest default', () => {

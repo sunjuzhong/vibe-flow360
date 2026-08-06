@@ -40,6 +40,7 @@ export type ViewerToolbarProps = {
   showEntityLegend?: boolean
   showWarnings?: boolean
   toolbar?: React.ReactNode
+  topToolbar?: React.ReactNode
 }
 
 export function LazyViewer3D(props: ComponentProps<typeof Viewer3DComponent>) {
