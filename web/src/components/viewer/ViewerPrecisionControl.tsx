@@ -19,12 +19,14 @@ export function ViewerPrecisionControl({
   levels,
   currentLevel,
   selection,
+  unavailableLevels = new Set<number>(),
   disabled = false,
   onChange,
 }: {
   levels: number
   currentLevel: number
   selection: ViewerPrecisionSelection
+  unavailableLevels?: ReadonlySet<number>
   disabled?: boolean
   onChange: (selection: ViewerPrecisionSelection) => void
 }) {
@@ -41,7 +43,9 @@ export function ViewerPrecisionControl({
       >
         <option value="default">Manifest default · L{currentLevel}</option>
         {Array.from({ length: levels }, (_, level) => (
-          <option key={level} value={level}>{precisionLevelLabel(level, levels)}</option>
+          <option key={level} value={level} disabled={unavailableLevels.has(level)}>
+            {precisionLevelLabel(level, levels)}{unavailableLevels.has(level) ? ' · unavailable' : ''}
+          </option>
         ))}
       </select>
     </label>

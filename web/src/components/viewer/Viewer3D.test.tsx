@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { Viewer3D } from './Viewer3D'
+import { precisionFallbackNotice, Viewer3D } from './Viewer3D'
 
 describe('Viewer3D layout state', () => {
   it('marks the container as loading without rendering the controls gutter content', () => {
@@ -36,5 +36,11 @@ describe('Viewer3D layout state', () => {
 
     expect(visible).toContain('Showing Geometry as spatial context.')
     expect(suppressed).not.toContain('Showing Geometry as spatial context.')
+  })
+
+  it('explains an unavailable explicit LOD and the restored manifest default', () => {
+    expect(precisionFallbackNotice(0, 1)).toBe(
+      'Detail level L0 is unavailable for this resource. Restored manifest default L1.',
+    )
   })
 })

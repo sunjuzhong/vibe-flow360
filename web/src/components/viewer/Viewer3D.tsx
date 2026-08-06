@@ -224,6 +224,14 @@ export function Viewer3D({
     selection: 'default',
   })
   const [precisionInfo, setPrecisionInfo] = useState({ levels: 1, currentLevel: 0 })
+  const [precisionNotice, setPrecisionNotice] = useState<{ assetURL: string | null; message: string }>({
+    assetURL: null,
+    message: '',
+  })
+  const [unavailablePrecision, setUnavailablePrecision] = useState<{ assetURL: string | null; levels: number[] }>({
+    assetURL: null,
+    levels: [],
+  })
   const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
   const [colormap, setColormap] = useState<ColormapName>('viridis')
   const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
@@ -251,6 +259,10 @@ export function Viewer3D({
   const effectiveWireframe = wireframe ?? wireframeOn
   const precisionSelection = precision.assetURL === manifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
+  const unavailablePrecisionLevels = new Set(
+    unavailablePrecision.assetURL === manifest?.asset_url ? unavailablePrecision.levels : [],
+  )
+  const activePrecisionNotice = precisionNotice.assetURL === manifest?.asset_url ? precisionNotice.message : ''
   const activeResourceRef = useMemo<ResourceRef | null>(() => {
     if (resourceRef) return resourceRef
     if (!manifest?.asset_url) return null
@@ -571,11 +583,27 @@ export function Viewer3D({
         .then(() => {
           if (!controller.signal.aborted) {
             loadedAssetURLRef.current = manifest.asset_url
+            if (requestedLODLevel !== undefined) setPrecisionNotice({ assetURL: manifest.asset_url, message: '' })
             setAssetState({ status: 'ready' })
           }
         })
         .catch((cause) => {
           if (controller.signal.aborted) return
+          if (requestedLODLevel !== undefined) {
+            setUnavailablePrecision((current) => ({
+              assetURL: manifest.asset_url,
+              levels: current.assetURL === manifest.asset_url
+                ? [...new Set([...current.levels, requestedLODLevel])]
+                : [requestedLODLevel],
+            }))
+            setPrecision({ assetURL: manifest.asset_url, selection: 'default' })
+            setPrecisionNotice({
+              assetURL: manifest.asset_url,
+              message: precisionFallbackNotice(requestedLODLevel, precisionInfo.currentLevel),
+            })
+            setAssetState({ status: 'loading', message: 'Selected precision is unavailable. Restoring manifest default…' })
+            return
+          }
           setAssetState({
             status: 'error',
             message: cause instanceof Error ? cause.message : String(cause),
@@ -1052,6 +1080,9 @@ export function Viewer3D({
           <p>{visibleState.message}</p>
         </div>
       )}
+      {activePrecisionNotice && visibleState.status === 'ready' && (
+        <div className="viewer-precision-notice" role="status">{activePrecisionNotice}</div>
+      )}
       {(assetStats || toolbar) && visibleState.status === 'ready' && (
         <div className="viewer-controls-rail">
           {assetStats && (
@@ -1063,7 +1094,11 @@ export function Viewer3D({
                 levels={precisionInfo.levels}
                 currentLevel={precisionInfo.currentLevel}
                 selection={precisionSelection}
-                onChange={(selection) => setPrecision({ assetURL: manifest?.asset_url ?? null, selection })}
+                unavailableLevels={unavailablePrecisionLevels}
+                onChange={(selection) => {
+                  setPrecisionNotice({ assetURL: manifest?.asset_url ?? null, message: '' })
+                  setPrecision({ assetURL: manifest?.asset_url ?? null, selection })
+                }}
               />
               <button
                 className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
@@ -1200,6 +1235,10 @@ export function Viewer3D({
       )}
     </div>
   )
+}
+
+export function precisionFallbackNotice(requestedLevel: number, defaultLevel: number): string {
+  return `Detail level L${requestedLevel} is unavailable for this resource. Restored manifest default L${defaultLevel}.`
 }
 
 function disposeObject(root: THREE.Object3D) {

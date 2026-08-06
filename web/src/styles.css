@@ -2130,6 +2130,21 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   background: #fff;
   font: 7px 'DM Mono';
 }
+.viewer-precision-notice {
+  position: absolute;
+  z-index: 21;
+  right: 10px;
+  bottom: 56px;
+  max-width: min(360px, calc(100% - 20px));
+  padding: 7px 9px;
+  border: 1px solid #d9c47e;
+  border-radius: 7px;
+  color: #735f1c;
+  background: rgba(255, 248, 221, .96);
+  box-shadow: 0 5px 16px rgba(67, 55, 18, .1);
+  font-size: 8px;
+  line-height: 1.4;
+}
 .viewer-field-panel {
   position: absolute;
   z-index: 3;

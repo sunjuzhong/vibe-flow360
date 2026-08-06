@@ -33,4 +33,19 @@ describe('ViewerPrecisionControl', () => {
       reference: { levels: 1 },
     })).toBe(3)
   })
+
+  it('marks a failed precision level unavailable for the active asset', () => {
+    const markup = renderToStaticMarkup(
+      <ViewerPrecisionControl
+        levels={2}
+        currentLevel={1}
+        selection="default"
+        unavailableLevels={new Set([0])}
+        onChange={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('Highest detail · L0 · unavailable')
+    expect(markup).toContain('value="0" disabled=""')
+  })
 })
