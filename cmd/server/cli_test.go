@@ -29,7 +29,6 @@ func TestServerURL(t *testing.T) {
 		}
 	}
 }
-
 func TestInitHelpExplainsAuthenticationSkipIsForAutomation(t *testing.T) {
 	var output bytes.Buffer
 	if err := runCLI([]string{"init", "--help"}, strings.NewReader(""), &output, &output); err != nil {
