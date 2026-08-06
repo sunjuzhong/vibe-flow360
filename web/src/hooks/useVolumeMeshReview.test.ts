@@ -68,4 +68,19 @@ describe('VolumeMesh review store', () => {
     expect(selected.selectedField).toBe('prism_layer_count')
     expect(selected.range).toEqual([0, 20])
   })
+
+  it('defaults generated slice pairs to flat and switches visibility atomically', () => {
+    const groups = [
+      { id: 'flat', name: 'Worst-quality x-normal slice (flat)', color: '#aaa', visible: true },
+      { id: 'crinkled', name: 'Worst-quality x-normal slice (crinkled)', color: '#bbb', visible: true },
+      { id: 'fluid', name: 'Fluid', color: '#ccc', visible: false },
+    ]
+    const loaded = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, { type: 'reset-groups', groups })
+    expect(loaded.sliceVariant).toBe('flat')
+    expect(loaded.visibility).toEqual({ flat: true, crinkled: false, fluid: false })
+
+    const switched = reduceVolumeMeshReviewState(loaded, { type: 'slice-variant', variant: 'crinkled', groups })
+    expect(switched.sliceVariant).toBe('crinkled')
+    expect(switched.visibility).toEqual({ flat: false, crinkled: true, fluid: false })
+  })
 })

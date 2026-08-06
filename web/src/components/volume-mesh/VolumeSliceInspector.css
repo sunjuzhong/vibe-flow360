@@ -1,0 +1,38 @@
+.volume-slice-variant {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 7px;
+  padding: 3px;
+  border-radius: 6px;
+  background: #e8e4dc;
+}
+
+.volume-slice-variant button {
+  min-height: 27px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #746c60;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.volume-slice-variant button.active {
+  border-color: #d5b17c;
+  color: #754a1f;
+  background: #fff8ec;
+  box-shadow: 0 1px 3px rgba(87, 58, 25, .12);
+}
+
+.volume-slice-variant button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.volume-slice-variant-detail {
+  margin: 5px 0 0 !important;
+  color: #8b6c44 !important;
+  font: 8px 'DM Mono' !important;
+}

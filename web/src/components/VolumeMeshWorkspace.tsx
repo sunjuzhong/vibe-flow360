@@ -346,9 +346,12 @@ export default function VolumeMeshWorkspace({
               position={review.clipPosition}
               bounds={review.clipBounds}
               available={previewSource === 'primary'}
+              variants={review.sliceVariants}
+              variant={review.sliceVariant}
               onEnabled={review.setClipEnabled}
               onAxis={review.setClipAxis}
               onPosition={review.setClipPosition}
+              onVariant={review.setSliceVariant}
             />
           ) : review.mode === 'zones' ? (
             <section className="geometry-selection-card volume-selection-card">

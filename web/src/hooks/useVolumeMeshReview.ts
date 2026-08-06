@@ -10,11 +10,14 @@ import type {
 import {
   buildVolumeZoneInventory,
   buildBoundaryLayerReview,
+  applyVolumeSliceVariantVisibility,
+  buildVolumeSliceVariantReview,
   classifyBoundaryLayerEvidenceFields,
   classifyVolumeMeshQualityFields,
   volumeMeshCapabilities,
   volumeMeshParameterSummary,
   type VolumeViewMode,
+  type VolumeSliceVariant,
 } from '../lib/volumeMeshReview'
 import { buildVolumeRefinementReview } from '../lib/volumeRefinementReview'
 
@@ -36,6 +39,7 @@ export type VolumeMeshReviewState = {
   clipEnabled: boolean
   clipAxis: 'x' | 'y' | 'z'
   clipPosition: number
+  sliceVariant: VolumeSliceVariant
 }
 
 export type VolumeMeshReviewAction =
@@ -55,6 +59,7 @@ export type VolumeMeshReviewAction =
   | { type: 'clip-enabled'; enabled: boolean }
   | { type: 'clip-axis'; axis: 'x' | 'y' | 'z'; position: number }
   | { type: 'clip-position'; position: number }
+  | { type: 'slice-variant'; variant: VolumeSliceVariant; groups: ReviewGroup[] }
 
 export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
   mode: 'overview',
@@ -72,6 +77,7 @@ export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
   clipEnabled: false,
   clipAxis: 'x',
   clipPosition: 0,
+  sliceVariant: 'flat',
 }
 
 export function reduceVolumeMeshReviewState(
@@ -79,13 +85,20 @@ export function reduceVolumeMeshReviewState(
   action: VolumeMeshReviewAction,
 ): VolumeMeshReviewState {
   switch (action.type) {
-    case 'reset-groups':
+    case 'reset-groups': {
+      const sliceVariants = buildVolumeSliceVariantReview(action.groups)
+      const sliceVariant: VolumeSliceVariant = sliceVariants.hasFlat ? 'flat' : sliceVariants.hasCrinkled ? 'crinkled' : 'flat'
+      const visibility = applyVolumeSliceVariantVisibility(
+        Object.fromEntries(action.groups.map((group) => [group.id, group.visible])),
+        sliceVariants,
+        sliceVariant,
+      )
       return {
         ...state,
         selection: action.groups.some((group) => group.id === state.selection.groupId)
           ? state.selection
           : { groupId: null },
-        visibility: Object.fromEntries(action.groups.map((group) => [group.id, group.visible])),
+        visibility,
         allFields: [],
         qualityFields: [],
         boundaryLayerFields: [],
@@ -95,7 +108,9 @@ export function reduceVolumeMeshReviewState(
         extrema: null,
         probe: null,
         focusTarget: null,
+        sliceVariant,
       }
+    }
     case 'mode': {
       const allowedFields = action.mode === 'quality'
         ? state.qualityFields
@@ -178,6 +193,16 @@ export function reduceVolumeMeshReviewState(
       return { ...state, clipAxis: action.axis, clipPosition: action.position }
     case 'clip-position':
       return { ...state, clipPosition: action.position }
+    case 'slice-variant': {
+      const review = buildVolumeSliceVariantReview(action.groups)
+      const available = action.variant === 'flat' ? review.hasFlat : review.hasCrinkled
+      if (!available) return state
+      return {
+        ...state,
+        sliceVariant: action.variant,
+        visibility: applyVolumeSliceVariantVisibility(state.visibility, review, action.variant),
+      }
+    }
   }
 }
 
@@ -207,6 +232,7 @@ export function useVolumeMeshReview({
     groups,
     boundingBox,
   }), [boundingBox, detail?.simulation_params, groups])
+  const sliceVariants = useMemo(() => buildVolumeSliceVariantReview(groups), [groups])
   const capabilities = useMemo(() => volumeMeshCapabilities({
     detail,
     previewSource,
@@ -247,8 +273,15 @@ export function useVolumeMeshReview({
     dispatch({ type: 'selection', groupId })
   }, [zones])
   const showAllZones = useCallback(() => {
-    dispatch({ type: 'visibility', visibility: Object.fromEntries(zones.map((zone) => [zone.id, true])) })
-  }, [zones])
+    dispatch({
+      type: 'visibility',
+      visibility: applyVolumeSliceVariantVisibility(
+        Object.fromEntries(zones.map((zone) => [zone.id, true])),
+        sliceVariants,
+        state.sliceVariant,
+      ),
+    })
+  }, [sliceVariants, state.sliceVariant, zones])
   const hideAllZones = useCallback(() => {
     dispatch({ type: 'visibility', visibility: Object.fromEntries(zones.map((zone) => [zone.id, false])) })
   }, [zones])
@@ -263,6 +296,7 @@ export function useVolumeMeshReview({
     parameters,
     boundaryLayer,
     refinements,
+    sliceVariants,
     capabilities,
     selectedZone,
     qualityFieldNames,
@@ -288,6 +322,7 @@ export function useVolumeMeshReview({
     setClipEnabled: (enabled: boolean) => dispatch({ type: 'clip-enabled', enabled }),
     setClipAxis,
     setClipPosition: (position: number) => dispatch({ type: 'clip-position', position }),
+    setSliceVariant: (variant: VolumeSliceVariant) => dispatch({ type: 'slice-variant', variant, groups }),
   }
 }
 

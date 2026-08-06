@@ -4,6 +4,8 @@ import {
   buildVolumeZoneInventory,
   buildBoundaryLayerReview,
   buildVolumeQualityThresholds,
+  buildVolumeSliceVariantReview,
+  applyVolumeSliceVariantVisibility,
   assessVolumeMeshQuality,
   classifyBoundaryLayerEvidenceFields,
   classifyVolumeMeshQualityFields,
@@ -223,5 +225,39 @@ describe('VolumeMesh review business adapter', () => {
     const field = { name: 'orthogonality', kind: 'scalar' as const, min: 0.02, max: 1 }
     const threshold = buildVolumeQualityThresholds([field])[0]
     expect(volumeQualityRiskFilter(field, threshold).rules[0]).toMatchObject({ min: 0.02, max: 0.15 })
+  })
+
+  it('pairs generated flat and crinkled slice faces by stable base name', () => {
+    const review = buildVolumeSliceVariantReview([
+      { id: 'slice-flat', name: 'Worst-quality x-normal slice (flat)', color: '#aaa', visible: true },
+      { id: 'slice-crinkled', name: 'Worst-quality x-normal slice (crinkled)', color: '#bbb', visible: true },
+      { id: 'fluid', name: 'Fluid zone', color: '#ccc', visible: true },
+    ])
+    expect(review).toMatchObject({ hasFlat: true, hasCrinkled: true, pairedCount: 1 })
+    expect(review.families[0]).toMatchObject({
+      name: 'Worst-quality x-normal slice',
+      flatGroupIds: ['slice-flat'],
+      crinkledGroupIds: ['slice-crinkled'],
+    })
+  })
+
+  it('switches only slice variants and preserves non-slice visibility', () => {
+    const review = buildVolumeSliceVariantReview([
+      { id: 'flat', name: 'Slice A (flat)', color: '#aaa', visible: true },
+      { id: 'crinkled', name: 'Slice A (crinkled)', color: '#bbb', visible: true },
+      { id: 'crinkled-only', name: 'Slice B (crinkled)', color: '#bbb', visible: true },
+    ])
+    expect(applyVolumeSliceVariantVisibility({ flat: true, crinkled: true, 'crinkled-only': true, fluid: false }, review, 'flat')).toEqual({
+      flat: true,
+      crinkled: false,
+      'crinkled-only': true,
+      fluid: false,
+    })
+    expect(applyVolumeSliceVariantVisibility({ flat: true, crinkled: false, 'crinkled-only': true, fluid: false }, review, 'crinkled')).toEqual({
+      flat: false,
+      crinkled: true,
+      'crinkled-only': true,
+      fluid: false,
+    })
   })
 })

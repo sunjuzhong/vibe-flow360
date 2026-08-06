@@ -39,6 +39,22 @@ export type VolumeReadinessCheck = {
   hint: string
 }
 
+export type VolumeSliceVariant = 'flat' | 'crinkled'
+
+export type VolumeSliceVariantFamily = {
+  key: string
+  name: string
+  flatGroupIds: string[]
+  crinkledGroupIds: string[]
+}
+
+export type VolumeSliceVariantReview = {
+  families: VolumeSliceVariantFamily[]
+  hasFlat: boolean
+  hasCrinkled: boolean
+  pairedCount: number
+}
+
 export type BoundaryLayerDefaults = {
   firstLayerThickness?: string
   growthRate?: string
@@ -112,6 +128,7 @@ export type VolumeQualityAssessment = {
 
 const qualityFieldPattern = /(?:^|[_\s-])(aspect(?:[_\s-]*ratio)?|edge(?:[_\s-]*length)?|cell(?:[_\s-]*volume)?|volume|jacobian|orthog(?:onality)?|skew(?:ness)?|quality|non[_\s-]*orthogonal)(?:$|[_\s-])/i
 const boundaryLayerFieldPattern = /(?:^|[_\s-])(boundary[_\s-]*layer|first[_\s-]*(?:layer[_\s-]*)?(?:height|thickness)|prism|layer[_\s-]*(?:count|height|thickness|growth)|wall[_\s-]*spacing)(?:$|[_\s-])/i
+const sliceVariantSuffixPattern = /^(.*?)\s*\((flat|crinkled)\)\s*$/i
 
 const parameterPaths: Array<Pick<VolumeParameterRow, 'path' | 'section'>> = [
   { path: 'meshing.defaults.boundary_layer_first_layer_thickness', section: 'Boundary layer' },
@@ -132,6 +149,43 @@ export function classifyVolumeMeshQualityFields(fields: UVFFieldInfo[]): UVFFiel
 
 export function classifyBoundaryLayerEvidenceFields(fields: UVFFieldInfo[]): UVFFieldInfo[] {
   return fields.filter((field) => field.kind === 'scalar' && boundaryLayerFieldPattern.test(normalizeFieldName(field.name)))
+}
+
+export function buildVolumeSliceVariantReview(groups: MeshGroupData[]): VolumeSliceVariantReview {
+  const families = new Map<string, VolumeSliceVariantFamily>()
+  for (const group of groups) {
+    const match = group.name.match(sliceVariantSuffixPattern) ?? group.id.match(sliceVariantSuffixPattern)
+    if (!match) continue
+    const name = match[1].trim()
+    if (!name) continue
+    const key = normalizeKey(name)
+    const family = families.get(key) ?? { key, name, flatGroupIds: [], crinkledGroupIds: [] }
+    if (match[2].toLowerCase() === 'flat') family.flatGroupIds.push(group.id)
+    else family.crinkledGroupIds.push(group.id)
+    families.set(key, family)
+  }
+  const rows = Array.from(families.values()).sort((left, right) => left.name.localeCompare(right.name))
+  return {
+    families: rows,
+    hasFlat: rows.some((family) => family.flatGroupIds.length > 0),
+    hasCrinkled: rows.some((family) => family.crinkledGroupIds.length > 0),
+    pairedCount: rows.filter((family) => family.flatGroupIds.length > 0 && family.crinkledGroupIds.length > 0).length,
+  }
+}
+
+export function applyVolumeSliceVariantVisibility(
+  visibility: Record<string, boolean>,
+  review: VolumeSliceVariantReview,
+  variant: VolumeSliceVariant,
+): Record<string, boolean> {
+  const next = { ...visibility }
+  for (const family of review.families) {
+    const selected = variant === 'flat' ? family.flatGroupIds : family.crinkledGroupIds
+    const fallback = variant === 'flat' ? family.crinkledGroupIds : family.flatGroupIds
+    const visible = selected.length > 0 ? selected : fallback
+    for (const groupId of [...family.flatGroupIds, ...family.crinkledGroupIds]) next[groupId] = visible.includes(groupId)
+  }
+  return next
 }
 
 export function buildBoundaryLayerReview({
@@ -328,11 +382,13 @@ export function volumeMeshCapabilities({
     simulationParams: detail?.simulation_params,
     groups,
   })
+  const sliceVariants = buildVolumeSliceVariantReview(groups)
   const aggregateQuality = findMetric(
     [detail?.summary, detail?.state],
     ['minimum_orthogonality', 'min_orthogonality', 'max_skewness', 'maximum_skewness', 'min_cell_size', 'minimum_cell_size'],
   )
-  const hasExplicitSlices = fields.some((field) => /(?:^|[_\s-])slice(?:$|[_\s-])/i.test(field.name))
+  const hasExplicitSlices = sliceVariants.families.length > 0
+    || fields.some((field) => /(?:^|[_\s-])slice(?:$|[_\s-])/i.test(field.name))
   return [
     {
       key: 'asset',
@@ -391,7 +447,9 @@ export function volumeMeshCapabilities({
       label: 'Volume slices',
       status: hasExplicitSlices ? 'available' : previewSource === 'primary' ? 'proxy' : 'unavailable',
       detail: hasExplicitSlices
-        ? 'The asset reports slice data.'
+        ? sliceVariants.families.length > 0
+          ? `${sliceVariants.families.length} generated slice(s) expose Flat/Crinkled face variants.`
+          : 'The asset reports slice data.'
         : previewSource === 'primary'
           ? 'Interactive clipping is available; it is not a generated flat or crinkled mesh slice.'
           : 'Slice diagnostics require a real VolumeMesh asset.',
