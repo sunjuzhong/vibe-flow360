@@ -4103,7 +4103,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   display: grid;
   min-height: 62px;
   flex: 0 0 auto;
-  grid-template-columns: minmax(190px, .8fr) minmax(320px, 1.3fr) minmax(340px, 430px);
+  grid-template-columns: minmax(190px, .75fr) minmax(280px, 1.1fr) minmax(460px, 1.35fr);
   align-items: center;
   gap: 16px;
   padding: 8px 13px;
@@ -4183,7 +4183,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: auto auto minmax(120px, 1fr) auto;
+  grid-template-columns: auto auto minmax(130px, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -4254,6 +4254,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   font-weight: 700;
   cursor: pointer;
 }
+.project-draft-actions > button span { white-space: nowrap; }
 .project-draft-actions > button:disabled { opacity: .45; cursor: not-allowed; }
 .project-draft-actions > .project-draft-refresh {
   width: 34px;
@@ -5601,6 +5602,16 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 
 .project-page .copilot-panel { top: 64px; }
 
+@media (max-width: 1280px) {
+  .project-context-bar {
+    grid-template-columns: minmax(155px, .65fr) minmax(210px, .9fr) minmax(455px, 1.45fr);
+    gap: 8px;
+    padding-inline: 9px;
+  }
+  .project-draft-heading > div { display: none; }
+  .project-draft-actions > button { padding-inline: 7px; }
+}
+
 @media (max-width: 920px) {
   .project-shell-header { grid-template-columns: auto minmax(120px, 1fr) auto; }
   .project-shell-brand strong { display: none; }
@@ -5608,11 +5619,18 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .project-shell-actions > button span { display: none; }
   .project-shell-actions > button { width: 34px; padding: 0; }
   .project-context-bar {
-    grid-template-columns: minmax(145px, .8fr) minmax(250px, 1.2fr) minmax(300px, 370px);
+    grid-template-columns: minmax(140px, .65fr) minmax(190px, .85fr) minmax(440px, 1.5fr);
     gap: 8px;
     padding-inline: 9px;
   }
   .project-draft-heading small { display: none; }
+}
+
+@media (max-width: 840px) {
+  .project-context-bar {
+    grid-template-columns: minmax(140px, .65fr) minmax(440px, 1.5fr);
+  }
+  .canvas-stage-strip { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -5629,17 +5647,17 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .project-workbench { height: calc(100vh - 58px); min-height: 0; }
   .project-context-bar {
     min-height: 55px;
-    grid-template-columns: minmax(0, 1fr) minmax(230px, auto);
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 1.4fr);
     gap: 7px;
     padding: 7px 9px;
   }
   .project-context-bar .canvas-resource-title > em { display: none; }
   .project-draft-heading { display: none; }
-  .project-draft-inline { grid-template-columns: auto minmax(110px, 1fr) auto; gap: 5px; }
+  .project-draft-inline { grid-template-columns: auto minmax(100px, 1fr) auto; gap: 5px; }
   .project-draft-entry__copy small { display: none; }
   .project-draft-entry__primary { min-height: 38px; }
-  .project-draft-actions > button:first-child { width: 34px; padding: 0; }
-  .project-draft-actions > button:first-child span { display: none; }
+  .project-draft-actions > button:not(.project-draft-refresh) { width: 34px; padding: 0; }
+  .project-draft-actions > button span { display: none; }
   .canvas-resource-title small { max-width: 180px; }
   .canvas-stage-strip { display: none; }
   .project-panel-scrim { inset: 58px 0 0; }
