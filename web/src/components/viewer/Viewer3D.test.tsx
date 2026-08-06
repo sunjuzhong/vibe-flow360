@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { precisionFallbackNotice, Viewer3D, ViewerCameraToolbar } from './Viewer3D'
+import { precisionFallbackNotice, Viewer3D, ViewerNavCube } from './Viewer3D'
 
 describe('Viewer3D layout state', () => {
   it('marks the container as loading without rendering the controls gutter content', () => {
@@ -40,13 +40,17 @@ describe('Viewer3D layout state', () => {
 
   it('renders the shared camera controls for every ready 3D workspace', () => {
     const html = renderToStaticMarkup(
-      <ViewerCameraToolbar hasSelection={false} onCommand={() => undefined} />,
+      <ViewerNavCube hasSelection={false} onCommand={() => undefined} />,
     )
 
-    expect(html).toContain('aria-label="Camera controls"')
-    expect(html).toContain('title="Fit view"')
+    expect(html).toContain('aria-label="3D view navigation"')
+    expect(html).toContain('aria-label="NavCube orientation controls"')
+    expect(html).toContain('title="Fit all"')
     expect(html).toContain('title="Fit selected entity"')
-    expect(html).toContain('title="Isometric view"')
+    expect(html).toContain('aria-label="View from positive X"')
+    expect(html).toContain('aria-label="View from positive Y"')
+    expect(html).toContain('aria-label="View from positive Z"')
+    expect(html).toContain('aria-label="Isometric view"')
     expect(html).toContain('disabled=""')
   })
 

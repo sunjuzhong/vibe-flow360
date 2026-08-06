@@ -13,7 +13,7 @@ describe('ViewerToolbarSections', () => {
 
     expect(html).toContain('aria-label="Target workflow controls"')
     expect(html).toContain('aria-label="Viewer actions"')
-    expect(html).toContain('>Review<')
-    expect(html).toContain('>Actions<')
+    expect(html).toContain('>Quality<')
+    expect(html).toContain('>Measure<')
   })
 })

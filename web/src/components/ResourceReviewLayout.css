@@ -60,63 +60,54 @@
   padding-bottom: 0;
 }
 
-.resource-review-viewer .viewer-3d-container[data-viewer-status='ready'] {
-  padding-bottom: 52px;
+:is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container[data-viewer-status='ready'] {
+  padding-bottom: 58px;
 }
 
-.resource-review-viewer .viewer-controls-rail {
+:is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
   right: 10px;
-  bottom: 7px;
-  left: 10px;
-}
-
-:is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-cluster {
-  max-width: calc(100% - 120px);
+  left: auto;
+  transform: none;
 }
 
 @media (max-width: 1100px) {
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container[data-viewer-status='ready'] {
-    padding-bottom: 88px;
-  }
-
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-controls-rail,
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-cluster {
-    flex-wrap: wrap;
-  }
-
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-cluster {
-    width: 100%;
-    max-width: none;
+    padding-bottom: 92px;
   }
 
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-asset-stats {
     display: none;
   }
 
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    transform: none;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-sections {
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: center;
   }
 }
 
 @media (max-width: 680px) {
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container[data-viewer-status='ready'] {
-    padding-bottom: 94px;
+    padding-bottom: 96px;
   }
 
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-camera-toolbar {
-    width: 100%;
-    justify-content: center;
-  }
-
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-camera-toolbar button span {
-    display: none;
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-navigation {
+    top: 8px;
+    right: 8px;
+    transform: scale(.88);
+    transform-origin: top right;
   }
 
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    justify-content: center;
+    bottom: 6px;
   }
 
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-sections {
@@ -124,12 +115,8 @@
     justify-content: center;
   }
 
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-section-label {
-    display: none;
-  }
-
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-section {
-    padding-top: 4px;
+    padding-top: 0;
   }
 }
 

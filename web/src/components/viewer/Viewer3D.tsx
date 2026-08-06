@@ -91,7 +91,7 @@ export type ViewerCameraCommand = {
 
 export type ViewerOverlayContent = Omit<ViewerOverlayFrame, 'resourceRef' | 'assetWorldMatrix'>
 
-export function ViewerCameraToolbar({
+export function ViewerNavCube({
   hasSelection,
   onCommand,
 }: {
@@ -99,23 +99,28 @@ export function ViewerCameraToolbar({
   onCommand: (type: ViewerCameraCommand['type']) => void
 }) {
   return (
-    <div className="viewer-camera-toolbar" role="group" aria-label="Camera controls">
-      <button type="button" onClick={() => onCommand('fit')} title="Fit view">
-        <Focus size={13} /> <span>Fit</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onCommand('fit-selection')}
-        disabled={!hasSelection}
-        title="Fit selected entity"
-      >
-        <View size={13} /> <span>Selection</span>
-      </button>
-      <span className="viewer-toolbar-divider" aria-hidden="true" />
-      <button type="button" onClick={() => onCommand('x')} title="View from positive X">X</button>
-      <button type="button" onClick={() => onCommand('y')} title="View from positive Y">Y</button>
-      <button type="button" onClick={() => onCommand('z')} title="View from positive Z">Z</button>
-      <button type="button" onClick={() => onCommand('iso')} title="Isometric view">ISO</button>
+    <div className="viewer-navigation" aria-label="3D view navigation">
+      <div className="viewer-navcube" role="group" aria-label="NavCube orientation controls">
+        <div className="viewer-navcube-cube">
+          <button className="viewer-navcube-face front" type="button" onClick={() => onCommand('y')} aria-label="View from positive Y">Y</button>
+          <button className="viewer-navcube-face right" type="button" onClick={() => onCommand('x')} aria-label="View from positive X">X</button>
+          <button className="viewer-navcube-face top" type="button" onClick={() => onCommand('z')} aria-label="View from positive Z">Z</button>
+        </div>
+        <button className="viewer-navcube-iso" type="button" onClick={() => onCommand('iso')} aria-label="Isometric view">ISO</button>
+      </div>
+      <div className="viewer-fit-controls" role="group" aria-label="Fit controls">
+        <button type="button" onClick={() => onCommand('fit')} title="Fit all">
+          <Focus size={13} /> <span>Fit</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onCommand('fit-selection')}
+          disabled={!hasSelection}
+          title="Fit selected entity"
+        >
+          <View size={13} /> <span>Selection</span>
+        </button>
+      </div>
     </div>
   )
 }
@@ -1118,7 +1123,11 @@ export function Viewer3D({
         <div className="viewer-precision-notice" role="status">{activePrecisionNotice}</div>
       )}
       {visibleState.status === 'ready' && (
-        <div className="viewer-controls-rail">
+        <>
+          <ViewerNavCube
+            hasSelection={Boolean(selection?.groupId)}
+            onCommand={applyCameraCommand}
+          />
           {assetStats && (
             <div className="viewer-asset-stats">
               <span>{assetStats.faces} faces</span>
@@ -1145,14 +1154,12 @@ export function Viewer3D({
               </button>
             </div>
           )}
-          <div className="viewer-toolbar-cluster">
-            <ViewerCameraToolbar
-              hasSelection={Boolean(selection?.groupId)}
-              onCommand={applyCameraCommand}
-            />
-            {toolbar && <div className="viewer-toolbar-slot">{toolbar}</div>}
-          </div>
-        </div>
+          {toolbar && (
+            <div className="viewer-toolbar-slot">
+              {toolbar}
+            </div>
+          )}
+        </>
       )}
       {snapStatus && visibleState.status === 'ready' && (
         <div className={`viewer-snap-status viewer-snap-status-${snapStatus.mode}`} role="status" aria-live="polite">
