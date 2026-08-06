@@ -521,6 +521,8 @@ button { color: inherit; }
 .tutorial-card-visual::before { width: 135px; height: 135px; }
 .tutorial-card-visual::after { width: 185px; height: 185px; }
 .tutorial-card-visual svg { position: relative; z-index: 1; transform: rotate(-18deg); }
+.tutorial-card-visual.mesh-card-visual { background: radial-gradient(circle at 42% 40%, #edf4ce, #c5d783 70%, #a7bd5f); }
+.tutorial-card-visual.mesh-card-visual svg { transform: none; }
 .tutorial-id, .tutorial-level { position: absolute; z-index: 2; font-family: 'DM Mono', monospace; }
 .tutorial-id { top: 16px; left: 16px; font-size: 20px; font-weight: 700; }
 .tutorial-level { right: 12px; bottom: 12px; padding: 4px 6px; border-radius: 4px; background: rgba(250,250,247,.7); font-size: 7px; letter-spacing: .08em; }
@@ -599,6 +601,7 @@ button { color: inherit; }
 .provenance.provided { color: #416785; background: #e7f2f8; }
 .provenance.derived { color: #6f5a11; background: #f6edcd; }
 .provenance.inferred { color: #5c701b; background: #eaf0d6; }
+.provenance.adapted { color: #66562a; background: #efe6c8; }
 .lesson-validate-button, .lesson-secondary-button, .lesson-workspace-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; margin-top: 16px; padding: 0 14px; border-radius: 8px; font-size: 10px; font-weight: 700; cursor: pointer; text-decoration: none; }
 .lesson-validate-button, .lesson-workspace-button { color: #fff; border: 1px solid #20241b; background: #20241b; }
 .lesson-secondary-button { color: #4d5f18; border: 1px solid #ced8ad; background: #f7faef; }
@@ -611,6 +614,11 @@ button { color: inherit; }
 .setup-checks strong { font-size: 9px; }
 .setup-checks small { margin-top: 3px; color: #82877e; font-size: 8px; line-height: 1.4; }
 .alpha-experiment { display: grid; grid-template-columns: 190px 1fr; gap: 12px; }
+.mesh-experiment { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; }
+.cylinder-stage { display: grid; min-height: 310px; place-items: center; overflow: hidden; border: 1px solid #d8dad2; border-radius: 14px; background: radial-gradient(circle at 35% 50%, #fafbf7 0, #edefe7 72%); }
+.cylinder-stage.compact { min-height: 230px; }
+.tutorial-cylinder { width: min(100%, 520px); }
+.tutorial-cylinder text { fill: #596253; font-family: 'DM Mono', monospace; font-size: 11px; }
 .alpha-control { display: grid; gap: 8px; }
 .alpha-control button { padding: 16px; border: 1px solid #dbddd5; border-radius: 9px; color: #777d72; background: #fafaf7; text-align: left; cursor: pointer; }
 .alpha-control button.active { color: #33400d; border-color: #aabd72; background: #f2f7df; box-shadow: inset 3px 0 #829f26; }
@@ -731,7 +739,7 @@ button { color: inherit; }
   .environment-progress > div { grid-template-columns: 24px 1fr; justify-items: start; align-items: center; text-align: left; }
   .environment-progress > div::before { top: -8px; bottom: auto; left: 10px; width: 1px; height: 16px; }
   .geometry-assumptions > div { border-right: 0; border-bottom: 1px solid #e1e3dc; }
-  .alpha-experiment { grid-template-columns: 1fr; }
+  .alpha-experiment, .mesh-experiment { grid-template-columns: 1fr; }
   .semantic-diff { grid-column: auto; }
   .lesson-footer { padding: 0 16px; }
   .lesson-footer > span { display: none; }

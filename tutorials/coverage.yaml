@@ -47,6 +47,13 @@ mappings:
       owners: [SimulationParams, UnitSystemConfig, ReferenceGeometry, CoordinateSystem, CoordinateSystemAssignmentGroup, CoordinateSystemParent, EntitySelector, Predicate, GeometryBodyGroup, MirrorPlane, MirroredGeometryBodyGroup, MirroredSurface, Surface]
   - tutorial: T03
     section: baseline
+    status: verified
+    artifact: tutorials/T03-cylinder-boundary-layer/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:(MeshingParams|MeshingDefaults|BoundaryLayer|SurfaceRefinement)|field:MeshingParams\.(defaults|refinement_factor|refinements|volume_zones)|field:MeshingDefaults\.(surface_max_edge_length|surface_max_edge_length\.(units|value)|curvature_resolution_angle|curvature_resolution_angle\.(units|value)|surface_edge_growth_rate|boundary_layer_first_layer_thickness|boundary_layer_first_layer_thickness\.(units|value)|boundary_layer_growth_rate)|field:SurfaceRefinement\.(name|refinement_type|faces|max_edge_length|max_edge_length\.(units|value)|curvature_resolution_angle|curvature_resolution_angle\.(units|value))|field:BoundaryLayer\.(name|refinement_type|faces|first_layer_thickness|first_layer_thickness\.(units|value)|growth_rate)|variant:MeshingParams\.refinements\[\]=(SurfaceRefinement|BoundaryLayer)|variant:MeshingParams\.volume_zones\[\]=AutomatedFarfield)$'
+  - tutorial: T03
+    section: baseline
     status: planned
     selector:
       owners: [MeshingParams, MeshingDefaults, BoundaryLayer, SurfaceRefinement]

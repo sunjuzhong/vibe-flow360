@@ -1,0 +1,19 @@
+schema_version: 1
+scenario: external-cylinder-meshing
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_unit: {value: m, provenance: provided}
+  surface_max_edge_length: {value: 1, unit: m, provenance: adapted}
+  global_curvature_angle: {value: 15, unit: degree, provenance: adapted}
+  surface_growth_rate: {value: 1.2, provenance: adapted}
+  cylinder_max_edge_length: {value: 0.25, unit: m, provenance: inferred}
+  cylinder_curvature_angle: {value: 10, unit: degree, provenance: inferred}
+  first_layer_thickness: {value: 0.01, unit: m, provenance: adapted}
+  boundary_layer_growth_rate: {value: 1.2, provenance: adapted}
+  farfield_relative_size: {value: 40, provenance: inferred}
+  beta_mesher: {value: true, provenance: required}
+review_required:
+  - Confirm the cylinder is interpreted as one metre in diameter and seventeen metres in span.
+  - Inspect facet density around the circular cross-section before accepting the surface mesh.
+  - Treat the first-layer thickness as a teaching value; derive a production value from the target y-plus and operating condition.

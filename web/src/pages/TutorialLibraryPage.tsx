@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CheckCircle2, Clock3, Plane, ShieldCheck } from 'lucide-react'
+import { ArrowRight, BookOpen, CheckCircle2, CircleDot, Clock3, Plane, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Start locally. Connect to cloud execution only after review.</p></div></div>
-          <span>1 available</span>
+          <span>2 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -44,6 +44,24 @@ export default function TutorialLibraryPage() {
               <p className="eyebrow">EXTERNAL AERODYNAMICS</p>
               <h2>First trustworthy lift and drag result</h2>
               <p>Set up a simple aircraft at 0° and 5° angle of attack, then learn why mesh review, convergence, and force stability all matter.</p>
+              <div className="tutorial-card-meta">
+                <span><Clock3 size={13} /> 15–20 min</span>
+                <span><CheckCircle2 size={13} /> Browser guided</span>
+                <span>Flow360 25.10</span>
+              </div>
+              <span className="tutorial-start">Start tutorial <ArrowRight size={15} /></span>
+            </div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T03">
+            <div className="tutorial-card-visual mesh-card-visual">
+              <CircleDot size={52} strokeWidth={1.1} />
+              <span className="tutorial-id">T03</span>
+              <span className="tutorial-level">MESHING</span>
+            </div>
+            <div className="tutorial-card-content">
+              <p className="eyebrow">EXTERNAL FLOW MESHING</p>
+              <h2>Curvature-sensitive cylinder mesh</h2>
+              <p>Combine global defaults, local curvature refinement, and boundary layers—then compare a controlled finer mesh before solving.</p>
               <div className="tutorial-card-meta">
                 <span><Clock3 size={13} /> 15–20 min</span>
                 <span><CheckCircle2 size={13} /> Browser guided</span>

@@ -1,0 +1,63 @@
+{
+  "meshing": {
+    "defaults": {
+      "boundary_layer_first_layer_thickness": {
+        "units": "m",
+        "value": 0.005
+      }
+    },
+    "refinements": [
+      {
+        "curvature_resolution_angle": {
+          "units": "degree",
+          "value": 6.0
+        },
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "cylinder",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000101",
+              "private_attribute_sub_components": [
+                "body0001_face0001",
+                "body0001_face0002",
+                "body0001_face0003"
+              ],
+              "private_attribute_tag_key": "groupName"
+            }
+          ]
+        },
+        "max_edge_length": {
+          "units": "m",
+          "value": 0.15
+        },
+        "name": "Cylinder curvature refinement",
+        "refinement_type": "SurfaceRefinement"
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "cylinder",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000101",
+              "private_attribute_sub_components": [
+                "body0001_face0001",
+                "body0001_face0002",
+                "body0001_face0003"
+              ],
+              "private_attribute_tag_key": "groupName"
+            }
+          ]
+        },
+        "first_layer_thickness": {
+          "units": "m",
+          "value": 0.005
+        },
+        "growth_rate": 1.2,
+        "name": "Cylinder boundary layer",
+        "refinement_type": "BoundaryLayer"
+      }
+    ]
+  }
+}

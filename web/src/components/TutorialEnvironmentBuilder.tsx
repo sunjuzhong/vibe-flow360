@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { api, type Flow360Status, type FolderNode } from '../api/client'
 import {
   createT01Environment,
+  type TutorialEnvironmentClient,
   type TutorialEnvironmentResult,
   type TutorialEnvironmentStage,
 } from '../tutorials/t01'
@@ -27,11 +28,13 @@ export function preferredTutorialFolder(options: FolderOption[]): string {
 }
 
 const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-plans', 'ready']
-const stageCopy: Record<TutorialEnvironmentStage, string> = {
-  staging: 'Stage bundled geometry',
-  'creating-project': 'Create and process Geometry',
-  'creating-plans': 'Compile two configured Case Plans',
-  ready: 'Ready for review',
+function stageCopy(planKind: string): Record<TutorialEnvironmentStage, string> {
+  return {
+    staging: 'Stage bundled geometry',
+    'creating-project': 'Create and process Geometry',
+    'creating-plans': `Compile two configured ${planKind} Plans`,
+    ready: 'Ready for review',
+  }
 }
 
 function planState(plan: TutorialEnvironmentResult['baselinePlan']) {
@@ -40,16 +43,49 @@ function planState(plan: TutorialEnvironmentResult['baselinePlan']) {
   return 'Draft created'
 }
 
-export default function TutorialEnvironmentBuilder({ status }: { status: Flow360Status | null }) {
+type EnvironmentCreator = (
+  input: { folderId: string; projectName: string },
+  client: TutorialEnvironmentClient,
+  onStage: (stage: TutorialEnvironmentStage) => void,
+) => Promise<TutorialEnvironmentResult>
+
+export type TutorialEnvironmentBuilderProps = {
+  status: Flow360Status | null
+  tutorialId?: string
+  defaultProjectName?: string
+  heading?: string
+  description?: string
+  configurationSummary?: string
+  planKind?: string
+  baselineValue?: string
+  variantValue?: string
+  successDescription?: string
+  createEnvironment?: EnvironmentCreator
+}
+
+export default function TutorialEnvironmentBuilder({
+  status,
+  tutorialId = 'T01',
+  defaultProjectName = 'Tutorial T01 · Lift and drag',
+  heading = 'Build the T01 environment from this lesson',
+  description = 'The app uploads the bundled aircraft, waits for its Geometry, and creates two fully configured draft Case Plans.',
+  configurationSummary = 'Mesh, physics, boundaries, outputs, α 0° and α 5°',
+  planKind = 'Case',
+  baselineValue = 'α = 0°',
+  variantValue = 'α = 5°',
+  successDescription = 'The Geometry is processed and both Case Plans are configured. No mesh or Case computation has been submitted.',
+  createEnvironment = createT01Environment,
+}: TutorialEnvironmentBuilderProps) {
   const navigate = useNavigate()
   const [folders, setFolders] = useState<FolderOption[]>([])
   const [folderId, setFolderId] = useState('')
-  const [projectName, setProjectName] = useState('Tutorial T01 · Lift and drag')
+  const [projectName, setProjectName] = useState(defaultProjectName)
   const [confirmed, setConfirmed] = useState(false)
   const [stage, setStage] = useState<TutorialEnvironmentStage | null>(null)
   const [result, setResult] = useState<TutorialEnvironmentResult | null>(null)
   const [error, setError] = useState('')
   const busy = stage !== null && stage !== 'ready'
+  const stages = stageCopy(planKind)
 
   useEffect(() => {
     api.folders()
@@ -69,7 +105,7 @@ export default function TutorialEnvironmentBuilder({ status }: { status: Flow360
     if (!canCreate) return
     setError('')
     try {
-      setResult(await createT01Environment(
+      setResult(await createEnvironment(
         { folderId, projectName: projectName.trim() },
         api,
         setStage,
@@ -82,12 +118,12 @@ export default function TutorialEnvironmentBuilder({ status }: { status: Flow360
 
   if (result) {
     return <div className="tutorial-environment-success">
-      <div className="environment-success-heading"><CheckCircle2 size={28}/><div><span>EXPERIMENT ENVIRONMENT READY</span><strong>{projectName}</strong><p>The Geometry is processed and both Case Plans are configured. No mesh or Case computation has been submitted.</p></div></div>
+      <div className="environment-success-heading"><CheckCircle2 size={28}/><div><span>EXPERIMENT ENVIRONMENT READY</span><strong>{projectName}</strong><p>{successDescription}</p></div></div>
       <div className="environment-plan-pair">
-        <article><span>BASELINE</span><strong>α = 0°</strong><small>{planState(result.baselinePlan)}</small></article>
-        <article><span>CONTROLLED VARIANT</span><strong>α = 5°</strong><small>{planState(result.variantPlan)}</small></article>
+        <article><span>BASELINE</span><strong>{baselineValue}</strong><small>{planState(result.baselinePlan)}</small></article>
+        <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>{planState(result.variantPlan)}</small></article>
       </div>
-      <button className="lesson-workspace-button" onClick={() => navigate(`/projects/${encodeURIComponent(result.projectId)}?plan=${encodeURIComponent(result.baselinePlan.id)}&tutorial=T01`)}>
+      <button className="lesson-workspace-button" onClick={() => navigate(`/projects/${encodeURIComponent(result.projectId)}?plan=${encodeURIComponent(result.baselinePlan.id)}&tutorial=${encodeURIComponent(tutorialId)}`)}>
         <span>Review configured Plans</span><Rocket size={17}/>
       </button>
     </div>
@@ -96,7 +132,7 @@ export default function TutorialEnvironmentBuilder({ status }: { status: Flow360
   return <div className="tutorial-environment-builder">
     <div className="environment-builder-heading">
       <div className="run-ready-icon"><Rocket size={25}/></div>
-      <div><span>CREATE THE EXPERIMENT</span><strong>Build the T01 environment from this lesson</strong><p>The app uploads the bundled aircraft, waits for its Geometry, and creates two fully configured draft Case Plans.</p></div>
+      <div><span>CREATE THE EXPERIMENT</span><strong>{heading}</strong><p>{description}</p></div>
     </div>
 
     <div className="environment-form-grid">
@@ -109,12 +145,12 @@ export default function TutorialEnvironmentBuilder({ status }: { status: Flow360
 
     <div className="environment-summary">
       <div><Folder size={15}/><span><strong>{selectedFolder?.label || 'Choose a destination'}</strong><small>Flow360 Project · release-25.10 · geometry unit m</small></span></div>
-      <div><CheckCircle2 size={15}/><span><strong>Parameters already configured</strong><small>Mesh, physics, boundaries, outputs, α 0° and α 5°</small></span></div>
+      <div><CheckCircle2 size={15}/><span><strong>Parameters already configured</strong><small>{configurationSummary}</small></span></div>
     </div>
 
     {stage && <div className="environment-progress">
       {stageOrder.map((item, index) => <div className={`${index < currentStage ? 'complete' : ''} ${index === currentStage ? 'active' : ''}`} key={item}>
-        <span>{index < currentStage || item === 'ready' ? <Check size={12}/> : index + 1}</span><small>{stageCopy[item]}</small>
+        <span>{index < currentStage || item === 'ready' ? <Check size={12}/> : index + 1}</span><small>{stages[item]}</small>
       </div>)}
     </div>}
 
@@ -123,10 +159,10 @@ export default function TutorialEnvironmentBuilder({ status }: { status: Flow360
 
     <label className="environment-confirm">
       <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={busy}/>
-      <span>I reviewed the destination and authorize creation of this remote Flow360 Project. The two Case Plans remain local drafts until I separately approve and run them.</span>
+      <span>I reviewed the destination and authorize creation of this remote Flow360 Project. The two {planKind} Plans remain local drafts until I separately approve and run them.</span>
     </label>
     <button className="environment-create-button" disabled={!canCreate} onClick={() => void create()}>
-      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stageCopy[stage] : 'Create Project + 2 Case Plans'}
+      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stages[stage] : `Create Project + 2 ${planKind} Plans`}
     </button>
   </div>
 }

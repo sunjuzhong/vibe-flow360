@@ -1,0 +1,23 @@
+schema_version: 1
+criteria:
+  - id: refined-patch-valid
+    category: provenance
+    description: The refined merge patch passes Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: variants/refined-mesh.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: refinement-is-controlled
+    category: provenance
+    description: Only local curvature resolution, maximum surface edge length, and first-layer thickness change.
+    artifact: semantic diff
+    required: true
+    check: {method: manual, metric: variant.diff.reviewed}
+  - id: refined-mesh-reviewed
+    category: mesh
+    description: Compare facet density and boundary-layer continuity against the baseline using the same views.
+    artifact: mesh comparison
+    required: true
+    check: {method: manual, metric: mesh.comparison.reviewed}
+limitations:
+  - A finer mesh is not automatically a better engineering model.
+  - The refined Plan still requires cloud meshing and evidence review.

@@ -21,6 +21,7 @@ import type { Flow360Status } from '../api/client'
 import { api } from '../api/client'
 import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
+import T03TutorialPage from './T03TutorialPage'
 import {
   t01Evidence,
   t01ParameterCards,
@@ -69,6 +70,12 @@ function downloadJSON(params: Record<string, unknown>, alpha: number) {
 
 export default function TutorialPage() {
   const { tutorialId = '' } = useParams()
+  if (tutorialId.toUpperCase() === 'T03') return <T03TutorialPage />
+  if (tutorialId.toUpperCase() !== 'T01') return <Navigate to="/tutorials" replace />
+  return <T01TutorialPage />
+}
+
+function T01TutorialPage() {
   const [status, setStatus] = useState<Flow360Status | null>(null)
   const [stepIndex, setStepIndex] = useState(0)
   const [completed, setCompleted] = useState<string[]>(readProgress)
@@ -86,8 +93,6 @@ export default function TutorialPage() {
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(completed))
   }, [completed])
-
-  if (tutorialId.toUpperCase() !== 'T01') return <Navigate to="/tutorials" replace />
 
   const finishStep = () => {
     setCompleted((current) => current.includes(step.id) ? current : [...current, step.id])

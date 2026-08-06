@@ -1,0 +1,68 @@
+schema_version: 1
+id: T03
+slug: cylinder-boundary-layer
+title: Curvature-sensitive cylinder mesh
+summary: Build and compare surface curvature and boundary-layer controls before running a cylinder Case.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: VolumeMesh
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:MeshingParams', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingParams.defaults', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingParams.refinement_factor', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingParams.refinements', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingParams.volume_zones', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:MeshingDefaults', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.surface_max_edge_length', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.surface_max_edge_length.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.surface_max_edge_length.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.curvature_resolution_angle', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.curvature_resolution_angle.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.curvature_resolution_angle.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.surface_edge_growth_rate', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.boundary_layer_first_layer_thickness', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.boundary_layer_first_layer_thickness.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.boundary_layer_first_layer_thickness.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshingDefaults.boundary_layer_growth_rate', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:SurfaceRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.refinement_type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.faces', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.max_edge_length', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.max_edge_length.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.max_edge_length.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.curvature_resolution_angle', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.curvature_resolution_angle.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SurfaceRefinement.curvature_resolution_angle.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:BoundaryLayer', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.refinement_type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.faces', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.first_layer_thickness', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.first_layer_thickness.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.first_layer_thickness.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:BoundaryLayer.growth_rate', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:MeshingParams.refinements[]=SurfaceRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:MeshingParams.refinements[]=BoundaryLayer', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:MeshingParams.volume_zones[]=AutomatedFarfield', section: baseline, artifact: simulation.json}
+assets:
+  - path: assets/cylinder.csm
+    sha256: e901318e7f33522000d07db84f3591f3eaa90a2696aaf49aa410ab04247f4e01
+    source: Adapted from Flow360 examples/basic_simulations/steady/steady_3D_cylinder.py
+    license: LGPL-2.1-or-later
+variants:
+  - id: refined-mesh
+    title: Tighten curvature, surface spacing, and first-layer thickness
+    patch: variants/refined-mesh.patch.json
+    evidence: variants/refined-mesh.evidence.yaml

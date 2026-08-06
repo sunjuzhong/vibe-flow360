@@ -1,0 +1,13 @@
+schema_version: 1
+engineering_question: Build a curvature-sensitive surface mesh and controlled boundary layer around a three-dimensional cylinder.
+decision: Determine whether the mesh resolves the circular profile and near-wall gradient before spending resources on a flow solution.
+inputs:
+  geometry: assets/cylinder.csm
+  length_unit: m
+  cylinder_diameter: 1 m
+  cylinder_span: 17 m
+deliverables:
+  - A reviewed curvature-sensitive cylinder surface mesh
+  - A continuous near-wall boundary-layer stack
+  - Baseline and refined VolumeMesh Plans with an explicit semantic diff
+  - A mesh-quality evidence contract that precedes solver execution

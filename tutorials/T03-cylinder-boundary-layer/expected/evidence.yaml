@@ -1,0 +1,36 @@
+schema_version: 1
+criteria:
+  - id: pinned-meshing-params-valid
+    category: provenance
+    description: Baseline parameters deserialize and pass Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: simulation.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: curvature-resolution-reviewed
+    category: mesh
+    description: Cylinder facets follow the circular profile without visibly flattened high-curvature regions.
+    artifact: surface mesh review
+    required: true
+    check: {method: manual, metric: mesh.curvature.approved}
+  - id: boundary-layer-continuity
+    category: mesh
+    description: Prism layers remain continuous around the cylinder and do not collapse or intersect.
+    artifact: volume mesh review
+    required: true
+    check: {method: manual, metric: mesh.boundary-layer.continuous}
+  - id: growth-transition-reviewed
+    category: mesh
+    description: Surface and boundary-layer growth transition smoothly into the surrounding volume mesh.
+    artifact: volume mesh review
+    required: true
+    check: {method: manual, metric: mesh.growth-transition.approved}
+  - id: mesh-quality-acceptable
+    category: mesh
+    description: No open boundaries, inverted cells, or unacceptable local quality are present.
+    artifact: mesh quality summary
+    required: true
+    check: {method: manual, metric: mesh.quality.approved}
+limitations:
+  - The tutorial does not establish grid independence.
+  - The first-layer thickness is not a universal y-plus prescription.
+  - No solver Case is created; T28 adds convergence and force evidence for the cylinder.

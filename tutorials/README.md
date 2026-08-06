@@ -42,11 +42,15 @@ The coverage gate reports four disjoint states:
 - [T01 — First trustworthy lift and drag result](T01-first-lift-drag/README.md):
   a complete Geometry-to-Case aircraft example with a reproducible baseline,
   a 5° angle-of-attack variant, and explicit mesh/convergence/force evidence.
+- [T03 — Curvature-sensitive cylinder mesh](T03-cylinder-boundary-layer/README.md):
+  global meshing defaults, local SurfaceRefinement, BoundaryLayer controls, and
+  browser-created baseline/refined VolumeMesh Plan drafts.
 
-T01 can be experienced locally without credentials or cloud charges:
+T01 and T03 can be experienced locally without credentials or cloud charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
+python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
 make tutorials-validate
 ```
 

@@ -1,0 +1,4 @@
+# Three-dimensional cylinder for the T03 meshing tutorial.
+cylinder 0 -8.5 0 0 8.5 0 0.5
+attribute groupName $cylinder
+end

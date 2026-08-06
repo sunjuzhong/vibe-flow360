@@ -152,6 +152,11 @@ Its final step can create a processed Flow360 Geometry and two preconfigured,
 locally reviewable Case Plans after an explicit Project-creation confirmation;
 mesh and Case execution remain separately locked behind the normal approval gate.
 
+T03 adds a browser-native cylinder meshing lesson. Its final step creates the
+Geometry Project and baseline/refined VolumeMesh Plan drafts with curvature,
+surface spacing, first-layer thickness, growth rates, farfield, and beta mesher
+selection already configured. Cloud meshing remains a separate approval.
+
 ## Agent configuration
 ## Agent configuration
 
