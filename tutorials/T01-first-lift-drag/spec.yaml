@@ -1,0 +1,21 @@
+schema_version: 1
+scenario: external-aerodynamics
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_unit: {value: m, provenance: provided}
+  velocity: {value: 100, unit: m/s, provenance: provided}
+  alpha: {value: 0, unit: degree, provenance: provided}
+  beta: {value: 0, unit: degree, provenance: defaulted}
+  fluid: {value: air, provenance: defaulted}
+  reference_area: {value: 24, unit: m^2, provenance: derived}
+  reference_length: {value: 2.4, unit: m, provenance: derived}
+  moment_center: {value: [4, 0, 0], unit: m, provenance: derived}
+  farfield: {value: automated, relative_size: 50, provenance: inferred}
+  first_layer_thickness: {value: 0.001, unit: m, provenance: inferred}
+  surface_max_edge_length: {value: 0.5, unit: m, provenance: inferred}
+  time_stepping: {value: steady, max_steps: 1000, provenance: inferred}
+review_required:
+  - Confirm the CSM geometry is interpreted in metres.
+  - Confirm the 24 m^2 area and 2.4 m reference length match the intended aircraft definition.
+  - Treat mesh settings as tutorial fidelity, not a production grid-independence result.

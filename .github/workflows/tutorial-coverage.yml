@@ -33,6 +33,7 @@ jobs:
         run: |
           python -m unittest scripts/test_validate_tutorials.py
           go test ./cmd/tutorial-coverage
+          python tutorials/T01-first-lift-drag/build_simulation.py --check
       - name: Validate tutorial contracts and artifacts
         run: python scripts/validate_tutorials.py --output /tmp/tutorial-validation-report.json
       - name: Verify every public feature is accounted for

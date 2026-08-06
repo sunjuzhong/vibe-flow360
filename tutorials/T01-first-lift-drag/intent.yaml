@@ -1,0 +1,14 @@
+schema_version: 1
+engineering_question: Estimate lift and drag for a simple aircraft at zero and five degrees angle of attack.
+decision: Determine whether the setup produces stable, reviewable aerodynamic coefficients before using it for design comparisons.
+inputs:
+  geometry: assets/geometry.csm
+  length_unit: m
+  velocity: 100 m/s
+  baseline_alpha: 0 degree
+  variant_alpha: 5 degree
+deliverables:
+  - Surface pressure, skin-friction, y-plus, and friction-vector fields
+  - CL and CD histories for the complete aircraft
+  - Mesh, convergence, and force-stability evidence
+  - A limitations-aware comparison of the two angles of attack

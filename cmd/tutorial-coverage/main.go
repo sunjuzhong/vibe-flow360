@@ -42,6 +42,7 @@ type mapping struct {
 	Section  string   `yaml:"section"`
 	Status   string   `yaml:"status"`
 	Artifact string   `yaml:"artifact"`
+	Override bool     `yaml:"override"`
 }
 
 type exclusion struct {
@@ -191,6 +192,25 @@ func validateVerified(root string, current feature, mapping mapping, report vali
 	return nil
 }
 
+func selectMapping(featureID string, matched []mapping) (mapping, bool, error) {
+	if len(matched) == 0 {
+		return mapping{}, false, nil
+	}
+	if len(matched) == 1 {
+		return matched[0], true, nil
+	}
+	overrides := []mapping{}
+	for _, candidate := range matched {
+		if candidate.Override {
+			overrides = append(overrides, candidate)
+		}
+	}
+	if len(overrides) != 1 {
+		return mapping{}, false, fmt.Errorf("feature %s matches multiple mappings without exactly one override", featureID)
+	}
+	return overrides[0], true, nil
+}
+
 func main() {
 	root := flag.String("root", ".", "repository root")
 	jsonOutput := flag.Bool("json", false, "print JSON report")
@@ -278,22 +298,23 @@ func main() {
 				mappingHits[index]++
 			}
 		}
-		if len(matched) > 1 {
-			fatal(fmt.Errorf("feature %s matches multiple mappings", current.ID))
+		selected, mapped, err := selectMapping(current.ID, matched)
+		if err != nil {
+			fatal(err)
 		}
 		if excluded > 0 {
 			report["excluded"] = append(report["excluded"], current.ID)
 			continue
 		}
-		if len(matched) == 0 {
+		if !mapped {
 			report["missing"] = append(report["missing"], current.ID)
 			continue
 		}
-		if matched[0].Status == "verified" {
-			if matched[0].Artifact == "" {
+		if selected.Status == "verified" {
+			if selected.Artifact == "" {
 				fatal(fmt.Errorf("verified feature %s has no artifact", current.ID))
 			}
-			if err := validateVerified(*root, current, matched[0], validation); err != nil {
+			if err := validateVerified(*root, current, selected, validation); err != nil {
 				fatal(err)
 			}
 			report["verified"] = append(report["verified"], current.ID)

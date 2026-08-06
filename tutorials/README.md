@@ -37,6 +37,21 @@ The coverage gate reports four disjoint states:
 - `missing`: public and neither mapped nor excluded (the gate fails);
 - `excluded`: intentionally outside the tutorial contract, with a documented reason.
 
+## Available tutorial
+
+- [T01 — First trustworthy lift and drag result](T01-first-lift-drag/README.md):
+  a complete Geometry-to-Case aircraft example with a reproducible baseline,
+  a 5° angle-of-attack variant, and explicit mesh/convergence/force evidence.
+
+T01 can be experienced locally without credentials or cloud charges:
+
+```bash
+python3 tutorials/T01-first-lift-drag/build_simulation.py --check
+make tutorials-validate
+```
+
+See its execution plan for the optional cloud submission commands.
+
 A mapping may be changed from `planned` to `verified` only when it names an
 `artifact` committed in this repository. The central validator must produce a
 fresh report proving that the tutorial declares the same feature, the artifact

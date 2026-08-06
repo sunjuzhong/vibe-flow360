@@ -1,0 +1,23 @@
+schema_version: 1
+criteria:
+  - id: variant-params-valid
+    category: provenance
+    description: The five-degree merge patch produces parameters that pass the same Geometry-to-Case validation as the baseline.
+    artifact: variants/alpha-5deg.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.case}
+  - id: variant-force-stability
+    category: force
+    description: Five-degree CL and CD should vary by less than one percent over the final 200 pseudo-steps.
+    artifact: five-degree total forces CSV
+    required: true
+    check: {method: relative_change, metric: force.final_window, value: 0.01}
+  - id: lift-response-reviewed
+    category: force
+    description: Review the sign and magnitude of the CL change rather than assuming a linear lift response.
+    artifact: baseline versus five-degree comparison
+    required: true
+    check: {method: manual, metric: force.CL_response_reviewed}
+limitations:
+  - The angle-of-attack patch changes no mesh settings, so mesh suitability must be reassessed at five degrees.
+  - A two-point comparison is not a lift curve or stall prediction.

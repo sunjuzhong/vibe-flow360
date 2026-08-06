@@ -41,6 +41,7 @@ tutorials-validate:
 tutorials-test:
 	python3 -m unittest scripts/test_validate_tutorials.py
 	go test ./cmd/tutorial-coverage
+	python3 tutorials/T01-first-lift-drag/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:

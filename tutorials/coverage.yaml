@@ -5,6 +5,41 @@ package_version: 25.10.3
 # A mapping means the public capability has a teaching home. "planned" becomes
 # "verified" only when an artifact exists and passes Flow360 validation.
 mappings:
+  # Narrow verified mappings override the broader planned teaching homes below.
+  - tutorial: T01
+    section: baseline
+    status: verified
+    artifact: tutorials/T01-first-lift-drag/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:SimulationParams|field:SimulationParams\.(version|unit_system|meshing|reference_geometry|operating_condition|models|time_stepping|outputs)|variant:SimulationParams\.(meshing=MeshingParams|models\[\]=(Fluid|Wall|Freestream)|operating_condition=AerospaceCondition|outputs\[\]=(SurfaceOutput|ForceOutput)|time_stepping=Steady))$'
+  - tutorial: T01
+    section: baseline
+    status: verified
+    artifact: tutorials/T01-first-lift-drag/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:UnitSystemConfig|field:UnitSystemConfig\.name|enum:UnitSystemConfig\.name)$'
+  - tutorial: T01
+    section: baseline
+    status: verified
+    artifact: tutorials/T01-first-lift-drag/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:ReferenceGeometry|field:ReferenceGeometry\.(area|area\.units|area\.value|moment_center|moment_center\.units|moment_center\.value|moment_length|moment_length\.units|moment_length\.value)|variant:ReferenceGeometry\.(area=object|moment_length=object))$'
+  - tutorial: T01
+    section: baseline
+    status: verified
+    artifact: tutorials/T01-first-lift-drag/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:Surface|field:Surface\.name)$'
+  - tutorial: T01
+    section: workflow
+    status: verified
+    artifact: tutorials/T01-first-lift-drag/plan.md
+    override: true
+    selector: {feature_pattern: '^workflow:geometry-to-case$'}
   - tutorial: T01
     section: baseline
     status: planned

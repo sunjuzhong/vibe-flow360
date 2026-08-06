@@ -1,0 +1,69 @@
+schema_version: 1
+id: T01
+slug: first-lift-drag
+title: First trustworthy lift and drag result
+summary: Validate and run a steady aircraft case at zero and five degrees angle of attack.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:SimulationParams', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.version', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.unit_system', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.meshing', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.reference_geometry', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.operating_condition', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.models', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.time_stepping', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:SimulationParams.outputs', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.meshing=MeshingParams', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.models[]=Fluid', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.models[]=Wall', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.models[]=Freestream', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.operating_condition=AerospaceCondition', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.outputs[]=SurfaceOutput', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.outputs[]=ForceOutput', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:SimulationParams.time_stepping=Steady', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:UnitSystemConfig', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:UnitSystemConfig.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:enum:UnitSystemConfig.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:ReferenceGeometry', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.area', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.area.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.area.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.moment_center', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.moment_center.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.moment_center.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.moment_length', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.moment_length.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ReferenceGeometry.moment_length.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:ReferenceGeometry.area=object', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:ReferenceGeometry.moment_length=object', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:Surface', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Surface.name', section: baseline, artifact: simulation.json}
+  - {feature: 'workflow:geometry-to-case', section: workflow, artifact: plan.md}
+assets:
+  - path: assets/geometry.csm
+    sha256: 7a41592c77520c10ff85d83f2c2cd0c46129389957f10cefe889712ecde7ff93
+    source: https://github.com/flexcompute/Flow360/tree/develop/flow360/examples/airplane
+    license: LGPL-2.1-or-later
+  - path: assets/entity-info.json
+    sha256: 42bb39c050c872718d0e1a65b0a2e0046a436bc3e52a2b91461c5178a27d9fcc
+    source: https://github.com/flexcompute/Flow360/tree/develop/tests/simulation/data/geometry_airplane
+    license: LGPL-2.1-or-later
+variants:
+  - id: alpha-5deg
+    title: Increase angle of attack to five degrees
+    patch: variants/alpha-5deg.patch.json
+    evidence: variants/alpha-5deg.evidence.yaml

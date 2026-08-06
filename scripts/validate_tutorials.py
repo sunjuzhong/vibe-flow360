@@ -127,6 +127,9 @@ def validate_one(
             elif path.suffix == ".json" and name != "simulation":
                 json.loads(path.read_text(encoding="utf-8"))
                 checks.append("json.parse")
+            elif path.suffix == ".py":
+                compile(path.read_text(encoding="utf-8"), str(path), "exec")
+                checks.append("python.compile")
             elif path.suffix == ".md" and not path.read_text(encoding="utf-8").strip():
                 raise ValueError(f"artifact {name} is empty: {relative}")
             result["artifacts"][path.relative_to(root).as_posix()] = artifact_record(root, path, checks)

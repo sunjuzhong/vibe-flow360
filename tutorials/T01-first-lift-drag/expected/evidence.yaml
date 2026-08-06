@@ -1,0 +1,36 @@
+schema_version: 1
+criteria:
+  - id: pinned-params-valid
+    category: provenance
+    description: The baseline parameters deserialize and pass Geometry-to-Case validation with Flow360 25.10.3.
+    artifact: simulation.json
+    required: true
+    check: {method: present, metric: flow360.validation.case}
+  - id: volume-mesh-reviewed
+    category: mesh
+    description: Review the surface and volume mesh for open boundaries, missing layers, and excessive local skewness before trusting forces.
+    artifact: volume-mesh review
+    required: true
+    check: {method: manual, metric: mesh.review.approved}
+  - id: residual-reduction
+    category: convergence
+    description: Primary residuals should decrease by at least three orders of magnitude without sustained late growth.
+    artifact: nonlinear residuals CSV
+    required: true
+    check: {method: greater_equal, metric: residual.orders_reduced, value: 3}
+  - id: force-stability
+    category: force
+    description: CL and CD should vary by less than one percent over the final 200 pseudo-steps.
+    artifact: total forces CSV
+    required: true
+    check: {method: relative_change, metric: force.final_window, value: 0.01}
+  - id: surface-fields-present
+    category: field
+    description: Cp, Cf, yPlus, and CfVec surface fields must be downloadable for engineering review.
+    artifact: surface results
+    required: true
+    check: {method: present, metric: fields.Cp_Cf_yPlus_CfVec}
+limitations:
+  - The mesh is tutorial fidelity and does not demonstrate grid independence.
+  - Numerical CL and CD targets are intentionally omitted until a pinned cloud run is archived.
+  - A steady RANS result may not represent separated or intrinsically unsteady flow at higher angle of attack.

@@ -73,3 +73,15 @@ func TestVerifiedArtifactCannotEscapeRepository(t *testing.T) {
 		t.Fatal("expected escaping artifact path to fail")
 	}
 }
+
+func TestSelectMappingRequiresExactlyOneOverride(t *testing.T) {
+	planned := mapping{Tutorial: "T01", Status: "planned"}
+	verified := mapping{Tutorial: "T01", Status: "verified", Override: true}
+	selected, ok, err := selectMapping("schema:type:SimulationParams", []mapping{planned, verified})
+	if err != nil || !ok || selected.Status != "verified" {
+		t.Fatalf("expected verified override, got %#v, %v, %v", selected, ok, err)
+	}
+	if _, _, err := selectMapping("schema:type:SimulationParams", []mapping{planned, planned}); err == nil {
+		t.Fatal("expected ambiguous mappings to fail")
+	}
+}

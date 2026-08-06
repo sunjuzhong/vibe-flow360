@@ -1,0 +1,14 @@
+{
+  "operating_condition": {
+    "alpha": {
+      "value": 5.0,
+      "units": "degree"
+    },
+    "private_attribute_input_cache": {
+      "alpha": {
+        "value": 5.0,
+        "units": "degree"
+      }
+    }
+  }
+}
