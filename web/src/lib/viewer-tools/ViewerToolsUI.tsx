@@ -32,6 +32,18 @@ export function positionViewerToolsMenu(
   }
 }
 
+type ContainsTarget = { contains: (target: Node) => boolean }
+
+export function shouldDismissViewerToolsMenu(
+  target: EventTarget | null,
+  launcher: ContainsTarget | null,
+  menu: ContainsTarget | null,
+): boolean {
+  if (!target) return true
+  const node = target as Node
+  return !launcher?.contains(node) && !menu?.contains(node)
+}
+
 const toolIcons = {
   distance: Ruler,
   point: MapPin,
@@ -54,14 +66,15 @@ export function ViewerToolsDock({
   const [open, setOpen] = useState(initiallyOpen)
   const [menuPosition, setMenuPosition] = useState<ViewerToolsMenuPosition | null>(null)
   const launcherRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
   const selectDistance = () => {
     model.activateDistance()
-    setOpen(true)
+    setOpen(false)
   }
   const selectBasic = (toolId: BasicToolId) => {
     model.activateBasic(toolId)
-    setOpen(true)
+    setOpen(false)
   }
 
   useClientLayoutEffect(() => {
@@ -86,8 +99,27 @@ export function ViewerToolsDock({
     }
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+    const dismissOnOutsidePointer = (event: PointerEvent) => {
+      if (shouldDismissViewerToolsMenu(event.target, launcherRef.current, menuRef.current)) {
+        setOpen(false)
+      }
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', dismissOnOutsidePointer)
+    document.addEventListener('keydown', dismissOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', dismissOnOutsidePointer)
+      document.removeEventListener('keydown', dismissOnEscape)
+    }
+  }, [open])
+
   const menu = (
     <div
+      ref={menuRef}
       id={menuId}
       className={`viewer-tools-menu ${menuPosition ? 'viewer-tools-menu-portal' : ''}`}
       role="toolbar"

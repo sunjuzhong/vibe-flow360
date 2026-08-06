@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { WorkspaceViewerToolsModel } from '../../hooks/useWorkspaceViewerTools'
 import { BASIC_TOOLS, polylineToolDefinition } from './basic-tools'
-import { positionViewerToolsMenu, ViewerToolPanel, ViewerToolsDock } from './ViewerToolsUI'
+import { positionViewerToolsMenu, shouldDismissViewerToolsMenu, ViewerToolPanel, ViewerToolsDock } from './ViewerToolsUI'
 
 function model(overrides: Partial<WorkspaceViewerToolsModel> = {}): WorkspaceViewerToolsModel {
   const idleDistance = {
@@ -35,6 +35,18 @@ function model(overrides: Partial<WorkspaceViewerToolsModel> = {}): WorkspaceVie
 }
 
 describe('ViewerToolsUI', () => {
+  it('dismisses only for targets outside the launcher and portaled menu', () => {
+    const launcherTarget = {} as Node
+    const menuTarget = {} as Node
+    const outsideTarget = {} as Node
+    const launcher = { contains: (target: Node) => target === launcherTarget }
+    const menu = { contains: (target: Node) => target === menuTarget }
+
+    expect(shouldDismissViewerToolsMenu(launcherTarget, launcher, menu)).toBe(false)
+    expect(shouldDismissViewerToolsMenu(menuTarget, launcher, menu)).toBe(false)
+    expect(shouldDismissViewerToolsMenu(outsideTarget, launcher, menu)).toBe(true)
+  })
+
   it('keeps the portaled menu inside the viewport and right-aligns it to the launcher', () => {
     expect(positionViewerToolsMenu(
       { top: 700, right: 590 },
