@@ -1598,18 +1598,22 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		return
 	}
 	if s.mirror != nil {
+		assetURL := fmt.Sprintf(
+			"/api/flow360/resources/%s/%s/visualization/manifest.json",
+			resourceType,
+			resourceID,
+		)
+		var cachedPreview *flow360.MeshPreview
 		manifest, manifestErr := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
 		if manifestErr == nil {
-			assetURL := fmt.Sprintf(
-				"/api/flow360/resources/%s/%s/visualization/manifest.json",
-				resourceType,
-				resourceID,
-			)
 			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)
 			if previewErr == nil {
-				c.Header("Cache-Control", "private, max-age=60")
-				c.JSON(http.StatusOK, preview)
-				return
+				cachedPreview = &preview
+				if s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
+					c.Header("Cache-Control", "private, max-age=60")
+					c.JSON(http.StatusOK, preview)
+					return
+				}
 			}
 		}
 		if s.projectSyncClient != nil {
@@ -1629,11 +1633,6 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 						visualization.Bins,
 						0,
 					); persistErr == nil {
-						assetURL := fmt.Sprintf(
-							"/api/flow360/resources/%s/%s/visualization/manifest.json",
-							resourceType,
-							resourceID,
-						)
 						if preview, previewErr := flow360.GeometryUVFPreview(resourceID, visualization.Manifest, assetURL); previewErr == nil {
 							c.Header("Cache-Control", "private, max-age=60")
 							c.JSON(http.StatusOK, preview)
@@ -1642,6 +1641,11 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 					}
 				}
 			}
+		}
+		if cachedPreview != nil {
+			c.Header("Cache-Control", "private, max-age=60")
+			c.JSON(http.StatusOK, *cachedPreview)
+			return
 		}
 	}
 
@@ -1665,6 +1669,19 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func (s *Server) resourceVisualizationComplete(resourceType, resourceID string, manifest json.RawMessage) bool {
+	paths, err := flow360.TessellationBinPaths(manifest)
+	if err != nil {
+		return false
+	}
+	for _, path := range paths {
+		if _, err := s.mirror.ResourceVisualizationFile(resourceType, resourceID, path); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) flow360GeometryDiagnostics(c *gin.Context) {

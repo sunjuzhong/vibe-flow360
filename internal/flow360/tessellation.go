@@ -15,7 +15,8 @@ import (
 
 const (
 	maxTessellationManifestSize = 2 * 1024 * 1024
-	maxTessellationBinSize      = MaxPreviewSize
+	maxTessellationBinSize      = 128 * 1024 * 1024
+	maxTessellationTotalSize    = 256 * 1024 * 1024
 	maxTessellationFiles        = 64
 	visualizationTimeout        = 180 * time.Second
 )
@@ -145,7 +146,7 @@ func (c *Client) ResourceVisualization(
 			fmt.Errorf("read manifest: %w", err),
 		)
 	}
-	binPaths, err := TessellationDefaultBinPaths(manifest)
+	binPaths, err := TessellationBinPaths(manifest)
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
 	}
@@ -165,11 +166,11 @@ func (c *Client) ResourceVisualization(
 			)
 		}
 		totalSize += len(payload)
-		if totalSize > MaxPreviewSize {
+		if totalSize > maxTessellationTotalSize {
 			return ResourceVisualization{}, visualizationError(
 				VisualizationMalformed,
 				resourceType,
-				fmt.Errorf("default LOD exceeds %d byte limit", MaxPreviewSize),
+				fmt.Errorf("visualization buffers exceed %d byte limit", maxTessellationTotalSize),
 			)
 		}
 		bins[relative] = payload
@@ -509,7 +510,7 @@ for entry in entries:
         default = buffers.get("default", 0)
         if type(default) is not int or default < 0 or default >= len(levels):
             raise ValueError("invalid default visualization LOD")
-        candidates = [levels[default]]
+        candidates = levels
     else:
         candidates = [buffers]
     for candidate in candidates:

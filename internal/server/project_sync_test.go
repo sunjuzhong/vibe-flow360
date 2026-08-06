@@ -23,6 +23,7 @@ type fakeProjectSyncClient struct {
 	details              map[string]flow360.ResourceDetail
 	failures             map[string]error
 	visualizationFailure error
+	visualization        *flow360.ResourceVisualization
 	visualizationCalls   int
 	calls                map[string]int
 	delay                time.Duration
@@ -34,6 +35,9 @@ func (f *fakeProjectSyncClient) ResourceVisualization(_ context.Context, resourc
 	f.mu.Unlock()
 	if f.visualizationFailure != nil {
 		return flow360.ResourceVisualization{}, f.visualizationFailure
+	}
+	if f.visualization != nil {
+		return *f.visualization, nil
 	}
 	return flow360.ResourceVisualization{
 		Manifest: json.RawMessage(`[
@@ -297,6 +301,70 @@ func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 	}
 	if second := requestPreview(); second.Code != http.StatusOK {
 		t.Fatalf("cached preview got %d: %s", second.Code, second.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.visualizationCalls != 1 {
+		t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+	}
+}
+
+func TestResourceMeshPreviewRepairsIncompleteLODCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manifest := json.RawMessage(`[
+		{"id":"body-1","type":"SolidGeometry","properties":{"boundsMin":[-1,-1,-1],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"lod","default":1,"levels":[
+			{"path":"body-high.bin","sections":[{"name":"position","length":36}]},
+			{"path":"body-low.bin","sections":[{"name":"position","length":36}]}
+		]}}},
+		{"id":"face-1","name":"Face 1","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}}
+	]`)
+	visualization := flow360.ResourceVisualization{
+		Manifest: manifest,
+		Bins: map[string][]byte{
+			"body-high.bin": {4, 5, 6},
+			"body-low.bin":  {1, 2, 3},
+		},
+	}
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+			"Case/case-1":    {ID: "case-1", Type: "Case", Errors: map[string]string{}},
+		},
+		failures:      map[string]error{},
+		visualization: &visualization,
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+	if _, err := app.mirror.PutResourceVisualization(
+		"prj-1",
+		"Geometry",
+		"geo-1",
+		manifest,
+		map[string][]byte{"body-low.bin": {1, 2, 3}},
+		1,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	requestPreview := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		requestContext, _ := gin.CreateTestContext(recorder)
+		requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
+		requestContext.Params = gin.Params{
+			{Key: "resource_type", Value: "Geometry"},
+			{Key: "resource_id", Value: "geo-1"},
+		}
+		app.flow360ResourceMeshPreview(requestContext)
+		return recorder
+	}
+	if repaired := requestPreview(); repaired.Code != http.StatusOK {
+		t.Fatalf("repair preview got %d: %s", repaired.Code, repaired.Body)
+	}
+	if cached := requestPreview(); cached.Code != http.StatusOK {
+		t.Fatalf("cached preview got %d: %s", cached.Code, cached.Body)
+	}
+	if payload, err := app.mirror.ResourceVisualizationFile("Geometry", "geo-1", "body-high.bin"); err != nil || len(payload) == 0 {
+		t.Fatalf("high precision LOD was not repaired: payload=%v err=%v", payload, err)
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()

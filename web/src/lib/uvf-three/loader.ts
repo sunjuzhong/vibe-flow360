@@ -5,7 +5,7 @@ import { normalizeFieldValue } from './fieldScale'
 import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
-const maxBufferBytes = 25 * 1024 * 1024
+const maxBufferBytes = 128 * 1024 * 1024
 const maxBufferFiles = 64
 const maxTotalBufferBytes = 256 * 1024 * 1024
 

@@ -16,7 +16,7 @@ const (
 	SchemaVersion                       = 3
 	ArtifactPolicyMetadataOnly          = "metadata-only"
 	ArtifactPolicyMetadataVisualization = "metadata+geometry-visualization"
-	maxGeometryVisualizationFileSize    = 25 * 1024 * 1024
+	maxGeometryVisualizationFileSize    = 128 * 1024 * 1024
 
 	StatusSyncing   = "syncing"
 	StatusCompleted = "completed"
@@ -254,6 +254,9 @@ func (s *Store) PutResourceVisualization(
 		SyncStatusMetadata,
 	)
 	for relative, payload := range bins {
+		if len(payload) > maxGeometryVisualizationFileSize {
+			return nil, errors.New("resource visualization asset exceeds the size limit")
+		}
 		clean, err := validateVisualizationPath(relative, ".bin")
 		if err != nil {
 			return nil, err
