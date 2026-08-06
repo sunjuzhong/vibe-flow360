@@ -1,6 +1,6 @@
 import type { ResourceDetail } from '../api/client'
 import type { MeshGroupData } from '../components/viewer/LazyViewer3D'
-import type { UVFFieldInfo } from './uvf-three'
+import type { UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo } from './uvf-three'
 import {
   compactParameterValue,
   unwrapSimulationParams,
@@ -70,6 +70,43 @@ export type BoundaryLayerReview = {
   targetCount: number
   matchedTargetCount: number
   unmatchedTargetCount: number
+}
+
+export type VolumeQualitySeverity = 'critical' | 'warning' | 'pass'
+
+export type VolumeQualityThreshold = {
+  fieldName: string
+  metric: 'skewness' | 'non-orthogonality' | 'orthogonality' | 'aspect-ratio' | 'jacobian' | 'quality'
+  riskDirection: 'min' | 'max'
+  warning: number
+  critical: number
+  source: 'baseline' | 'custom'
+  rationale: string
+}
+
+export type VolumeQualityThresholdOverride = Pick<VolumeQualityThreshold, 'warning' | 'critical'>
+
+export type VolumeQualityFinding = {
+  id: string
+  fieldName: string
+  severity: VolumeQualitySeverity
+  riskDirection: 'min' | 'max'
+  worstValue: number
+  warningThreshold: number
+  criticalThreshold: number
+  estimatedWarningCount?: number
+  estimatedCriticalCount?: number
+  sampleCount?: number
+  advice: string
+  rationale: string
+}
+
+export type VolumeQualityAssessment = {
+  findings: VolumeQualityFinding[]
+  unsupportedFields: string[]
+  criticalCount: number
+  warningCount: number
+  passCount: number
 }
 
 const qualityFieldPattern = /(?:^|[_\s-])(aspect(?:[_\s-]*ratio)?|edge(?:[_\s-]*length)?|cell(?:[_\s-]*volume)?|volume|jacobian|orthog(?:onality)?|skew(?:ness)?|quality|non[_\s-]*orthogonal)(?:$|[_\s-])/i
@@ -152,6 +189,89 @@ export function volumeQualityRiskDirection(fieldName: string): 'min' | 'max' {
   const normalized = normalizeFieldName(fieldName)
   if (/minimum|min edge|cell volume|jacobian|orthogonality|quality/.test(normalized)) return 'min'
   return 'max'
+}
+
+export function buildVolumeQualityThresholds(
+  fields: UVFFieldInfo[],
+  overrides: Record<string, VolumeQualityThresholdOverride> = {},
+): VolumeQualityThreshold[] {
+  const thresholds: VolumeQualityThreshold[] = []
+  for (const field of fields) {
+    const baseline = volumeQualityBaseline(field.name)
+    if (!baseline) continue
+    const override = overrides[field.name]
+    if (!override || !validThresholdOrder(baseline.riskDirection, override.warning, override.critical)) {
+      thresholds.push({ fieldName: field.name, ...baseline, source: 'baseline' })
+      continue
+    }
+    thresholds.push({
+      fieldName: field.name,
+      ...baseline,
+      warning: override.warning,
+      critical: override.critical,
+      source: 'custom',
+    })
+  }
+  return thresholds
+}
+
+export function assessVolumeMeshQuality({
+  fields,
+  thresholds,
+  histogram,
+}: {
+  fields: UVFFieldInfo[]
+  thresholds: VolumeQualityThreshold[]
+  histogram?: UVFFieldHistogram | null
+}): VolumeQualityAssessment {
+  const fieldByName = new Map(fields.map((field) => [field.name, field]))
+  const thresholdByName = new Map(thresholds.map((threshold) => [threshold.fieldName, threshold]))
+  const findings = thresholds.flatMap((threshold) => {
+    const field = fieldByName.get(threshold.fieldName)
+    if (!field) return []
+    const worstValue = threshold.riskDirection === 'min' ? field.min : field.max
+    const severity = riskCrosses(threshold.riskDirection, worstValue, threshold.critical)
+      ? 'critical' as const
+      : riskCrosses(threshold.riskDirection, worstValue, threshold.warning) ? 'warning' as const : 'pass' as const
+    const activeHistogram = histogram?.field.name === field.name ? histogram : null
+    return [{
+      id: `volume-quality-${normalizeKey(field.name)}`,
+      fieldName: field.name,
+      severity,
+      riskDirection: threshold.riskDirection,
+      worstValue,
+      warningThreshold: threshold.warning,
+      criticalThreshold: threshold.critical,
+      estimatedWarningCount: activeHistogram ? estimateHistogramRiskCount(activeHistogram, threshold.riskDirection, threshold.warning) : undefined,
+      estimatedCriticalCount: activeHistogram ? estimateHistogramRiskCount(activeHistogram, threshold.riskDirection, threshold.critical) : undefined,
+      sampleCount: activeHistogram?.sampleCount,
+      advice: volumeQualityAdvice(threshold.metric),
+      rationale: threshold.rationale,
+    }]
+  }).sort((left, right) => severityRank(right.severity) - severityRank(left.severity))
+  return {
+    findings,
+    unsupportedFields: fields.filter((field) => !thresholdByName.has(field.name)).map((field) => field.name),
+    criticalCount: findings.filter((finding) => finding.severity === 'critical').length,
+    warningCount: findings.filter((finding) => finding.severity === 'warning').length,
+    passCount: findings.filter((finding) => finding.severity === 'pass').length,
+  }
+}
+
+export function volumeQualityRiskFilter(
+  field: UVFFieldInfo,
+  threshold: VolumeQualityThreshold,
+): UVFFieldFilter {
+  return {
+    enabled: true,
+    operator: 'and',
+    rules: [{
+      id: `volume-threshold-${normalizeKey(field.name)}`,
+      fieldName: field.name,
+      min: threshold.riskDirection === 'min' ? field.min : threshold.warning,
+      max: threshold.riskDirection === 'min' ? threshold.warning : field.max,
+    }],
+  }
 }
 
 export function volumeMeshParameterSummary(simulationParams: unknown): VolumeParameterRow[] {
@@ -487,6 +607,110 @@ function normalizeFieldName(value: string): string {
     .replaceAll('_', ' ')
     .replaceAll('-', ' ')
     .toLowerCase()
+}
+
+function volumeQualityBaseline(fieldName: string): Omit<VolumeQualityThreshold, 'fieldName' | 'source'> | null {
+  const normalized = normalizeFieldName(fieldName)
+  if (/non\s*orthog/.test(normalized)) {
+    return {
+      metric: 'non-orthogonality',
+      riskDirection: 'max',
+      warning: 65,
+      critical: 75,
+      rationale: 'Angle-based screening baseline; confirm against the solver and mesh-generation requirements.',
+    }
+  }
+  if (/orthog/.test(normalized)) {
+    return {
+      metric: 'orthogonality',
+      riskDirection: 'min',
+      warning: 0.15,
+      critical: 0.05,
+      rationale: 'Normalized orthogonality screening baseline where values closer to zero are riskier.',
+    }
+  }
+  if (/skew/.test(normalized)) {
+    return {
+      metric: 'skewness',
+      riskDirection: 'max',
+      warning: 0.85,
+      critical: 0.95,
+      rationale: 'Normalized skewness screening baseline where values closer to one are riskier.',
+    }
+  }
+  if (/aspect/.test(normalized)) {
+    return {
+      metric: 'aspect-ratio',
+      riskDirection: 'max',
+      warning: 50,
+      critical: 100,
+      rationale: 'General-purpose aspect-ratio screen; aligned boundary-layer cells may require a project-specific limit.',
+    }
+  }
+  if (/jacobian/.test(normalized)) {
+    return {
+      metric: 'jacobian',
+      riskDirection: 'min',
+      warning: 0.2,
+      critical: 0.05,
+      rationale: 'Normalized Jacobian screening baseline; non-positive values require immediate review.',
+    }
+  }
+  if (/quality/.test(normalized)) {
+    return {
+      metric: 'quality',
+      riskDirection: 'min',
+      warning: 0.2,
+      critical: 0.05,
+      rationale: 'Generic normalized quality baseline; verify the field definition before accepting the mesh.',
+    }
+  }
+  return null
+}
+
+function validThresholdOrder(direction: 'min' | 'max', warning: number, critical: number): boolean {
+  if (!Number.isFinite(warning) || !Number.isFinite(critical)) return false
+  return direction === 'min' ? critical <= warning : critical >= warning
+}
+
+function riskCrosses(direction: 'min' | 'max', value: number, threshold: number): boolean {
+  return direction === 'min' ? value <= threshold : value >= threshold
+}
+
+function estimateHistogramRiskCount(
+  histogram: UVFFieldHistogram,
+  direction: 'min' | 'max',
+  threshold: number,
+): number {
+  const count = histogram.bins.reduce((sum, bin) => {
+    if (bin.max <= bin.min) return sum + (riskCrosses(direction, bin.min, threshold) ? bin.count : 0)
+    if (direction === 'max') {
+      if (bin.min >= threshold) return sum + bin.count
+      if (bin.max <= threshold) return sum
+      return sum + bin.count * (bin.max - threshold) / (bin.max - bin.min)
+    }
+    if (bin.max <= threshold) return sum + bin.count
+    if (bin.min >= threshold) return sum
+    return sum + bin.count * (threshold - bin.min) / (bin.max - bin.min)
+  }, 0)
+  return Math.max(0, Math.min(histogram.sampleCount, Math.round(count)))
+}
+
+function volumeQualityAdvice(metric: VolumeQualityThreshold['metric']): string {
+  if (metric === 'skewness' || metric === 'non-orthogonality') {
+    return 'Inspect abrupt size transitions, concave intersections, and narrow gaps; reduce growth or add targeted refinement where the field peaks.'
+  }
+  if (metric === 'aspect-ratio') {
+    return 'Confirm whether the worst cells are wall-aligned layers; if not, reduce stretching and smooth the transition into the core mesh.'
+  }
+  if (metric === 'orthogonality' || metric === 'jacobian') {
+    return 'Inspect topology and nearby refinement transitions; locally improve alignment and remove collapsed or highly distorted cells.'
+  }
+  return 'Verify the field definition, locate the worst region, and correlate it with skewness, orthogonality, and local sizing before acceptance.'
+}
+
+function severityRank(severity: VolumeQualitySeverity): number {
+  return severity === 'critical' ? 2 : severity === 'warning' ? 1 : 0
 }
 
 function normalizeKey(value: string): string {

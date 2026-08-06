@@ -3,11 +3,14 @@ import type { ResourceDetail } from '../api/client'
 import {
   buildVolumeZoneInventory,
   buildBoundaryLayerReview,
+  buildVolumeQualityThresholds,
+  assessVolumeMeshQuality,
   classifyBoundaryLayerEvidenceFields,
   classifyVolumeMeshQualityFields,
   computeVolumeReadiness,
   volumeMeshCapabilities,
   volumeMeshParameterSummary,
+  volumeQualityRiskFilter,
   volumeQualityRiskDirection,
 } from './volumeMeshReview'
 
@@ -177,5 +180,48 @@ describe('VolumeMesh review business adapter', () => {
       { name: 'boundary_layer_vector', kind: 'vector', min: 0, max: 1 },
       { name: 'pressure', kind: 'scalar', min: -1, max: 1 },
     ]).map((field) => field.name)).toEqual(['prism_layer_count'])
+  })
+
+  it('builds conservative CFD screening thresholds without inventing dimensional limits', () => {
+    const fields = [
+      { name: 'maximum_skewness', kind: 'scalar' as const, min: 0.01, max: 0.97 },
+      { name: 'minimum_orthogonality', kind: 'scalar' as const, min: 0.04, max: 1 },
+      { name: 'cell_volume', kind: 'scalar' as const, min: 1e-12, max: 1 },
+    ]
+    const thresholds = buildVolumeQualityThresholds(fields, {
+      maximum_skewness: { warning: 0.8, critical: 0.9 },
+    })
+    expect(thresholds).toHaveLength(2)
+    expect(thresholds[0]).toMatchObject({ riskDirection: 'max', warning: 0.8, critical: 0.9, source: 'custom' })
+    expect(thresholds[1]).toMatchObject({ riskDirection: 'min', warning: 0.15, critical: 0.05, source: 'baseline' })
+  })
+
+  it('ranks quality findings from field evidence and estimates histogram exceedance', () => {
+    const fields = [
+      { name: 'skewness', kind: 'scalar' as const, min: 0, max: 0.97 },
+      { name: 'aspect_ratio', kind: 'scalar' as const, min: 1, max: 70 },
+    ]
+    const assessment = assessVolumeMeshQuality({
+      fields,
+      thresholds: buildVolumeQualityThresholds(fields),
+      histogram: {
+        field: fields[0],
+        sampleCount: 100,
+        bins: [
+          { min: 0, max: 0.8, count: 80 },
+          { min: 0.8, max: 0.9, count: 10 },
+          { min: 0.9, max: 1, count: 10 },
+        ],
+      },
+    })
+    expect(assessment).toMatchObject({ criticalCount: 1, warningCount: 1, passCount: 0 })
+    expect(assessment.findings[0]).toMatchObject({ fieldName: 'skewness', severity: 'critical', estimatedWarningCount: 15, estimatedCriticalCount: 5 })
+    expect(assessment.findings[1]).toMatchObject({ fieldName: 'aspect_ratio', severity: 'warning' })
+  })
+
+  it('builds a viewer filter for the risky side of a threshold', () => {
+    const field = { name: 'orthogonality', kind: 'scalar' as const, min: 0.02, max: 1 }
+    const threshold = buildVolumeQualityThresholds([field])[0]
+    expect(volumeQualityRiskFilter(field, threshold).rules[0]).toMatchObject({ min: 0.02, max: 0.15 })
   })
 })

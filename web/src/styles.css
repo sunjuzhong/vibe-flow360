@@ -4604,6 +4604,107 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .volume-field-probe { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-top: 7px; padding: 6px; border-radius: 5px; background: #f4eee4; font-size: 9px; }
 .volume-field-probe small { grid-column: 1 / -1; color: #8a8175; font-family: 'DM Mono'; }
+.volume-quality-assessment {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #ded9cf;
+}
+.volume-quality-assessment-head,
+.volume-quality-scoreboard,
+.volume-quality-queue-head,
+.volume-quality-queue article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+.volume-quality-assessment-head > div { min-width: 0; }
+.volume-quality-assessment-head strong,
+.volume-quality-assessment-head small { display: block; }
+.volume-quality-assessment-head strong { color: #514b41; font-size: 11px; }
+.volume-quality-assessment-head small { margin-top: 2px; color: #8b8378; font-size: 8px; line-height: 1.35; }
+.volume-quality-assessment-head > button,
+.volume-quality-threshold-editor > button,
+.volume-quality-queue article > button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid #ddd5c9;
+  border-radius: 5px;
+  color: #71685b;
+  background: #fff;
+  font-size: 8px;
+  cursor: pointer;
+}
+.volume-quality-assessment-head > button { padding: 5px 6px; }
+.volume-quality-assessment-head button:disabled,
+.volume-quality-threshold-editor button:disabled { opacity: .4; cursor: default; }
+.volume-quality-scoreboard { justify-content: flex-start; margin-top: 8px; }
+.volume-quality-scoreboard span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  font: 8px 'DM Mono';
+}
+.volume-quality-scoreboard .critical { color: #9d382c; background: #fae4df; }
+.volume-quality-scoreboard .warning { color: #8b631f; background: #f8edcf; }
+.volume-quality-scoreboard .pass { color: #587229; background: #eaf1d8; }
+.volume-quality-threshold-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 72px 25px;
+  align-items: end;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px;
+  border: 1px solid #e1dcd3;
+  border-radius: 6px;
+  background: rgba(255,255,255,.66);
+}
+.volume-quality-threshold-editor > div strong,
+.volume-quality-threshold-editor > div span { display: block; }
+.volume-quality-threshold-editor > div strong { color: #514b41; font-size: 9px; }
+.volume-quality-threshold-editor > div span { margin-top: 2px; color: #897f72; font: 7px 'DM Mono'; }
+.volume-quality-threshold-editor label { color: #7b7266; font-size: 7px; }
+.volume-quality-threshold-editor input {
+  width: 100%;
+  height: 25px;
+  margin-top: 2px;
+  padding: 0 5px;
+  border: 1px solid #d9d2c7;
+  border-radius: 4px;
+  color: #51493e;
+  background: #fff;
+  font: 8px 'DM Mono';
+}
+.volume-quality-threshold-editor > button { width: 25px; height: 25px; }
+.volume-quality-threshold-editor > p { grid-column: 1 / -1; margin: 0; color: #8a8175; font-size: 8px; line-height: 1.4; }
+.volume-quality-threshold-empty { margin: 8px 0 0; color: #887f73; font-size: 8px; line-height: 1.45; }
+.volume-quality-queue-head { margin-top: 10px; }
+.volume-quality-queue-head strong { color: #544e44; font-size: 10px; }
+.volume-quality-queue-head span { color: #8b8174; font: 8px 'DM Mono'; }
+.volume-quality-queue { display: grid; gap: 6px; margin-top: 6px; }
+.volume-quality-queue article {
+  padding: 7px;
+  border: 1px solid #e1d5bc;
+  border-radius: 6px;
+  background: #fffaf0;
+}
+.volume-quality-queue article.critical { border-color: #e5b8ae; background: #fff1ee; }
+.volume-quality-queue article > div { justify-content: flex-start; color: #9a6724; }
+.volume-quality-queue article.critical > div { color: #a23f31; }
+.volume-quality-queue article > div span { display: flex; min-width: 0; flex: 1; align-items: baseline; justify-content: space-between; gap: 6px; }
+.volume-quality-queue article strong { overflow: hidden; color: #554b3e; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.volume-quality-queue article small { font: 7px 'DM Mono'; text-transform: uppercase; }
+.volume-quality-queue article > p { margin: 5px 0 0; color: #766d60; font: 8px 'DM Mono'; }
+.volume-quality-queue .volume-quality-estimate { display: block; margin-top: 4px; color: #8b7454; font-size: 7px; text-transform: none; }
+.volume-quality-queue .volume-quality-advice { font-family: inherit; line-height: 1.4; }
+.volume-quality-queue article > button { margin-top: 6px; padding: 4px 6px; color: #805729; background: rgba(255,255,255,.72); }
+.volume-quality-queue-empty { display: flex; align-items: center; gap: 5px; margin: 0; padding: 7px; color: #65744e; font-size: 8px; background: #f2f5e9; border-radius: 5px; }
+.volume-quality-unsupported { display: block; margin-top: 7px; color: #8b8276; font-size: 7px; line-height: 1.4; }
 .volume-slice-axis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 7px; }
 .volume-slice-axis button { padding: 5px 4px; border: 1px solid #d9d5cc; border-radius: 5px; color: #716a60; background: #fff; font-size: 9px; cursor: pointer; }
 .volume-slice-axis button.active { border-color: #bf7d37; color: #754a1f; background: #f8ebdc; }
@@ -6027,6 +6128,19 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .geometry-disclosure-card[open] > summary::after { transform: rotate(-90deg); }
 .geometry-disclosure-card[open] > summary { border-bottom: 1px solid #eceee8; }
 .geometry-disclosure-content { padding: 10px; }
+.geometry-panel-intent {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 9px;
+  padding: 7px 8px;
+  border: 1px solid #e2e5dc;
+  border-radius: 5px;
+  color: #697165;
+  background: #f7f8f4;
+  font-size: 8px;
+  line-height: 1.4;
+}
+.geometry-panel-intent strong { color: #424b3e; font-size: 9px; }
 
 .geometry-clip-controls {
   display: grid;
@@ -6598,6 +6712,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .geometry-review-workspace .geometry-selection-card dt,
 .geometry-review-workspace .geometry-selection-card dd,
 .geometry-review-workspace .geometry-disclosure-card > summary > span,
+.geometry-review-workspace .geometry-panel-intent,
 .geometry-review-workspace .geometry-clip-controls label,
 .geometry-review-workspace .geometry-semantic-field,
 .geometry-review-workspace .geometry-clip-controls select,

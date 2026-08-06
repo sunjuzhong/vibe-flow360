@@ -84,6 +84,7 @@ export function useSurfaceQualityFilter(resourceId: string, fields: UVFFieldInfo
   return {
     filter: state.filter,
     matchCount: state.matchCount,
+    setFilter: replace,
     addRule,
     removeRule,
     updateRule,

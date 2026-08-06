@@ -18,13 +18,14 @@ import { LazyViewer3D } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
 import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
+import { useVolumeQualityThresholds } from '../hooks/useVolumeQualityThresholds'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
 import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
-import { computeVolumeReadiness } from '../lib/volumeMeshReview'
+import { assessVolumeMeshQuality, computeVolumeReadiness, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { VolumeCapabilityPanel } from './volume-mesh/VolumeCapabilityPanel'
 import { VolumeParameterSummary } from './volume-mesh/VolumeParameterSummary'
@@ -33,6 +34,7 @@ import { VolumeSliceInspector } from './volume-mesh/VolumeSliceInspector'
 import { VolumeViewModeToolbar } from './volume-mesh/VolumeViewModeToolbar'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
 import { BoundaryLayerInspector } from './volume-mesh/BoundaryLayerInspector'
+import { VolumeQualityAssessmentPanel } from './volume-mesh/VolumeQualityAssessmentPanel'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -113,6 +115,15 @@ export default function VolumeMeshWorkspace({
     `volume:${resourceId ?? detail?.id ?? ''}`,
     review.qualityFields,
   )
+  const qualityThresholds = useVolumeQualityThresholds(
+    `volume:${resourceId ?? detail?.id ?? ''}`,
+    review.qualityFields,
+  )
+  const qualityAssessment = useMemo(() => assessVolumeMeshQuality({
+    fields: review.qualityFields,
+    thresholds: qualityThresholds.thresholds,
+    histogram: review.histogram,
+  }), [qualityThresholds.thresholds, review.histogram, review.qualityFields])
   const status = resourceStatus(detail)
   const failed = ['failed', 'error'].includes(status.toLowerCase())
   const metricSources = [detail?.summary, detail?.state, detail?.simulation_params]
@@ -263,6 +274,21 @@ export default function VolumeMeshWorkspace({
                 entityNames={entityNames}
                 onRangeChange={(range) => review.setRange(range)}
                 onLocateExtreme={review.locateExtreme}
+              />
+              <VolumeQualityAssessmentPanel
+                assessment={qualityAssessment}
+                thresholds={qualityThresholds.thresholds}
+                selectedFieldName={review.selectedField}
+                onThresholdChange={qualityThresholds.updateThreshold}
+                onResetThreshold={qualityThresholds.resetThreshold}
+                onResetAll={qualityThresholds.resetAll}
+                onReviewFinding={(finding) => {
+                  const field = review.qualityFields.find((candidate) => candidate.name === finding.fieldName)
+                  const threshold = qualityThresholds.thresholds.find((candidate) => candidate.fieldName === finding.fieldName)
+                  if (!field || !threshold) return
+                  review.setSelectedField(field.name)
+                  qualityFilter.setFilter(volumeQualityRiskFilter(field, threshold))
+                }}
               />
               <SurfaceQualityFilterPanel
                 fields={review.qualityFields}
