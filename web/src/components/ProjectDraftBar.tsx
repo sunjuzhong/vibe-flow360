@@ -1,5 +1,6 @@
 import { Braces, ChevronRight, GitPullRequestDraft, Play, Plus, RefreshCw } from 'lucide-react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
+import HelpTooltip from './HelpTooltip'
 import { resourceStatus } from './ResourceDetailPanel'
 
 type Props = {
@@ -79,10 +80,14 @@ export default function ProjectDraftBar({
           </span>
           <span className="project-draft-entry__copy">
             <strong>{label}</strong>
-            <small>{hasDrafts ? 'Editable configurations in this Project' : 'Start an editable configuration'}</small>
           </span>
           <ChevronRight size={14} aria-hidden="true" />
         </button>
+        <HelpTooltip label="About Project Drafts" placement="top" align="end">
+          {hasDrafts
+            ? 'Drafts are editable configurations. Open one to inspect parameters, review changes, or run it.'
+            : 'A Draft is an editable configuration created from this Resource. Creating one does not start a remote run.'}
+        </HelpTooltip>
         {unavailable && (
           <button type="button" className="project-draft-entry__refresh" onClick={onRefresh} aria-label="Retry loading Drafts" title="Retry loading Drafts">
             <RefreshCw size={14} />
@@ -97,6 +102,9 @@ export default function ProjectDraftBar({
       <div className="project-draft-heading" aria-label="Draft mode">
         <span><GitPullRequestDraft size={15} /></span>
         <strong>Draft</strong>
+        <HelpTooltip label="About Draft mode" placement="top">
+          Draft mode lets you edit parameters and review changes before any Flow360 execution.
+        </HelpTooltip>
       </div>
 
       <label className="project-draft-select">

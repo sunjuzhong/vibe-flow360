@@ -4288,6 +4288,79 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .project-connection.online > span { background: #87a82f; }
 
+.help-tooltip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.help-tooltip__trigger {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #7b8273;
+  background: transparent;
+  cursor: help;
+}
+
+.help-tooltip__trigger:hover,
+.help-tooltip__trigger:focus-visible {
+  color: #43580d;
+  background: #edf3dc;
+  outline: none;
+}
+
+.help-tooltip__trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgba(126, 151, 44, .42);
+}
+
+.help-tooltip__content {
+  position: absolute;
+  z-index: 80;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 7px 9px;
+  border: 1px solid #4b5048;
+  border-radius: 7px;
+  color: #f8f9f4;
+  background: #30352d;
+  box-shadow: 0 6px 18px rgba(31, 36, 28, .18);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-2px);
+  transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+}
+
+.help-tooltip--start .help-tooltip__content { left: 0; }
+.help-tooltip--center .help-tooltip__content { left: 50%; transform: translateX(-50%) translateY(-2px); }
+.help-tooltip--end .help-tooltip__content { right: 0; }
+
+.help-tooltip--top .help-tooltip__content { bottom: calc(100% + 7px); }
+.help-tooltip--bottom .help-tooltip__content { top: calc(100% + 7px); }
+
+.help-tooltip:hover .help-tooltip__content,
+.help-tooltip:focus-within .help-tooltip__content {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.help-tooltip--center:hover .help-tooltip__content,
+.help-tooltip--center:focus-within .help-tooltip__content {
+  transform: translateX(-50%) translateY(0);
+}
+
 .project-workbench {
   position: relative;
   display: block;
