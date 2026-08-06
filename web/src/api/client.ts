@@ -71,9 +71,18 @@ export type AICreateResult = {
     assumptions: string[]
     target: string
   }
-  plan: SimulationPlan
+  simulation_params: Record<string, unknown>
+  preflight?: AICreatePreflight
   stages: string[]
   warnings?: string[]
+}
+
+export type AICreatePreflight = {
+  schema_version: number
+  validator_version?: string
+  valid: boolean
+  issues: PlanPreflight['issues']
+  form_schema: DynamicFormSchema
 }
 
 export type AICreateClarificationField = {

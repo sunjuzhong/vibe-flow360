@@ -10,8 +10,8 @@ import {
 
 describe('aiCreateProjectPath', () => {
   it('opens the Project with the configured Flow360 Draft selected', () => {
-    expect(aiCreateProjectPath({ project_id: 'prj 1', draft_id: 'draft/ready', plan: { id: 'plan 1' } }))
-      .toBe('/projects/prj%201?draft=draft%2Fready&plan=plan+1')
+    expect(aiCreateProjectPath({ project_id: 'prj 1', draft_id: 'draft/ready' }))
+      .toBe('/projects/prj%201?draft=draft%2Fready')
     expect(aiCreateProjectPath({ project_id: 'prj-1' })).toBe('/projects/prj-1')
   })
 })

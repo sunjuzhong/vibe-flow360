@@ -155,7 +155,7 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	if response.ProjectID != "project-ai-1" || response.RootResourceID != "geometry-ai-1" {
 		t.Fatalf("unexpected remote IDs: %#v", response)
 	}
-	if response.DraftID != "draft-ai-1" || response.Plan.RemoteIDs == nil || response.Plan.RemoteIDs.DraftID != "draft-ai-1" {
+	if response.DraftID != "draft-ai-1" {
 		t.Fatalf("expected configured remote Draft binding: %#v", response)
 	}
 	progress := app.aiCreateProgress["aip-integration-123456"]
@@ -165,17 +165,14 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	if progress.ProjectID != response.ProjectID || progress.ResourceID != response.RootResourceID {
 		t.Fatalf("expected progress to expose Flow360 resources: %#v", progress)
 	}
-	if response.Plan.Target != "case" || response.Plan.ProjectID != response.ProjectID || len(response.Plan.Patch) == 0 {
-		t.Fatalf("expected preloaded Case plan: %#v", response.Plan)
-	}
-	if response.Plan.Preflight == nil || !response.Plan.Preflight.Valid {
-		t.Fatalf("expected schema-valid generated parameters: %#v", response.Plan.Preflight)
+	if response.Preflight == nil || !response.Preflight.Valid || len(response.SimulationParams) == 0 {
+		t.Fatalf("expected schema-valid generated parameters: %#v", response.Preflight)
 	}
 	if len(agentRequests) < 2 || !strings.Contains(agentRequests[1], "time_stepping.max_steps") {
 		t.Fatalf("parameter Agent did not receive the active Flow360 schema catalog: %#v", agentRequests)
 	}
 	var patch map[string]any
-	if err := json.Unmarshal(response.Plan.Patch, &patch); err != nil {
+	if err := json.Unmarshal(response.SimulationParams, &patch); err != nil {
 		t.Fatal(err)
 	}
 	models := patch["models"].([]any)
@@ -187,17 +184,25 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	if len(entities) != 1 || entities[0].(map[string]any)["name"] != "cylinder-side" {
 		t.Fatalf("expected concrete CAD Wall assignment: %#v", entities)
 	}
-	if _, err := os.Stat(filepath.Join(root, "ai-create")); err != nil {
-		t.Fatalf("expected durable staging root: %v", err)
+	if _, err := os.Stat(filepath.Join(root, "ai-create-sessions")); err != nil {
+		t.Fatalf("expected durable session CAD root: %v", err)
+	}
+	storedSession := app.aiCreateSessions[progress.SessionID]
+	if storedSession.Phase != "completed" || storedSession.CAD == nil || storedSession.Parameters == nil || storedSession.DraftID != response.DraftID {
+		t.Fatalf("expected completed session checkpoints to remain resumable: %#v", storedSession)
+	}
+	storedPlans, err := planStore.List(response.ProjectID, "")
+	if err != nil || len(storedPlans) != 0 {
+		t.Fatalf("AI Create should configure the Draft directly without restoring the removed Plan layer: plans=%#v err=%v", storedPlans, err)
 	}
 }
 
 func TestAICreateCompletionStagesKeepCreatedProjectInAgentRecovery(t *testing.T) {
-	stages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: false}}, false)
+	stages := aiCreateCompletionStages(false, false)
 	if stages[len(stages)-1] != "Opened Agent Recovery for remaining Flow360 parameter issues" {
 		t.Fatalf("created Project did not continue into Agent Recovery: %#v", stages)
 	}
-	validStages := aiCreateCompletionStages(plans.Plan{Preflight: &plans.Preflight{Valid: true}}, true)
+	validStages := aiCreateCompletionStages(true, true)
 	if validStages[len(validStages)-1] != "Ready for review and approval" {
 		t.Fatalf("valid Project did not report completed preflight: %#v", validStages)
 	}
@@ -428,6 +433,50 @@ func TestGenerateAICreateCADCanRecoverOnThirdAgentRepair(t *testing.T) {
 	progress := app.aiCreateProgress[progressID]
 	if !strings.Contains(progress.Detail, "self-repair 3 of 3") {
 		t.Fatalf("progress did not expose the real repair round: %#v", progress)
+	}
+}
+
+func TestPrepareAICreateCADReusesDurableValidatedCheckpoint(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "checkpoint.step")
+	step := "ISO-10303-21;\nDATA;\n#1=MANIFOLD_SOLID_BREP('checkpoint',#2);\n#2=ADVANCED_FACE('',(),#3,.T.);\nENDSEC;\nEND-ISO-10303-21;\n"
+	if err := os.WriteFile(path, []byte(step), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	generator := &sequenceCADGenerator{}
+	checkpoint := aiCreateCADCheckpoint{
+		GeometryName: "checkpoint.step", GeometryPath: path,
+		Blueprint:  aicreate.Blueprint{ProjectName: "Checkpoint", Geometry: validTestFlow360Geometry("checkpoint")},
+		Validation: aicreate.GeometryValidation{SolidCount: 1, FaceCount: 3, Kernel: "checkpoint"},
+	}
+	app := &Server{workDir: root, cadGenerator: generator}
+	progressID := "aip-cad-checkpoint-1234"
+	app.startAICreateProgress(progressID)
+	blueprint, validation, gotPath, gotName, err := app.prepareAICreateCAD(
+		context.Background(), aiCreateSession{ID: "aic-checkpoint", CAD: &checkpoint}, progressID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generator.calls != 0 || gotPath != path || gotName != checkpoint.GeometryName || blueprint.ProjectName != "Checkpoint" || validation.Kernel != "checkpoint" {
+		t.Fatalf("durable CAD checkpoint was not reused: calls=%d path=%q name=%q blueprint=%#v validation=%#v", generator.calls, gotPath, gotName, blueprint, validation)
+	}
+	if !strings.Contains(app.aiCreateProgress[progressID].Detail, "Reusing") {
+		t.Fatalf("checkpoint reuse was not exposed in real progress: %#v", app.aiCreateProgress[progressID])
+	}
+}
+
+func TestAICreateFailureDoesNotOverwriteResumableProgress(t *testing.T) {
+	app := &Server{workDir: t.TempDir()}
+	progressID := "aip-resumable-progress-1234"
+	if !app.startAICreateProgress(progressID) {
+		t.Fatal("could not start progress")
+	}
+	app.finishAICreateProgress(progressID, "needs_attention", "Draft setup can be retried.", "project-1", "geometry-1")
+	app.failAICreateProgressIfRunning(progressID, "generic failure")
+	progress := app.aiCreateProgress[progressID]
+	if progress.Status != "needs_attention" || progress.Detail != "Draft setup can be retried." {
+		t.Fatalf("resumable progress was overwritten: %#v", progress)
 	}
 }
 

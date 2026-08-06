@@ -108,6 +108,23 @@ func (s *Server) finishAICreateProgress(requestID, status, detail, projectID, re
 	s.persistAICreateProgressLocked()
 }
 
+func (s *Server) failAICreateProgressIfRunning(requestID, detail string) {
+	if requestID == "" {
+		return
+	}
+	s.aiCreateProgressMu.Lock()
+	defer s.aiCreateProgressMu.Unlock()
+	item, ok := s.aiCreateProgress[requestID]
+	if !ok || item.Status != "running" {
+		return
+	}
+	item.Status = "failed"
+	item.Detail = strings.TrimSpace(detail)
+	item.UpdatedAt = time.Now().UTC()
+	s.aiCreateProgress[requestID] = item
+	s.persistAICreateProgressLocked()
+}
+
 func (s *Server) bindAICreateProgressResources(requestID, projectID, resourceID string) {
 	if requestID == "" {
 		return

@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, CheckCircle2, CircleHelp, Loader2, PauseCircle, Sparkles, WandSparkles, X } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle2, CircleHelp, ExternalLink, Loader2, Minus, PauseCircle, RotateCcw, Sparkles, WandSparkles, X } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   api,
@@ -10,6 +10,7 @@ import {
 } from '../api/client'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360IdLink from './Flow360IdLink'
+import './AICreateSession.css'
 
 export const AI_CREATE_INTENT_MAX_CHARACTERS = 4000
 const AI_CREATE_INTENT_WARNING_CHARACTERS = Math.floor(AI_CREATE_INTENT_MAX_CHARACTERS * 0.85)
@@ -209,6 +210,8 @@ export default function AICreateModal({
   const [fields, setFields] = useState<AICreateClarificationField[]>([])
   const [answers, setAnswers] = useState<Record<string, unknown>>({})
   const [transcript, setTranscript] = useState<TranscriptItem[]>([])
+  const [minimized, setMinimized] = useState(false)
+  const [completedResult, setCompletedResult] = useState<AICreateResult | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const closeWhenIdle = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
   const modalRef = useFocusTrap<HTMLDivElement>(true, closeWhenIdle, 'textarea,input,select,button')
@@ -231,7 +234,10 @@ export default function AICreateModal({
     const refreshProgress = async () => {
       try {
         const current = await api.aiCreateProgress(progressID)
-        if (polling) setProgress(current)
+        if (polling) {
+          setProgress(current)
+          if (current.session_id) setSessionId(current.session_id)
+        }
       } catch {
         // The POST registers the request ID; a 404 before that point is expected.
       }
@@ -243,7 +249,10 @@ export default function AICreateModal({
         await delay(attempt < 10 ? 500 : 1_000)
         try {
           const current = await api.aiCreateProgress(progressID)
-          if (polling) setProgress(current)
+          if (polling) {
+            setProgress(current)
+            if (current.session_id) setSessionId(current.session_id)
+          }
           if (current.response) return current.response
           if (current.status === 'recovering' && current.session_id && !resumed) {
             resumed = true
@@ -274,7 +283,8 @@ export default function AICreateModal({
         ])
         return
       }
-      onCreated(result)
+      setFields([])
+      setCompletedResult(result)
     }
     const timer = window.setInterval(() => { void refreshProgress() }, 800)
     try {
@@ -312,16 +322,31 @@ export default function AICreateModal({
     void runCreate(serializedAnswers(fields, answers))
   }
 
+  if (minimized) {
+    const ready = completedResult !== null
+    return (
+      <aside className={`ai-create-session-dock${ready ? ' ready' : ''}`} aria-live="polite">
+        <span className="ai-create-session-dock-icon">{ready ? <CheckCircle2 size={16} /> : <Sparkles size={16} />}</span>
+        <span>
+          <strong>{ready ? 'AI Create is ready' : 'AI Create session'}</strong>
+          <small>{ready ? 'Project and Draft are ready to review.' : progress?.detail || 'Working in the background…'}</small>
+        </span>
+        <button type="button" onClick={() => setMinimized(false)}>{ready ? 'Review' : 'Open'}</button>
+      </aside>
+    )
+  }
+
   return (
     <div className="ai-create-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeWhenIdle() }}>
       <div ref={modalRef} className="ai-create-modal" role="dialog" aria-modal="true" aria-labelledby="ai-create-title" tabIndex={-1}>
+        <button className="icon-button ai-create-minimize" type="button" onClick={() => setMinimized(true)} aria-label="Minimize AI Create session"><Minus size={18} /></button>
         <button className="icon-button ai-create-close" type="button" onClick={closeWhenIdle} disabled={busy} aria-label="Close AI Create dialog"><X size={18} /></button>
         <div className="ai-create-copy">
           <span className="ai-create-icon"><WandSparkles size={19} /></span>
           <div>
             <p className="eyebrow">AI CREATE</p>
             <h2 id="ai-create-title">{sessionId ? 'Let’s define the simulation' : 'Describe the simulation you want'}</h2>
-            <p>The Agent builds the goal over multiple steps, asks only for blocking engineering decisions, then creates exact CAD and a reviewable Flow360 setup.</p>
+            <p>This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.</p>
           </div>
         </div>
 
@@ -388,6 +413,21 @@ export default function AICreateModal({
         {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />Connecting to the AI Create backend…</div>}
         {progress && (busy || progress.status !== 'completed') && <AICreateProgressView progress={progress} environment={environment} />}
         {error && <div className="ai-create-error" role="alert">{error}</div>}
+        {error && sessionId && !busy && (
+          <button className="ai-create-retry" type="button" onClick={() => { void runCreate() }}>
+            <RotateCcw size={14} /> Retry current step
+          </button>
+        )}
+        {completedResult && (
+          <section className="ai-create-session-complete" aria-live="polite">
+            <CheckCircle2 size={20} />
+            <div>
+              <strong>Project and Draft are ready</strong>
+              <p>The validated checkpoints remain in this session. Opening the Project is now an explicit action.</p>
+            </div>
+            <button type="button" onClick={() => onCreated(completedResult)}>Open Project <ExternalLink size={14} /></button>
+          </section>
+        )}
         <p className="ai-create-safety">The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.</p>
       </div>
     </div>

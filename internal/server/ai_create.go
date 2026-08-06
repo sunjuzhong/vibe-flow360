@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
+	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
 
@@ -41,14 +42,32 @@ type aiCreateRequest struct {
 }
 
 type aiCreateSession struct {
-	ID        string                        `json:"id"`
-	Intent    string                        `json:"intent"`
-	FolderID  string                        `json:"folder_id"`
-	Rounds    []aicreate.ClarificationRound `json:"rounds"`
-	Pending   []aicreate.ClarificationField `json:"pending,omitempty"`
-	Prepared  *aiCreatePrepared             `json:"prepared,omitempty"`
-	CreatedAt time.Time                     `json:"created_at"`
-	UpdatedAt time.Time                     `json:"updated_at"`
+	ID          string                        `json:"id"`
+	Intent      string                        `json:"intent"`
+	FolderID    string                        `json:"folder_id"`
+	Rounds      []aicreate.ClarificationRound `json:"rounds"`
+	Pending     []aicreate.ClarificationField `json:"pending,omitempty"`
+	Phase       string                        `json:"phase"`
+	CAD         *aiCreateCADCheckpoint        `json:"cad,omitempty"`
+	Prepared    *aiCreatePrepared             `json:"prepared,omitempty"`
+	Parameters  *aiCreateParameterCheckpoint  `json:"parameters,omitempty"`
+	DraftID     string                        `json:"draft_id,omitempty"`
+	CreatedAt   time.Time                     `json:"created_at"`
+	UpdatedAt   time.Time                     `json:"updated_at"`
+	CompletedAt *time.Time                    `json:"completed_at,omitempty"`
+}
+
+type aiCreateCADCheckpoint struct {
+	GeometryName string                      `json:"geometry_name"`
+	GeometryPath string                      `json:"geometry_path"`
+	Blueprint    aicreate.Blueprint          `json:"blueprint"`
+	Validation   aicreate.GeometryValidation `json:"validation"`
+}
+
+type aiCreateParameterCheckpoint struct {
+	Blueprint        aicreate.Blueprint      `json:"blueprint"`
+	SimulationParams json.RawMessage         `json:"simulation_params"`
+	Preflight        flow360.PreflightResult `json:"preflight"`
 }
 
 type aiCreatePrepared struct {
@@ -75,14 +94,15 @@ type aiCreateClarificationResponse struct {
 }
 
 type aiCreateResponse struct {
-	ProjectID        string             `json:"project_id"`
-	DraftID          string             `json:"draft_id,omitempty"`
-	RootResourceID   string             `json:"root_resource_id"`
-	RootResourceType string             `json:"root_resource_type"`
-	Blueprint        aicreate.Blueprint `json:"blueprint"`
-	Plan             plans.Plan         `json:"plan"`
-	Stages           []string           `json:"stages"`
-	Warnings         []string           `json:"warnings,omitempty"`
+	ProjectID        string                   `json:"project_id"`
+	DraftID          string                   `json:"draft_id,omitempty"`
+	RootResourceID   string                   `json:"root_resource_id"`
+	RootResourceType string                   `json:"root_resource_type"`
+	Blueprint        aicreate.Blueprint       `json:"blueprint"`
+	SimulationParams json.RawMessage          `json:"simulation_params"`
+	Preflight        *flow360.PreflightResult `json:"preflight,omitempty"`
+	Stages           []string                 `json:"stages"`
+	Warnings         []string                 `json:"warnings,omitempty"`
 }
 
 func (s *Server) aiCreateProject(c *gin.Context) {
@@ -129,7 +149,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.Set("ai_create_progress_id", request.ProgressID)
 		defer func() {
 			if c.Writer.Status() >= http.StatusBadRequest {
-				s.finishAICreateProgress(request.ProgressID, "failed", "AI Create stopped at this stage. See the reported error for details.", "", "")
+				s.failAICreateProgressIfRunning(request.ProgressID, "AI Create stopped at this stage. See the reported error for details.")
 			}
 		}()
 	}
@@ -151,7 +171,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		return
 	}
 
-	blueprint, err := aicreate.DesignConversation(c.Request.Context(), s.agent, session.Intent, session.Rounds)
+	blueprint, validation, geometryPath, geometryName, err := s.prepareAICreateCAD(c.Request.Context(), session, request.ProgressID)
 	if err != nil {
 		var missing *aicreate.MissingInputError
 		if errors.As(err, &missing) {
@@ -166,51 +186,12 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 			c.JSON(http.StatusOK, response)
 			return
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": humanizeAICreateDesignError(err)})
-		return
-	}
-	s.updateAICreateProgress(request.ProgressID, 1, "The CAD plan is ready; CadQuery/OpenCascade is generating and round-trip validating exact STEP geometry.")
-
-	stagingRoot := filepath.Join(s.workDir, "ai-create")
-	if err := os.MkdirAll(stagingRoot, 0o700); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare generated geometry"})
-		return
-	}
-	stagingDir, err := os.MkdirTemp(stagingRoot, "agent-cad-")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare generated geometry"})
-		return
-	}
-	defer os.RemoveAll(stagingDir)
-	geometryName := safeGeometryName(blueprint.Geometry.Name) + ".step"
-	geometryPath := filepath.Join(stagingDir, geometryName)
-	generator := s.cadGenerator
-	if generator == nil {
-		generator = aicreate.NewCadQueryGenerator()
-	}
-	blueprint, validation, err := s.generateAICreateCAD(c.Request.Context(), generator, session, blueprint, geometryPath, request.ProgressID)
-	if err != nil {
-		var missing *aicreate.MissingInputError
-		if errors.As(err, &missing) {
-			s.finishAICreateProgress(request.ProgressID, "needs_input", "CAD self-repair needs an engineering decision before it can continue.", "", "")
-			s.setAICreateSessionPending(session.ID, missing.Fields)
-			response := aiCreateClarificationResponse{
-				Status: "needs_input", SessionID: session.ID,
-				Message: "The Agent found a CAD construction issue and needs an engineering decision to continue self-repair.",
-				Round:   len(session.Rounds) + 1, Fields: missing.Fields,
-			}
-			s.storeAICreateProgressResponse(request.ProgressID, response)
-			c.JSON(http.StatusOK, response)
-			return
-		}
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeAICreateGenerationError(err)})
 		return
 	}
-	blueprint.Geometry.Validated = true
-	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP and complete boundary coverage validation passed: %d solids, %d faces, volume %.8g m^3, %d named bodies and %d named faces (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, len(validation.BodyNames), len(validation.FaceNames), validation.Kernel)
-	if err := validateAICreateAsset(geometryPath, "geometry"); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
-		return
+	generator := s.cadGenerator
+	if generator == nil {
+		generator = aicreate.NewCadQueryGenerator()
 	}
 
 	remote, err := s.importAICreateGeometry(c.Request.Context(), session.FolderID, blueprint, geometryPath, request.ProgressID)
@@ -266,6 +247,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 			return
 		}
 		blueprint = repaired
+		s.setAICreateSessionCAD(session.ID, aiCreateCADCheckpoint{GeometryName: geometryName, GeometryPath: geometryPath, Blueprint: repaired, Validation: validation})
 		remote, err = s.importAICreateGeometry(c.Request.Context(), session.FolderID, blueprint, geometryPath, request.ProgressID)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "project_id": remote.ProjectID})
@@ -302,6 +284,11 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSession, prepared aiCreatePrepared) {
 	progressID := aiCreateProgressID(c)
 	s.bindAICreateProgressResources(progressID, prepared.ProjectID, prepared.RootResourceID)
+	if session.Parameters != nil {
+		s.updateAICreateProgress(progressID, 5, "Reusing the session's schema-valid parameter checkpoint; only Flow360 Draft configuration remains.")
+		s.finishAICreateDraft(c, session, prepared, *session.Parameters)
+		return
+	}
 	s.updateAICreateProgress(progressID, 3, "Querying the installed Flow360 Geometry-to-Case schemas against the Project's canonical SimulationParams.")
 	boundaryBaseline, err := plans.MergedSimulationParams(plans.Plan{Baseline: prepared.Baseline, Patch: prepared.BoundaryPatch})
 	if err != nil {
@@ -348,7 +335,7 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		return
 	}
 	if assisted.Proposal == nil || assisted.Preflight == nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent returned an incomplete Flow360 plan", "project_id": prepared.ProjectID})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent returned an incomplete Flow360 parameter setup", "project_id": prepared.ProjectID})
 		return
 	}
 	patch, err := mergePlanAssistPatches(prepared.BoundaryPatch, assisted.Proposal.Patch)
@@ -361,54 +348,53 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 	if json.Unmarshal(patch, &finalPatch) == nil {
 		blueprint.SimulationParams = finalPatch
 	}
-	evidence := []plans.Evidence{
-		{Key: "geometry.generator", Value: blueprint.Geometry.Generator, Provenance: "derived", Description: "Constrained CAD program selected by the geometry agent."},
-		{Key: "geometry.operations", Value: len(blueprint.Geometry.Operations), Provenance: "derived", Description: "Validated parametric and boolean CAD operations."},
-		{Key: "geometry.validation", Value: blueprint.Geometry.Validation, Provenance: "derived", Description: "Exact CAD kernel and STEP round-trip validation."},
-		{Key: "models.boundary_semantics", Value: "Named Geometry face groups and Flow360 schema evidence", Provenance: "derived", Description: "Mapped explicit CAD face semantics and left remaining entity assignments to schema-driven preflight repair."},
-		{Key: "simulation.parameters", Value: "installed-schema-derived and preflighted", Provenance: "inferred", Description: "The parameter Agent used the installed Flow360 stage schemas and canonical Geometry baseline."},
-		{Key: "simulation.schema_version", Value: assisted.Preflight.SchemaVersion, Provenance: "derived", Description: "Flow360 schema contract used for parameter validation."},
-		{Key: "simulation.repair_attempts", Value: assisted.RepairAttempts, Provenance: "derived", Description: "Bounded schema-driven self-repair attempts before Draft creation."},
-	}
-	plan, err := s.plans.Create(plans.CreateInput{
-		ProjectID: prepared.ProjectID, ProjectName: blueprint.ProjectName,
-		SourceID: prepared.RootResourceID, SourceType: "Geometry", SourceName: prepared.GeometryName,
-		Target: blueprint.Target, Name: "AI Create · " + blueprint.ProjectName, Intent: session.Intent,
-		Patch: patch, Baseline: prepared.Baseline, Evidence: evidence,
-		ValidationHints: append(append([]string(nil), blueprint.Assumptions...), assisted.Action.Assumptions...),
-		IdempotencyKey:  "ai-create:" + prepared.ProjectID,
-	})
+	mergedParams, err := plans.MergedSimulationParams(plans.Plan{Baseline: prepared.Baseline, Patch: patch})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "project was created, but its simulation plan could not be saved", "project_id": prepared.ProjectID})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "project was created, but its validated parameters could not be checkpointed", "project_id": prepared.ProjectID})
 		return
 	}
-	plan = s.runPlanPreflight(c.Request.Context(), plan)
+	checkpoint := aiCreateParameterCheckpoint{
+		Blueprint: blueprint, SimulationParams: mergedParams, Preflight: *assisted.Preflight,
+	}
+	s.setAICreateSessionParameters(session.ID, checkpoint)
+	s.finishAICreateDraft(c, session, prepared, checkpoint)
+}
+
+func (s *Server) finishAICreateDraft(c *gin.Context, session aiCreateSession, prepared aiCreatePrepared, checkpoint aiCreateParameterCheckpoint) {
+	progressID := aiCreateProgressID(c)
 	draftID := ""
 	warnings := []string(nil)
-	if plan.Preflight != nil && plan.Preflight.Valid {
+	if checkpoint.Preflight.Valid {
 		s.updateAICreateProgress(progressID, 5, "Flow360 preflight passed; creating a Draft from the validated parameters and making it the Project's ready-to-review setup.")
-		var draftErr error
-		plan, draftID, draftErr = s.materializeAICreateDraft(c.Request.Context(), plan)
+		_, createdDraftID, draftErr := s.materializeAICreateDraftParameters(
+			c.Request.Context(), prepared.ProjectID, prepared.RootResourceID,
+			"AI Create · "+checkpoint.Blueprint.ProjectName, checkpoint.SimulationParams,
+		)
+		draftID = createdDraftID
 		if draftErr != nil {
-			log.Printf("AI Create remote Draft setup failed for plan %s: %v", plan.ID, draftErr)
-			warnings = append(warnings, "The Project and reviewed Plan were created, but Flow360 Draft setup needs recovery before approval.")
-			s.finishAICreateProgress(progressID, "needs_attention", "The Project and validated Plan are ready, but Flow360 Draft creation needs recovery.", prepared.ProjectID, prepared.RootResourceID)
-		}
-		if draftErr == nil && draftID == "" {
-			s.finishAICreateProgress(progressID, "needs_attention", "Flow360 accepted the validated Plan but did not return a Draft ID; Draft recovery is required.", prepared.ProjectID, prepared.RootResourceID)
+			log.Printf("AI Create remote Draft setup failed for session %s: %v", session.ID, draftErr)
+			s.finishAICreateProgress(progressID, "needs_attention", "The Project and validated parameters are ready, but Flow360 Draft creation needs recovery.", prepared.ProjectID, prepared.RootResourceID)
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":      "The Project and schema-valid parameters were preserved, but Flow360 Draft configuration did not finish. Retry this session to continue from the Draft step: " + draftErr.Error(),
+				"project_id": prepared.ProjectID, "session_id": session.ID, "draft_id": draftID,
+			})
+			return
 		}
 	} else {
-		s.finishAICreateProgress(progressID, "needs_attention", "The Project and Plan were created, but Flow360 preflight found inputs that still need review; no Draft was created.", prepared.ProjectID, prepared.RootResourceID)
+		s.finishAICreateProgress(progressID, "needs_attention", "The Project was created, but Flow360 parameter validation still needs review; no Draft was created.", prepared.ProjectID, prepared.RootResourceID)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Flow360 parameter validation did not pass", "project_id": prepared.ProjectID, "session_id": session.ID})
+		return
 	}
 	if draftID != "" {
 		s.finishAICreateProgress(progressID, "completed", "The exact CAD, Flow360 Project, schema-valid parameters, preflight, and configured Draft are all ready for review.", prepared.ProjectID, prepared.RootResourceID)
 	}
-	stages := aiCreateCompletionStages(plan, draftID != "")
-	s.completeAICreateSession(session.ID)
+	stages := aiCreateCompletionStages(checkpoint.Preflight.Valid, draftID != "")
+	s.completeAICreateSession(session.ID, draftID)
 
 	response := aiCreateResponse{
 		ProjectID: prepared.ProjectID, DraftID: draftID, RootResourceID: prepared.RootResourceID,
-		RootResourceType: "Geometry", Blueprint: blueprint, Plan: plan,
+		RootResourceType: "Geometry", Blueprint: checkpoint.Blueprint,
+		SimulationParams: checkpoint.SimulationParams, Preflight: &checkpoint.Preflight,
 		Stages: stages, Warnings: warnings,
 	}
 	s.storeAICreateProgressResponse(progressID, response)
@@ -532,9 +518,9 @@ func compactAICreateResult(raw json.RawMessage) string {
 	return value
 }
 
-func aiCreateCompletionStages(plan plans.Plan, draftReady bool) []string {
+func aiCreateCompletionStages(preflightValid, draftReady bool) []string {
 	stages := []string{"Agent interpreted requirement", "Agent authored a constrained CAD program", "Generated and validated exact STEP", "Created Flow360 Project", "Resolved CAD boundaries", "Loaded complete simulation parameters"}
-	if plan.Preflight != nil && plan.Preflight.Valid {
+	if preflightValid {
 		stages = append(stages, "Passed Flow360 schema preflight")
 		if draftReady {
 			return append(stages, "Created Flow360 Draft", "Stored canonical Draft SimulationParams", "Ready for review and approval")
@@ -544,39 +530,27 @@ func aiCreateCompletionStages(plan plans.Plan, draftReady bool) []string {
 	return append(stages, "Opened Agent Recovery for remaining Flow360 parameter issues")
 }
 
-func (s *Server) materializeAICreateDraft(ctx context.Context, plan plans.Plan) (plans.Plan, string, error) {
-	merged, err := plans.MergedSimulationParams(plan)
+func (s *Server) materializeAICreateDraftParameters(ctx context.Context, projectID, sourceID, name string, simulationParams json.RawMessage) (json.RawMessage, string, error) {
+	created, err := s.flow360.EnsureDraft(ctx, projectID, sourceID, name)
 	if err != nil {
-		return plan, "", err
-	}
-	created, err := s.flow360.EnsureDraft(ctx, plan.ProjectID, plan.SourceID, plan.Name)
-	if err != nil {
-		return plan, "", err
+		return nil, "", err
 	}
 	remoteIDs := plans.ExtractRemoteIDs(created)
 	if remoteIDs == nil || strings.TrimSpace(remoteIDs.DraftID) == "" {
-		return plan, "", errors.New("Flow360 Draft creation did not return a Draft ID")
+		return nil, "", errors.New("Flow360 Draft creation did not return a Draft ID")
 	}
-	remoteIDs.ProjectID = plan.ProjectID
-	if plan.SourceType == "Geometry" {
-		remoteIDs.GeometryID = plan.SourceID
-	}
-	canonical, err := s.flow360.SetDraftSimulationParams(ctx, remoteIDs.DraftID, merged)
+	canonical, err := s.flow360.SetDraftSimulationParams(ctx, remoteIDs.DraftID, simulationParams)
 	if err != nil {
-		canonical, err = s.flow360.SetDraftSimulationParams(ctx, remoteIDs.DraftID, merged)
+		canonical, err = s.flow360.SetDraftSimulationParams(ctx, remoteIDs.DraftID, simulationParams)
 	}
 	if err != nil {
-		return plan, remoteIDs.DraftID, err
+		return nil, remoteIDs.DraftID, err
 	}
 	var canonicalObject map[string]any
 	if json.Unmarshal(canonical, &canonicalObject) != nil || len(canonicalObject) == 0 {
-		return plan, remoteIDs.DraftID, errors.New("Flow360 did not return canonical Draft SimulationParams")
+		return nil, remoteIDs.DraftID, errors.New("Flow360 did not return canonical Draft SimulationParams")
 	}
-	updated, err := s.plans.SetRemoteIDs(plan.ID, remoteIDs)
-	if err != nil {
-		return plan, remoteIDs.DraftID, err
-	}
-	return updated, remoteIDs.DraftID, nil
+	return canonical, remoteIDs.DraftID, nil
 }
 
 type aiCreateCADRepairExhaustedError struct {
@@ -586,6 +560,46 @@ type aiCreateCADRepairExhaustedError struct {
 
 func (e *aiCreateCADRepairExhaustedError) Error() string {
 	return fmt.Sprintf("CAD self-repair failed after %d attempts: %s", e.Attempts, e.Diagnostic)
+}
+
+func (s *Server) prepareAICreateCAD(ctx context.Context, session aiCreateSession, progressID string) (aicreate.Blueprint, aicreate.GeometryValidation, string, string, error) {
+	if session.CAD != nil {
+		checkpoint := *session.CAD
+		if err := validateAICreateAsset(checkpoint.GeometryPath, "geometry"); err == nil {
+			s.updateAICreateProgress(progressID, 1, "Reusing the session's validated exact STEP checkpoint; CAD generation does not need to run again.")
+			return checkpoint.Blueprint, checkpoint.Validation, checkpoint.GeometryPath, checkpoint.GeometryName, nil
+		}
+	}
+
+	blueprint, err := aicreate.DesignConversation(ctx, s.agent, session.Intent, session.Rounds)
+	if err != nil {
+		return aicreate.Blueprint{}, aicreate.GeometryValidation{}, "", "", err
+	}
+	s.updateAICreateProgress(progressID, 1, "The CAD design is ready; CadQuery/OpenCascade is generating and round-trip validating exact STEP geometry.")
+	sessionDirectory := filepath.Join(s.workDir, "ai-create-sessions", session.ID)
+	if err := os.MkdirAll(sessionDirectory, 0o700); err != nil {
+		return blueprint, aicreate.GeometryValidation{}, "", "", errors.New("could not prepare the durable CAD session directory")
+	}
+	geometryName := safeGeometryName(blueprint.Geometry.Name) + ".step"
+	geometryPath := filepath.Join(sessionDirectory, geometryName)
+	generator := s.cadGenerator
+	if generator == nil {
+		generator = aicreate.NewCadQueryGenerator()
+	}
+	blueprint, validation, err := s.generateAICreateCAD(ctx, generator, session, blueprint, geometryPath, progressID)
+	if err != nil {
+		return blueprint, validation, geometryPath, geometryName, err
+	}
+	blueprint.Geometry.Validated = true
+	blueprint.Geometry.Validation = fmt.Sprintf("Round-trip exact STEP and complete boundary coverage validation passed: %d solids, %d faces, volume %.8g m^3, %d named bodies and %d named faces (%s).", validation.SolidCount, validation.FaceCount, validation.Volume, len(validation.BodyNames), len(validation.FaceNames), validation.Kernel)
+	if err := validateAICreateAsset(geometryPath, "geometry"); err != nil {
+		return blueprint, validation, geometryPath, geometryName, err
+	}
+	s.setAICreateSessionCAD(session.ID, aiCreateCADCheckpoint{
+		GeometryName: geometryName, GeometryPath: geometryPath,
+		Blueprint: blueprint, Validation: validation,
+	})
+	return blueprint, validation, geometryPath, geometryName, nil
 }
 
 func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Generator, session aiCreateSession, blueprint aicreate.Blueprint, outputPath, progressID string) (aicreate.Blueprint, aicreate.GeometryValidation, error) {
@@ -672,7 +686,7 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 		now := time.Now().UTC()
 		session := aiCreateSession{
 			ID: strings.Replace(identifier, "sub-", "aic-", 1), Intent: request.Intent, FolderID: request.FolderID,
-			CreatedAt: now, UpdatedAt: now,
+			Phase: "understanding", CreatedAt: now, UpdatedAt: now,
 		}
 		s.aiCreateSessions[session.ID] = session
 		s.persistAICreateSessionsLocked()
@@ -682,7 +696,7 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 	if !ok {
 		return aiCreateSession{}, errors.New("AI Create session expired; start again with the original request")
 	}
-	if session.Prepared != nil && len(session.Pending) == 0 {
+	if len(session.Pending) == 0 {
 		return session, nil
 	}
 	if len(session.Rounds) >= maxAICreateClarificationRounds {
@@ -711,6 +725,22 @@ func (s *Server) setAICreateSessionPending(sessionID string, fields []aicreate.C
 		return
 	}
 	session.Pending = append([]aicreate.ClarificationField(nil), fields...)
+	session.Phase = "needs_input"
+	session.UpdatedAt = time.Now().UTC()
+	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
+}
+
+func (s *Server) setAICreateSessionCAD(sessionID string, checkpoint aiCreateCADCheckpoint) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	copy := checkpoint
+	session.CAD = &copy
+	session.Phase = "cad_validated"
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[sessionID] = session
 	s.persistAICreateSessionsLocked()
@@ -727,6 +757,23 @@ func (s *Server) setAICreateSessionPrepared(sessionID string, prepared aiCreateP
 	copy.Baseline = append(json.RawMessage(nil), prepared.Baseline...)
 	copy.BoundaryPatch = append(json.RawMessage(nil), prepared.BoundaryPatch...)
 	session.Prepared = &copy
+	session.Phase = "geometry_imported"
+	session.UpdatedAt = time.Now().UTC()
+	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
+}
+
+func (s *Server) setAICreateSessionParameters(sessionID string, checkpoint aiCreateParameterCheckpoint) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	copy := checkpoint
+	copy.SimulationParams = append(json.RawMessage(nil), checkpoint.SimulationParams...)
+	session.Parameters = &copy
+	session.Phase = "parameters_validated"
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[sessionID] = session
 	s.persistAICreateSessionsLocked()
@@ -774,10 +821,19 @@ func aiCreateParameterClarificationFields(questions []agent.Question) []aicreate
 	return fields
 }
 
-func (s *Server) completeAICreateSession(sessionID string) {
+func (s *Server) completeAICreateSession(sessionID, draftID string) {
 	s.aiCreateMu.Lock()
 	defer s.aiCreateMu.Unlock()
-	delete(s.aiCreateSessions, sessionID)
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	session.Phase = "completed"
+	session.DraftID = strings.TrimSpace(draftID)
+	session.CompletedAt = &now
+	session.UpdatedAt = now
+	s.aiCreateSessions[sessionID] = session
 	s.persistAICreateSessionsLocked()
 }
 

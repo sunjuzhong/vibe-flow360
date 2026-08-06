@@ -1,0 +1,58 @@
+.ai-create-minimize {
+  position: absolute;
+  top: 12px;
+  right: 52px;
+  z-index: 1;
+}
+
+.ai-create-session-dock {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 90;
+  display: grid;
+  width: min(420px, calc(100vw - 32px));
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #c8d49d;
+  border-radius: 14px;
+  color: #344315;
+  background: rgba(250, 253, 240, .98);
+  box-shadow: 0 16px 44px rgba(28, 35, 12, .2);
+}
+
+.ai-create-session-dock.ready { border-color: #9fc52a; }
+.ai-create-session-dock-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: #dfff87; }
+.ai-create-session-dock > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.ai-create-session-dock strong { font-size: 12px; }
+.ai-create-session-dock small { overflow: hidden; color: #747d66; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.ai-create-session-dock button,
+.ai-create-retry,
+.ai-create-session-complete button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #a9bd64; border-radius: 9px; color: #344315; background: #e6f6b4; font-weight: 650; cursor: pointer; }
+.ai-create-session-dock button { min-height: 34px; padding: 0 12px; }
+.ai-create-retry { margin-top: 8px; min-height: 36px; padding: 0 13px; }
+
+.ai-create-session-complete {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #b8d660;
+  border-radius: 11px;
+  color: #3d5014;
+  background: #f4fbdc;
+}
+.ai-create-session-complete div { display: grid; gap: 3px; }
+.ai-create-session-complete strong { font-size: 12px; }
+.ai-create-session-complete p { margin: 0; color: #6f795c; font-size: 10px; line-height: 1.45; }
+.ai-create-session-complete button { min-height: 38px; padding: 0 14px; background: #bde836; }
+
+@media (max-width: 720px) {
+  .ai-create-session-dock { right: 16px; bottom: 16px; }
+  .ai-create-session-complete { grid-template-columns: auto 1fr; }
+  .ai-create-session-complete button { grid-column: 1 / -1; }
+}
