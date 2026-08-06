@@ -102,6 +102,7 @@ export function SchemaFormFields({
   value,
   onChange,
   sparse = false,
+  showAll = false,
   baseline,
   addLabel = 'Change',
   removeLabel = 'Keep inherited',
@@ -110,11 +111,12 @@ export function SchemaFormFields({
   value: unknown
   onChange: (value: unknown) => void
   sparse?: boolean
+  showAll?: boolean
   baseline?: unknown
   addLabel?: string
   removeLabel?: string
 }) {
-  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} />
+  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} showAll={showAll} configured baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} />
 }
 
 function SchemaField({
@@ -123,6 +125,8 @@ function SchemaField({
   onChange,
   path,
   sparse,
+  showAll,
+  configured,
   baseline,
   addLabel,
   removeLabel,
@@ -132,6 +136,8 @@ function SchemaField({
   onChange: (value: unknown) => void
   path: string
   sparse: boolean
+  showAll: boolean
+  configured: boolean
   baseline?: unknown
   addLabel: string
   removeLabel: string
@@ -144,13 +150,13 @@ function SchemaField({
     const requiredKeys = Array.isArray(schema.required) ? schema.required : []
     return (
       <fieldset className="schema-object">
-        {path && <legend>{title}</legend>}
+        {path && <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>}
         {schema.description && path && <p>{schema.description}</p>}
         {Object.entries(schema.properties ?? {}).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key)
           const required = child.required === true || requiredKeys.includes(key)
-          if (sparse && !present && !required) {
+          if (sparse && !showAll && !present && !required) {
             return (
               <div className="schema-add-field" key={key}>
                 <span>
@@ -172,6 +178,8 @@ function SchemaField({
                 value={present ? object[key] : initialValue(child, sparse)}
                 baseline={baselineObject[key]}
                 sparse={sparse}
+                showAll={showAll}
+                configured={present}
                 addLabel={addLabel}
                 removeLabel={removeLabel}
                 onChange={(next) => onChange({ ...object, [key]: next })}
@@ -203,7 +211,7 @@ function SchemaField({
     const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
     return (
       <label className="schema-field" htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
         <span className="schema-quantity">
           <input
             id={fieldID}
@@ -229,13 +237,13 @@ function SchemaField({
     )
   }
   if (schema.type === 'entity_assignment') {
-    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} />
+    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} configured={configured} showAll={showAll} />
   }
   if (schema.type === 'field_removal') {
     const recommendation = schema.recommendation
     return (
       <fieldset className="schema-object schema-entity-assignment">
-        <legend>{title}</legend>
+        <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>
         <div className="schema-ai-recommendation">
           <div className="schema-ai-heading">
             <span><Sparkles size={15} /><strong>Schema-safe repair</strong></span>
@@ -257,14 +265,14 @@ function SchemaField({
     return (
       <label className="schema-field schema-boolean">
         <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
-        <FieldLabel schema={schema} title={title} path={path} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
       </label>
     )
   }
   if (schema.type === 'enum') {
     return (
       <label className="schema-field" htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
@@ -277,7 +285,7 @@ function SchemaField({
     const array = Array.isArray(value) ? value : []
     return (
       <fieldset className="schema-object schema-array">
-        <legend>{title}</legend>
+        <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>
         {schema.description && <p>{schema.description}</p>}
         {array.map((item, index) => (
           <div className="schema-array-item" key={index}>
@@ -286,6 +294,8 @@ function SchemaField({
               path={`${path}.${index}`}
               value={item}
               sparse={sparse}
+              showAll={showAll}
+              configured
               addLabel={addLabel}
               removeLabel={removeLabel}
               onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
@@ -321,21 +331,21 @@ function SchemaField({
             ))}
           </select>
         </label>
-        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} addLabel={addLabel} removeLabel={removeLabel} onChange={(next) => onChange({ ...draft, value: next })} />
+        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} onChange={(next) => onChange({ ...draft, value: next })} />
       </fieldset>
     )
   }
   if (schema.type === 'json') {
     return (
       <label className="schema-field" htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
       </label>
     )
   }
   return (
     <label className="schema-field" htmlFor={fieldID}>
-      <FieldLabel schema={schema} title={title} path={path} />
+      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
       <input
         id={fieldID}
         type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
@@ -358,12 +368,16 @@ function EntityAssignmentField({
   onChange,
   fieldID,
   title,
+  configured,
+  showAll,
 }: {
   schema: DynamicFormSchema
   value: unknown
   onChange: (value: unknown) => void
   fieldID: string
   title: string
+  configured: boolean
+  showAll: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const draft = isRecord(value) ? value : {}
@@ -375,7 +389,7 @@ function EntityAssignmentField({
   const recommendation = schema.recommendation
   return (
     <fieldset className="schema-object schema-entity-assignment">
-      <legend>{title}</legend>
+      <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>
       {recommendation ? (
         <div className="schema-ai-recommendation">
           <div className="schema-ai-heading">
@@ -453,10 +467,25 @@ function EntityAssignmentField({
   )
 }
 
-function FieldLabel({ schema, title, path }: { schema: DynamicFormSchema; title: string; path: string }) {
+function FieldLabel({
+  schema,
+  title,
+  path,
+  configured = true,
+  showAll = false,
+}: {
+  schema: DynamicFormSchema
+  title: string
+  path: string
+  configured?: boolean
+  showAll?: boolean
+}) {
   return (
     <span className="schema-field-label">
-      <strong>{title}{schema.required === true ? ' *' : ''}</strong>
+      <strong>
+        {title}{schema.required === true ? ' *' : ''}
+        {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+      </strong>
       <code>{path}</code>
       {schema.description && <small>{schema.description}</small>}
     </span>

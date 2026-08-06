@@ -162,4 +162,48 @@ describe('schema-driven Flow360 form', () => {
       meshing: { defaults: { surface_max_edge_length: { value: 0.05, units: 'meter' } } },
     })
   })
+
+  it('renders the complete schema while keeping absent values sparse', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        meshing: {
+          type: 'object',
+          title: 'Meshing',
+          properties: {
+            defaults: {
+              type: 'object',
+              properties: {
+                target_surface_node_count: { type: 'integer', title: 'Target surface node count' },
+              },
+            },
+          },
+        },
+        operating_condition: {
+          type: 'object',
+          title: 'Operating Condition',
+          properties: {
+            velocity_magnitude: { type: 'number', title: 'Velocity magnitude' },
+          },
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { meshing: { defaults: { target_surface_node_count: 500000 } } },
+      sparse: true,
+      showAll: true,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('Target surface node count')
+    expect(markup).toContain('value="500000"')
+    expect(markup).toContain('Operating Condition')
+    expect(markup).toContain('Velocity magnitude')
+    expect(markup).toContain('Not configured')
+    expect(markup).not.toContain('schema-add-field')
+    expect(serializeValue(schema, { meshing: { defaults: { target_surface_node_count: 500000 } } }, true)).toEqual({
+      meshing: { defaults: { target_surface_node_count: 500000 } },
+    })
+  })
 })

@@ -116,10 +116,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
 
       {mode === 'form' && schema && (
         <div className="draft-parameter-form" role="tabpanel">
+          <div className="draft-parameter-form-guide">
+            <strong>Complete SimulationParams schema</strong>
+            <span>Configured fields show the current Draft value. “Not configured” fields remain absent from saved params until you change them.</span>
+          </div>
           <SchemaFormFields
             schema={schema}
             value={formValue}
             sparse
+            showAll
             addLabel="Add"
             removeLabel="Remove"
             onChange={(next) => {
