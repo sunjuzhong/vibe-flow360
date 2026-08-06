@@ -14,6 +14,7 @@ import { LazyViewer3D } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
 import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
+import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
@@ -21,6 +22,7 @@ import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspector'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
 import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
+import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
 import {
@@ -102,6 +104,10 @@ export default function SurfaceMeshWorkspace({
   const review = useSurfaceMeshReview(
     manifest?.groups ?? noSurfaceGroups,
     detail?.simulation_params,
+  )
+  const qualityFilter = useSurfaceQualityFilter(
+    resourceId ?? detail?.id ?? '',
+    review.qualityFields,
   )
   const advanced = useSurfaceMeshAdvancedReview({
     versions,
@@ -201,6 +207,8 @@ export default function SurfaceMeshWorkspace({
           onFieldHistogramChange={review.setHistogram}
           onFieldExtremaChange={review.setExtrema}
           onFieldProbe={review.mode === 'quality' ? review.setProbe : undefined}
+          fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
+          onFieldFilterMatchCount={qualityFilter.setMatchCount}
           focusTarget={review.focusTarget}
           clipPlane={advanced.clipPlane}
           projectId={projectId}
@@ -279,16 +287,29 @@ export default function SurfaceMeshWorkspace({
                     : 'Plain mesh display'}
             </div>
             {review.mode === 'quality' ? (
-              <SurfaceQualityInspector
-                field={review.selectedFieldInfo}
-                range={review.range}
-                histogram={review.histogram}
-                extrema={review.extrema}
-                probe={review.probe}
-                entityNames={Object.fromEntries(review.boundaryInventory.map((row) => [row.id, row.name]))}
-                onRangeChange={review.setRange}
-                onLocateExtreme={review.locateExtreme}
-              />
+              <>
+                <SurfaceQualityInspector
+                  field={review.selectedFieldInfo}
+                  range={review.range}
+                  histogram={review.histogram}
+                  extrema={review.extrema}
+                  probe={review.probe}
+                  entityNames={Object.fromEntries(review.boundaryInventory.map((row) => [row.id, row.name]))}
+                  onRangeChange={review.setRange}
+                  onLocateExtreme={review.locateExtreme}
+                />
+                <SurfaceQualityFilterPanel
+                  fields={review.qualityFields}
+                  filter={qualityFilter.filter}
+                  matchCount={qualityFilter.matchCount}
+                  onAddRule={qualityFilter.addRule}
+                  onRemoveRule={qualityFilter.removeRule}
+                  onUpdateRule={qualityFilter.updateRule}
+                  onEnabledChange={qualityFilter.setEnabled}
+                  onOperatorChange={qualityFilter.setOperator}
+                  onReset={qualityFilter.reset}
+                />
+              </>
             ) : review.mode === 'boundaries' ? (
               review.selectedBoundary ? (
                 <dl>

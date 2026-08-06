@@ -4,8 +4,8 @@ import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setWireframeOverlay, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
-import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import type { UVFAsset, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
@@ -140,6 +140,8 @@ type Props = {
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
+  fieldFilter?: UVFFieldFilter | null
+  onFieldFilterMatchCount?: (count: number) => void
   focusTarget?: [number, number, number] | null
   clipPlane?: ViewerClipPlane | null
   projectId?: string
@@ -175,6 +177,8 @@ export function Viewer3D({
   onFieldHistogramChange,
   onFieldExtremaChange,
   onFieldProbe,
+  fieldFilter,
+  onFieldFilterMatchCount,
   focusTarget,
   clipPlane,
   projectId,
@@ -231,6 +235,7 @@ export function Viewer3D({
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
   const onFieldHistogramChangeRef = useRef(onFieldHistogramChange)
   const onFieldExtremaChangeRef = useRef(onFieldExtremaChange)
+  const onFieldFilterMatchCountRef = useRef(onFieldFilterMatchCount)
   const onCaptureRef = useRef(onCapture)
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
@@ -279,8 +284,9 @@ export function Viewer3D({
     onFieldsDiscoveredRef.current = onFieldsDiscovered
     onFieldHistogramChangeRef.current = onFieldHistogramChange
     onFieldExtremaChangeRef.current = onFieldExtremaChange
+    onFieldFilterMatchCountRef.current = onFieldFilterMatchCount
     onCaptureRef.current = onCapture
-  }, [onCapture, onFieldExtremaChange, onFieldHistogramChange, onFieldsDiscovered])
+  }, [onCapture, onFieldExtremaChange, onFieldFilterMatchCount, onFieldHistogramChange, onFieldsDiscovered])
 
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
@@ -949,6 +955,11 @@ export function Viewer3D({
       })
     }
   }, [assetState.status, selectedField, colormap, fieldRange, resolvedFieldScale])
+
+  useEffect(() => {
+    const count = uvfAssetRef.current ? setFieldFilterOverlay(uvfAssetRef.current, fieldFilter ?? null) : 0
+    onFieldFilterMatchCountRef.current?.(count)
+  }, [assetState.status, fieldFilter])
 
   useEffect(() => {
     if (uvfAssetRef.current) {

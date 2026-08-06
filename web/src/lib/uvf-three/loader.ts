@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_BUFFER_BYTES)
@@ -608,6 +608,100 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
       delete material.userData.uvfWirePolygonOffset
       material.needsUpdate = true
     }
+  }
+}
+
+export function setFieldFilterOverlay(asset: UVFAsset, filter: UVFFieldFilter | null): number {
+  const fields = new Map(asset.fields.map((field) => [field.name, field]))
+  const rules = filter?.enabled
+    ? filter.rules.filter((rule) => Number.isFinite(rule.min) && Number.isFinite(rule.max))
+    : []
+  let matchingTriangles = 0
+
+  asset.object.traverse((object) => {
+    if (!(object instanceof THREE.Mesh) || object.userData.uvfType !== 'Face') return
+    removeFieldFilterOverlay(object)
+    if (!filter?.enabled || rules.length === 0) return
+
+    const geometry = object.geometry
+    const positions = geometry.getAttribute('position')
+    if (!(positions instanceof THREE.BufferAttribute)) return
+    const index = geometry.getIndex()
+    const triangleCount = Math.floor((index?.count ?? positions.count) / 3)
+    const segmentIndices: number[] = []
+    for (let triangle = 0; triangle < triangleCount; triangle++) {
+      const offset = triangle * 3
+      const vertices = index
+        ? [index.getX(offset), index.getX(offset + 1), index.getX(offset + 2)]
+        : [offset, offset + 1, offset + 2]
+      const matches = rules.map((rule) => triangleMatchesFieldRule(geometry, fields.get(rule.fieldName), rule, vertices))
+      const matchesFilter = filter.operator === 'or' ? matches.some(Boolean) : matches.every(Boolean)
+      if (!matchesFilter) continue
+      matchingTriangles++
+      for (const [from, to] of [[0, 1], [1, 2], [2, 0]]) {
+        segmentIndices.push(vertices[from], vertices[to])
+      }
+    }
+    if (segmentIndices.length === 0) return
+
+    const overlayGeometry = new THREE.BufferGeometry()
+    overlayGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(positions.array, positions.itemSize, positions.normalized),
+    )
+    overlayGeometry.setIndex(segmentIndices)
+    const overlay = new THREE.LineSegments(
+      overlayGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0xff5a1f,
+        transparent: true,
+        opacity: 0.98,
+        depthWrite: false,
+      }),
+    )
+    overlay.name = `${object.name || object.uuid} field filter overlay`
+    overlay.userData.uvfFieldFilterOverlay = true
+    overlay.userData.uvfType = 'FieldFilterOverlay'
+    overlay.renderOrder = object.renderOrder + 3
+    object.add(overlay)
+  })
+  return matchingTriangles
+}
+
+function triangleMatchesFieldRule(
+  geometry: THREE.BufferGeometry,
+  field: UVFFieldInfo | undefined,
+  rule: UVFFieldFilterRule,
+  vertices: number[],
+): boolean {
+  if (!field) return false
+  const attribute = geometry.getAttribute(rule.fieldName)
+  if (!(attribute instanceof THREE.BufferAttribute)) return false
+  const dimension = Math.max(1, field.dimension ?? attribute.itemSize)
+  const values = vertices.map((vertex) => {
+    if (field.kind === 'vector') {
+      let squared = 0
+      for (let component = 0; component < dimension; component++) {
+        const value = attribute.getComponent(vertex, component)
+        squared += value * value
+      }
+      return Math.sqrt(squared)
+    }
+    return attribute.getComponent(vertex, 0)
+  })
+  if (values.some((value) => !Number.isFinite(value))) return false
+  const value = values.reduce((sum, sample) => sum + sample, 0) / values.length
+  return value >= Math.min(rule.min, rule.max) && value <= Math.max(rule.min, rule.max)
+}
+
+function removeFieldFilterOverlay(face: THREE.Mesh): void {
+  const existing = face.children.filter((child) => child.userData.uvfFieldFilterOverlay === true)
+  for (const child of existing) {
+    face.remove(child)
+    if (!(child instanceof THREE.LineSegments)) continue
+    child.geometry.dispose()
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    materials.forEach((material) => material.dispose())
   }
 }
 

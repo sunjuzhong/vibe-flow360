@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
@@ -339,6 +339,58 @@ describe('Flow360 UVF Three.js library', () => {
     expect(disposeWireMaterial).toHaveBeenCalledOnce()
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
+    asset.dispose()
+  })
+
+  it('outlines triangles matched by compound field range rules', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'body-1',
+        type: 'SolidGeometry',
+        attributions: { faces: ['face-1'] },
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'body.bin',
+            sections: [
+              { name: 'position', dType: 'float32', dimension: 3, offset: 0, length: 72 },
+              { name: 'qualityA', dType: 'float32', dimension: 1, offset: 72, length: 24 },
+              { name: 'qualityB', dType: 'float32', dimension: 1, offset: 96, length: 24 },
+            ],
+          },
+        },
+      },
+      { id: 'face-1', type: 'Face' },
+    ])
+    const data = new ArrayBuffer(120)
+    new Float32Array(data, 0, 18).set([
+      0, 0, 0, 1, 0, 0, 0, 1, 0,
+      1, 0, 0, 1, 1, 0, 0, 1, 0,
+    ])
+    new Float32Array(data, 72, 6).set([0.1, 0.1, 0.1, 0.9, 0.9, 0.9])
+    new Float32Array(data, 96, 6).set([0.8, 0.8, 0.8, 0.2, 0.2, 0.2])
+    const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
+    const face = asset.getEntityObject('face-1') as THREE.Mesh
+    const rules = [
+      { id: 'a', fieldName: 'qualityA', min: 0, max: 0.2 },
+      { id: 'b', fieldName: 'qualityB', min: 0.7, max: 1 },
+    ]
+    expect(setFieldFilterOverlay(asset, { enabled: true, operator: 'and', rules })).toBe(1)
+    let overlay = face.children.find((child) => child.userData.uvfFieldFilterOverlay) as THREE.LineSegments
+    expect(overlay.geometry.getIndex()?.count).toBe(6)
+
+    expect(setFieldFilterOverlay(asset, {
+      enabled: true,
+      operator: 'or',
+      rules: [
+        { id: 'a', fieldName: 'qualityA', min: 0.8, max: 1 },
+        { id: 'b', fieldName: 'qualityB', min: 0.7, max: 1 },
+      ],
+    })).toBe(2)
+    overlay = face.children.find((child) => child.userData.uvfFieldFilterOverlay) as THREE.LineSegments
+    expect(overlay.geometry.getIndex()?.count).toBe(12)
+    expect(setFieldFilterOverlay(asset, null)).toBe(0)
+    expect(face.children.some((child) => child.userData.uvfFieldFilterOverlay)).toBe(false)
     asset.dispose()
   })
 

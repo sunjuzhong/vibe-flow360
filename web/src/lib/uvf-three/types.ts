@@ -110,6 +110,19 @@ export type UVFFieldExtrema = {
   max: UVFFieldProbe | null
 }
 
+export type UVFFieldFilterRule = {
+  id: string
+  fieldName: string
+  min: number
+  max: number
+}
+
+export type UVFFieldFilter = {
+  enabled: boolean
+  operator: 'and' | 'or'
+  rules: UVFFieldFilterRule[]
+}
+
 export type UVFEntityInfo = {
   id: string
   name: string

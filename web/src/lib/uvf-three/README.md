@@ -15,6 +15,7 @@ names, solver fields, quality thresholds, or product workflows.
 - discover scalar and vector fields from section metadata;
 - aggregate declared bounds or compute finite bounds from binary values;
 - apply generic colormaps, wireframe state, and entity visibility;
+- combine generic field-range predicates and outline matching triangles;
 - expose format-level counts and lifecycle disposal.
 
 LOD state is reported per solid entity because one manifest may contain solids

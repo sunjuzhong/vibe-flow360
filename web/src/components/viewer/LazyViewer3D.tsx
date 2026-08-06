@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
 import type { Viewer3D as Viewer3DComponent } from './Viewer3D'
 
-import type { UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
+import type { UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 
 const Viewer = lazy(() => import('./Viewer3D').then((module) => ({ default: module.Viewer3D })))
 
@@ -30,6 +30,8 @@ export type ViewerToolbarProps = {
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
+  fieldFilter?: UVFFieldFilter | null
+  onFieldFilterMatchCount?: (count: number) => void
   focusTarget?: [number, number, number] | null
   clipPlane?: import('./Viewer3D').ViewerClipPlane | null
   captureRequest?: number
