@@ -12,6 +12,7 @@ export function SurfaceQualityFilterPanel({
   onEnabledChange,
   onOperatorChange,
   onReset,
+  elementLabel = 'Triangle',
 }: {
   fields: UVFFieldInfo[]
   filter: UVFFieldFilter
@@ -22,13 +23,14 @@ export function SurfaceQualityFilterPanel({
   onEnabledChange: (enabled: boolean) => void
   onOperatorChange: (operator: 'and' | 'or') => void
   onReset: () => void
+  elementLabel?: string
 }) {
   const fieldByName = new Map(fields.map((field) => [field.name, field]))
   return (
-    <section className="surface-quality-filter-panel" aria-label="Triangle quality filter">
+    <section className="surface-quality-filter-panel" aria-label={`${elementLabel} quality filter`}>
       <div className="surface-quality-filter-heading">
         <div>
-          <strong>Triangle range filter</strong>
+          <strong>{elementLabel} range filter</strong>
           <small>Matching elements are outlined in orange</small>
         </div>
         <label className="surface-quality-filter-toggle">
@@ -44,7 +46,7 @@ export function SurfaceQualityFilterPanel({
 
       {filter.rules.length > 1 && (
         <label className="surface-quality-filter-operator">
-          Match triangles satisfying
+          Match {elementLabel.toLocaleLowerCase()}s satisfying
           <select value={filter.operator} onChange={(event) => onOperatorChange(event.target.value as 'and' | 'or')}>
             <option value="and">ALL rules (AND)</option>
             <option value="or">ANY rule (OR)</option>

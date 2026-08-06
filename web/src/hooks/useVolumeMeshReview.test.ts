@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest'
+import {
+  initialVolumeMeshReviewState,
+  reduceVolumeMeshReviewState,
+} from './useVolumeMeshReview'
+
+describe('VolumeMesh review store', () => {
+  it('discovers only volume-quality fields and waits for explicit selection', () => {
+    const next = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, {
+      type: 'fields',
+      fields: [
+        { name: 'aspect_ratio', kind: 'scalar', min: 1, max: 80 },
+        { name: 'pressure', kind: 'scalar', min: -1, max: 1 },
+      ],
+    })
+    expect(next.qualityFields.map((field) => field.name)).toEqual(['aspect_ratio'])
+    expect(next.allFields.map((field) => field.name)).toEqual(['aspect_ratio', 'pressure'])
+    expect(next.selectedField).toBeNull()
+  })
+
+  it('enables clipping only in section mode', () => {
+    const section = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, { type: 'mode', mode: 'slices' })
+    const zones = reduceVolumeMeshReviewState(section, { type: 'mode', mode: 'zones' })
+    expect(section.clipEnabled).toBe(true)
+    expect(zones.clipEnabled).toBe(false)
+  })
+
+  it('locates the risky extreme and synchronizes entity selection', () => {
+    const withExtrema = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, {
+      type: 'extrema',
+      extrema: {
+        field: { name: 'cell_volume', kind: 'scalar', min: 0.001, max: 2 },
+        min: { fieldName: 'cell_volume', value: 0.001, entityId: 'wake', position: [1, 2, 3] },
+        max: null,
+      },
+    })
+    const located = reduceVolumeMeshReviewState(withExtrema, { type: 'locate-extreme', direction: 'min' })
+    expect(located.selection.groupId).toBe('wake')
+    expect(located.focusTarget).toEqual([1, 2, 3])
+  })
+
+  it('preserves a stable zone selection when groups refresh', () => {
+    const selected = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, { type: 'selection', groupId: 'fluid' })
+    const refreshed = reduceVolumeMeshReviewState(selected, {
+      type: 'reset-groups',
+      groups: [
+        { id: 'fluid', name: 'Fluid', color: '#aaa', visible: true },
+        { id: 'solid', name: 'Solid', color: '#bbb', visible: false },
+      ],
+    })
+    expect(refreshed.selection.groupId).toBe('fluid')
+    expect(refreshed.visibility).toEqual({ fluid: true, solid: false })
+  })
+})

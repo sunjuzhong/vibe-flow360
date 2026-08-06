@@ -45,12 +45,13 @@ describe('computeReadiness', () => {
     expect(cellCheck?.status).toBe('missing')
   })
 
-  it('reports quality indicators when present', () => {
+  it('treats aggregate quality indicators as proxy evidence when spatial fields are absent', () => {
     const checks = computeReadiness(
       buildDetail('completed', { max_skewness: 0.82, min_orthogonality: 0.3 }),
     )
     const qualityCheck = checks.find((c) => c.label.includes('quality'))
-    expect(qualityCheck?.status).toBe('ready')
+    expect(qualityCheck?.status).toBe('warning')
+    expect(qualityCheck?.hint).toContain('Aggregate quality metrics')
   })
 
   it('marks partial read errors as warning', () => {

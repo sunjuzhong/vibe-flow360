@@ -10,29 +10,28 @@ import {
   Share2,
   Triangle,
   Volume2,
-  Eye,
-  EyeOff,
 } from 'lucide-react'
-import { useState, useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
+import { LazyViewer3D } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
+import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
+import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
-import {
-  createViewerContext,
-  findLengthUnit,
-} from '../lib/viewer-tools/context/ViewerContext'
+import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
-import type { UVFFieldInfo } from '../lib/uvf-three'
-import {
-  ManifestMemberGroup,
-  manifestVisibilityMap,
-  visibleManifestMemberCount,
-} from './ManifestMemberGroup'
+import { computeVolumeReadiness } from '../lib/volumeMeshReview'
+import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
+import { VolumeCapabilityPanel } from './volume-mesh/VolumeCapabilityPanel'
+import { VolumeParameterSummary } from './volume-mesh/VolumeParameterSummary'
+import { VolumeQualityInspector } from './volume-mesh/VolumeQualityInspector'
+import { VolumeSliceInspector } from './volume-mesh/VolumeSliceInspector'
+import { VolumeViewModeToolbar } from './volume-mesh/VolumeViewModeToolbar'
+import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -55,7 +54,7 @@ function metricText(value: unknown) {
   if (value === undefined || value === null || value === '') return 'Not reported'
   if (typeof value === 'number') return value.toLocaleString()
   if (typeof value === 'string') return value
-  if (typeof value === 'object' && 'value' in (value as object)) {
+  if (typeof value === 'object' && 'value' in value) {
     const metric = value as { value?: unknown; units?: unknown }
     return `${metric.value ?? '—'}${metric.units ? ` ${metric.units}` : ''}`
   }
@@ -73,56 +72,8 @@ function isReportedMetric(value: unknown): boolean {
   return Object.keys(value).length > 0
 }
 
-type ReadinessCheck = {
-  label: string
-  status: 'ready' | 'warning' | 'blocked' | 'missing'
-  hint: string
-}
-
-export function computeReadiness(detail: ResourceDetail | null): ReadinessCheck[] {
-  const status = resourceStatus(detail).toLowerCase()
-  const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
-  const cellCount = findMetric(source, ['cell_count', 'num_cells', 'cells', 'element_count', 'volume_cell_count'])
-  const minOrtho = findMetric(source, ['minimum_orthogonality', 'min_orthogonality', 'orthogonality'])
-  const maxSkew = findMetric(source, ['max_skewness', 'maximum_skewness', 'skewness'])
-  const hasCells = cellCount !== undefined && cellCount !== null && cellCount !== ''
-  const hasParams = Boolean(detail?.simulation_params && Object.keys(detail.simulation_params).length)
-  const noErrors = !detail?.errors || Object.keys(detail.errors).length === 0
-
-  return [
-    {
-      label: 'Volume mesh reached a terminal state',
-      status: ['completed', 'processed', 'success'].includes(status)
-        ? 'ready'
-        : status === 'failed' || status === 'error'
-        ? 'blocked'
-        : 'warning',
-      hint: `Current status: ${status || 'unknown'}`,
-    },
-    {
-      label: 'Cell count is reported',
-      status: hasCells ? 'ready' : 'missing',
-      hint: hasCells ? `Cell count: ${metricText(cellCount)}` : 'Not reported by Flow360 snapshot',
-    },
-    {
-      label: 'Mesh quality indicators are available',
-      status: minOrtho !== undefined || maxSkew !== undefined ? 'ready' : 'missing',
-      hint:
-        minOrtho === undefined && maxSkew === undefined
-          ? 'Quality fields were not reported'
-          : `min orthogonality ${metricText(minOrtho)} · max skewness ${metricText(maxSkew)}`,
-    },
-    {
-      label: 'Simulation parameters are available',
-      status: hasParams ? 'ready' : 'missing',
-      hint: hasParams ? 'SimulationParams patch can be derived from the baseline' : 'Baseline SimulationParams missing',
-    },
-    {
-      label: 'No partial Flow360 reads were reported',
-      status: noErrors ? 'ready' : 'warning',
-      hint: noErrors ? 'All Flow360 calls for this snapshot succeeded' : 'Some fields fell back to cache defaults',
-    },
-  ]
+export function computeReadiness(detail: ResourceDetail | null) {
+  return computeVolumeReadiness({ detail })
 }
 
 export default function VolumeMeshWorkspace({
@@ -144,40 +95,32 @@ export default function VolumeMeshWorkspace({
   onPlanCase: () => void
   onShowLogs?: () => void
 }) {
-  const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
-  const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
-  const [volumeFields, setVolumeFields] = useState<string[]>([])
-  const [activeSlice, setActiveSlice] = useState<string | null>(null)
-
-  const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
-    const sliceFields = fields.filter((f) =>
-      /slice|cell|growth|layer|zone|interface|orthog|skew/i.test(f.name),
-    )
-    setVolumeFields(sliceFields.map((f) => f.name))
-  }, [])
-
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'VolumeMesh' : null,
     resourceId ?? detail?.id ?? null,
     detail && geometryResourceId ? 'Geometry' : null,
     geometryResourceId ?? null,
   )
+  const previewKind = previewSource ?? 'none'
+  const review = useVolumeMeshReview({
+    groups: manifest?.groups ?? [],
+    detail,
+    previewSource: previewKind,
+    boundingBox: manifest?.bounding_box,
+  })
+  const qualityFilter = useSurfaceQualityFilter(
+    `volume:${resourceId ?? detail?.id ?? ''}`,
+    review.qualityFields,
+  )
   const status = resourceStatus(detail)
-  const statusLower = status.toLowerCase()
-  const failed = ['failed', 'error'].includes(statusLower)
-  const source = detail?.summary ?? detail?.state ?? detail?.simulation_params
-  const unit = findLengthUnit([
-    detail?.simulation_params,
-    detail?.summary,
-    detail?.state,
-  ])
+  const failed = ['failed', 'error'].includes(status.toLowerCase())
+  const metricSources = [detail?.summary, detail?.state, detail?.simulation_params]
+  const unit = findLengthUnit(metricSources)
   const viewerContext = useMemo(() => createViewerContext({
     projectId,
     resourceRef,
     assetSource: previewSource,
-    fallbackAssetRef: geometryResourceId
-      ? { id: geometryResourceId, type: 'Geometry' }
-      : null,
+    fallbackAssetRef: geometryResourceId ? { id: geometryResourceId, type: 'Geometry' } : null,
     unit,
     capabilities: ['distance', 'surface-picking', 'field-probe'],
   }), [geometryResourceId, previewSource, projectId, resourceRef, unit])
@@ -189,78 +132,34 @@ export default function VolumeMeshWorkspace({
     annotationsModel,
     unit: viewerContext.unit,
   })
-
   const metrics = [
-    {
-      label: 'Cell count',
-      value: findMetric(source, ['cell_count', 'num_cells', 'cells', 'element_count', 'volume_cell_count']),
-      icon: Layers,
-    },
-    {
-      label: 'Node count',
-      value: findMetric(source, ['node_count', 'num_nodes', 'nodes', 'vertex_count']),
-      icon: Share2,
-    },
-    {
-      label: 'Minimum orthogonality',
-      value: findMetric(source, ['minimum_orthogonality', 'min_orthogonality', 'orthogonality']),
-      icon: Triangle,
-    },
-    {
-      label: 'Maximum skewness',
-      value: findMetric(source, ['max_skewness', 'maximum_skewness', 'skewness']),
-      icon: ScanLine,
-    },
-    {
-      label: 'Minimum cell size',
-      value: findMetric(source, ['min_cell_size', 'minimum_cell_size', 'cell_size']),
-      icon: Ruler,
-    },
-    {
-      label: 'Computing domain',
-      value: findMetric(source, ['domain_extent', 'domain', 'bounding_box']),
-      icon: Volume2,
-    },
+    { label: 'Cell count', value: findMetric(metricSources, ['cell_count', 'num_cells', 'cells', 'element_count', 'volume_cell_count']), icon: Layers },
+    { label: 'Node count', value: findMetric(metricSources, ['node_count', 'num_nodes', 'nodes', 'vertex_count']), icon: Share2 },
+    { label: 'Minimum orthogonality', value: findMetric(metricSources, ['minimum_orthogonality', 'min_orthogonality', 'orthogonality']), icon: Triangle },
+    { label: 'Maximum skewness', value: findMetric(metricSources, ['max_skewness', 'maximum_skewness', 'skewness']), icon: ScanLine },
+    { label: 'Minimum cell size', value: findMetric(metricSources, ['min_cell_size', 'minimum_cell_size', 'cell_size']), icon: Ruler },
+    { label: 'Computing domain', value: findMetric(metricSources, ['domain_extent', 'domain', 'bounding_box']), icon: Volume2 },
   ]
   const reportedMetrics = metrics.filter((metric) => isReportedMetric(metric.value))
-
-  const checks = computeReadiness(detail)
-  const readyCount = checks.filter((c) => c.status === 'ready').length
-  const warningCount = checks.filter((c) => c.status === 'warning' || c.status === 'missing').length
-  const blockedCount = checks.filter((c) => c.status === 'blocked').length
+  const checks = computeVolumeReadiness({
+    detail,
+    previewSource: previewKind,
+    groups: manifest?.groups ?? [],
+    fields: review.allFields,
+  })
+  const readyCount = checks.filter((check) => check.status === 'ready').length
+  const warningCount = checks.filter((check) => check.status === 'warning' || check.status === 'missing').length
+  const blockedCount = checks.filter((check) => check.status === 'blocked').length
   const reviewLevel = blockedCount > 0 ? 'blocked' : warningCount > 0 ? 'warning' : 'ready'
   const reviewLabel = reviewLevel === 'ready'
     ? 'Ready for Case planning'
     : reviewLevel === 'blocked' ? 'Resolve volume mesh blockers' : 'Engineering review required'
-  const reviewDetail = reviewLevel === 'ready'
-    ? 'The volume mesh lifecycle, cell inventory, quality evidence, and parameters are available for downstream review.'
-    : reviewLevel === 'blocked'
-      ? 'The volume mesh failed. Review the logs and correct meshing inputs before planning a Case.'
-      : 'Review missing mesh evidence and lifecycle state before relying on this domain for a Case.'
-  const groups = manifest?.groups ?? []
-  const visibleGroupCount = visibleManifestMemberCount(groups, entityVisibility)
-  const selectedGroup = groups.find((group) => group.id === viewerSelection.groupId) ?? null
-
-  const toggleGroupVisibility = (groupId: string) => {
-    const group = groups.find((candidate) => candidate.id === groupId)
-    if (!group) return
-    setEntityVisibility((current) => ({
-      ...current,
-      [groupId]: !(current[groupId] ?? group.visible),
-    }))
-  }
-
-  const showAllGroups = () => {
-    setEntityVisibility(manifestVisibilityMap(groups, true))
-  }
-
-  const hideAllGroups = () => {
-    setEntityVisibility(manifestVisibilityMap(groups, false))
-  }
+  const selectedZone = review.selectedZone
+  const entityNames = Object.fromEntries(review.zones.map((zone) => [zone.id, zone.name]))
 
   return (
     <ResourceReviewLayout
-      className="volume-mesh-workspace volume-review-workspace"
+      className={`volume-mesh-workspace volume-review-workspace volume-mode-${review.mode}`}
       inventoryLabel="VolumeMesh region inventory"
       inspectorLabel="VolumeMesh engineering review"
       inventory={(
@@ -270,53 +169,19 @@ export default function VolumeMeshWorkspace({
               <span>{previewSource === 'fallback' ? 'CONTEXT' : 'REGIONS'}</span>
               <strong>{previewSource === 'fallback' ? 'Geometry inventory' : 'Domain inventory'}</strong>
             </div>
-            <span className="geometry-count-badge">{groups.length}</span>
+            <span className="geometry-count-badge">{review.zones.length}</span>
           </div>
-          <div className="geometry-entity-tree">
-            <ManifestMemberGroup
-              label={previewSource === 'fallback' ? 'Geometry surfaces' : 'Cell zones and regions'}
-              memberLabel="regions"
-              icon={<Volume2 size={13} aria-hidden="true" />}
-              total={groups.length}
-              visibleCount={visibleGroupCount}
-              onShowAll={showAllGroups}
-              onHideAll={hideAllGroups}
-            >
-              {groups.map((group) => {
-                const visible = entityVisibility[group.id] ?? group.visible
-                return (
-                  <div
-                    className={`geometry-entity-row ${viewerSelection.groupId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
-                    data-entity-id={group.id}
-                    key={group.id}
-                  >
-                    <button
-                      type="button"
-                      className="geometry-entity-select"
-                      onClick={() => setViewerSelection({ groupId: group.id })}
-                      title="Select volume region"
-                    >
-                      <span className="viewer-color-swatch" style={{ background: group.color }} />
-                      <span>{group.name}</span>
-                      <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} elems` : 'region'}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className="geometry-entity-visibility"
-                      aria-label={`${visible ? 'Hide' : 'Show'} region ${group.name}`}
-                      aria-pressed={visible}
-                      onClick={() => toggleGroupVisibility(group.id)}
-                    >
-                      {visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                    </button>
-                  </div>
-                )
-              })}
-              {groups.length === 0 && (
-                <div className="geometry-empty-list">No volume regions were reported by the visualization asset.</div>
-              )}
-            </ManifestMemberGroup>
-          </div>
+          <VolumeZoneInspector
+            inventory={review.zones}
+            selectedId={review.selection.groupId}
+            visibility={review.visibility}
+            onSelect={(groupId) => review.setSelection({ groupId })}
+            onIsolate={review.isolateZone}
+            onToggleVisibility={review.toggleZoneVisibility}
+            onShowAll={review.showAllZones}
+            onHideAll={review.hideAllZones}
+            contextOnly={previewSource === 'fallback'}
+          />
         </>
       )}
       viewer={(
@@ -324,43 +189,35 @@ export default function VolumeMeshWorkspace({
           <LazyViewer3D
             manifest={manifest}
             state={viewerState}
-            selection={viewerSelection}
-            onSelectionChange={setViewerSelection}
-            entityVisibility={entityVisibility}
-            onEntityVisibilityChange={setEntityVisibility}
-            selectedField={activeSlice}
+            selection={review.selection}
+            onSelectionChange={review.setSelection}
+            entityVisibility={review.visibility}
+            onEntityVisibilityChange={review.setVisibility}
+            selectedField={review.mode === 'quality' ? review.selectedField : null}
+            onSelectedFieldChange={review.setSelectedField}
+            onFieldsDiscovered={review.handleFieldsDiscovered}
+            fieldNames={review.qualityFieldNames}
+            fieldRange={review.mode === 'quality' ? review.range : null}
+            onFieldHistogramChange={review.setHistogram}
+            onFieldExtremaChange={review.setExtrema}
+            onFieldProbe={review.mode === 'quality' ? review.setProbe : undefined}
+            fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
+            onFieldFilterMatchCount={qualityFilter.setMatchCount}
+            focusTarget={review.focusTarget}
+            clipPlane={review.mode === 'slices' ? review.clipPlane : null}
+            showFieldPanel={review.mode === 'quality'}
             showEntityLegend={false}
             showWarnings={previewSource !== 'fallback'}
-            onFieldsDiscovered={handleFieldsDiscovered}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
             toolInput={tools.toolInput}
             overlays={tools.overlays}
             onDoubleClick={tools.onDoubleClick}
             toolbar={(
-              <>
-                {volumeFields.length > 0 && (
-                  <>
-                    <button
-                      className={!activeSlice ? 'active' : ''}
-                      onClick={() => setActiveSlice(null)}
-                      aria-label="Show full mesh"
-                    >
-                      <Layers size={10} /> Full
-                    </button>
-                    {volumeFields.slice(0, 4).map((name) => (
-                      <button
-                        key={name}
-                        className={activeSlice === name ? 'active' : ''}
-                        onClick={() => setActiveSlice(activeSlice === name ? null : name)}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </>
-                )}
+              <div className="volume-combined-toolbar">
+                <VolumeViewModeToolbar mode={review.mode} onChange={review.setMode} />
                 <ViewerToolsDock model={tools} />
-              </>
+              </div>
             )}
           />
           <ViewerToolPanel model={tools} />
@@ -371,98 +228,109 @@ export default function VolumeMeshWorkspace({
           <div className={`geometry-readiness-card ${reviewLevel}`}>
             <div className="geometry-panel-heading">
               <div><span>VOLUME MESH REVIEW</span><strong>{reviewLabel}</strong></div>
-              {reviewLevel === 'ready'
-                ? <CheckCircle2 size={20} />
-                : reviewLevel === 'blocked'
-                  ? <AlertCircle size={20} />
-                  : <Activity size={20} />}
+              {reviewLevel === 'ready' ? <CheckCircle2 size={20} /> : reviewLevel === 'blocked' ? <AlertCircle size={20} /> : <Activity size={20} />}
             </div>
-            <p>{reviewDetail}</p>
+            <p>{reviewLevel === 'ready'
+              ? 'Lifecycle, zones, quality evidence, and parameters are available for downstream review.'
+              : reviewLevel === 'blocked'
+                ? 'The volume mesh failed. Review logs and meshing inputs before planning a Case.'
+                : 'Missing data remains visible as missing or proxy evidence; review it before relying on this mesh.'}</p>
             <div className="geometry-readiness-counts">
               {blockedCount > 0 && <span className="blocked">{blockedCount} blocker{blockedCount === 1 ? '' : 's'}</span>}
               {warningCount > 0 && <span className="warning">{warningCount} warnings / missing</span>}
               <span className="warning">Status · {status}</span>
             </div>
           </div>
+
           {reportedMetrics.length > 0 && (
             <div className="geometry-summary-grid volume-summary-grid">
               {reportedMetrics.map(({ label, value, icon: Icon }) => (
-                <div key={label}>
-                  <span><Icon size={12} /> {label}</span>
-                  <strong>{metricText(value)}</strong>
-                </div>
+                <div key={label}><span><Icon size={12} /> {label}</span><strong>{metricText(value)}</strong></div>
               ))}
             </div>
           )}
-          <section className="geometry-selection-card volume-selection-card">
-            <div className="geometry-section-title"><Layers size={13} /> Selection properties</div>
-            {selectedGroup ? (
-              <dl>
-                <div><dt>Name</dt><dd>{selectedGroup.name}</dd></div>
-                <div><dt>ID</dt><dd title={selectedGroup.id}>{selectedGroup.id}</dd></div>
-                <div><dt>Elements</dt><dd>{selectedGroup.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
-                <div><dt>Vertices</dt><dd>{selectedGroup.vertices?.toLocaleString() ?? 'Not reported'}</dd></div>
-              </dl>
-            ) : (
-              <p>Select a cell zone or region in the inventory or 3D viewer to inspect it.</p>
-            )}
-          </section>
+
+          {review.mode === 'quality' ? (
+            <section className="geometry-selection-card volume-active-review">
+              <div className="geometry-section-title"><ScanLine size={13} /> Cell quality · {review.qualityFields.length} fields</div>
+              <VolumeQualityInspector
+                field={review.selectedFieldInfo}
+                range={review.range}
+                histogram={review.histogram}
+                extrema={review.extrema}
+                probe={review.probe}
+                entityNames={entityNames}
+                onRangeChange={(range) => review.setRange(range)}
+                onLocateExtreme={review.locateExtreme}
+              />
+              <SurfaceQualityFilterPanel
+                fields={review.qualityFields}
+                filter={qualityFilter.filter}
+                matchCount={qualityFilter.matchCount}
+                onAddRule={qualityFilter.addRule}
+                onRemoveRule={qualityFilter.removeRule}
+                onUpdateRule={qualityFilter.updateRule}
+                onEnabledChange={qualityFilter.setEnabled}
+                onOperatorChange={qualityFilter.setOperator}
+                onReset={qualityFilter.reset}
+                elementLabel="Cell"
+              />
+            </section>
+          ) : review.mode === 'slices' ? (
+            <VolumeSliceInspector
+              enabled={review.clipEnabled}
+              axis={review.clipAxis}
+              position={review.clipPosition}
+              bounds={review.clipBounds}
+              available={previewSource === 'primary'}
+              onEnabled={review.setClipEnabled}
+              onAxis={review.setClipAxis}
+              onPosition={review.setClipPosition}
+            />
+          ) : review.mode === 'zones' ? (
+            <section className="geometry-selection-card volume-selection-card">
+              <div className="geometry-section-title"><Layers size={13} /> Zone properties</div>
+              {selectedZone ? (
+                <dl>
+                  <div><dt>Name</dt><dd>{selectedZone.name}</dd></div>
+                  <div><dt>ID</dt><dd title={selectedZone.id}>{selectedZone.id}</dd></div>
+                  <div><dt>Zone type</dt><dd>{selectedZone.zoneType}</dd></div>
+                  <div><dt>Type evidence</dt><dd>{selectedZone.typeProvenance}</dd></div>
+                  <div><dt>Rendered elements</dt><dd>{selectedZone.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
+                  <div><dt>Vertices</dt><dd>{selectedZone.vertices?.toLocaleString() ?? 'Not reported'}</dd></div>
+                </dl>
+              ) : <p>Select a cell zone or region in the inventory or 3D viewer.</p>}
+            </section>
+          ) : (
+            <VolumeCapabilityPanel capabilities={review.capabilities} />
+          )}
+
           {previewSource === 'fallback' && (
             <div className="volume-source-warning" role="status">
               <AlertCircle size={14} />
-              <span>
-                <strong>Geometry context shown</strong>
-                The VolumeMesh slice asset is unavailable; these are parent Geometry surfaces, not volume cells.
-              </span>
+              <span><strong>Geometry context shown</strong>These are parent Geometry surfaces, not volume cells or diagnostic slices.</span>
             </div>
           )}
+
           <div className="geometry-checks volume-mesh-checks">
             {checks.map((check) => (
               <div className={check.status === 'missing' ? 'unknown' : check.status} key={check.label}>
-                {check.status === 'ready' ? (
-                  <CheckCircle2 size={14} />
-                ) : check.status === 'blocked' ? (
-                  <AlertCircle size={14} />
-                ) : (
-                  <CircleDashed size={14} />
-                )}
-                <div>
-                  <span>{check.label}</span>
-                  <small>{check.hint}</small>
-                </div>
+                {check.status === 'ready' ? <CheckCircle2 size={14} /> : check.status === 'blocked' ? <AlertCircle size={14} /> : <CircleDashed size={14} />}
+                <div><span>{check.label}</span><small>{check.hint}</small></div>
               </div>
             ))}
           </div>
+
+          {review.parameters.length > 0 && <VolumeParameterSummary parameters={review.parameters} />}
+
           <div className="geometry-plan-action-stack">
-            <button
-              className="geometry-plan-action"
-              onClick={onPlanCase}
-              disabled={failed}
-              title={failed ? 'Cannot plan a Case from a failed volume mesh' : 'Plan a Case using this volume mesh'}
-            >
-              <GitPullRequestDraft size={15} />
-              Plan Case
+            <button className="geometry-plan-action" onClick={onPlanCase} disabled={failed} title={failed ? 'Cannot plan a Case from a failed volume mesh' : 'Plan a Case using this volume mesh'}>
+              <GitPullRequestDraft size={15} /> Plan Case
             </button>
-            {failed && onShowLogs && (
-              <button className="secondary-action" onClick={onShowLogs}>
-                <Activity size={14} />
-                View Logs
-              </button>
-            )}
+            {failed && onShowLogs && <button className="secondary-action" onClick={onShowLogs}><Activity size={14} /> View Logs</button>}
             <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>
-            {primaryError && previewSource === 'fallback' && (
-              <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
-            )}
+            {primaryError && previewSource === 'fallback' && <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>}
           </div>
-          <section className="geometry-inspection-card volume-review-order">
-            <div className="geometry-section-title"><ScanLine size={13} /> CFD review order</div>
-            <ol>
-              <li>Domain extent and zones</li>
-              <li>Near-wall prism layers</li>
-              <li>Worst aspect ratio / minimum edge slices</li>
-              <li>Wake and refinement continuity</li>
-            </ol>
-          </section>
         </>
       )}
     />

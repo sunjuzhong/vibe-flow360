@@ -186,6 +186,33 @@
   padding: 14px 13px 10px;
 }
 
+.volume-review-workspace .resource-review-inventory .volume-zone-inspector {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.volume-review-workspace .resource-review-inventory .volume-zone-tools {
+  grid-template-columns: 1fr;
+  margin: 0 10px 7px;
+}
+
+.volume-review-workspace .resource-review-inventory .volume-zone-tools > span {
+  grid-column: auto;
+}
+
+.volume-review-workspace .resource-review-inventory .volume-zone-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 7px;
+}
+
+.volume-review-workspace .resource-review-inventory .volume-zone-row {
+  min-height: 48px;
+}
+
 .volume-review-workspace .volume-region-tools {
   grid-template-columns: minmax(0, 1fr) auto;
 }
