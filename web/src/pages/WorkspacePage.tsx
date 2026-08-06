@@ -295,7 +295,7 @@ export default function WorkspacePage() {
 
         {selectedFolder && (
           <div className="project-toolbar">
-            <label>
+            <label className="project-search">
               <Search size={15} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…" />
             </label>

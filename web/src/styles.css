@@ -532,8 +532,8 @@ button { color: inherit; }
 .folder-tree-count { padding: 0 8px 4px; color: #989c93; font-family: 'DM Mono'; font-size: 7px; }
 .folder-search-hint { padding: 8px; color: #7a7f74; font-size: 9px; text-align: center; }
 
-.toolbar-filter { display: flex; align-items: center; gap: 5px; color: #72776c; font-size: 9px; }
-.toolbar-filter select { padding: 4px 8px; border: 1px solid #d5d7ce; border-radius: 6px; background: #fafaf7; color: #52574e; font-size: 9px; }
+.toolbar-filter { display: flex; align-items: center; gap: 6px; color: #72776c; font-size: 9px; white-space: nowrap; }
+.toolbar-filter select { height: 32px; min-width: 108px; padding: 0 28px 0 10px; border: 1px solid #d5d7ce; border-radius: 7px; background: #fafaf7; color: #52574e; font-size: 9px; }
 
 .import-advanced { margin: 12px 0; padding: 10px 12px; border: 1px solid #d8dad2; border-radius: 8px; background: #f7f7f3; }
 .import-advanced summary { cursor: pointer; font-size: 10px; font-weight: 600; color: #4d5543; padding: 4px 0; }
@@ -1167,7 +1167,7 @@ button { color: inherit; }
   margin: 0 auto 11px;
 }
 
-.project-toolbar label {
+.project-toolbar > .project-search {
   display: flex;
   min-width: 220px;
   max-width: 430px;
@@ -1180,6 +1180,17 @@ button { color: inherit; }
   border-radius: 8px;
   background: #fafaf7;
   color: #94988f;
+}
+
+.project-toolbar > .toolbar-filter {
+  min-width: 0;
+  max-width: none;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .project-toolbar input,
