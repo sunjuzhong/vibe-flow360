@@ -41,7 +41,9 @@ entity color or field coloring remains visible underneath.
 Dense wire overlays are screen-space adaptive: they remain hidden while
 individual triangles are sub-pixel at an overview scale and fade in as the
 camera moves close enough to resolve them. This prevents distant mesh edges
-from producing moiré or camouflage patterns.
+from producing moiré or camouflage patterns. The overlay remains hidden while
+the average projected triangle is too small to resolve, and fades in only after
+zooming close enough for its three edges to be visually distinct.
 
 ## Consumer responsibilities
 

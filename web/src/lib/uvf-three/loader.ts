@@ -721,9 +721,13 @@ export function wireframeOverlayOpacity(object: THREE.Object3D, selected = false
 
 export function wireframeOpacityForScreenDensity(baseOpacity: number, pixelAreaPerTriangle: number): number {
   if (!Number.isFinite(baseOpacity) || baseOpacity <= 0) return 0
-  if (!Number.isFinite(pixelAreaPerTriangle) || pixelAreaPerTriangle <= 2) return 0
-  if (pixelAreaPerTriangle >= 12) return baseOpacity
-  return baseOpacity * (pixelAreaPerTriangle - 2) / 10
+  // A triangle with only a few pixels of projected area cannot produce three
+  // distinct anti-aliased edges. Showing it anyway turns dense surface meshes
+  // into a low-frequency moire/camouflage pattern. Keep the overlay off until
+  // an average triangle is actually readable, then fade it in gradually.
+  if (!Number.isFinite(pixelAreaPerTriangle) || pixelAreaPerTriangle <= 24) return 0
+  if (pixelAreaPerTriangle >= 96) return baseOpacity
+  return baseOpacity * (pixelAreaPerTriangle - 24) / 72
 }
 
 export function updateWireframeOverlayForCamera(

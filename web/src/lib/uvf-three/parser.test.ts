@@ -8,8 +8,9 @@ describe('Flow360 UVF Three.js library', () => {
     expect(wireframeOpacityForTriangleCount(90_000)).toBeLessThan(0.2)
     expect(wireframeOpacityForTriangleCount(1_000_000)).toBe(0.16)
     expect(wireframeOpacityForScreenDensity(0.32, 1)).toBe(0)
-    expect(wireframeOpacityForScreenDensity(0.32, 7)).toBeCloseTo(0.16)
-    expect(wireframeOpacityForScreenDensity(0.32, 20)).toBe(0.32)
+    expect(wireframeOpacityForScreenDensity(0.32, 24)).toBe(0)
+    expect(wireframeOpacityForScreenDensity(0.32, 60)).toBeCloseTo(0.16)
+    expect(wireframeOpacityForScreenDensity(0.32, 96)).toBe(0.32)
   })
 
   it('decodes indexed faces and edge positions', () => {
