@@ -77,6 +77,7 @@ jobs:
       - name: Reject unsafe publication target
         if: inputs.publish
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
@@ -208,6 +209,7 @@ jobs:
       - name: Publish GitHub Release
         if: inputs.publish
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
           RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
