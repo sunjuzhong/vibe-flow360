@@ -57,6 +57,10 @@
 
 .resource-review-viewer .viewer-3d-container {
   box-sizing: border-box;
+  padding-bottom: 0;
+}
+
+.resource-review-viewer .viewer-3d-container[data-viewer-status='ready'] {
   padding-bottom: 52px;
 }
 

@@ -996,6 +996,7 @@ export function Viewer3D({
       data-viewer-format={manifest?.format ?? ''}
       data-viewer-faces={assetStats?.faces ?? ''}
       data-viewer-edges={assetStats?.edges ?? ''}
+      data-viewer-status={visibleState.status}
     >
       <div
         ref={containerRef}
