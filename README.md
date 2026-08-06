@@ -157,6 +157,11 @@ Geometry Project and baseline/refined VolumeMesh Plan drafts with curvature,
 surface spacing, first-layer thickness, growth rates, farfield, and beta mesher
 selection already configured. Cloud meshing remains a separate approval.
 
+T02 compares Geometry, SurfaceMesh, and VolumeMesh Project roots. Its final
+step accepts a reviewed SurfaceMesh or VolumeMesh upload, creates the matching
+Project, and prepares α=0°/5° local Case Plans while keeping boundary mapping
+and all cloud execution behind explicit review.
+
 ## Agent configuration
 
 The default `builtin` provider preserves the current behavior. Without an API

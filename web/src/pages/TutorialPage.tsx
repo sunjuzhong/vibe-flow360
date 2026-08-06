@@ -21,6 +21,7 @@ import type { Flow360Status } from '../api/client'
 import { api } from '../api/client'
 import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
+import T02TutorialPage from './T02TutorialPage'
 import T03TutorialPage from './T03TutorialPage'
 import {
   t01Evidence,
@@ -70,6 +71,7 @@ function downloadJSON(params: Record<string, unknown>, alpha: number) {
 
 export default function TutorialPage() {
   const { tutorialId = '' } = useParams()
+  if (tutorialId.toUpperCase() === 'T02') return <T02TutorialPage />
   if (tutorialId.toUpperCase() === 'T03') return <T03TutorialPage />
   if (tutorialId.toUpperCase() !== 'T01') return <Navigate to="/tutorials" replace />
   return <T01TutorialPage />

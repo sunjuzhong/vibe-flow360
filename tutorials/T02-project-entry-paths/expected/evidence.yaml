@@ -1,0 +1,24 @@
+schema_version: 1
+criteria:
+  - id: root-type-visible
+    category: provenance
+    description: The Project root type is explicit and matches the uploaded artifact.
+    artifact: Project resource tree
+    required: true
+    check: {method: present, metric: project.root-item-type}
+  - id: skipped-stages-reviewed
+    category: provenance
+    description: Every skipped stage is recorded as trusted upstream provenance.
+    artifact: T02 path matrix
+    required: true
+    check: {method: manual, metric: workflow.skipped-stages-reviewed}
+  - id: boundary-semantics-reviewed
+    category: mesh
+    description: Uploaded boundary names are mapped to physical models before execution.
+    artifact: Case Plan preflight
+    required: true
+    check: {method: manual, metric: model.boundaries-mapped}
+limitations:
+  - T02 does not certify an uploaded mesh as high quality.
+  - Boundary semantics cannot be made portable across arbitrary user meshes.
+  - Creating the tutorial environment does not submit cloud meshing or a Case.

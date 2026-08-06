@@ -1,0 +1,12 @@
+schema_version: 1
+scenario: project-entry-path-selection
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_path: {value: Geometry-to-SurfaceMesh-to-VolumeMesh-to-Case, provenance: adapted}
+  surface_mesh_path: {value: SurfaceMesh-to-VolumeMesh-to-Case, provenance: adapted}
+  volume_mesh_path: {value: VolumeMesh-to-Case, provenance: adapted}
+review_required:
+  - Confirm mesh length units before upload.
+  - Map actual boundary names to physical models before execution.
+  - Treat skipped stages as trusted provenance, not proof of quality.

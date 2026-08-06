@@ -1,0 +1,21 @@
+schema_version: 1
+id: T02
+slug: project-entry-paths
+title: Choose the right Project entry path
+summary: Compare Geometry, SurfaceMesh, and VolumeMesh roots before creating a reviewable Case path.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+evidence: {contract: expected/evidence.yaml}
+coverage:
+  - {feature: 'workflow:surface-mesh-to-case', section: workflow, artifact: plan.md}
+  - {feature: 'workflow:volume-mesh-to-case', section: workflow, artifact: plan.md}
