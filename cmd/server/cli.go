@@ -19,6 +19,10 @@ import (
 
 const commandName = "vibe-flow360"
 
+// buildVersion is injected by release builds. Development builds deliberately
+// report "dev" so an unversioned binary cannot be mistaken for a release.
+var buildVersion = "dev"
+
 func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		writeRootUsage(stdout)
@@ -32,6 +36,12 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return runServe(args[1:], stdout, stderr)
 	case "init":
 		return runInit(args[1:], stdin, stdout, stderr)
+	case "version":
+		if len(args) != 1 {
+			return errors.New("version does not accept arguments")
+		}
+		fmt.Fprintf(stdout, "%s %s\n", commandName, buildVersion)
+		return nil
 	default:
 		return fmt.Errorf("unknown command %q; run %s --help", args[0], commandName)
 	}
@@ -43,9 +53,10 @@ func writeRootUsage(output io.Writer) {
 Usage:
   %s init [options]   Install and verify all runtime dependencies
   %s serve [options]  Start the Vibe Flow360 server
+  %s version          Print the build/Flow360 version
 
 Run "%s <command> --help" for command options.
-`, commandName, commandName, commandName)
+`, commandName, commandName, commandName, commandName)
 }
 
 func runServe(args []string, stdout, stderr io.Writer) error {

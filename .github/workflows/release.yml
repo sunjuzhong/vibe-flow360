@@ -1,0 +1,226 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create the version tag and GitHub Release after validation
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vibe-flow360-release
+  cancel-in-progress: false
+
+jobs:
+  resolve-version:
+    name: Resolve Flow360 version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+          package-manager-cache: false
+
+      - name: Build resolver binary
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          rm -rf internal/server/dist
+          cp -R web/dist internal/server/dist
+          go build -buildvcs=false -o vibe-flow360 ./cmd/server
+
+      - name: Install current Flow360 runtime
+        run: |
+          ./vibe-flow360 init \
+            --env-file "$RUNNER_TEMP/vibe-flow360.env" \
+            --tools-dir "$RUNNER_TEMP/vibe-flow360-runtime" \
+            --no-login \
+            --skip-auth-check
+
+      - name: Resolve exact package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_binary="$RUNNER_TEMP/vibe-flow360-runtime/uv-tools/flow360/bin/python"
+          test -x "$python_binary"
+          version="$("$python_binary" -c 'from importlib.metadata import version; print(version("flow360"))')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9.-]+)?$ ]]; then
+            echo "Invalid Flow360 package version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved Flow360 $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reject unsafe publication target
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "${{ github.event.repository.default_branch }}" ]]; then
+            echo "Releases must be dispatched from ${{ github.event.repository.default_branch }}." >&2
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+
+  build:
+    name: Build (${{ matrix.target_os }}-${{ matrix.target_arch }})
+    needs: resolve-version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target_os: linux
+            target_arch: amd64
+          - runner: ubuntu-latest
+            target_os: linux
+            target_arch: arm64
+          - runner: macos-latest
+            target_os: darwin
+            target_arch: amd64
+          - runner: macos-latest
+            target_os: darwin
+            target_arch: arm64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+          package-manager-cache: false
+
+      - name: Build production archive
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: |
+          set -euo pipefail
+          npm ci --prefix web
+          npm run build --prefix web
+          rm -rf internal/server/dist
+          cp -R web/dist internal/server/dist
+
+          archive_name="vibe-flow360_${RELEASE_VERSION}_${TARGET_OS}_${TARGET_ARCH}"
+          package_dir="$RUNNER_TEMP/$archive_name"
+          mkdir -p "$package_dir"
+          CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
+            go build -buildvcs=false -trimpath \
+            -ldflags "-s -w -X main.buildVersion=$RELEASE_VERSION" \
+            -o "$package_dir/vibe-flow360" ./cmd/server
+          cp README.md "$package_dir/README.md"
+          printf '%s\n' "$RELEASE_VERSION" > "$package_dir/VERSION"
+          tar -czf "$RUNNER_TEMP/$archive_name.tar.gz" -C "$RUNNER_TEMP" "$archive_name"
+          echo "ARCHIVE_PATH=$RUNNER_TEMP/$archive_name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Smoke test native binary
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: |
+          set -euo pipefail
+          if [[ "$(go env GOOS)" == "$TARGET_OS" && "$(go env GOARCH)" == "$TARGET_ARCH" ]]; then
+            binary="$RUNNER_TEMP/vibe-flow360_${RELEASE_VERSION}_${TARGET_OS}_${TARGET_ARCH}/vibe-flow360"
+            test "$("$binary" version)" = "vibe-flow360 $RELEASE_VERSION"
+            "$binary" --help >/dev/null
+          fi
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.ARCHIVE_PATH }}
+          archive: false
+          retention-days: 7
+
+  release:
+    name: Assemble release
+    needs: [resolve-version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate and verify checksums
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          mapfile -t archives < <(find . -maxdepth 1 -type f -name "vibe-flow360_${RELEASE_VERSION}_*.tar.gz" -print | sort)
+          if [[ ${#archives[@]} -ne 4 ]]; then
+            echo "Expected 4 release archives, found ${#archives[@]}." >&2
+            find . -maxdepth 2 -type f -print
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Publish GitHub Release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            release-assets/*.tar.gz \
+            release-assets/SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title "Vibe Flow360 $RELEASE_VERSION" \
+            --notes "Built and versioned against Flow360 $RELEASE_VERSION. Run 'vibe-flow360 init' after extracting the archive to prepare the isolated runtime and account configuration."
+
+      - name: Summarize dry run
+        if: ${{ !inputs.publish }}
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: echo "Built and validated all Vibe Flow360 $RELEASE_VERSION release assets without publishing." >> "$GITHUB_STEP_SUMMARY"

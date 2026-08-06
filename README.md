@@ -128,6 +128,21 @@ read-only live account gate on scheduled, manual, and main-branch runs. The
 workflow deliberately withholds this secret from every pull-request run,
 including branches created by repository collaborators.
 
+### Manual releases
+
+Run the `Release` workflow from the GitHub Actions page to build Linux and
+macOS archives for amd64 and arm64. The workflow resolves the exact package
+version selected by the current `vibe-flow360 init` defaults and uses that same
+version for the binary, archive names, Git tag, and GitHub Release. Its
+`publish` input defaults to true; set it to false to build and validate all
+artifacts without creating a tag or Release.
+
+Release binaries report the matching version directly:
+
+```bash
+vibe-flow360 version
+```
+
 ## Agent configuration
 
 The default `builtin` provider preserves the current behavior. Without an API

@@ -39,3 +39,24 @@ func TestInitHelpExplainsAuthenticationSkipIsForAutomation(t *testing.T) {
 		t.Fatalf("init help does not constrain authentication skipping:\n%s", output.String())
 	}
 }
+
+func TestVersionReportsInjectedBuildVersion(t *testing.T) {
+	previous := buildVersion
+	buildVersion = "25.10.3"
+	t.Cleanup(func() { buildVersion = previous })
+
+	var output bytes.Buffer
+	if err := runCLI([]string{"version"}, strings.NewReader(""), &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(output.String()); got != "vibe-flow360 25.10.3" {
+		t.Fatalf("version output = %q", got)
+	}
+}
+
+func TestVersionRejectsArguments(t *testing.T) {
+	err := runCLI([]string{"version", "unexpected"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "does not accept") {
+		t.Fatalf("version argument error = %v", err)
+	}
+}
