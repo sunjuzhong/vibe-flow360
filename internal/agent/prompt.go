@@ -90,6 +90,8 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - When a schema field exposes recommendation/default_model/default_entities with high confidence, prefer that evidence-backed value and record it as derived or defaulted. Exact schema and preflight errors override general CFD memory.
 - Treat confirmed_inputs as authoritative. Never ask for a value already present there. In an autonomous AI Create request, select a supplied recommended default yourself for a basic or ready-to-run case; request input only when no defensible default exists and the choice materially changes the engineering objective.
 - Match the language of the user's latest request. Use that language for all explanatory text and human-readable string values, including message, questions, warnings, assumptions, and field descriptions. Keep JSON keys, enum values, SimulationParams paths, and protocol identifiers unchanged.
+- Treat scope_type and scope_id as the primary identity of this conversation. A Draft scope and its source Resource scope are separate conversations even when they share the same source_id.
+- You may use project_resources and project_drafts as the read-only Project context catalog to reason across branches and refer to other Resources or Drafts by stable ID. Never associate them by display name. The current scope remains primary; when another catalog entry lacks detailed evidence, state that limitation instead of inventing its parameters or results.
 
 ## Context payload format:
 You will receive a structured context block with project info, resource details, SimulationParams snapshot, and Flow360 schema preflight. Use this to make informed proposals.`
@@ -99,6 +101,8 @@ type ChatContextPayload struct {
 	ProjectID            string          `json:"project_id,omitempty"`
 	ProjectName          string          `json:"project_name,omitempty"`
 	SolverVersion        string          `json:"solver_version,omitempty"`
+	ScopeType            string          `json:"scope_type,omitempty"`
+	ScopeID              string          `json:"scope_id,omitempty"`
 	SourceID             string          `json:"source_id,omitempty"`
 	SourceType           string          `json:"source_type,omitempty"`
 	SourceName           string          `json:"source_name,omitempty"`
@@ -110,6 +114,7 @@ type ChatContextPayload struct {
 	ResourceSummary      json.RawMessage `json:"resource_summary,omitempty"`
 	ResultArtifacts      json.RawMessage `json:"result_artifacts,omitempty"`
 	ProjectResources     json.RawMessage `json:"project_resources,omitempty"`
+	ProjectDrafts        json.RawMessage `json:"project_drafts,omitempty"`
 	ActiveDraft          json.RawMessage `json:"active_draft,omitempty"`
 	PartialErrors        json.RawMessage `json:"partial_errors,omitempty"`
 	ProjectResourceCount int             `json:"project_resource_count,omitempty"`
@@ -172,6 +177,7 @@ func parseContextPayload(contextStr string) ChatContextPayload {
 		payload.ResourceSummary = truncateRaw(payload.ResourceSummary, maxEvidenceBytes)
 		payload.ResultArtifacts = truncateRaw(payload.ResultArtifacts, maxResourceInventoryBytes)
 		payload.ProjectResources = truncateRaw(payload.ProjectResources, maxResourceInventoryBytes)
+		payload.ProjectDrafts = truncateRaw(payload.ProjectDrafts, maxResourceInventoryBytes)
 		payload.ActiveDraft = truncateRaw(payload.ActiveDraft, maxSimulationParamsBytes)
 		payload.PartialErrors = truncateRaw(payload.PartialErrors, maxEvidenceBytes)
 		payload.RecentLogs = truncate(payload.RecentLogs, maxEvidenceBytes)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentAction } from '../api/client'
-import { actionPlanConversionSummary, copilotHorizontalContainment, shouldShowCopilotClarification } from './CopilotPanel'
+import { actionPlanConversionSummary, copilotHorizontalContainment, copilotScopeLabel, shouldShowCopilotClarification } from './CopilotPanel'
 
 const clarification: AgentAction = {
   version: 'v1',
@@ -23,6 +23,14 @@ describe('Ask AI clarification visibility', () => {
 describe('Ask AI horizontal overflow containment', () => {
   it('keeps the drawer and message list from scrolling horizontally', () => {
     expect(copilotHorizontalContainment).toEqual({ overflowX: 'hidden' })
+  })
+})
+
+describe('Ask AI session scope', () => {
+  it('distinguishes Draft, Resource, and Project conversations', () => {
+    expect(copilotScopeLabel('draft')).toBe('Draft session')
+    expect(copilotScopeLabel('resource')).toBe('Resource session')
+    expect(copilotScopeLabel('project')).toBe('Project session')
   })
 })
 

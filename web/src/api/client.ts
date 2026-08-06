@@ -34,6 +34,8 @@ export type ChatSession = {
   id?: string
   project_id: string
   resource_id?: string
+  scope_type?: 'project' | 'resource' | 'draft'
+  scope_id?: string
   messages: ChatMessage[]
   created_at?: string
   updated_at?: string
@@ -992,8 +994,10 @@ export const api = {
     return body
   },
   agentState: () => json<AgentState>('/api/agent/state'),
-  agentChatSession: (projectId: string, resourceId?: string) => {
+  agentChatSession: (projectId: string, scopeType: 'project' | 'resource' | 'draft', scopeId?: string, resourceId?: string) => {
     const params = new URLSearchParams({ project_id: projectId })
+    params.set('scope_type', scopeType)
+    if (scopeId) params.set('scope_id', scopeId)
     if (resourceId) params.set('resource_id', resourceId)
     return json<ChatSession>(`/api/agent/chat/session?${params.toString()}`)
   },

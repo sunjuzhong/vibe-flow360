@@ -23,6 +23,14 @@ export function actionPlanConversionSummary(result: ActionPlanResult) {
   return `${result.created}/${result.total} local plan${result.total === 1 ? '' : 's'} ready`
 }
 
+export type CopilotScopeType = 'project' | 'resource' | 'draft'
+
+export function copilotScopeLabel(scopeType: CopilotScopeType) {
+  if (scopeType === 'draft') return 'Draft session'
+  if (scopeType === 'resource') return 'Resource session'
+  return 'Project session'
+}
+
 export default function CopilotPanel({
   open,
   onClose,
@@ -30,6 +38,8 @@ export default function CopilotPanel({
   context,
   projectId,
   projectName,
+  scopeType,
+  scopeId,
   resourceId,
   resourceType,
   resourceName,
@@ -42,6 +52,8 @@ export default function CopilotPanel({
   context: string
   projectId: string
   projectName?: string
+  scopeType: CopilotScopeType
+  scopeId?: string
   resourceId?: string
   resourceType?: string
   resourceName?: string
@@ -65,12 +77,12 @@ export default function CopilotPanel({
   }, [])
 
   useEffect(() => {
-    const scope = `${projectId}\u0000${resourceId ?? ''}`
+    const scope = `${projectId}\u0000${scopeType}\u0000${scopeId ?? ''}`
     scopeRef.current = scope
     setMessages([])
     setConvertingIndex(null)
     setSessionLoading(true)
-    api.agentChatSession(projectId, resourceId)
+    api.agentChatSession(projectId, scopeType, scopeId, resourceId)
       .then((session) => {
         if (scopeRef.current === scope) {
           const restored = session.messages.map((message) => ({
@@ -87,7 +99,7 @@ export default function CopilotPanel({
       .finally(() => {
         if (scopeRef.current === scope) setSessionLoading(false)
       })
-  }, [projectId, resourceId])
+  }, [projectId, resourceId, scopeId, scopeType])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -156,7 +168,7 @@ export default function CopilotPanel({
   const submit = async (submittedText?: string) => {
     const text = (submittedText ?? input).trim()
     if (!text || busy || sessionLoading) return
-    const scope = `${projectId}\u0000${resourceId ?? ''}`
+    const scope = `${projectId}\u0000${scopeType}\u0000${scopeId ?? ''}`
     const history = messages.map(({ role, content }) => ({ role, content }))
     setInput('')
     setBusy(true)
@@ -173,6 +185,8 @@ export default function CopilotPanel({
           context,
           project_id: projectId,
           resource_id: resourceId,
+          scope_type: scopeType,
+          scope_id: scopeId,
         }),
       })
       if (!response.ok) throw new Error(await response.text())
@@ -237,7 +251,12 @@ export default function CopilotPanel({
         </div>
         <button className="icon-button" onClick={onClose} aria-label="Close AI assistant"><X size={18} /></button>
       </div>
-      <div className="copilot-context"><MessageSquareText size={14} /><span>{contextLabel}</span></div>
+      <div className="copilot-context" aria-label={`${copilotScopeLabel(scopeType)}: ${contextLabel}`}>
+        <MessageSquareText size={14} />
+        <strong>{copilotScopeLabel(scopeType)}</strong>
+        <span>{contextLabel}</span>
+        <small>Project-wide context</small>
+      </div>
       <div className="copilot-messages" style={copilotHorizontalContainment}>
         {sessionLoading && !messages.length && (
           <div className="copilot-empty"><Loader2 className="spin" size={22} /><p>Loading this conversation…</p></div>
@@ -246,7 +265,7 @@ export default function CopilotPanel({
           <div className="copilot-empty">
             <Sparkles size={23} />
             <h3>Ask in context</h3>
-            <p>I’ll answer using this Project and resource context, and show a reviewable plan before any remote action.</p>
+            <p>I’ll use this {scopeType} as the primary context and can reference other Resources and Drafts in this Project.</p>
             {suggestions.length > 0 && (
               <div className="copilot-suggestions">
                 {suggestions.map((suggestion) => (

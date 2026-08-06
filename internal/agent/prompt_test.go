@@ -71,6 +71,9 @@ func TestBuildChatPromptKeepsProjectResourceCFDContext(t *testing.T) {
   "resource_summary":{"convergence":"not-converged"},
   "result_artifacts":[{"name":"linear_residual_v2.csv"}],
   "project_resources":[{"id":"geo-1","type":"Geometry"},{"id":"case-1","type":"Case"}],
+  "project_drafts":[{"id":"draft-1","source_id":"geo-1","source_type":"Geometry"}],
+  "scope_type":"draft",
+  "scope_id":"draft-1",
   "partial_errors":{"logs":"tail unavailable"},
   "project_resource_count":2,
   "branch_resource_count":2
@@ -80,7 +83,10 @@ func TestBuildChatPromptKeepsProjectResourceCFDContext(t *testing.T) {
 	if payload.ProjectName != "Cylinder Flow" || payload.SourceStatus != "Completed" {
 		t.Fatalf("project/resource identity was not preserved: %#v", payload)
 	}
-	for _, expected := range []string{"not-converged", "linear_residual_v2.csv", "velocity_magnitude", "tail unavailable", "flow360"} {
+	if payload.ScopeType != ChatScopeDraft || payload.ScopeID != "draft-1" {
+		t.Fatalf("Draft conversation scope was not preserved: %#v", payload)
+	}
+	for _, expected := range []string{"not-converged", "linear_residual_v2.csv", "velocity_magnitude", "tail unavailable", "flow360", "draft-1"} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("prompt is missing CFD context %q: %s", expected, prompt)
 		}

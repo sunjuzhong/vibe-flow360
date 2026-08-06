@@ -23,6 +23,8 @@ type ChatRequest struct {
 	Session    string    `json:"session,omitempty"`
 	ProjectID  string    `json:"project_id,omitempty"`
 	ResourceID string    `json:"resource_id,omitempty"`
+	ScopeType  string    `json:"scope_type,omitempty"`
+	ScopeID    string    `json:"scope_id,omitempty"`
 	Model      string    `json:"model,omitempty"`
 	Geometry   string    `json:"geometry,omitempty"`
 	Context    string    `json:"context,omitempty"`

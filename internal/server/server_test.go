@@ -309,6 +309,40 @@ func TestChatStreamPersistsAndRestoresProjectResourceSession(t *testing.T) {
 	}
 }
 
+func TestChatStreamPersistsDraftSeparatelyFromItsSourceResource(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store, err := agent.NewChatStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{agent: &agent.Service{}, chatSessions: store}
+	body := `{
+  "message":"Change the wall setup.",
+  "project_id":"project-1",
+  "resource_id":"geo-1",
+  "scope_type":"draft",
+  "scope_id":"draft-1",
+  "context":"{\"project_id\":\"project-1\",\"source_id\":\"geo-1\",\"scope_type\":\"draft\",\"scope_id\":\"draft-1\"}"
+}`
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/agent/chat/stream", strings.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	app.chatStream(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"type":"done"`) {
+		t.Fatalf("unexpected stream response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	draft, err := store.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-1"})
+	if err != nil || len(draft.Messages) != 2 {
+		t.Fatalf("Draft transcript was not persisted: %#v, %v", draft, err)
+	}
+	if _, err := store.Get("project-1", "geo-1"); !errors.Is(err, agent.ErrChatSessionNotFound) {
+		t.Fatalf("Draft transcript leaked into source Resource scope: %v", err)
+	}
+}
+
 func TestRecoverPlanCreatesInterventionForPersistedPreflightFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	temp := t.TempDir()

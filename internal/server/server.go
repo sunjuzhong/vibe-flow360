@@ -2726,8 +2726,15 @@ func (s *Server) chatStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	scope, err := agent.ResolveChatScope(request.ScopeType, request.ScopeID, request.ResourceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	request.ScopeType = scope.Type
+	request.ScopeID = scope.ID
 	if s.chatSessions != nil && strings.TrimSpace(request.ProjectID) != "" {
-		session, err := s.chatSessions.Get(request.ProjectID, request.ResourceID)
+		session, err := s.chatSessions.GetScope(request.ProjectID, scope)
 		if err == nil {
 			request.History = session.Messages
 		} else if !errors.Is(err, agent.ErrChatSessionNotFound) {
@@ -2736,7 +2743,9 @@ func (s *Server) chatStream(c *gin.Context) {
 		}
 		_, promptContext := agent.BuildChatPrompt(request)
 		if (promptContext.ProjectID != "" && promptContext.ProjectID != request.ProjectID) ||
-			(promptContext.SourceID != "" && promptContext.SourceID != request.ResourceID) {
+			(promptContext.SourceID != "" && promptContext.SourceID != request.ResourceID) ||
+			(promptContext.ScopeType != "" && promptContext.ScopeType != scope.Type) ||
+			(promptContext.ScopeID != "" && promptContext.ScopeID != scope.ID) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "chat scope does not match the structured context"})
 			return
 		}
@@ -2758,9 +2767,9 @@ func (s *Server) chatStream(c *gin.Context) {
 		return
 	}
 	if s.chatSessions != nil && strings.TrimSpace(request.ProjectID) != "" {
-		if _, err := s.chatSessions.Append(
+		if _, err := s.chatSessions.AppendScope(
 			request.ProjectID,
-			request.ResourceID,
+			scope,
 			agent.Message{Role: "user", Content: request.Message},
 			agent.Message{Role: "assistant", Content: reply},
 		); err != nil {
@@ -2783,11 +2792,18 @@ func (s *Server) getChatSession(c *gin.Context) {
 	}
 	projectID := strings.TrimSpace(c.Query("project_id"))
 	resourceID := strings.TrimSpace(c.Query("resource_id"))
-	session, err := s.chatSessions.Get(projectID, resourceID)
+	scope, err := agent.ResolveChatScope(c.Query("scope_type"), c.Query("scope_id"), resourceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	session, err := s.chatSessions.GetScope(projectID, scope)
 	if errors.Is(err, agent.ErrChatSessionNotFound) {
 		c.JSON(http.StatusOK, gin.H{
 			"project_id":  projectID,
 			"resource_id": resourceID,
+			"scope_type":  scope.Type,
+			"scope_id":    scope.ID,
 			"messages":    []agent.Message{},
 		})
 		return

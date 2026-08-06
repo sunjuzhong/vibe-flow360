@@ -373,6 +373,8 @@ export default function ProjectPage() {
     [activeDraftId, drafts],
   )
   const draftMode = Boolean(requestedDraftId && activeDraft)
+  const copilotScopeType = draftMode ? 'draft' : selected ? 'resource' : 'project'
+  const copilotScopeId = draftMode ? activeDraft?.id : selected?.id
 
   const loadDraftDetail = useCallback(async () => {
     if (!activeDraftId) {
@@ -918,6 +920,8 @@ export default function ProjectPage() {
         onClose={() => setChatOpen(false)}
         projectId={projectId}
         projectName={project?.name}
+        scopeType={copilotScopeType}
+        scopeId={copilotScopeId}
         resourceId={selected?.id}
         resourceType={selected?.type}
         resourceName={selected?.name}
@@ -930,23 +934,32 @@ export default function ProjectPage() {
           }
           navigate(`/projects/${projectId}/resources/${encodeURIComponent(plan.source_id)}?plan=${encodeURIComponent(plan.id)}`)
         }}
-        contextLabel={selected ? `${selected.type} · ${selected.name}` : `Project · ${project?.name || projectId}`}
+        contextLabel={draftMode && activeDraft
+          ? `${activeDraft.name} · based on ${selected?.name || activeDraft.source_type || 'Resource'}`
+          : selected
+            ? `${selected.type} · ${selected.name}`
+            : `Project · ${project?.name || projectId}`}
         context={JSON.stringify({
           project_id: project?.id ?? projectId,
           project_name: project?.name,
           solver_version: project?.solver_version,
+          scope_type: copilotScopeType,
+          scope_id: copilotScopeId,
           source_id: selected?.id,
           source_type: selected?.type,
           source_name: selected?.name,
           source_status: resourceStatus(detail),
-          simulation_params: detail?.simulation_params,
+          simulation_params: draftMode ? draftDetail?.simulation_params : detail?.simulation_params,
           resource_info: detail?.info,
           resource_state: detail?.state,
           resource_summary: detail?.summary,
           result_artifacts: detail?.results?.records,
           partial_errors: detail?.errors,
           project_resources: items.map(({ id, name, type, parent_id }) => ({ id, name, type, parent_id })),
-          active_draft: activeDraft ? {
+          project_drafts: drafts.map(({ id, name, status, source_id, source_type }) => ({
+            id, name, status, source_id, source_type,
+          })),
+          active_draft: draftMode && activeDraft ? {
             id: activeDraft.id,
             name: activeDraft.name,
             status: resourceStatus(draftDetail),
