@@ -61,7 +61,10 @@ describe('Viewer3D layout state', () => {
       (light): light is THREE.DirectionalLight => light instanceof THREE.DirectionalLight,
     )
 
-    expect(lights.some((light) => light instanceof THREE.HemisphereLight)).toBe(true)
+    const hemisphere = lights.find((light): light is THREE.HemisphereLight => (
+      light instanceof THREE.HemisphereLight
+    ))
+    expect(hemisphere?.position.toArray()).toEqual([0, 0, 1])
     expect(lights.some((light) => light instanceof THREE.AmbientLight)).toBe(true)
     expect(directionalLights.some((light) => light.position.z > 0)).toBe(true)
     expect(directionalLights.some((light) => light.position.z < 0)).toBe(true)

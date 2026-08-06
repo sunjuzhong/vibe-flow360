@@ -104,6 +104,7 @@ export function createEngineeringLightRig() {
 
   const hemisphere = new THREE.HemisphereLight(0xffffff, 0xd9e2e8, 0.7)
   hemisphere.name = 'sky-ground-fill'
+  hemisphere.position.set(0, 0, 1)
   rig.add(hemisphere)
 
   const key = new THREE.DirectionalLight(0xffffff, 0.55)
