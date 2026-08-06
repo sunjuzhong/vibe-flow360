@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildGeometryEntityAppearances,
+  canDeleteGeometryAppearance,
+  clearGeometryAppearanceOverrides,
   cfdGeometryAppearancePresets,
   defaultGeometryAppearances,
+  geometryAppearancePresetForBoundary,
+  isGeometryAppearancePreset,
   loadGeometryAppearanceLibrary,
   loadGeometryAppearanceAssignments,
   newGeometryAppearance,
   parseGeometryAppearanceLibrary,
+  resolveGeometryAppearanceAssignments,
   saveGeometryAppearanceAssignments,
   saveGeometryAppearanceLibrary,
 } from './geometryAppearances'
@@ -64,10 +69,37 @@ describe('geometry appearance persistence', () => {
     expect(cfdGeometryAppearancePresets.every((preset) => parsed.some(({ id }) => id === preset.id))).toBe(true)
   })
 
-  it('does not recreate a deleted seeded material after migration to version 3', () => {
+  it('restores protected presets omitted by a saved version 3 library', () => {
     const storage = memoryStorage()
     saveGeometryAppearanceLibrary(defaultGeometryAppearances.filter((item) => item.id !== 'transparent'), storage)
-    expect(loadGeometryAppearanceLibrary(storage).some((item) => item.id === 'transparent')).toBe(false)
+    expect(loadGeometryAppearanceLibrary(storage).some((item) => item.id === 'transparent')).toBe(true)
+  })
+
+  it('identifies every system preset while leaving custom materials deletable', () => {
+    expect(defaultGeometryAppearances.every(({ id }) => isGeometryAppearancePreset(id))).toBe(true)
+    expect(isGeometryAppearancePreset('appearance-custom')).toBe(false)
+    expect(defaultGeometryAppearances.every(({ id }) => !canDeleteGeometryAppearance(id, defaultGeometryAppearances.length + 1))).toBe(true)
+    expect(canDeleteGeometryAppearance('appearance-custom', defaultGeometryAppearances.length + 1)).toBe(true)
+  })
+
+  it('maps solver boundary types and semantic roles to display presets', () => {
+    expect(geometryAppearancePresetForBoundary('Wall')).toBe('cfd-wall')
+    expect(geometryAppearancePresetForBoundary('Freestream')).toBe('cfd-farfield')
+    expect(geometryAppearancePresetForBoundary('VelocityInlet')).toBe('cfd-inflow')
+    expect(geometryAppearancePresetForBoundary('PressureOutflow')).toBe('cfd-outflow')
+    expect(geometryAppearancePresetForBoundary('SlipWall')).toBe('cfd-slip-wall')
+    expect(geometryAppearancePresetForBoundary('Periodic')).toBe('cfd-periodic')
+    expect(geometryAppearancePresetForBoundary('unknown')).toBeNull()
+  })
+
+  it('reactively resolves params, semantic edits, and explicit visual overrides in priority order', () => {
+    expect(resolveGeometryAppearanceAssignments(
+      { wing: 'cfd-wall', farfield: 'cfd-farfield' },
+      { wing: 'cfd-slip-wall' },
+      { wing: 'custom-red' },
+    )).toEqual({ wing: 'custom-red', farfield: 'cfd-farfield' })
+    expect(clearGeometryAppearanceOverrides({ wing: 'custom-red', farfield: 'custom-blue' }, ['wing']))
+      .toEqual({ farfield: 'custom-blue' })
   })
 
   it('keeps Surface associations stable when a material name changes', () => {

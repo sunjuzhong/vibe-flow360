@@ -52,14 +52,20 @@ import {
 import { resourceStatus } from './ResourceDetailPanel'
 import {
   buildGeometryEntityAppearances,
+  canDeleteGeometryAppearance,
+  clearGeometryAppearanceOverrides,
+  geometryAppearancePresetForBoundary,
   isCfdGeometryAppearancePreset,
+  isGeometryAppearancePreset,
   loadGeometryAppearanceAssignments,
   loadGeometryAppearanceLibrary,
   newGeometryAppearance,
+  resolveGeometryAppearanceAssignments,
   saveGeometryAppearanceAssignments,
   saveGeometryAppearanceLibrary,
   type GeometryAppearance,
 } from '../lib/geometryAppearances'
+import { buildSurfaceBoundaryInventory } from '../lib/surfaceMeshReview'
 import {
   LazyViewer3D,
   type ViewerCameraCommand,
@@ -108,7 +114,7 @@ function GeometryAppearanceOptions({ appearances }: { appearances: GeometryAppea
         </optgroup>
       )}
       {cfd.length > 0 && (
-        <optgroup label="CFD boundary display presets">
+        <optgroup label="CFD-inspired display presets">
           {cfd.map((appearance) => (
             <option key={appearance.id} value={appearance.id}>{appearance.name}</option>
           ))}
@@ -237,24 +243,54 @@ export default function GeometryWorkspace({
   )
   const defaultAppearance = appearanceById.get('default-cad') ?? appearances[0]
   const selectedAppearance = appearanceById.get(selectedAppearanceId) ?? defaultAppearance
+  const selectedAppearanceIsPreset = isGeometryAppearancePreset(selectedAppearance?.id ?? '')
+  const selectedAppearanceCanDelete = canDeleteGeometryAppearance(selectedAppearance?.id ?? '', appearances.length)
+  const parameterBoundaryInventory = useMemo(
+    () => buildSurfaceBoundaryInventory(manifest?.groups ?? [], detail?.simulation_params),
+    [detail?.simulation_params, manifest?.groups],
+  )
+  const parameterAppearanceAssignments = useMemo(
+    () => Object.fromEntries(parameterBoundaryInventory.flatMap((surface) => {
+      if (surface.status !== 'assigned') return []
+      const presetId = geometryAppearancePresetForBoundary(surface.assignments[0]?.modelType ?? '')
+      return presetId ? [[surface.id, presetId]] : []
+    })),
+    [parameterBoundaryInventory],
+  )
+  const semanticAppearanceAssignments = useMemo(
+    () => Object.fromEntries(Object.values(assignments).flatMap((assignment) => {
+      const presetId = geometryAppearancePresetForBoundary(assignment.role)
+      return presetId ? [[assignment.groupId, presetId]] : []
+    })),
+    [assignments],
+  )
+  const effectiveAppearanceAssignments = useMemo(
+    () => resolveGeometryAppearanceAssignments(
+      parameterAppearanceAssignments,
+      semanticAppearanceAssignments,
+      appearanceAssignments,
+    ),
+    [appearanceAssignments, parameterAppearanceAssignments, semanticAppearanceAssignments],
+  )
   const appearanceForGroup = (groupId: string) =>
-    appearanceById.get(appearanceAssignments[groupId]) ?? defaultAppearance
+    appearanceById.get(effectiveAppearanceAssignments[groupId]) ?? defaultAppearance
   const entityAppearances = useMemo(
     () => buildGeometryEntityAppearances(
-      appearanceAssignments,
+      effectiveAppearanceAssignments,
       appearances,
       manifest?.groups.map((group) => group.id) ?? [],
       defaultAppearance?.id,
     ),
-    [appearanceAssignments, appearances, defaultAppearance?.id, manifest],
+    [appearances, defaultAppearance?.id, effectiveAppearanceAssignments, manifest],
   )
   const selectedAppearanceNames = new Set(selectedGroups.map((group) => appearanceForGroup(group.id)?.name))
-  const selectedSurfaceAppearanceIds = new Set(
-    selectedGroups.map((group) => appearanceForGroup(group.id)?.id).filter(Boolean),
-  )
-  const selectedSurfaceAppearanceId = selectedSurfaceAppearanceIds.size === 1
-    ? [...selectedSurfaceAppearanceIds][0]
-    : '__mixed__'
+  const selectedSurfaceOverrideIds = selectedGroups.map((group) => appearanceAssignments[group.id])
+  const selectedSurfaceOverrideIdSet = new Set(selectedSurfaceOverrideIds.filter(Boolean))
+  const selectedSurfaceAppearanceId = selectedSurfaceOverrideIds.every((id) => !id)
+    ? '__cfd_auto__'
+    : selectedSurfaceOverrideIds.every(Boolean) && selectedSurfaceOverrideIdSet.size === 1
+      ? [...selectedSurfaceOverrideIdSet][0]
+      : '__mixed__'
 
   useEffect(() => {
     setViewerSelection({ groupId: null })
@@ -304,6 +340,11 @@ export default function GeometryWorkspace({
   }
 
   const assignSurfaceMaterial = (appearanceId: string) => {
+    if (appearanceId === '__cfd_auto__') {
+      const next = clearGeometryAppearanceOverrides(appearanceAssignments, selectedGroups.map(({ id }) => id))
+      setGeometryAppearanceAssignments(next)
+      return
+    }
     setSelectedAppearanceId(appearanceId)
     applyAppearanceToSelection(appearanceId)
   }
@@ -340,7 +381,7 @@ export default function GeometryWorkspace({
 
   const deleteAppearance = () => {
     const current = appearances.find((item) => item.id === selectedAppearanceId)
-    if (!current || appearances.length <= 1) return
+    if (!current || !canDeleteGeometryAppearance(current.id, appearances.length)) return
     const nextLibrary = appearances.filter((item) => item.id !== current.id)
     const fallback = nextLibrary[0]
     const nextAssignments = Object.fromEntries(
@@ -840,6 +881,9 @@ export default function GeometryWorkspace({
                 {selectedSurfaceAppearanceId === '__mixed__' && (
                   <option value="__mixed__" disabled>Mixed materials</option>
                 )}
+                <option value="__cfd_auto__">
+                  Follow CFD semantics{selectedAppearanceNames.size === 1 ? ` · ${[...selectedAppearanceNames][0]}` : ''}
+                </option>
                 <GeometryAppearanceOptions appearances={appearances} />
               </select>
             </label>
@@ -849,11 +893,15 @@ export default function GeometryWorkspace({
         <details className="geometry-appearance-card geometry-disclosure-card" open>
           <summary>
             <span><Palette size={13} /> Display material</span>
-            <small>Shared across projects</small>
+            <small>Visual appearance only</small>
           </summary>
           <div className="geometry-disclosure-content">
+            <div className="geometry-panel-intent">
+              <strong>How the model looks</strong>
+              <span>3D appearance follows current CFD roles by default. Choosing a material here creates a visual override; it does not change SimulationParams.</span>
+            </div>
             <label className="geometry-semantic-field">
-              Material record
+              Display material
               <select value={selectedAppearanceId} onChange={(event) => setSelectedAppearanceId(event.target.value)}>
                 <GeometryAppearanceOptions appearances={appearances} />
               </select>
@@ -875,16 +923,21 @@ export default function GeometryWorkspace({
               disabled={selectedGroups.length === 0}
               onClick={() => applyAppearanceToSelection()}
             >
-              Apply material to selected ({selectedGroups.length})
+              Override selected surfaces ({selectedGroups.length})
             </button>
             <div className="geometry-appearance-actions">
               <button type="button" onClick={createAppearance}><Plus size={11} /> New</button>
               <button type="button" onClick={duplicateAppearance}>Duplicate</button>
-              <button type="button" disabled={appearances.length <= 1} onClick={deleteAppearance}><Trash2 size={11} /> Delete</button>
+              <button
+                type="button"
+                disabled={!selectedAppearanceCanDelete}
+                onClick={deleteAppearance}
+                title={selectedAppearanceIsPreset ? 'System presets cannot be deleted. Duplicate it to create a custom material.' : 'Delete custom display material'}
+              ><Trash2 size={11} /> Delete</button>
             </div>
             <small className="geometry-semantic-safety">
-              Visual display only; CFD boundary semantics are assigned separately below. Material ID: {selectedAppearance?.id}.
-              Names are editable labels; Surface links use the stable ID.
+              {selectedAppearanceIsPreset ? 'Protected system preset. ' : 'Custom display material. '}
+              Shared across projects · Material ID: {selectedAppearance?.id}. Names are editable labels; Surface links use the stable ID.
             </small>
           </div>
         </details>
@@ -892,9 +945,13 @@ export default function GeometryWorkspace({
         <details className="geometry-semantics-card geometry-disclosure-card">
           <summary>
             <span><Sparkles size={13} /> CFD semantic draft</span>
-            <small>{assignmentList.length}/{manifest?.groups.length ?? 0} assigned</small>
+            <small>Solver roles · {assignmentList.length}/{manifest?.groups.length ?? 0}</small>
           </summary>
           <div className="geometry-disclosure-content">
+          <div className="geometry-panel-intent">
+            <strong>What the surface means physically</strong>
+            <span>This is the physical source of truth. Wall, Farfield, Inflow and other roles automatically drive 3D display presets unless a surface has a visual override.</span>
+          </div>
           <div className="geometry-semantic-progress">
             <span>{assignmentList.length} assigned</span>
             <span>{unassignedCount} unassigned</span>

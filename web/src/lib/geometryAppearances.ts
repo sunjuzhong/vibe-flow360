@@ -33,9 +33,51 @@ export const defaultGeometryAppearances: GeometryAppearance[] = [
 ]
 
 const cfdPresetIds = new Set(cfdGeometryAppearancePresets.map(({ id }) => id))
+const presetIds = new Set(defaultGeometryAppearances.map(({ id }) => id))
 
 export function isCfdGeometryAppearancePreset(id: string): boolean {
   return cfdPresetIds.has(id)
+}
+
+export function isGeometryAppearancePreset(id: string): boolean {
+  return presetIds.has(id)
+}
+
+export function canDeleteGeometryAppearance(id: string, librarySize: number): boolean {
+  return librarySize > 1 && !isGeometryAppearancePreset(id)
+}
+
+export function geometryAppearancePresetForBoundary(boundaryType: string): string | null {
+  const normalized = boundaryType.replace(/[^a-z0-9]/gi, '').toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes('porous') || normalized.includes('jump')) return 'cfd-porous-jump'
+  if (normalized.includes('periodic')) return 'cfd-periodic'
+  if (normalized.includes('symmetry')) return 'cfd-symmetry'
+  if (normalized.includes('slip')) return 'cfd-slip-wall'
+  if (normalized.includes('freestream') || normalized.includes('farfield')) return 'cfd-farfield'
+  if (normalized.includes('inflow') || normalized.includes('inlet')) return 'cfd-inflow'
+  if (normalized.includes('outflow') || normalized.includes('outlet')) return 'cfd-outflow'
+  if (normalized.includes('rotating') || normalized.includes('rotation')) return 'rotating'
+  if (normalized.includes('wall') || normalized === 'ground') return 'cfd-wall'
+  if (normalized === 'exclude') return 'transparent'
+  return null
+}
+
+export function resolveGeometryAppearanceAssignments(
+  parameterAssignments: Record<string, string>,
+  semanticDraftAssignments: Record<string, string>,
+  manualOverrides: Record<string, string>,
+): Record<string, string> {
+  return { ...parameterAssignments, ...semanticDraftAssignments, ...manualOverrides }
+}
+
+export function clearGeometryAppearanceOverrides(
+  overrides: Record<string, string>,
+  groupIds: string[],
+): Record<string, string> {
+  const cleared = { ...overrides }
+  for (const groupId of groupIds) delete cleared[groupId]
+  return cleared
 }
 
 function validAppearance(value: unknown): value is GeometryAppearance {
@@ -54,8 +96,7 @@ export function parseGeometryAppearanceLibrary(raw: string | null): GeometryAppe
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const versioned = parsed as { version?: number; items?: unknown[] }
       if (versioned.version === 3 && Array.isArray(versioned.items)) {
-        const items = versioned.items.filter(validAppearance)
-        return items.length > 0 ? items : defaultGeometryAppearances
+        stored = versioned.items.filter(validAppearance)
       }
       if (versioned.version === 2 && Array.isArray(versioned.items)) {
         stored = versioned.items.filter(validAppearance)
@@ -67,7 +108,7 @@ export function parseGeometryAppearanceLibrary(raw: string | null): GeometryAppe
       return override ? { ...preset, ...override } : preset
     })
     const custom = legacy.filter((item) =>
-      !defaultGeometryAppearances.some((preset) => preset.id === item.id),
+      !isGeometryAppearancePreset(item.id),
     )
     return [...seeded, ...custom]
   } catch {

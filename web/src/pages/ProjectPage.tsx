@@ -411,6 +411,11 @@ export default function ProjectPage() {
     () => items.find((item) => item.id === activeDraft?.source_id) ?? null,
     [activeDraft?.source_id, items],
   )
+  const workspaceDetail = useMemo(() => (
+    detail && draftMode && draftDetail?.simulation_params
+      ? { ...detail, simulation_params: draftDetail.simulation_params }
+      : detail
+  ), [detail, draftDetail?.simulation_params, draftMode])
   const surfaceMeshVersions = useMemo(
     () => items.filter((item) => (
       item.type === 'SurfaceMesh'
@@ -686,7 +691,7 @@ export default function ProjectPage() {
             {selected.type === 'Geometry' && (
               <GeometryWorkspace
                 key={selected.id}
-                detail={detail}
+                detail={workspaceDetail}
                 resourceId={selected.id}
                 projectId={projectId}
                 resourceRef={{ id: selected.id, type: selected.type }}
@@ -738,7 +743,7 @@ export default function ProjectPage() {
             {selected.type === 'SurfaceMesh' && (
               <SurfaceMeshWorkspace
                 key={selected.id}
-                detail={detail}
+                detail={workspaceDetail}
                 resourceId={selected.id}
                 projectId={projectId}
                 resourceRef={{ id: selected.id, type: selected.type }}
@@ -772,7 +777,7 @@ export default function ProjectPage() {
             {selected.type === 'VolumeMesh' && (
               <VolumeMeshWorkspace
                 key={selected.id}
-                detail={detail}
+                detail={workspaceDetail}
                 resourceId={selected.id}
                 projectId={projectId}
                 resourceRef={{ id: selected.id, type: selected.type }}
@@ -791,7 +796,7 @@ export default function ProjectPage() {
             {selected.type === 'Case' && (
               <CaseWorkspace
                 key={selected.id}
-                detail={detail}
+                detail={workspaceDetail}
                 resourceId={selected.id}
                 projectId={projectId}
                 resourceRef={{ id: selected.id, type: selected.type }}
