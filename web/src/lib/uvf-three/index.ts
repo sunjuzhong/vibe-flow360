@@ -10,6 +10,8 @@ export {
   findFieldExtrema,
   probeFieldAtIntersection,
   setWireframeOverlay,
+  wireframeOpacityForTriangleCount,
+  wireframeOverlayOpacity,
   setEntityVisibility,
   setGroupVisibility,
   validateUVFBufferFileCount,

@@ -4,7 +4,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setWireframeOverlay, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setWireframeOverlay, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldExtrema, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
@@ -607,7 +607,7 @@ export function Viewer3D({
       materials.forEach((material) => {
         if (!(material instanceof THREE.LineBasicMaterial)) return
         material.color.set(0x30352d)
-        material.opacity = 0.72
+        material.opacity = wireframeOverlayOpacity(object) ?? 0.72
         material.needsUpdate = true
       })
     })
@@ -617,7 +617,7 @@ export function Viewer3D({
       materials.forEach((material) => {
         if (!(material instanceof THREE.LineBasicMaterial)) return
         material.color.set(0xd59a2d)
-        material.opacity = 1
+        material.opacity = wireframeOverlayOpacity(object, true) ?? 1
         material.needsUpdate = true
       })
     })

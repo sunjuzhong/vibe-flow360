@@ -550,17 +550,22 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
     const materials = Array.isArray(face.material) ? face.material : [face.material]
     if (visible) {
       if (existing) continue
+      const indexCount = face.geometry.getIndex()?.count
+        ?? face.geometry.getAttribute('position')?.count
+        ?? 0
+      const overlayOpacity = wireframeOpacityForTriangleCount(Math.floor(indexCount / 3))
       const overlay = new THREE.LineSegments(
         new THREE.WireframeGeometry(face.geometry),
         new THREE.LineBasicMaterial({
           color: 0x30352d,
           transparent: true,
-          opacity: 0.72,
+          opacity: overlayOpacity,
           depthWrite: false,
         }),
       )
       overlay.name = `${face.name || face.uuid} wire overlay`
       overlay.userData.uvfWireframeOverlay = true
+      overlay.userData.uvfWireframeOpacity = overlayOpacity
       overlay.userData.uvfType = 'WireframeOverlay'
       overlay.renderOrder = face.renderOrder + 1
       face.add(overlay)
@@ -598,6 +603,19 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
       material.needsUpdate = true
     }
   }
+}
+
+export function wireframeOpacityForTriangleCount(triangleCount: number): number {
+  if (!Number.isFinite(triangleCount) || triangleCount <= 0) return 0.32
+  const densityAdjusted = 0.12 + 0.5 / (1 + Math.sqrt(triangleCount / 1_500))
+  return Math.max(0.16, Math.min(0.42, densityAdjusted))
+}
+
+export function wireframeOverlayOpacity(object: THREE.Object3D, selected = false): number | null {
+  if (object.userData.uvfWireframeOverlay !== true) return null
+  const stored = object.userData.uvfWireframeOpacity
+  const base = typeof stored === 'number' && Number.isFinite(stored) ? stored : 0.32
+  return selected ? Math.max(base, 0.48) : base
 }
 
 export function setEntityVisibility(asset: UVFAsset, entityId: string, visible: boolean): void {

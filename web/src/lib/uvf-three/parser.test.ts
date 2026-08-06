@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay, validateUVFBufferFileCount } from '.'
+import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
+  it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
+    expect(wireframeOpacityForTriangleCount(100)).toBeGreaterThan(0.35)
+    expect(wireframeOpacityForTriangleCount(90_000)).toBeLessThan(0.2)
+    expect(wireframeOpacityForTriangleCount(1_000_000)).toBe(0.16)
+  })
+
   it('decodes indexed faces and edge positions', () => {
     const manifest = parseUVFManifest([
       {
@@ -319,6 +325,9 @@ describe('Flow360 UVF Three.js library', () => {
     expect(faceMesh.children.filter((child) => child.userData.uvfWireframeOverlay)).toHaveLength(1)
     const wireOverlay = faceMesh.children.find((child) => child.userData.uvfWireframeOverlay) as THREE.LineSegments
     expect(wireOverlay).toBeInstanceOf(THREE.LineSegments)
+    expect((wireOverlay.material as THREE.LineBasicMaterial).opacity).toBe(wireframeOpacityForTriangleCount(1))
+    expect(wireframeOverlayOpacity(wireOverlay)).toBe((wireOverlay.material as THREE.LineBasicMaterial).opacity)
+    expect(wireframeOverlayOpacity(wireOverlay, true)).toBeGreaterThanOrEqual(0.48)
     const disposeWireGeometry = vi.spyOn(wireOverlay.geometry, 'dispose')
     const disposeWireMaterial = vi.spyOn(wireOverlay.material as THREE.Material, 'dispose')
     setWireframeOverlay(asset, true)
