@@ -5,13 +5,13 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 
 const ALLOWED_EXTENSIONS: Record<string, string[]> = {
-  geometry: ['.step', '.stp', '.igs', '.iges', '.brep', '.cax', '.catpart', '.catproduct'],
+  geometry: ['.step', '.stp', '.igs', '.iges', '.brep', '.csm', '.cax', '.catpart', '.catproduct'],
   'surface-mesh': ['.cgns', '.dat', '.key', '.k', '.msh', '.nas', '.bdf', '.inp', '.vtk', '.vtu'],
   'volume-mesh': ['.cgns', '.dat', '.key', '.k', '.msh', '.nas', '.bdf', '.inp', '.vtk', '.vtu'],
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  geometry: 'Geometry (STEP, IGES, BREP, CATIA)',
+  geometry: 'Geometry (CSM, STEP, IGES, BREP, CATIA)',
   'surface-mesh': 'Surface Mesh (CGNS, NASTRAN, Abaqus, SU2)',
   'volume-mesh': 'Volume Mesh (CGNS, NASTRAN, Abaqus, SU2)',
 }

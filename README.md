@@ -148,6 +148,9 @@ vibe-flow360 version
 Open `/tutorials` from the top navigation to enter the tutorial library. T01
 teaches the engineering question, geometry semantics, parameter provenance,
 the controlled 0°/5° variant, and the evidence contract entirely in the Web UI.
+Its final step can create a processed Flow360 Geometry and two preconfigured,
+locally reviewable Case Plans after an explicit Project-creation confirmation;
+mesh and Case execution remain separately locked behind the normal approval gate.
 
 ## Agent configuration
 ## Agent configuration

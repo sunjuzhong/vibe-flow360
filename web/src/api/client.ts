@@ -814,6 +814,15 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(message)
 }
 
+export function importPlanRequestPath(form: FormData): string {
+  const params = new URLSearchParams()
+  for (const key of ['name', 'source_type', 'unit', 'workflow', 'solver_version', 'folder_id', 'tags']) {
+    const value = form.get(key)
+    if (typeof value === 'string' && value.trim()) params.set(key, value.trim())
+  }
+  return `/api/imports${params.size ? `?${params.toString()}` : ''}`
+}
+
 export const api = {
   annotations: annotationsApi,
   flow360Status: () => json<Flow360Status>('/api/flow360/status'),
@@ -995,7 +1004,7 @@ export const api = {
   runPlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/run`),
   stageImport: async (form: FormData) => {
-    const response = await fetch('/api/imports', { method: 'POST', body: form })
+    const response = await fetch(importPlanRequestPath(form), { method: 'POST', body: form })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(body.error || response.statusText)
     return body as ImportPlan
@@ -1006,7 +1015,7 @@ export const api = {
     return json<ImportPlan[]>(`/api/imports${params.toString() ? `?${params.toString()}` : ''}`)
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
-  runImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run`),
+  runImport: (id: string, sync = false) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run${sync ? '?sync=true' : ''}`),
   aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string) => {
     const response = await fetch('/api/ai-create', {
       method: 'POST',

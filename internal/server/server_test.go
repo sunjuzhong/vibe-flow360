@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,10 +22,66 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/geometrydiag"
+	importplans "github.com/sunjuzhong/vibe-flow360/internal/imports"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 )
+
+func TestTutorialCSMImportWaitsForProcessedGeometry(t *testing.T) {
+	if !slices.Contains(allowedImportExtensions["geometry"], ".csm") {
+		t.Fatal("tutorial CSM is not an allowed Geometry import")
+	}
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+printf '%s ' "$@" > "` + argsPath + `"
+printf '{"project_id":"prj-1","geometry_id":"geo-1"}'
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := importplans.New(filepath.Join(dir, "imports"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, _, err := store.Create(importplans.Plan{
+		Name: "T01 experiment", SourceType: "geometry", Unit: "m", Workflow: "standard",
+		SolverVersion: "release-25.10", FolderID: "folder-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := store.AddFile(created.ID, "geometry.csm", strings.NewReader("despmtr tutorial"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FinalizePlan(created.ID, []importplans.FileInfo{file}, file.SizeBytes, []string{"flow360"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(created.ID, func(plan *importplans.Plan) error {
+		plan.Status = "approved"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}, imports: store}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Params = gin.Params{{Key: "import_id", Value: created.ID}}
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/imports/"+created.ID+"/run?sync=true", nil)
+	app.runImport(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"project_id":"prj-1"`) {
+		t.Fatalf("unexpected import response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	args, _ := os.ReadFile(argsPath)
+	if !strings.Contains(string(args), "project create") || !strings.Contains(string(args), "--sync") || !strings.Contains(string(args), "geometry.csm") {
+		t.Fatalf("tutorial import did not use synchronous project creation: %s", args)
+	}
+}
 
 func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 	tests := map[string]struct {

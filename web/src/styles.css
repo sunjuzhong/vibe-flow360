@@ -659,6 +659,53 @@ button { color: inherit; }
 .lesson-previous:disabled { opacity: .4; cursor: default; }
 .lesson-next { justify-self: end; border: 1px solid #24281f; color: #fff; background: #24281f; }
 
+.tutorial-environment-builder,
+.tutorial-environment-success { margin-top: 14px; padding: 20px; border: 1px solid #d5d9c9; border-radius: 11px; background: #fafaf7; }
+.environment-builder-heading,
+.environment-success-heading { display: flex; gap: 14px; align-items: flex-start; }
+.environment-builder-heading > div:last-child > span,
+.environment-success-heading > div > span { color: #71842c; font-family: 'DM Mono', monospace; font-size: 7px; letter-spacing: .08em; }
+.environment-builder-heading strong,
+.environment-success-heading strong { display: block; margin: 5px 0; color: #35400f; font-size: 15px; }
+.environment-builder-heading p,
+.environment-success-heading p { margin: 0; color: #79806f; font-size: 9px; line-height: 1.5; }
+.environment-success-heading > svg { flex: 0 0 auto; color: #78951f; }
+.environment-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 17px; }
+.environment-form-grid label { display: grid; gap: 5px; color: #62685d; font-size: 8px; font-weight: 700; }
+.environment-form-grid input,
+.environment-form-grid select { width: 100%; min-width: 0; height: 37px; padding: 0 10px; border: 1px solid #d5d8ce; border-radius: 7px; color: #34382f; background: #fff; font-size: 9px; }
+.environment-form-grid input:focus,
+.environment-form-grid select:focus { outline: 2px solid rgba(126, 157, 31, .2); border-color: #9caf5d; }
+.environment-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.environment-summary > div { display: flex; gap: 8px; padding: 11px; border-radius: 7px; color: #66751f; background: #f3f6e7; }
+.environment-summary svg { flex: 0 0 auto; }
+.environment-summary strong,
+.environment-summary small { display: block; }
+.environment-summary strong { color: #4b581b; font-size: 8px; }
+.environment-summary small { margin-top: 3px; color: #858b78; font-size: 7px; line-height: 1.4; }
+.environment-progress { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; padding: 12px; border: 1px solid #e0e2db; border-radius: 8px; background: #f7f8f3; }
+.environment-progress > div { position: relative; display: grid; justify-items: center; gap: 5px; color: #a1a69b; text-align: center; }
+.environment-progress > div::before { position: absolute; top: 10px; right: 50%; left: -50%; height: 1px; content: ''; background: #d9dcd2; }
+.environment-progress > div:first-child::before { display: none; }
+.environment-progress > div > span { z-index: 1; display: grid; width: 21px; height: 21px; place-items: center; border: 1px solid #cdd1c7; border-radius: 50%; background: #f7f8f3; font-family: 'DM Mono'; font-size: 7px; }
+.environment-progress > div.active,
+.environment-progress > div.complete { color: #5a7115; }
+.environment-progress > div.active > span { color: #fff; border-color: #78951f; background: #78951f; box-shadow: 0 0 0 4px rgba(120,149,31,.11); }
+.environment-progress > div.complete > span { color: #fff; border-color: #8ba53d; background: #8ba53d; }
+.environment-progress > div.complete::before { background: #9db65a; }
+.environment-progress small { font-size: 7px; line-height: 1.3; }
+.environment-confirm { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; color: #6f756a; font-size: 8px; line-height: 1.5; cursor: pointer; }
+.environment-confirm input { margin: 2px 0 0; accent-color: #78951f; }
+.environment-create-button { display: inline-flex; min-height: 39px; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; padding: 0 15px; border: 1px solid #25291f; border-radius: 8px; color: #fff; background: #25291f; font-size: 9px; font-weight: 700; cursor: pointer; }
+.environment-create-button:disabled { color: #989d93; border-color: #dbddd6; background: #eceee8; cursor: not-allowed; }
+.environment-plan-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 16px; }
+.environment-plan-pair article { padding: 14px; border: 1px solid #d8deca; border-radius: 8px; background: #f6f9ec; }
+.environment-plan-pair article > span { color: #7c8c44; font-family: 'DM Mono'; font-size: 7px; letter-spacing: .06em; }
+.environment-plan-pair strong,
+.environment-plan-pair small { display: block; }
+.environment-plan-pair strong { margin: 6px 0 3px; color: #3c4913; font-size: 15px; }
+.environment-plan-pair small { color: #758054; font-size: 8px; }
+
 @media (max-width: 960px) {
   .tutorial-card { grid-template-columns: 165px minmax(0,1fr); }
   .tutorial-player-page { grid-template-columns: 240px minmax(0, 1fr); }
@@ -679,6 +726,10 @@ button { color: inherit; }
   .tutorial-lesson { min-height: auto; }
   .lesson-content { min-height: auto; padding-top: 36px; }
   .lesson-objectives, .geometry-assumptions, .parameter-learning-grid, .setup-checks, .run-boundary-grid { grid-template-columns: 1fr; }
+  .environment-form-grid, .environment-summary, .environment-plan-pair { grid-template-columns: 1fr; }
+  .environment-progress { grid-template-columns: 1fr; gap: 8px; }
+  .environment-progress > div { grid-template-columns: 24px 1fr; justify-items: start; align-items: center; text-align: left; }
+  .environment-progress > div::before { top: -8px; bottom: auto; left: 10px; width: 1px; height: 16px; }
   .geometry-assumptions > div { border-right: 0; border-bottom: 1px solid #e1e3dc; }
   .alpha-experiment { grid-template-columns: 1fr; }
   .semantic-diff { grid-column: auto; }

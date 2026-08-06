@@ -1,5 +1,7 @@
 import baselineDocument from '../../../tutorials/T01-first-lift-drag/simulation.json'
 import alphaFivePatch from '../../../tutorials/T01-first-lift-drag/variants/alpha-5deg.patch.json'
+import geometryUrl from '../../../tutorials/T01-first-lift-drag/assets/geometry.csm?url'
+import type { ImportPlan, SimulationPlan } from '../api/client'
 
 export type TutorialStep = {
   id: string
@@ -13,6 +15,32 @@ export type SetupCheck = {
   label: string
   detail: string
   passed: boolean
+}
+
+export type TutorialEnvironmentStage = 'staging' | 'creating-project' | 'creating-plans' | 'ready'
+
+export type TutorialEnvironmentClient = {
+  stageImport: (form: FormData) => Promise<ImportPlan>
+  approveImport: (id: string) => Promise<ImportPlan>
+  runImport: (id: string, sync?: boolean) => Promise<ImportPlan>
+  createPlan: (input: {
+    project_id: string
+    project_name: string
+    source_id: string
+    source_type: string
+    source_name: string
+    target: string
+    name: string
+    intent: string
+    patch: Record<string, unknown>
+  }) => Promise<SimulationPlan>
+}
+
+export type TutorialEnvironmentResult = {
+  projectId: string
+  geometryId: string
+  baselinePlan: SimulationPlan
+  variantPlan: SimulationPlan
 }
 
 export const t01Steps: TutorialStep[] = [
@@ -119,4 +147,64 @@ export function validateT01Setup(params: Record<string, unknown>): SetupCheck[] 
 export function tutorialProgress(completed: string[]): number {
   const unique = new Set(completed.filter((id) => t01Steps.some((step) => step.id === id)))
   return Math.round((unique.size / t01Steps.length) * 100)
+}
+
+function resultIdentifier(result: unknown, key: string): string {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return ''
+  const value = (result as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+export async function createT01Environment(
+  input: { folderId: string; projectName: string },
+  client: TutorialEnvironmentClient,
+  onStage: (stage: TutorialEnvironmentStage) => void = () => undefined,
+  fetchAsset: typeof fetch = fetch,
+): Promise<TutorialEnvironmentResult> {
+  onStage('staging')
+  const response = await fetchAsset(geometryUrl)
+  if (!response.ok) throw new Error('The bundled T01 geometry could not be loaded.')
+  const form = new FormData()
+  form.set('name', input.projectName)
+  form.set('source_type', 'geometry')
+  form.set('unit', 'm')
+  form.set('workflow', 'standard')
+  form.set('solver_version', 'release-25.10')
+  form.set('folder_id', input.folderId)
+  form.set('tags', 'tutorial,T01')
+  form.append('files', await response.blob(), 'geometry.csm')
+
+  const staged = await client.stageImport(form)
+  const approved = await client.approveImport(staged.id)
+  onStage('creating-project')
+  const submitted = await client.runImport(approved.id, true)
+  const projectId = resultIdentifier(submitted.result, 'project_id')
+  const geometryId = resultIdentifier(submitted.result, 'root_resource_id')
+  if (!projectId || !geometryId) throw new Error('Flow360 created the tutorial Project without returning its Geometry identifiers.')
+
+  onStage('creating-plans')
+  const shared = {
+    project_id: projectId,
+    project_name: input.projectName,
+    source_id: geometryId,
+    source_type: 'Geometry',
+    source_name: 'T01 Airplane Geometry',
+    target: 'case',
+  }
+  const [baselinePlan, variantPlan] = await Promise.all([
+    client.createPlan({
+      ...shared,
+      name: 'T01 baseline · α 0°',
+      intent: 'Create the reviewed T01 baseline Case at zero degrees angle of attack.',
+      patch: t01ParamsForAlpha(0),
+    }),
+    client.createPlan({
+      ...shared,
+      name: 'T01 variant · α 5°',
+      intent: 'Create the controlled T01 Case variant at five degrees angle of attack.',
+      patch: t01ParamsForAlpha(5),
+    }),
+  ])
+  onStage('ready')
+  return { projectId, geometryId, baselinePlan, variantPlan }
 }

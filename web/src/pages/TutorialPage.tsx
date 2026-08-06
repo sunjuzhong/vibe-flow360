@@ -20,6 +20,7 @@ import { Link, Navigate, useParams } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
 import { api } from '../api/client'
 import TopBar from '../components/TopBar'
+import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
 import {
   t01Evidence,
   t01ParameterCards,
@@ -190,13 +191,7 @@ export default function TutorialPage() {
             <div className="run-ready-icon"><CheckCircle2 size={30}/></div>
             <div><span>LOCAL TUTORIAL STATUS</span><strong>Baseline and 5° variant validated</strong><p>35 schema and workflow capabilities are backed by the pinned Flow360 25.10.3 tutorial artifact.</p></div>
           </div>
-          <div className="run-boundary-grid">
-            <div><span>1</span><strong>Choose a workspace folder</strong><p>The cloud Project will be created in the folder you select.</p></div>
-            <div><span>2</span><strong>Review cost and environment</strong><p>Confirm solver release, geometry units, and the paid execution boundary.</p></div>
-            <div><span>3</span><strong>Create both Cases</strong><p>Run baseline and 5° as a controlled pair, then evaluate the evidence contract.</p></div>
-          </div>
-          <div className={`cloud-readiness ${status?.available ? 'online' : ''}`}><Cloud size={17}/><span><strong>{status?.available ? 'Flow360 is connected' : 'Flow360 connection required'}</strong><small>{status?.available ? `${status.environment || 'production'} · ${status.profile || 'default'}` : 'You can finish the browser tutorial offline and connect later.'}</small></span></div>
-          <Link className="lesson-workspace-button" to="/"><span>Continue in workspace</span><ArrowRight size={17}/></Link>
+          <TutorialEnvironmentBuilder status={status}/>
         </>
     }
   }

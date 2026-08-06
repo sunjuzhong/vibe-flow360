@@ -1,0 +1,132 @@
+import { AlertTriangle, Check, CheckCircle2, Cloud, Folder, RefreshCw, Rocket } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api, type Flow360Status, type FolderNode } from '../api/client'
+import {
+  createT01Environment,
+  type TutorialEnvironmentResult,
+  type TutorialEnvironmentStage,
+} from '../tutorials/t01'
+
+export type FolderOption = { id: string; label: string }
+
+export function tutorialFolderOptions(root: FolderNode): FolderOption[] {
+  const options: FolderOption[] = []
+  const visit = (node: FolderNode, parents: string[]) => {
+    const path = [...parents, node.name]
+    options.push({ id: node.id, label: path.join(' / ') })
+    for (const child of node.subfolders ?? []) visit(child, path)
+  }
+  for (const folder of root.subfolders ?? []) visit(folder, [])
+  if (!options.length) options.push({ id: root.id, label: root.name })
+  return options
+}
+
+export function preferredTutorialFolder(options: FolderOption[]): string {
+  return options.find((option) => option.label.trim().toLowerCase() === 'tutorials')?.id ?? options[0]?.id ?? ''
+}
+
+const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-plans', 'ready']
+const stageCopy: Record<TutorialEnvironmentStage, string> = {
+  staging: 'Stage bundled geometry',
+  'creating-project': 'Create and process Geometry',
+  'creating-plans': 'Compile two configured Case Plans',
+  ready: 'Ready for review',
+}
+
+function planState(plan: TutorialEnvironmentResult['baselinePlan']) {
+  if (plan.preflight?.valid) return 'Preflight passed'
+  if (plan.preflight) return 'Needs review'
+  return 'Draft created'
+}
+
+export default function TutorialEnvironmentBuilder({ status }: { status: Flow360Status | null }) {
+  const navigate = useNavigate()
+  const [folders, setFolders] = useState<FolderOption[]>([])
+  const [folderId, setFolderId] = useState('')
+  const [projectName, setProjectName] = useState('Tutorial T01 · Lift and drag')
+  const [confirmed, setConfirmed] = useState(false)
+  const [stage, setStage] = useState<TutorialEnvironmentStage | null>(null)
+  const [result, setResult] = useState<TutorialEnvironmentResult | null>(null)
+  const [error, setError] = useState('')
+  const busy = stage !== null && stage !== 'ready'
+
+  useEffect(() => {
+    api.folders()
+      .then((response) => {
+        const options = tutorialFolderOptions(response.data.root)
+        setFolders(options)
+        setFolderId(preferredTutorialFolder(options))
+      })
+      .catch((cause) => setError(String(cause).replace('Error: ', '')))
+  }, [])
+
+  const currentStage = stage ? stageOrder.indexOf(stage) : -1
+  const canCreate = Boolean(status?.available && folderId && projectName.trim() && confirmed && !busy && !result)
+  const selectedFolder = useMemo(() => folders.find((folder) => folder.id === folderId), [folders, folderId])
+
+  const create = async () => {
+    if (!canCreate) return
+    setError('')
+    try {
+      setResult(await createT01Environment(
+        { folderId, projectName: projectName.trim() },
+        api,
+        setStage,
+      ))
+    } catch (cause) {
+      setStage(null)
+      setError(String(cause).replace('Error: ', ''))
+    }
+  }
+
+  if (result) {
+    return <div className="tutorial-environment-success">
+      <div className="environment-success-heading"><CheckCircle2 size={28}/><div><span>EXPERIMENT ENVIRONMENT READY</span><strong>{projectName}</strong><p>The Geometry is processed and both Case Plans are configured. No mesh or Case computation has been submitted.</p></div></div>
+      <div className="environment-plan-pair">
+        <article><span>BASELINE</span><strong>α = 0°</strong><small>{planState(result.baselinePlan)}</small></article>
+        <article><span>CONTROLLED VARIANT</span><strong>α = 5°</strong><small>{planState(result.variantPlan)}</small></article>
+      </div>
+      <button className="lesson-workspace-button" onClick={() => navigate(`/projects/${encodeURIComponent(result.projectId)}?plan=${encodeURIComponent(result.baselinePlan.id)}&tutorial=T01`)}>
+        <span>Review configured Plans</span><Rocket size={17}/>
+      </button>
+    </div>
+  }
+
+  return <div className="tutorial-environment-builder">
+    <div className="environment-builder-heading">
+      <div className="run-ready-icon"><Rocket size={25}/></div>
+      <div><span>CREATE THE EXPERIMENT</span><strong>Build the T01 environment from this lesson</strong><p>The app uploads the bundled aircraft, waits for its Geometry, and creates two fully configured draft Case Plans.</p></div>
+    </div>
+
+    <div className="environment-form-grid">
+      <label><span>Project name</span><input value={projectName} onChange={(event) => setProjectName(event.target.value)} disabled={busy}/></label>
+      <label><span>Destination folder</span><select value={folderId} onChange={(event) => setFolderId(event.target.value)} disabled={busy || !folders.length}>
+        {!folders.length && <option value="">Loading folders…</option>}
+        {folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.label}</option>)}
+      </select></label>
+    </div>
+
+    <div className="environment-summary">
+      <div><Folder size={15}/><span><strong>{selectedFolder?.label || 'Choose a destination'}</strong><small>Flow360 Project · release-25.10 · geometry unit m</small></span></div>
+      <div><CheckCircle2 size={15}/><span><strong>Parameters already configured</strong><small>Mesh, physics, boundaries, outputs, α 0° and α 5°</small></span></div>
+    </div>
+
+    {stage && <div className="environment-progress">
+      {stageOrder.map((item, index) => <div className={`${index < currentStage ? 'complete' : ''} ${index === currentStage ? 'active' : ''}`} key={item}>
+        <span>{index < currentStage || item === 'ready' ? <Check size={12}/> : index + 1}</span><small>{stageCopy[item]}</small>
+      </div>)}
+    </div>}
+
+    {error && <div className="lesson-callout warning"><AlertTriangle size={17}/><p><strong>Environment creation stopped</strong>{error} If the Project was already created, refresh Workspace before retrying to avoid a duplicate.</p></div>}
+    {!status?.available && <div className="cloud-readiness"><Cloud size={17}/><span><strong>Flow360 connection required</strong><small>Connect the local Flow360 profile before creating this environment.</small></span></div>}
+
+    <label className="environment-confirm">
+      <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={busy}/>
+      <span>I reviewed the destination and authorize creation of this remote Flow360 Project. The two Case Plans remain local drafts until I separately approve and run them.</span>
+    </label>
+    <button className="environment-create-button" disabled={!canCreate} onClick={() => void create()}>
+      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stageCopy[stage] : 'Create Project + 2 Case Plans'}
+    </button>
+  </div>
+}

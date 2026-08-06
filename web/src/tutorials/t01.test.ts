@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createT01Environment,
   mergeTutorialPatch,
   t01Baseline,
   t01ParamsForAlpha,
   tutorialProgress,
   validateT01Setup,
 } from './t01'
+import type { ImportPlan, SimulationPlan } from '../api/client'
 
 describe('T01 browser tutorial', () => {
   it('uses the committed SimulationParams artifact as its baseline', () => {
@@ -35,5 +37,44 @@ describe('T01 browser tutorial', () => {
   it('counts only known, unique lesson steps', () => {
     expect(tutorialProgress(['question', 'question', 'unknown'])).toBe(17)
     expect(tutorialProgress(['question', 'geometry', 'setup', 'variant', 'evidence', 'run'])).toBe(100)
+  })
+
+  it('creates a processed Project and two configured draft Plans', async () => {
+    const calls: string[] = []
+    const planInputs: Array<Record<string, unknown>> = []
+    const staged = { id: 'import-1', status: 'draft' } as ImportPlan
+    const approved = { ...staged, status: 'approved' } as ImportPlan
+    const submitted = {
+      ...approved,
+      status: 'submitted',
+      result: { project_id: 'prj-1', root_resource_id: 'geo-1' },
+    } as ImportPlan
+    const client = {
+      stageImport: async (form: FormData) => {
+        calls.push(`stage:${form.get('name')}:${form.get('folder_id')}:${(form.get('files') as File).name}`)
+        return staged
+      },
+      approveImport: async (id: string) => { calls.push(`approve:${id}`); return approved },
+      runImport: async (id: string, sync?: boolean) => { calls.push(`run:${id}:${sync}`); return submitted },
+      createPlan: async (input: Record<string, unknown>) => {
+        planInputs.push(input)
+        return { id: `plan-${planInputs.length}`, ...input, status: 'draft' } as unknown as SimulationPlan
+      },
+    }
+    const stages: string[] = []
+
+    const result = await createT01Environment(
+      { folderId: 'folder-1', projectName: 'T01 experiment' },
+      client,
+      (stage) => stages.push(stage),
+      async () => new Response('despmtr geometry', { status: 200 }),
+    )
+
+    expect(calls).toEqual(['stage:T01 experiment:folder-1:geometry.csm', 'approve:import-1', 'run:import-1:true'])
+    expect(stages).toEqual(['staging', 'creating-project', 'creating-plans', 'ready'])
+    expect(result.projectId).toBe('prj-1')
+    expect(planInputs).toHaveLength(2)
+    expect((planInputs[0].patch as Record<string, Record<string, unknown>>).operating_condition.alpha).toEqual({ units: 'degree', value: 0 })
+    expect((planInputs[1].patch as Record<string, Record<string, unknown>>).operating_condition.alpha).toEqual({ units: 'degree', value: 5 })
   })
 })

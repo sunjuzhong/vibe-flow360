@@ -69,6 +69,12 @@ type Server struct {
 	aiCreateProgress   map[string]aiCreateProgress
 }
 
+var allowedImportExtensions = map[string][]string{
+	"geometry":     {".step", ".stp", ".igs", ".iges", ".brep", ".csm", ".cax", ".catpart", ".catproduct"},
+	"surface-mesh": {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
+	"volume-mesh":  {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
+}
+
 type geometryDiagnosticsCacheEntry struct {
 	Report    geometrydiag.Report
 	CreatedAt time.Time
@@ -432,12 +438,7 @@ func (s *Server) stageImport(c *gin.Context) {
 		return
 	}
 
-	allowedExtensions := map[string][]string{
-		"geometry":     {".step", ".stp", ".igs", ".iges", ".brep", ".cax", ".catpart", ".catproduct"},
-		"surface-mesh": {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
-		"volume-mesh":  {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
-	}
-	allowed := allowedExtensions[sourceType]
+	allowed := allowedImportExtensions[sourceType]
 
 	var files []importplans.FileInfo
 	var totalSize int64
@@ -577,6 +578,11 @@ func (s *Server) approveImport(c *gin.Context) {
 }
 
 func (s *Server) runImport(c *gin.Context) {
+	syncRoot, parseErr := strconv.ParseBool(c.DefaultQuery("sync", "false"))
+	if parseErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sync must be true or false"})
+		return
+	}
 	plan, duplicate, err := s.imports.Start(c.Param("import_id"))
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -590,16 +596,13 @@ func (s *Server) runImport(c *gin.Context) {
 		return
 	}
 
-	result, runErr := s.flow360.CreateProject(
-		c.Request.Context(),
-		s.imports.FilePaths(plan),
-		plan.SourceType,
-		plan.Name,
-		plan.Unit,
-		plan.Workflow,
-		plan.SolverVersion,
-		plan.FolderID,
-		plan.Tags,
+	createProject := s.flow360.CreateProject
+	if syncRoot {
+		createProject = s.flow360.CreateProjectSync
+	}
+	result, runErr := createProject(
+		c.Request.Context(), s.imports.FilePaths(plan), plan.SourceType, plan.Name,
+		plan.Unit, plan.Workflow, plan.SolverVersion, plan.FolderID, plan.Tags,
 	)
 	if runErr == nil {
 		result, runErr = normalizeImportResult(result, plan.SourceType)
