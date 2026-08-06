@@ -36,8 +36,12 @@ func TestTutorialCSMImportWaitsForProcessedGeometry(t *testing.T) {
 	argsPath := filepath.Join(dir, "args.txt")
 	binaryPath := filepath.Join(dir, "flow360")
 	script := `#!/bin/sh
-printf '%s ' "$@" > "` + argsPath + `"
-printf '{"project_id":"prj-1","geometry_id":"geo-1"}'
+printf '%s\n' "$*" >> "` + argsPath + `"
+if [ "$1 $2" = "project items" ]; then
+  printf '{"items":[{"id":"geo-1","type":"Geometry","parent_id":null}]}'
+else
+  printf '{"id":"prj-1","type":"Project"}'
+fi
 `
 	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
@@ -80,6 +84,9 @@ printf '{"project_id":"prj-1","geometry_id":"geo-1"}'
 	args, _ := os.ReadFile(argsPath)
 	if !strings.Contains(string(args), "project create") || !strings.Contains(string(args), "--sync") || !strings.Contains(string(args), "geometry.csm") {
 		t.Fatalf("tutorial import did not use synchronous project creation: %s", args)
+	}
+	if !strings.Contains(string(args), "project items prj-1") {
+		t.Fatalf("tutorial import did not recover its Geometry from the created Project: %s", args)
 	}
 }
 

@@ -1052,13 +1052,32 @@ const (
 )
 
 func (s *Server) normalizeAICreateResult(ctx context.Context, raw json.RawMessage, sourceType string) (json.RawMessage, error) {
-	return normalizeAICreateResultWithLookup(
+	return s.normalizeCreatedProjectResult(ctx, raw, sourceType)
+}
+
+func (s *Server) normalizeCreatedProjectResult(ctx context.Context, raw json.RawMessage, sourceType string) (json.RawMessage, error) {
+	normalized, err := normalizeCreatedProjectResultWithLookup(
 		ctx, raw, sourceType, s.flow360.ProjectItems,
 		aiCreateRootLookupAttempts, aiCreateRootLookupDelay,
 	)
+	if err != nil {
+		return raw, err
+	}
+	return normalized, nil
 }
 
 func normalizeAICreateResultWithLookup(
+	ctx context.Context,
+	raw json.RawMessage,
+	sourceType string,
+	lookup func(context.Context, string) (json.RawMessage, error),
+	attempts int,
+	delay time.Duration,
+) (json.RawMessage, error) {
+	return normalizeCreatedProjectResultWithLookup(ctx, raw, sourceType, lookup, attempts, delay)
+}
+
+func normalizeCreatedProjectResultWithLookup(
 	ctx context.Context,
 	raw json.RawMessage,
 	sourceType string,

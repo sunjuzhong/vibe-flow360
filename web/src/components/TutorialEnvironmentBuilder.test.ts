@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { preferredTutorialFolder, tutorialFolderOptions } from './TutorialEnvironmentBuilder'
+import { preferredTutorialFolder, tutorialEnvironmentPath, tutorialFolderOptions } from './TutorialEnvironmentBuilder'
 
 describe('tutorial environment folder selection', () => {
   it('flattens nested workspace folders with readable paths', () => {
@@ -22,5 +22,12 @@ describe('tutorial environment folder selection', () => {
       { id: 'personal', label: 'Personal' },
       { id: 'tutorials', label: 'tutorials' },
     ])).toBe('tutorials')
+  })
+
+  it('opens the created Project with the baseline Plan and tutorial context', () => {
+    expect(tutorialEnvironmentPath({
+      projectId: 'prj/one',
+      baselinePlan: { id: 'plan baseline' },
+    }, 'T01')).toBe('/projects/prj%2Fone?plan=plan%20baseline&tutorial=T01')
   })
 })

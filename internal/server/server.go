@@ -605,13 +605,23 @@ func (s *Server) runImport(c *gin.Context) {
 		plan.Unit, plan.Workflow, plan.SolverVersion, plan.FolderID, plan.Tags,
 	)
 	if runErr == nil {
-		result, runErr = normalizeImportResult(result, plan.SourceType)
+		result, runErr = s.normalizeCreatedProjectResult(c.Request.Context(), result, plan.SourceType)
 	}
 
 	updatedPlan, _ := s.imports.Update(plan.ID, func(plan *importplans.Plan) error {
 		if runErr != nil {
 			plan.Status = "failed"
 			plan.Error = "Flow360 did not accept the project import"
+			if projectID := findProjectIDFromRaw(result); projectID != "" {
+				plan.Result, _ = json.Marshal(map[string]any{
+					"project_id":     projectID,
+					"flow360_result": json.RawMessage(result),
+				})
+				plan.Error = fmt.Sprintf(
+					"Project %s was created, but its root resource could not be resolved. Refresh Workspace instead of creating another Project.",
+					projectID,
+				)
+			}
 		} else {
 			plan.Status = "submitted"
 			plan.Result = result

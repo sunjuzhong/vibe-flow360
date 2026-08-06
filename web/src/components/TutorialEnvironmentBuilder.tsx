@@ -27,6 +27,13 @@ export function preferredTutorialFolder(options: FolderOption[]): string {
   return options.find((option) => option.label.trim().toLowerCase() === 'tutorials')?.id ?? options[0]?.id ?? ''
 }
 
+export function tutorialEnvironmentPath(
+  result: { projectId: string; baselinePlan: { id: string } },
+  tutorialId: string,
+): string {
+  return `/projects/${encodeURIComponent(result.projectId)}?plan=${encodeURIComponent(result.baselinePlan.id)}&tutorial=${encodeURIComponent(tutorialId)}`
+}
+
 const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-plans', 'ready']
 function stageCopy(planKind: string): Record<TutorialEnvironmentStage, string> {
   return {
@@ -105,11 +112,13 @@ export default function TutorialEnvironmentBuilder({
     if (!canCreate) return
     setError('')
     try {
-      setResult(await createEnvironment(
+      const created = await createEnvironment(
         { folderId, projectName: projectName.trim() },
         api,
         setStage,
-      ))
+      )
+      setResult(created)
+      navigate(tutorialEnvironmentPath(created, tutorialId))
     } catch (cause) {
       setStage(null)
       setError(String(cause).replace('Error: ', ''))
@@ -123,7 +132,7 @@ export default function TutorialEnvironmentBuilder({
         <article><span>BASELINE</span><strong>{baselineValue}</strong><small>{planState(result.baselinePlan)}</small></article>
         <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>{planState(result.variantPlan)}</small></article>
       </div>
-      <button className="lesson-workspace-button" onClick={() => navigate(`/projects/${encodeURIComponent(result.projectId)}?plan=${encodeURIComponent(result.baselinePlan.id)}&tutorial=${encodeURIComponent(tutorialId)}`)}>
+      <button className="lesson-workspace-button" onClick={() => navigate(tutorialEnvironmentPath(result, tutorialId))}>
         <span>Review configured Plans</span><Rocket size={17}/>
       </button>
     </div>
