@@ -330,6 +330,7 @@ export default function VolumeMeshWorkspace({
             onEntityVisibilityChange={setEntityVisibility}
             selectedField={activeSlice}
             showEntityLegend={false}
+            showWarnings={previewSource !== 'fallback'}
             onFieldsDiscovered={handleFieldsDiscovered}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}

@@ -151,6 +151,7 @@ type Props = {
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
   showEntityLegend?: boolean
+  showWarnings?: boolean
   toolbar?: React.ReactNode
   cameraCommand?: ViewerCameraCommand | null
   showNormals?: boolean
@@ -185,6 +186,7 @@ export function Viewer3D({
   onCapture,
   showFieldPanel = true,
   showEntityLegend = true,
+  showWarnings = true,
   toolbar,
   cameraCommand,
   showNormals = false,
@@ -1170,7 +1172,7 @@ export function Viewer3D({
           ))}
         </div>
       )}
-      {manifest?.warnings && manifest.warnings.length > 0 && (
+      {showWarnings && manifest?.warnings && manifest.warnings.length > 0 && (
         <div className="viewer-warnings">
           {manifest.warnings.map((w, i) => <span key={i}>{w}</span>)}
         </div>
