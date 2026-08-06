@@ -964,8 +964,11 @@ export function Viewer3D({
   }, [assetState.status, selectedField, colormap, fieldRange, resolvedFieldScale])
 
   useEffect(() => {
-    const count = uvfAssetRef.current ? setFieldFilterOverlay(uvfAssetRef.current, fieldFilter ?? null) : 0
-    onFieldFilterMatchCountRef.current?.(count)
+    const timeout = window.setTimeout(() => {
+      const count = uvfAssetRef.current ? setFieldFilterOverlay(uvfAssetRef.current, fieldFilter ?? null) : 0
+      onFieldFilterMatchCountRef.current?.(count)
+    }, fieldFilter?.enabled ? 80 : 0)
+    return () => window.clearTimeout(timeout)
   }, [assetState.status, fieldFilter])
 
   useEffect(() => {

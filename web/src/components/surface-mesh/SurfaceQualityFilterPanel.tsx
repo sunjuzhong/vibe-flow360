@@ -1,6 +1,23 @@
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
+import type { CSSProperties } from 'react'
 import type { UVFFieldFilter, UVFFieldFilterRule, UVFFieldInfo } from '../../lib/uvf-three'
-import { formatFieldValue } from '../../lib/uvf-three'
+import { formatFieldValue, normalizeFieldValue, resolveFieldScale } from '../../lib/uvf-three'
+
+const RANGE_SLIDER_STEPS = 1000
+
+export function qualityRangeSliderPosition(field: UVFFieldInfo, value: number): number {
+  const scale = resolveFieldScale('auto', field.min, field.max)
+  return Math.round(normalizeFieldValue(value, field.min, field.max, scale) * RANGE_SLIDER_STEPS)
+}
+
+export function qualityRangeSliderValue(field: UVFFieldInfo, position: number): number {
+  const t = Math.max(0, Math.min(RANGE_SLIDER_STEPS, position)) / RANGE_SLIDER_STEPS
+  const scale = resolveFieldScale('auto', field.min, field.max)
+  if (scale === 'log' && field.min > 0 && field.max > field.min) {
+    return 10 ** (Math.log10(field.min) + t * (Math.log10(field.max) - Math.log10(field.min)))
+  }
+  return field.min + t * (field.max - field.min)
+}
 
 export function SurfaceQualityFilterPanel({
   fields,
@@ -58,6 +75,8 @@ export function SurfaceQualityFilterPanel({
         {filter.rules.map((rule, index) => {
           const field = fieldByName.get(rule.fieldName)
           const step = field ? (field.max - field.min) / 1000 || 1 : 'any'
+          const lowerPosition = field ? qualityRangeSliderPosition(field, rule.min) : 0
+          const upperPosition = field ? qualityRangeSliderPosition(field, rule.max) : RANGE_SLIDER_STEPS
           return (
             <div className="surface-quality-filter-rule" key={rule.id}>
               <div className="surface-quality-filter-rule-head">
@@ -93,6 +112,39 @@ export function SurfaceQualityFilterPanel({
                   />
                 </label>
               </div>
+              {field && (
+                <div
+                  className="surface-quality-range-slider"
+                  style={{
+                    '--quality-range-start': `${lowerPosition / RANGE_SLIDER_STEPS * 100}%`,
+                    '--quality-range-end': `${upperPosition / RANGE_SLIDER_STEPS * 100}%`,
+                  } as CSSProperties}
+                >
+                  <div className="surface-quality-range-track" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={RANGE_SLIDER_STEPS}
+                    step={1}
+                    value={lowerPosition}
+                    aria-label={`Rule ${index + 1} minimum ${field.name}`}
+                    onChange={(event) => onUpdateRule(rule.id, {
+                      min: Math.min(qualityRangeSliderValue(field, Number(event.target.value)), rule.max),
+                    })}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={RANGE_SLIDER_STEPS}
+                    step={1}
+                    value={upperPosition}
+                    aria-label={`Rule ${index + 1} maximum ${field.name}`}
+                    onChange={(event) => onUpdateRule(rule.id, {
+                      max: Math.max(qualityRangeSliderValue(field, Number(event.target.value)), rule.min),
+                    })}
+                  />
+                </div>
+              )}
               {field && <small>Available: {formatFieldValue(field.min)} – {formatFieldValue(field.max)}</small>}
             </div>
           )
