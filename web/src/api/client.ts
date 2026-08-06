@@ -948,6 +948,8 @@ export const api = {
     intent: string
     prompt: string
     patch?: Record<string, unknown>
+    confirmed_inputs?: Record<string, unknown>
+    autonomous?: boolean
   }) => mutate<PlanAssistResponse>('/api/plans/assist', input),
   preflightPlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/preflight`),

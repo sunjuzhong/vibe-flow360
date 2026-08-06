@@ -232,6 +232,20 @@ export function partitionPatchByStages(
   return result
 }
 
+// Agent proposals are sparse merge patches relative to the current candidate.
+// Preserve edits already visible in the forms and project the new values back
+// into their owning execution stages immediately.
+export function applyProposalToStagePatches(
+  activeStages: SimulationStage[],
+  current: Record<SimulationStage, Record<string, unknown>>,
+  proposal: Record<string, unknown>,
+): Record<SimulationStage, Record<string, unknown>> {
+  return partitionPatchByStages(
+    mergeStagePatches(activeStages, current, proposal),
+    activeStages,
+  )
+}
+
 export function stageForPath(path: string): SimulationStage {
   if (
     path.startsWith('operating_condition')

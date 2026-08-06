@@ -28,8 +28,8 @@ type planComposerRequest struct {
 	Intent          string          `json:"intent,omitempty"`
 	Prompt          string          `json:"prompt,omitempty"`
 	Patch           json.RawMessage `json:"patch,omitempty"`
-	ConfirmedInputs json.RawMessage `json:"-"`
-	Autonomous      bool            `json:"-"`
+	ConfirmedInputs json.RawMessage `json:"confirmed_inputs,omitempty"`
+	Autonomous      bool            `json:"autonomous,omitempty"`
 }
 
 type planFormSchemaResponse struct {
@@ -289,8 +289,17 @@ func (s *Server) resolveAutonomousPlanAssistQuestions(ctx context.Context, compo
 	if !composer.Request.Autonomous {
 		return action, nil
 	}
-	const maxAutonomousDefaultRounds = 3
+	// One continuation is enough to apply an authoritative answer or an
+	// Agent-provided default. More automatic turns hide a non-converging model
+	// behind a long request and can repeatedly ask the same question.
+	const maxAutonomousDefaultRounds = 1
 	for round := 1; action.Kind == agent.ActionRequestMissingInput && round <= maxAutonomousDefaultRounds; round++ {
+		// confirmed_inputs was already present in the generation context. Asking
+		// for one of those fields again is a convergence failure, not a reason to
+		// spend another model turn or show the same form to the user.
+		if asksForConfirmedInput(action.Questions, composer.Request.ConfirmedInputs) {
+			return action, nil
+		}
 		defaults, ok := authoritativeQuestionValues(action.Questions, composer.Request.ConfirmedInputs)
 		if !ok {
 			return action, nil
@@ -306,7 +315,7 @@ func (s *Server) resolveAutonomousPlanAssistQuestions(ctx context.Context, compo
 		}
 		questions, _ := json.Marshal(action.Questions)
 		defaultsJSON, _ := json.Marshal(defaults)
-		message := fmt.Sprintf(`Continue the same autonomous Flow360 plan now. You requested configuration values even though every question supplied a recommended default. For this basic/ready-to-run AI Create workflow, the Agent has authority to accept those recommendations without another user round.
+		message := fmt.Sprintf(`Continue the same autonomous Flow360 plan now. Every requested field now has an authoritative value, supplied either by the user or by an Agent recommendation. Do not request another confirmation for these fields.
 
 Treat these values as confirmed and authoritative: %s
 Previous questions: %s
@@ -321,6 +330,22 @@ Return one complete create-plan proposal using only the active schema catalog. D
 		action = next
 	}
 	return action, nil
+}
+
+func asksForConfirmedInput(questions []agent.Question, confirmed json.RawMessage) bool {
+	if len(questions) == 0 || len(confirmed) == 0 {
+		return false
+	}
+	confirmedValues := map[string]any{}
+	if json.Unmarshal(confirmed, &confirmedValues) != nil {
+		return false
+	}
+	for _, question := range questions {
+		if _, exists := confirmedValues[strings.TrimSpace(question.Field)]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 func recommendedQuestionDefaults(questions []agent.Question) (map[string]any, bool) {
@@ -571,6 +596,8 @@ Read the schema catalog field-by-field before composing the patch. Each catalog 
 
 Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact. Use sparse merge-patch semantics and include only deliberate changes.
 
+When the User form instruction includes Flow360 validation errors or remote logs, diagnose them and return a concrete corrective patch. Prefer the safest reversible schema-valid correction supported by the supplied evidence. Do not ask the user to choose a schema mechanism or repeatedly confirm the same boundary/model decision; reserve a question for genuinely missing physical intent with no defensible repair.
+
 When the user asks for a basic, baseline, demonstration, or first-pass simulation, choose defensible reviewable defaults for missing operating, meshing, physical-model, and steady/unsteady settings when the active schemas support them. Put every inferred value in assumptions and explain the engineering consequence in the message. Preserve schema-valid infrastructure and entity assignments already supplied by the source resource unless the active schema or a real preflight issue requires changing them. Ask a focused question only when the choice would materially change geometry, make the setup invalid, or has no defensible baseline. Do not turn every unspecified preference into a blocking question, and never ask the user to perform a schema-mechanical correction.
 
 Use the language of the Plan intent and User form instruction for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
@@ -605,6 +632,13 @@ func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
 	}
 	if len(request.Patch) == 0 {
 		request.Patch = json.RawMessage(`{}`)
+	}
+	if len(request.ConfirmedInputs) > 0 {
+		var confirmed map[string]any
+		if !json.Valid(request.ConfirmedInputs) || json.Unmarshal(request.ConfirmedInputs, &confirmed) != nil || confirmed == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "confirmed engineering inputs must be a JSON object"})
+			return planComposerRequest{}, false
+		}
 	}
 	return request, true
 }

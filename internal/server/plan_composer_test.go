@@ -163,6 +163,25 @@ func TestResolveAutonomousPlanAssistQuestionsContinuesWithRecommendedReynoldsNum
 	}
 }
 
+func TestResolveAutonomousPlanAssistQuestionsStopsBeforeRetryingConfirmedField(t *testing.T) {
+	app := &Server{}
+	initial := &agent.Action{Version: "v1", Kind: agent.ActionRequestMissingInput, Message: "Choose boundary treatment", Questions: []agent.Question{{
+		Field: "models", Message: "Choose boundary treatment.", Urgency: "required", Type: "text",
+	}}}
+	resolved, err := app.resolveAutonomousPlanAssistQuestions(context.Background(), planComposerContext{
+		Request: planComposerRequest{
+			Autonomous: true, SourceType: "Case", Target: "case",
+			ConfirmedInputs: json.RawMessage(`{"models":"keep wall boundaries and rebuild the mesh"}`),
+		},
+	}, []byte(`{"form_schema":{"fields":[]}}`), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Kind != agent.ActionRequestMissingInput {
+		t.Fatalf("a repeated confirmed question should be returned without another model call: %#v", resolved)
+	}
+}
+
 func TestGenerateSchemaNativePlanRejectsMechanicalQuestionsAndRepairsOnThirdAttempt(t *testing.T) {
 	temp := t.TempDir()
 	fakePython := filepath.Join(temp, "python")

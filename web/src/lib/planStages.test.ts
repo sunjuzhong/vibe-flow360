@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyProposalToStagePatches,
   downstreamStages,
   hasPath,
   mergeStagePatches,
@@ -68,6 +69,28 @@ describe('stage-aware simulation planning', () => {
         },
         refinement_factor: 1.1,
       },
+    })
+  })
+
+  it('projects a sparse Agent proposal immediately without erasing existing form edits', () => {
+    expect(applyProposalToStagePatches(
+      ['Case'],
+      {
+        SurfaceMesh: {},
+        VolumeMesh: {},
+        Case: {
+          operating_condition: { alpha: { value: 3, units: 'degree' } },
+          time_stepping: { max_steps: 2000 },
+        },
+      },
+      {
+        models: [{ type: 'Wall', name: 'cylinder' }],
+        time_stepping: { max_steps: 20000 },
+      },
+    ).Case).toEqual({
+      operating_condition: { alpha: { value: 3, units: 'degree' } },
+      models: [{ type: 'Wall', name: 'cylinder' }],
+      time_stepping: { max_steps: 20000 },
     })
   })
 

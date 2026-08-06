@@ -20,6 +20,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type AgentAction, type PlanAssistResponse, type PlanFormSchemaResponse, type ProjectInfo, type ResourceDetail, type ResourceNode, type SimulationPlan } from '../api/client'
 import {
   compactParameterValue,
+  applyProposalToStagePatches,
   downstreamStages,
   hasPath,
   mergeStagePatches,
@@ -141,7 +142,9 @@ export default function PlanPanel({
   const [assistPreflight, setAssistPreflight] = useState<PlanAssistResponse['preflight'] | null>(null)
   const [assistRepair, setAssistRepair] = useState<{ attempts: number; repaired: boolean } | null>(null)
   const [clarificationAction, setClarificationAction] = useState<AgentAction | null>(null)
-  const [clarificationRecords, setClarificationRecords] = useState<string[]>([])
+  const [confirmedInputs, setConfirmedInputs] = useState<ClarificationAnswers>({})
+  const [assistStalled, setAssistStalled] = useState(false)
+  const [assistFailure, setAssistFailure] = useState('')
   const [reviewed, setReviewed] = useState(false)
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -178,7 +181,9 @@ export default function PlanPanel({
     setAssistPreflight(null)
     setAssistRepair(null)
     setClarificationAction(null)
-    setClarificationRecords([])
+    setConfirmedInputs({})
+    setAssistStalled(false)
+    setAssistFailure('')
     setReviewed(false)
     setExecuteConfirmed(false)
     setSchemaFormOpen(false)
@@ -324,12 +329,17 @@ export default function PlanPanel({
     }
   }
 
-  const fillWithAI = async (promptOverride?: string) => {
+  const fillWithAI = async (
+    promptOverride?: string,
+    confirmedOverride: ClarificationAnswers = confirmedInputs,
+  ) => {
     if (assistLoading || schemaLoading || !formSchema || !intent.trim()) return
     setAssistLoading(true)
     setAssistAction(null)
     setAssistPreflight(null)
     setAssistRepair(null)
+    setAssistStalled(false)
+    setAssistFailure('')
     setError('')
     try {
       const currentPatch = mergeStagePatches(activeStages, structuredStagePatches(), parsePatch('Advanced', advancedPatch))
@@ -343,23 +353,55 @@ export default function PlanPanel({
         intent,
         prompt: promptOverride ?? intent,
         patch: currentPatch,
+        confirmed_inputs: confirmedOverride,
+        autonomous: true,
       })
       setAssistAction(response.action)
+      const pendingQuestions = response.action.questions?.filter(
+        (question) => !Object.prototype.hasOwnProperty.call(confirmedOverride, question.field),
+      ) ?? []
+      const repeatedQuestions = response.action.kind === 'request-missing-input'
+        && Boolean(response.action.questions?.length)
+        && pendingQuestions.length === 0
+      setAssistStalled(repeatedQuestions)
       setClarificationAction(
-        response.action.kind === 'request-missing-input' && response.action.questions?.length
-          ? response.action
+        response.action.kind === 'request-missing-input' && pendingQuestions.length
+          ? { ...response.action, questions: pendingQuestions }
           : null,
       )
       setAssistPreflight(response.preflight ?? null)
       setAssistRepair({ attempts: response.repair_attempts ?? 0, repaired: response.auto_repaired ?? false })
       if (response.proposal) {
-        setStageValues(partitionPatchByStages(response.proposal.patch, activeStages))
+        setStageValues((current) => applyProposalToStagePatches(activeStages, current, response.proposal!.patch))
         if (response.proposal.name.trim()) setName(response.proposal.name)
       }
     } catch (cause) {
-      setError(`AI form fill failed: ${errorMessage(cause)}`)
+      setAssistFailure(errorMessage(cause))
     } finally {
       setAssistLoading(false)
+    }
+  }
+
+  const continueAgentRepair = () => {
+    const issues = assistPreflight?.issues
+      .filter((issue) => issue.level === 'error')
+      .map((issue) => `${issue.path || 'SimulationParams'}: ${issue.message}`)
+      .join('\n')
+    void fillWithAI([
+      intent,
+      'Repair the current candidate autonomously. Return a concrete schema-valid patch; do not ask me to reconfirm values already supplied.',
+      issues ? `Current Flow360 validation errors:\n${issues}` : '',
+    ].filter(Boolean).join('\n\n'))
+  }
+
+  const editAffectedParameters = () => {
+    const firstIssue = assistPreflight?.issues.find((issue) => issue.level === 'error')
+    const inferred = firstIssue?.path ? stageForPath(firstIssue.path) : activeStages[activeStages.length - 1]
+    const stage = activeStages.includes(inferred) ? inferred : activeStages[activeStages.length - 1]
+    const editor = stage ? document.getElementById(`plan-stage-editor-${stage}`) : null
+    if (editor instanceof HTMLDetailsElement) {
+      editor.open = true
+      editor.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }
 
@@ -540,7 +582,9 @@ export default function PlanPanel({
                     setAssistPreflight(null)
                     setAssistRepair(null)
                     setClarificationAction(null)
-                    setClarificationRecords([])
+                    setConfirmedInputs({})
+                    setAssistStalled(false)
+                    setAssistFailure('')
                   }}>
                     {options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
                   </select>
@@ -574,10 +618,17 @@ export default function PlanPanel({
                     <div className="plan-ai-form-result">
                       <strong>{assistAction.message}</strong>
                       {assistAction.assumptions?.map((item) => <span key={item}>Assumption · {item}</span>)}
-                      {assistAction.questions?.map((item) => <span key={item.field}>Needs input · {item.message}</span>)}
+                      {assistAction.questions
+                        ?.filter((item) => !Object.prototype.hasOwnProperty.call(confirmedInputs, item.field))
+                        .map((item) => <span key={item.field}>Needs input · {item.message}</span>)}
                       {assistAction.warnings?.map((item) => <span key={item}>Warning · {item}</span>)}
-                      {assistAction.kind === 'request-missing-input' && Boolean(assistAction.questions?.length) && (
-                        <button type="button" onClick={() => setClarificationAction(assistAction)}>
+                      {assistAction.kind === 'request-missing-input'
+                        && Boolean(assistAction.questions?.some((item) => !Object.prototype.hasOwnProperty.call(confirmedInputs, item.field)))
+                        && !assistStalled && (
+                        <button type="button" onClick={() => setClarificationAction({
+                          ...assistAction,
+                          questions: assistAction.questions?.filter((item) => !Object.prototype.hasOwnProperty.call(confirmedInputs, item.field)),
+                        })}>
                           Answer engineering questions
                         </button>
                       )}
@@ -600,11 +651,32 @@ export default function PlanPanel({
                           ))}
                         </ul>
                       )}
+                      {(assistStalled || (assistPreflight && !assistPreflight.valid)) && (
+                        <div className="plan-ai-resolution-actions">
+                          <span>{assistStalled
+                            ? 'The Agent repeated a question you already answered. Current parameter edits are preserved.'
+                            : 'The generated changes are already shown in the parameter forms. Choose how to resolve the remaining validation errors.'}</span>
+                          <div>
+                            <button type="button" onClick={continueAgentRepair} disabled={assistLoading}>Continue with AI repair</button>
+                            <button type="button" onClick={editAffectedParameters}>Edit dynamic form</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {clarificationRecords.map((record, index) => (
-                    <pre className="agent-clarification-record" key={`${index}-${record}`}>{record}</pre>
-                  ))}
+                  {assistFailure && (
+                    <div className="plan-ai-form-result">
+                      <strong>AI could not finish this pass</strong>
+                      <span>{assistFailure}</span>
+                      <div className="plan-ai-resolution-actions">
+                        <span>Your current parameter edits were not cleared.</span>
+                        <div>
+                          <button type="button" onClick={continueAgentRepair} disabled={assistLoading}>Retry with AI</button>
+                          <button type="button" onClick={editAffectedParameters}>Edit dynamic form</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </section>
                 <div className="plan-stage-workflow">
                   <div className="plan-stage-workflow-heading">
@@ -672,7 +744,7 @@ export default function PlanPanel({
                             )
                           })}
                         </div>
-                        <details className="plan-stage-editor">
+                        <details className="plan-stage-editor" id={`plan-stage-editor-${stage}`}>
                           <summary><ChevronDown size={13} /> Change {definition.label} parameters</summary>
                           <div className="plan-stage-schema-editor">
                             {schemaLoading && !schema && <div className="plan-neutral"><RefreshCw size={13} className="spin" /> Loading the installed Flow360 schema…</div>}
@@ -1017,11 +1089,11 @@ export default function PlanPanel({
           questions={clarificationAction?.questions ?? []}
           busy={assistLoading}
           onClose={() => setClarificationAction(null)}
-          onSubmit={(_answers: ClarificationAnswers, summary: string) => {
-            const records = [...clarificationRecords, summary]
-            setClarificationRecords(records)
+          onSubmit={(answers: ClarificationAnswers) => {
+            const nextConfirmed = { ...confirmedInputs, ...answers }
+            setConfirmedInputs(nextConfirmed)
             setClarificationAction(null)
-            void fillWithAI([intent, ...records].filter(Boolean).join('\n\n'))
+            void fillWithAI(intent, nextConfirmed)
           }}
         />
       </section>

@@ -2509,6 +2509,11 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .plan-ai-form-issues li { display: grid; grid-template-columns: minmax(150px,.45fr) minmax(0,1fr); gap: 8px; align-items: baseline; padding: 7px 8px; border: 1px solid #e3cda2; border-radius: 6px; color: #72561e; background: #fff9eb; }
 .plan-ai-form-issues code { overflow-wrap: anywhere; color: #674b14; font: 8px/1.5 'DM Mono'; }
 .plan-ai-form-issues span { font-size: 9px; line-height: 1.5; }
+.plan-ai-resolution-actions { display: grid; gap: 7px; margin-top: 3px; padding: 9px; border: 1px solid #d9c48f; border-radius: 7px; background: #fffaf0; }
+.plan-ai-resolution-actions > span { color: #72561e; font-size: 9px; line-height: 1.5; }
+.plan-ai-resolution-actions > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.plan-ai-resolution-actions button { padding: 7px 10px; border: 1px solid #a9b68a; border-radius: 6px; color: #43522e; background: #fff; font-size: 8px; font-weight: 700; cursor: pointer; }
+.plan-ai-resolution-actions button:first-child { border-color: #9fb64c; background: #bddb5c; }
 .plan-stage-workflow { margin: 4px 0 17px; }
 .plan-stage-workflow-heading { margin-bottom: 9px; }
 .plan-stage-workflow-heading > span,.plan-stage-workflow-heading > small { display: block; }
