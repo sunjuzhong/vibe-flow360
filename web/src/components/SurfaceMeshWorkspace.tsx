@@ -25,6 +25,7 @@ import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import { ViewerToolbarSections } from './viewer/ViewerToolbarSections'
 import {
   SurfaceAdvancedReview,
   SurfaceAdvancedToolbar,
@@ -224,15 +225,19 @@ export default function SurfaceMeshWorkspace({
           showFieldPanel={review.mode === 'quality'}
           showEntityLegend={false}
           toolbar={(
-            <div className="surface-combined-toolbar">
-              <SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />
-              <SurfaceAdvancedToolbar
-                clipping={advanced.clipEnabled}
-                onToggleClipping={() => advanced.setClipEnabled(!advanced.clipEnabled)}
-                onCapture={advanced.requestCapture}
-              />
-              <ViewerToolsDock model={tools} />
-            </div>
+            <ViewerToolbarSections
+              goal={<SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />}
+              actions={(
+                <div className="surface-combined-toolbar">
+                  <SurfaceAdvancedToolbar
+                    clipping={advanced.clipEnabled}
+                    onToggleClipping={() => advanced.setClipEnabled(!advanced.clipEnabled)}
+                    onCapture={advanced.requestCapture}
+                  />
+                  <ViewerToolsDock model={tools} />
+                </div>
+              )}
+            />
           )}
         />
         <ViewerToolPanel model={tools} />

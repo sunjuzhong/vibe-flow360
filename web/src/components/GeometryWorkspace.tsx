@@ -4,7 +4,6 @@ import {
   Camera,
   CheckCircle2,
   CircleHelp,
-  Focus,
   GitCompare,
   GitPullRequestDraft,
   Eye,
@@ -21,7 +20,6 @@ import {
   Sparkles,
   Trash2,
   Undo2,
-  View,
   XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -78,6 +76,7 @@ import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
+import { ViewerToolbarSections } from './viewer/ViewerToolbarSections'
 
 const readinessCopy = {
   ready: { label: 'Ready', detail: 'Available geometry evidence passes preflight.' },
@@ -736,38 +735,26 @@ export default function GeometryWorkspace({
           showFieldPanel={false}
           cameraCommand={cameraCommand}
           toolbar={(
-            <div className="geometry-camera-toolbar" aria-label="Geometry camera controls">
-              <button onClick={() => requestCamera('fit')} title="Fit all"><Focus size={13} /> Fit</button>
-              <button
-                onClick={() => requestCamera('fit-selection')}
-                disabled={!viewerSelection.groupId}
-                title="Fit selected surface"
-              >
-                <View size={13} /> Selection
-              </button>
-              <span />
-              <button onClick={() => requestCamera('x')} title="View from positive X">X</button>
-              <button onClick={() => requestCamera('y')} title="View from positive Y">Y</button>
-              <button onClick={() => requestCamera('z')} title="View from positive Z">Z</button>
-              <button onClick={() => requestCamera('iso')} title="Isometric view">ISO</button>
-              <span />
-              <button
-                className={clipEnabled ? 'active' : ''}
-                aria-pressed={clipEnabled}
-                onClick={() => setClipEnabled((enabled) => !enabled)}
-                title="Toggle clipping plane"
-              ><Scissors size={13} /> Clip</button>
-              <ViewerToolsDock model={tools} />
-              <button
-                className={showNormals ? 'active' : ''}
-                aria-pressed={showNormals}
-                onClick={() => setShowNormals((visible) => !visible)}
-                title="Toggle vertex normals"
-              ><ScanLine size={13} /> Normals</button>
-              <button onClick={() => setCaptureRequest((value) => value + 1)} title="Export PNG">
-                <Camera size={13} /> PNG
-              </button>
-            </div>
+            <ViewerToolbarSections actions={(
+              <div className="geometry-camera-toolbar" aria-label="Geometry actions">
+                <button
+                  className={clipEnabled ? 'active' : ''}
+                  aria-pressed={clipEnabled}
+                  onClick={() => setClipEnabled((enabled) => !enabled)}
+                  title="Toggle clipping plane"
+                ><Scissors size={13} /> Clip</button>
+                <ViewerToolsDock model={tools} />
+                <button
+                  className={showNormals ? 'active' : ''}
+                  aria-pressed={showNormals}
+                  onClick={() => setShowNormals((visible) => !visible)}
+                  title="Toggle vertex normals"
+                ><ScanLine size={13} /> Normals</button>
+                <button onClick={() => setCaptureRequest((value) => value + 1)} title="Export PNG">
+                  <Camera size={13} /> PNG
+                </button>
+              </div>
+            )} />
           )}
         />
         <ViewerToolPanel model={tools} />

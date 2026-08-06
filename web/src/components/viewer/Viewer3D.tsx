@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, Focus, View } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
@@ -90,6 +90,35 @@ export type ViewerCameraCommand = {
 }
 
 export type ViewerOverlayContent = Omit<ViewerOverlayFrame, 'resourceRef' | 'assetWorldMatrix'>
+
+export function ViewerCameraToolbar({
+  hasSelection,
+  onCommand,
+}: {
+  hasSelection: boolean
+  onCommand: (type: ViewerCameraCommand['type']) => void
+}) {
+  return (
+    <div className="viewer-camera-toolbar" role="group" aria-label="Camera controls">
+      <button type="button" onClick={() => onCommand('fit')} title="Fit view">
+        <Focus size={13} /> <span>Fit</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onCommand('fit-selection')}
+        disabled={!hasSelection}
+        title="Fit selected entity"
+      >
+        <View size={13} /> <span>Selection</span>
+      </button>
+      <span className="viewer-toolbar-divider" aria-hidden="true" />
+      <button type="button" onClick={() => onCommand('x')} title="View from positive X">X</button>
+      <button type="button" onClick={() => onCommand('y')} title="View from positive Y">Y</button>
+      <button type="button" onClick={() => onCommand('z')} title="View from positive Z">Z</button>
+      <button type="button" onClick={() => onCommand('iso')} title="Isometric view">ISO</button>
+    </div>
+  )
+}
 
 function nearestControlPointIndex(
   points: readonly PickResult[] | undefined,
@@ -511,20 +540,20 @@ export function Viewer3D({
     }
   }, [fitCameraToObject])
 
-  useEffect(() => {
-    if (!cameraCommand || assetState.status !== 'ready') return
+  const applyCameraCommand = useCallback((type: ViewerCameraCommand['type']) => {
+    if (assetState.status !== 'ready') return
     const asset = assetRef.current
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (!asset || !camera || !controls) return
 
-    if (cameraCommand.type === 'fit') {
+    if (type === 'fit') {
       fitCameraToObject(camera, controls, asset)
       return
     }
 
     const box = new THREE.Box3()
-    if (cameraCommand.type === 'fit-selection' && selection?.groupId) {
+    if (type === 'fit-selection' && selection?.groupId) {
       const selectedIds = selection.groupIds?.length ? selection.groupIds : [selection.groupId]
       for (const groupId of selectedIds) {
         const selectedEntity = uvfAssetRef.current?.getEntityObject(groupId)
@@ -547,19 +576,24 @@ export function Viewer3D({
       z: new THREE.Vector3(0, 0, 1),
       iso: new THREE.Vector3(1, 1, 1).normalize(),
     }
-    const direction = cameraCommand.type === 'fit-selection'
+    const direction = type === 'fit-selection'
       ? currentDirection
-      : directions[cameraCommand.type]
+      : directions[type]
     const distance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.25
     camera.up.set(0, 0, 1)
-    if (cameraCommand.type === 'z') camera.up.set(0, 1, 0)
+    if (type === 'z') camera.up.set(0, 1, 0)
     camera.position.copy(center).add(direction.multiplyScalar(distance))
     controls.target.copy(center)
     cameraBoundsRadiusRef.current = radius
     configurePerspectiveCameraForBounds(camera, controls, radius, distance)
     camera.lookAt(center)
     controls.update()
-  }, [assetState.status, cameraCommand, fitCameraToObject, selection])
+  }, [assetState.status, fitCameraToObject, selection])
+
+  useEffect(() => {
+    if (!cameraCommand) return
+    applyCameraCommand(cameraCommand.type)
+  }, [applyCameraCommand, cameraCommand])
 
   useViewerViewport({
     containerRef,
@@ -1083,7 +1117,7 @@ export function Viewer3D({
       {activePrecisionNotice && visibleState.status === 'ready' && (
         <div className="viewer-precision-notice" role="status">{activePrecisionNotice}</div>
       )}
-      {(assetStats || toolbar) && visibleState.status === 'ready' && (
+      {visibleState.status === 'ready' && (
         <div className="viewer-controls-rail">
           {assetStats && (
             <div className="viewer-asset-stats">
@@ -1111,7 +1145,13 @@ export function Viewer3D({
               </button>
             </div>
           )}
-          {toolbar && <div className="viewer-toolbar-slot">{toolbar}</div>}
+          <div className="viewer-toolbar-cluster">
+            <ViewerCameraToolbar
+              hasSelection={Boolean(selection?.groupId)}
+              onCommand={applyCameraCommand}
+            />
+            {toolbar && <div className="viewer-toolbar-slot">{toolbar}</div>}
+          </div>
         </div>
       )}
       {snapStatus && visibleState.status === 'ready' && (

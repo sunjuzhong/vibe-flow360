@@ -23,6 +23,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import { ViewerToolbarSections } from './viewer/ViewerToolbarSections'
 import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { assessVolumeMeshQuality, computeVolumeReadiness, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
@@ -238,10 +239,10 @@ export default function VolumeMeshWorkspace({
             overlays={viewerOverlays}
             onDoubleClick={tools.onDoubleClick}
             toolbar={(
-              <div className="volume-combined-toolbar">
-                <VolumeViewModeToolbar mode={review.mode} onChange={review.setMode} />
-                <ViewerToolsDock model={tools} />
-              </div>
+              <ViewerToolbarSections
+                goal={<VolumeViewModeToolbar mode={review.mode} onChange={review.setMode} />}
+                actions={<ViewerToolsDock model={tools} />}
+              />
             )}
           />
           <ViewerToolPanel model={tools} />

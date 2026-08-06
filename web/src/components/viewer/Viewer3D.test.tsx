@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { precisionFallbackNotice, Viewer3D } from './Viewer3D'
+import { precisionFallbackNotice, Viewer3D, ViewerCameraToolbar } from './Viewer3D'
 
 describe('Viewer3D layout state', () => {
   it('marks the container as loading without rendering the controls gutter content', () => {
@@ -36,6 +36,18 @@ describe('Viewer3D layout state', () => {
 
     expect(visible).toContain('Showing Geometry as spatial context.')
     expect(suppressed).not.toContain('Showing Geometry as spatial context.')
+  })
+
+  it('renders the shared camera controls for every ready 3D workspace', () => {
+    const html = renderToStaticMarkup(
+      <ViewerCameraToolbar hasSelection={false} onCommand={() => undefined} />,
+    )
+
+    expect(html).toContain('aria-label="Camera controls"')
+    expect(html).toContain('title="Fit view"')
+    expect(html).toContain('title="Fit selected entity"')
+    expect(html).toContain('title="Isometric view"')
+    expect(html).toContain('disabled=""')
   })
 
   it('explains an unavailable explicit LOD and the restored manifest default', () => {

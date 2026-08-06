@@ -29,6 +29,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import { ViewerToolbarSections } from './viewer/ViewerToolbarSections'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
 import { StructuredDataView } from './StructuredDataView'
 import {
@@ -470,10 +471,10 @@ export default function CaseWorkspace({
             overlays={tools.overlays}
             onDoubleClick={tools.onDoubleClick}
             toolbar={
-              <>
-                {activeField && <span className="viewer-toolbar-field-hint">Field · {activeField}</span>}
-                <ViewerToolsDock model={tools} />
-              </>
+              <ViewerToolbarSections
+                goal={activeField && <span className="viewer-toolbar-field-hint">Field · {activeField}</span>}
+                actions={<ViewerToolsDock model={tools} />}
+              />
             }
           />
           <ViewerToolPanel model={tools} />
