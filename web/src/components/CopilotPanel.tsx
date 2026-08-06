@@ -1,7 +1,7 @@
-import { ArrowUp, ChevronRight, Loader2, MessageSquareText, Sparkles, X } from 'lucide-react'
+import { AlertCircle, ArrowUp, CheckCircle2, ChevronRight, Loader2, MessageSquareText, Sparkles, X } from 'lucide-react'
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, type AgentAction, type AgentState, type ChatMessage } from '../api/client'
+import { api, type ActionPlanResult, type AgentAction, type AgentState, type ChatMessage, type SimulationPlan } from '../api/client'
 import { readSSE } from '../lib/sse'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
@@ -9,7 +9,8 @@ import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClar
 type Message = ChatMessage & {
   error?: boolean
   action?: AgentAction
-  actionExecuted?: boolean
+  conversion?: ActionPlanResult
+  conversionError?: string
 }
 
 export function shouldShowCopilotClarification(panelOpen: boolean, action: AgentAction | null) {
@@ -18,13 +19,21 @@ export function shouldShowCopilotClarification(panelOpen: boolean, action: Agent
 
 export const copilotHorizontalContainment = { overflowX: 'hidden' } as const
 
+export function actionPlanConversionSummary(result: ActionPlanResult) {
+  return `${result.created}/${result.total} local plan${result.total === 1 ? '' : 's'} ready`
+}
+
 export default function CopilotPanel({
   open,
   onClose,
   contextLabel,
   context,
   projectId,
+  projectName,
   resourceId,
+  resourceType,
+  resourceName,
+  onOpenPlan,
   suggestions = [],
 }: {
   open: boolean
@@ -32,7 +41,11 @@ export default function CopilotPanel({
   contextLabel: string
   context: string
   projectId: string
+  projectName?: string
   resourceId?: string
+  resourceType?: string
+  resourceName?: string
+  onOpenPlan: (plan: SimulationPlan) => void
   suggestions?: string[]
 }) {
   const [agent, setAgent] = useState<AgentState | null>(null)
@@ -44,7 +57,7 @@ export default function CopilotPanel({
   const scopeRef = useRef('')
   const panelRef = useFocusTrap(open, onClose, 'textarea')
 
-  const [converting, setConverting] = useState(false)
+  const [convertingIndex, setConvertingIndex] = useState<number | null>(null)
   const [clarificationAction, setClarificationAction] = useState<AgentAction | null>(null)
 
   useEffect(() => {
@@ -55,6 +68,7 @@ export default function CopilotPanel({
     const scope = `${projectId}\u0000${resourceId ?? ''}`
     scopeRef.current = scope
     setMessages([])
+    setConvertingIndex(null)
     setSessionLoading(true)
     api.agentChatSession(projectId, resourceId)
       .then((session) => {
@@ -111,31 +125,31 @@ export default function CopilotPanel({
 
   const convertToPlans = async (messageIndex: number) => {
     const msg = messages[messageIndex]
-    if (!msg.action) return
-    setConverting(true)
+    if (!msg.action || convertingIndex !== null || msg.conversion) return
+    const scope = scopeRef.current
+    setConvertingIndex(messageIndex)
+    setMessages((current) => current.map((message, index) => index === messageIndex
+      ? { ...message, conversionError: undefined }
+      : message))
     try {
-      const result = await api.planFromAction(msg.action)
-      setMessages((current) => {
-        const next = [...current]
-        next[messageIndex] = {
-          ...msg,
-          content: msg.content + `\n\n✅ Created ${result.created}/${result.total} plans${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
-          actionExecuted: true,
-        }
-        return next
+      const result = await api.planFromAction(msg.action, {
+        project_id: projectId,
+        project_name: projectName,
+        source_id: resourceId,
+        source_type: resourceType,
+        source_name: resourceName,
       })
+      setMessages((current) => scopeRef.current !== scope ? current : current.map((message, index) => index === messageIndex
+        ? { ...message, conversion: result, conversionError: undefined }
+        : message))
+      window.dispatchEvent(new Event('vibesim:plans-refresh'))
     } catch (err) {
-      setMessages((current) => {
-        const next = [...current]
-        next[messageIndex] = {
-          ...msg,
-          content: msg.content + `\n\n❌ Plan creation failed: ${String(err)}`,
-          actionExecuted: true,
-        }
-        return next
-      })
+      const conversionError = String(err).replace(/^Error:\s*/, '')
+      setMessages((current) => scopeRef.current !== scope ? current : current.map((message, index) => index === messageIndex
+        ? { ...message, conversionError }
+        : message))
     } finally {
-      setConverting(false)
+      if (scopeRef.current === scope) setConvertingIndex(null)
     }
   }
 
@@ -253,7 +267,7 @@ export default function CopilotPanel({
                   ? <ReactMarkdown>{message.content}</ReactMarkdown>
                   : <div className="thinking"><span /><span /><span /></div>
                 : message.content}
-              {message.action && message.action.kind === 'create-plan' && !message.actionExecuted && (
+              {message.action && message.action.kind === 'create-plan' && (
                 <div className="action-plan-card">
                   <div className="action-plan-header">
                     <strong>📋 Simulation plan</strong>
@@ -279,13 +293,44 @@ export default function CopilotPanel({
                       </div>
                     ))}
                   </div>
-                  <button
-                    className="action-plan-convert"
-                    disabled={converting}
-                    onClick={() => convertToPlans(index)}
-                  >
-                    {converting ? <><Loader2 size={14} /> Converting…</> : <><ChevronRight size={14} /> Convert to plans</>}
-                  </button>
+                  {message.conversion ? (
+                    <div className={`action-plan-conversion ${message.conversion.failed ? 'partial' : 'success'}`}>
+                      <div className="action-plan-conversion-summary">
+                        {message.conversion.failed ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
+                        <span>
+                          <strong>{actionPlanConversionSummary(message.conversion)}</strong>
+                          <small>Nothing was submitted to Flow360. Open a plan to validate and review it.</small>
+                        </span>
+                      </div>
+                      <div className="action-plan-conversion-results">
+                        {message.conversion.results.map((item) => item.plan ? (
+                          <button type="button" key={item.id} onClick={() => onOpenPlan(item.plan!)}>
+                            <CheckCircle2 size={14} />
+                            <span><strong>{item.plan.name}</strong><small>Local draft plan · review required</small></span>
+                            <ChevronRight size={14} />
+                          </button>
+                        ) : (
+                          <div className="failed" key={item.id}>
+                            <AlertCircle size={14} />
+                            <span><strong>{item.id}</strong><small>{item.error || 'Plan conversion failed'}</small></span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {message.conversionError && (
+                        <div className="action-plan-conversion-error"><AlertCircle size={14} /><span><strong>Could not create the local plan</strong><small>{message.conversionError}</small></span></div>
+                      )}
+                      <button
+                        className="action-plan-convert"
+                        disabled={convertingIndex !== null}
+                        onClick={() => convertToPlans(index)}
+                      >
+                        {convertingIndex === index ? <><Loader2 className="spin" size={14} /> Creating local plans…</> : <><ChevronRight size={14} /> {message.conversionError ? 'Try conversion again' : 'Convert to plans'}</>}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
               {message.action?.kind === 'request-missing-input' && Boolean(message.action.questions?.length) && (

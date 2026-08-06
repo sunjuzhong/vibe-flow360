@@ -179,6 +179,14 @@ export type ActionPlanResult = {
   failed: number
 }
 
+export type ActionPlanContext = {
+  project_id: string
+  project_name?: string
+  source_id?: string
+  source_type?: string
+  source_name?: string
+}
+
 export type FolderNode = {
   id: string
   name: string
@@ -268,6 +276,8 @@ export type DraftRecord = {
   project_id?: string
   source_id?: string
   source_type?: string
+  source_item_id?: string
+  source_item_type?: string
   status?: string
   state?: string
   created_at?: string
@@ -987,8 +997,8 @@ export const api = {
     if (resourceId) params.set('resource_id', resourceId)
     return json<ChatSession>(`/api/agent/chat/session?${params.toString()}`)
   },
-  planFromAction: (action: AgentAction) =>
-    mutate<ActionPlanResult>('/api/agent/plan-from-action', { action }),
+  planFromAction: (action: AgentAction, context?: ActionPlanContext) =>
+    mutate<ActionPlanResult>('/api/agent/plan-from-action', { action, ...context }),
   interventions: (projectId?: string, state?: string) => {
     const params = new URLSearchParams()
     if (projectId) params.set('project_id', projectId)

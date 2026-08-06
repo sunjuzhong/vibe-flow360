@@ -877,7 +877,19 @@ export default function ProjectPage() {
         open={chatOpen}
         onClose={() => setChatOpen(false)}
         projectId={projectId}
+        projectName={project?.name}
         resourceId={selected?.id}
+        resourceType={selected?.type}
+        resourceName={selected?.name}
+        onOpenPlan={(plan) => {
+          setChatOpen(false)
+          if (selected?.id === plan.source_id) {
+            setInitialPlanId(plan.id)
+            setPlanOpen(true)
+            return
+          }
+          navigate(`/projects/${projectId}/resources/${encodeURIComponent(plan.source_id)}?plan=${encodeURIComponent(plan.id)}`)
+        }}
         contextLabel={selected ? `${selected.type} · ${selected.name}` : `Project · ${project?.name || projectId}`}
         context={JSON.stringify({
           project_id: project?.id ?? projectId,

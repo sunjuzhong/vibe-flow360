@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentAction } from '../api/client'
-import { copilotHorizontalContainment, shouldShowCopilotClarification } from './CopilotPanel'
+import { actionPlanConversionSummary, copilotHorizontalContainment, shouldShowCopilotClarification } from './CopilotPanel'
 
 const clarification: AgentAction = {
   version: 'v1',
@@ -23,5 +23,13 @@ describe('Ask AI clarification visibility', () => {
 describe('Ask AI horizontal overflow containment', () => {
   it('keeps the drawer and message list from scrolling horizontally', () => {
     expect(copilotHorizontalContainment).toEqual({ overflowX: 'hidden' })
+  })
+})
+
+describe('Ask AI plan conversion feedback', () => {
+  it('produces a visible local-plan completion summary', () => {
+    expect(actionPlanConversionSummary({
+      message: 'ready', results: [], total: 2, created: 1, failed: 1,
+    })).toBe('1/2 local plans ready')
   })
 })

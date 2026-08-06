@@ -2800,7 +2800,12 @@ func (s *Server) getChatSession(c *gin.Context) {
 }
 
 type actionPlanRequest struct {
-	Action agent.Action `json:"action"`
+	Action      agent.Action `json:"action"`
+	ProjectID   string       `json:"project_id,omitempty"`
+	ProjectName string       `json:"project_name,omitempty"`
+	SourceID    string       `json:"source_id,omitempty"`
+	SourceType  string       `json:"source_type,omitempty"`
+	SourceName  string       `json:"source_name,omitempty"`
 }
 
 func (s *Server) planFromAction(c *gin.Context) {
@@ -2818,7 +2823,22 @@ func (s *Server) planFromAction(c *gin.Context) {
 		return
 	}
 	results := make([]map[string]any, 0, len(req.Action.Proposals))
-	for _, p := range req.Action.Proposals {
+	for _, original := range req.Action.Proposals {
+		p := original
+		if strings.TrimSpace(p.ProjectID) == "" {
+			p.ProjectID = strings.TrimSpace(req.ProjectID)
+		}
+		if strings.TrimSpace(p.ProjectName) == "" {
+			p.ProjectName = strings.TrimSpace(req.ProjectName)
+		}
+		if strings.EqualFold(strings.TrimSpace(p.SourceType), strings.TrimSpace(req.SourceType)) {
+			if strings.TrimSpace(p.SourceID) == "" {
+				p.SourceID = strings.TrimSpace(req.SourceID)
+			}
+			if strings.TrimSpace(p.SourceName) == "" {
+				p.SourceName = strings.TrimSpace(req.SourceName)
+			}
+		}
 		evidence := make([]plans.Evidence, 0, len(p.Fields))
 		for _, field := range p.Fields {
 			evidence = append(evidence, plans.Evidence{
@@ -2840,6 +2860,7 @@ func (s *Server) planFromAction(c *gin.Context) {
 			Patch:           p.Patch,
 			Evidence:        evidence,
 			ValidationHints: append([]string(nil), p.ValidationHints...),
+			IdempotencyKey:  actionProposalIdempotencyKey(p),
 		}
 		plan, err := s.plans.Create(planInput)
 		if err != nil {
@@ -2863,6 +2884,12 @@ func (s *Server) planFromAction(c *gin.Context) {
 		"created":  countSuccesses(results),
 		"failed":   len(results) - countSuccesses(results),
 	})
+}
+
+func actionProposalIdempotencyKey(proposal agent.Proposal) string {
+	payload, _ := json.Marshal(proposal)
+	digest := sha256.Sum256(payload)
+	return "agent-action:" + hex.EncodeToString(digest[:16])
 }
 
 func countSuccesses(results []map[string]any) int {

@@ -811,6 +811,59 @@ func TestPlanFromActionRejectsNonCreatePlanKind(t *testing.T) {
 	}
 }
 
+func TestPlanFromActionUsesRequestContextAndIsIdempotent(t *testing.T) {
+	planStore, err := plans.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{plans: planStore}
+	action := agent.Action{
+		Version: agent.ActionVersion,
+		Kind:    agent.ActionCreatePlan,
+		Message: "Create a contextual plan",
+		Proposals: []agent.Proposal{{
+			ID: "context-plan", SourceType: "VolumeMesh", Target: "case",
+			Name: "Context Case", Intent: "Review locally", Patch: json.RawMessage(`{}`),
+		}},
+	}
+	request := actionPlanRequest{
+		Action: action, ProjectID: "project-context", ProjectName: "Context Project",
+		SourceID: "vm-context", SourceType: "VolumeMesh", SourceName: "Context Mesh",
+	}
+	body, _ := json.Marshal(request)
+
+	var planIDs []string
+	for attempt := 0; attempt < 2; attempt++ {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodPost, "/api/agent/plan-from-action", bytes.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		app.planFromAction(context)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("attempt %d returned status %d: %s", attempt+1, recorder.Code, recorder.Body.String())
+		}
+		var response struct {
+			Results []struct {
+				Plan plans.Plan `json:"plan"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if len(response.Results) != 1 {
+			t.Fatalf("expected one result, got %#v", response.Results)
+		}
+		plan := response.Results[0].Plan
+		if plan.ProjectID != request.ProjectID || plan.SourceID != request.SourceID || plan.SourceName != request.SourceName {
+			t.Fatalf("request context was not applied: %#v", plan)
+		}
+		planIDs = append(planIDs, plan.ID)
+	}
+	if planIDs[0] != planIDs[1] {
+		t.Fatalf("repeated conversion created duplicate plans: %v", planIDs)
+	}
+}
+
 func TestPlanPreflightBlocksApprovalAndAcceptsSchemaFormInputs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	temp := t.TempDir()
