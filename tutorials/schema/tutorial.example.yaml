@@ -1,0 +1,32 @@
+schema_version: 1
+id: T01
+slug: first-lift-drag
+title: First trustworthy lift and drag result
+summary: Run an aircraft geometry through meshing and a steady external-aerodynamics Case.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - feature: schema:type:SimulationParams
+    section: baseline
+    artifact: simulation.json
+assets:
+  - path: assets/aircraft.step
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    source: https://example.invalid/aircraft.step
+    license: Replace with the real asset license.
+variants:
+  - id: alpha-5deg
+    title: Increase angle of attack to five degrees
+    patch: variants/alpha-5deg.patch.json
+    evidence: variants/alpha-5deg.evidence.yaml

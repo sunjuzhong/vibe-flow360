@@ -6,6 +6,8 @@ web/dist/
 /vibe-flow360
 .env
 .vibesim/
+.tutorial-validation/
+__pycache__/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

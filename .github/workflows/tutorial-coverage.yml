@@ -5,7 +5,10 @@ on:
     paths:
       - "tutorials/**"
       - "scripts/export_flow360_features.py"
+      - "scripts/validate_tutorials.py"
+      - "scripts/test_validate_tutorials.py"
       - "cmd/tutorial-coverage/**"
+      - "Makefile"
       - "go.mod"
       - "go.sum"
   push:
@@ -23,8 +26,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install pinned Flow360 schema package
-        run: python -m pip install "$(python -c 'import json; print(json.load(open("tutorials/flow360-version.json"))["install_spec"])')"
+        run: python -m pip install -r tutorials/validator-requirements.txt "$(python -c 'import json; print(json.load(open("tutorials/flow360-version.json"))["install_spec"])')"
       - name: Verify registry snapshot
         run: python scripts/export_flow360_features.py --check
+      - name: Test tutorial validators
+        run: |
+          python -m unittest scripts/test_validate_tutorials.py
+          go test ./cmd/tutorial-coverage
+      - name: Validate tutorial contracts and artifacts
+        run: python scripts/validate_tutorials.py --output /tmp/tutorial-validation-report.json
       - name: Verify every public feature is accounted for
-        run: go run ./cmd/tutorial-coverage
+        run: go run ./cmd/tutorial-coverage --validation-report /tmp/tutorial-validation-report.json

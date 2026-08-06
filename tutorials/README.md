@@ -9,11 +9,17 @@ This directory is the machine-verifiable source of truth for tutorial coverage.
   that do not come from `SimulationParams`.
 - `coverage.yaml` maps every public feature to a tutorial section, or excludes
   generated/private implementation details with a reason.
+- `schema/tutorial.schema.json` defines the contract shared by every tutorial.
+- `schema/evidence.schema.json` defines machine-checkable engineering evidence.
+- `schema/validation-report.schema.json` defines the ephemeral CI evidence that
+  allows a coverage mapping to become `verified`.
+- `validator-requirements.txt` pins the small schema/YAML validation runtime;
+  the Flow360 package itself remains pinned by `flow360-version.json`.
 
 Run the gate locally with:
 
 ```bash
-make tutorials-coverage
+make tutorials-test
 ```
 
 When upgrading Flow360, install the exact new package version, update
@@ -32,5 +38,35 @@ The coverage gate reports four disjoint states:
 - `excluded`: intentionally outside the tutorial contract, with a documented reason.
 
 A mapping may be changed from `planned` to `verified` only when it names an
-`artifact` committed in this repository. Artifact deserialization and stage
-validation are added with the tutorial that owns it.
+`artifact` committed in this repository. The central validator must produce a
+fresh report proving that the tutorial declares the same feature, the artifact
+hash still matches, and the pinned Flow360 package deserialized and validated
+the artifact at the requested stage. Validation reports live under
+`.tutorial-validation/` and are deliberately not committed.
+
+## Tutorial package contract
+
+Use `schema/tutorial.example.yaml` as the starting point. A tutorial directory
+is named `<ID>-<slug>` and contains a `tutorial.yaml` plus the artifacts it
+declares. At minimum it includes:
+
+```text
+tutorials/T01-first-lift-drag/
+  tutorial.yaml
+  intent.yaml
+  spec.yaml
+  simulation.json
+  plan.md
+  expected/evidence.yaml
+```
+
+The validator performs these checks without contacting Flow360 cloud services:
+
+1. Validate `tutorial.yaml` and the evidence contract against their JSON Schemas.
+2. Enforce the pinned API/package version and safe repository-local paths.
+3. Check every declared coverage feature against `feature-registry.json`.
+4. Verify input asset SHA-256 checksums.
+5. Deserialize and stage-validate the baseline `SimulationParams` using the
+   public Flow360 validation service.
+6. Apply each variant as an RFC 7396 JSON Merge Patch and validate the result.
+7. Emit deterministic artifact hashes and checks for the coverage gate.

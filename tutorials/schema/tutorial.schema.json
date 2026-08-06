@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibe-flow360.local/schemas/tutorial.schema.json",
+  "title": "Vibe Flow360 Tutorial Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "slug", "title", "summary", "flow360", "artifacts", "evidence", "coverage"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^T[0-9]{2}$"},
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "title": {"type": "string", "minLength": 1},
+    "summary": {"type": "string", "minLength": 1},
+    "flow360": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "package_version", "root_item_type", "validation_level"],
+      "properties": {
+        "api_version": {"type": "string", "minLength": 1},
+        "package_version": {"type": "string", "minLength": 1},
+        "root_item_type": {"enum": ["Geometry", "SurfaceMesh", "VolumeMesh"]},
+        "validation_level": {"enum": ["SurfaceMesh", "VolumeMesh", "Case", "All"]}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "minLength": 1},
+      "required": ["intent", "spec", "simulation", "plan"],
+      "properties": {
+        "intent": {"type": "string", "minLength": 1},
+        "spec": {"type": "string", "minLength": 1},
+        "simulation": {"type": "string", "minLength": 1},
+        "plan": {"type": "string", "minLength": 1},
+        "report": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract"],
+      "properties": {"contract": {"type": "string", "minLength": 1}}
+    },
+    "coverage": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feature", "section", "artifact"],
+        "properties": {
+          "feature": {"type": "string", "minLength": 1},
+          "section": {"type": "string", "minLength": 1},
+          "artifact": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "source"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "source": {"type": "string", "minLength": 1},
+          "license": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "variants": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "patch"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "title": {"type": "string", "minLength": 1},
+          "patch": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1},
+          "validation_level": {"enum": ["SurfaceMesh", "VolumeMesh", "Case", "All"]}
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 .PHONY: dev web server build init test clean cad-runtime install tutorials-registry tutorials-coverage tutorials-validate tutorials-test
 
 web:
