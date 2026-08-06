@@ -41,6 +41,8 @@ command.
 The repository now contains a working local Web prototype:
 
 - React/Vite simulation workspace with a persistent **Chat with AI** panel;
+- browser-native guided tutorials at `/tutorials`, beginning with the T01
+  lift-and-drag lesson built from its pinned SimulationParams artifact;
 - homepage **AI Create** flow that turns a cylinder-flow requirement into a
   CAD-kernel-generated, validated analytic B-rep Geometry, a Flow360 Project,
   and a preloaded Case plan;
@@ -116,7 +118,7 @@ npm run dev
 The Vite server prints the browser URL and proxies `/api` to
 `http://localhost:9292`.
 
-### Init cold-start CI
+## Init cold-start CI
 
 `.github/workflows/init-smoke.yml` repeats a credential-free first installation
 every day and on relevant pull requests or pushes, using clean Ubuntu and macOS
@@ -143,6 +145,11 @@ Release binaries report the matching version directly:
 vibe-flow360 version
 ```
 
+Open `/tutorials` from the top navigation to enter the tutorial library. T01
+teaches the engineering question, geometry semantics, parameter provenance,
+the controlled 0°/5° variant, and the evidence contract entirely in the Web UI.
+
+## Agent configuration
 ## Agent configuration
 
 The default `builtin` provider preserves the current behavior. Without an API

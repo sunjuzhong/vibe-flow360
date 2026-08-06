@@ -1,0 +1,59 @@
+import { ArrowRight, BookOpen, CheckCircle2, Clock3, Plane, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import type { Flow360Status } from '../api/client'
+import { api } from '../api/client'
+import TopBar from '../components/TopBar'
+
+export default function TutorialLibraryPage() {
+  const [status, setStatus] = useState<Flow360Status | null>(null)
+
+  useEffect(() => {
+    api.flow360Status().then(setStatus).catch(() => setStatus({ available: false }))
+  }, [])
+
+  return (
+    <div className="tutorial-library-page">
+      <TopBar status={status} title="Learn by building trustworthy simulations" />
+      <main className="tutorial-library">
+        <header className="tutorial-library-hero">
+          <div>
+            <p className="eyebrow">GUIDED TUTORIALS</p>
+            <h1>Learn Flow360 through engineering decisions.</h1>
+            <p>Each tutorial connects a physical question to a reviewable setup, a controlled variant, and evidence you can use to decide whether the result is trustworthy.</p>
+          </div>
+          <div className="tutorial-library-principle">
+            <ShieldCheck size={21} />
+            <div><strong>Completion is not credibility</strong><span>Every lesson ends with an evidence contract, not just a green solver status.</span></div>
+          </div>
+        </header>
+
+        <section className="tutorial-catalog-heading">
+          <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Start locally. Connect to cloud execution only after review.</p></div></div>
+          <span>1 available</span>
+        </section>
+
+        <section className="tutorial-card-grid">
+          <Link className="tutorial-card" to="/tutorials/T01">
+            <div className="tutorial-card-visual">
+              <Plane size={45} strokeWidth={1.15} />
+              <span className="tutorial-id">T01</span>
+              <span className="tutorial-level">FOUNDATION</span>
+            </div>
+            <div className="tutorial-card-content">
+              <p className="eyebrow">EXTERNAL AERODYNAMICS</p>
+              <h2>First trustworthy lift and drag result</h2>
+              <p>Set up a simple aircraft at 0° and 5° angle of attack, then learn why mesh review, convergence, and force stability all matter.</p>
+              <div className="tutorial-card-meta">
+                <span><Clock3 size={13} /> 15–20 min</span>
+                <span><CheckCircle2 size={13} /> Browser guided</span>
+                <span>Flow360 25.10</span>
+              </div>
+              <span className="tutorial-start">Start tutorial <ArrowRight size={15} /></span>
+            </div>
+          </Link>
+        </section>
+      </main>
+    </div>
+  )
+}
