@@ -24,10 +24,10 @@ describe('tutorial environment folder selection', () => {
     ])).toBe('tutorials')
   })
 
-  it('opens the created Project with the baseline Plan and tutorial context', () => {
+  it('opens the created Project with the baseline Draft and tutorial context', () => {
     expect(tutorialEnvironmentPath({
       projectId: 'prj/one',
-      baselinePlan: { id: 'plan baseline' },
-    }, 'T01')).toBe('/projects/prj%2Fone?plan=plan%20baseline&tutorial=T01')
+      baselineDraft: { id: 'draft baseline' },
+    }, 'T01')).toBe('/projects/prj%2Fone?draft=draft%20baseline&tutorial=T01')
   })
 })

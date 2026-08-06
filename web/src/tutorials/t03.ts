@@ -1,7 +1,6 @@
 import baselineDocument from '../../../tutorials/T03-cylinder-boundary-layer/simulation.json'
 import refinedPatch from '../../../tutorials/T03-cylinder-boundary-layer/variants/refined-mesh.patch.json'
 import geometryUrl from '../../../tutorials/T03-cylinder-boundary-layer/assets/cylinder.csm?url'
-import type { SimulationPlan } from '../api/client'
 import {
   mergeTutorialPatch,
   type SetupCheck,
@@ -17,7 +16,7 @@ export const t03Steps: TutorialStep[] = [
   { id: 'setup', label: '03', title: 'Build the mesh controls', summary: 'Combine global defaults with local surface and layer rules.' },
   { id: 'variant', label: '04', title: 'Compare a refinement', summary: 'Tighten three spatial controls without changing the geometry.' },
   { id: 'evidence', label: '05', title: 'Define mesh evidence', summary: 'Inspect curvature, layers, transitions, and cell quality.' },
-  { id: 'run', label: '06', title: 'Create mesh Plans', summary: 'Create the environment while keeping cloud meshing behind approval.' },
+  { id: 'run', label: '06', title: 'Create mesh Drafts', summary: 'Create configured Drafts while keeping cloud meshing behind approval.' },
 ]
 
 export const t03Baseline = baselineDocument as unknown as Record<string, unknown>
@@ -108,29 +107,22 @@ export async function createT03Environment(
   const geometryId = identifier(submitted.result, 'root_resource_id')
   if (!projectId || !geometryId) throw new Error('Flow360 created the tutorial Project without returning its Geometry identifiers.')
 
-  onStage('creating-plans')
+  onStage('creating-drafts')
   const shared = {
-    project_id: projectId,
-    project_name: input.projectName,
     source_id: geometryId,
-    source_type: 'Geometry',
-    source_name: 'T03 Cylinder Geometry',
-    target: 'volume-mesh',
   }
-  const plans: SimulationPlan[] = await Promise.all([
-    client.createPlan({
+  const drafts = await Promise.all([
+    client.createConfiguredDraft(projectId, {
       ...shared,
       name: 'T03 baseline · curvature + layers',
-      intent: 'Create the reviewed baseline VolumeMesh for the three-dimensional cylinder.',
       patch: t03Params(false),
     }),
-    client.createPlan({
+    client.createConfiguredDraft(projectId, {
       ...shared,
       name: 'T03 refined · tighter curvature + first layer',
-      intent: 'Create the controlled refined VolumeMesh while preserving the cylinder geometry and farfield.',
       patch: t03Params(true),
     }),
   ])
   onStage('ready')
-  return { projectId, geometryId, baselinePlan: plans[0], variantPlan: plans[1] }
+  return { projectId, rootResourceId: geometryId, baselineDraft: drafts[0], variantDraft: drafts[1] }
 }

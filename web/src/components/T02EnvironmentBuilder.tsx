@@ -9,7 +9,7 @@ import { preferredTutorialFolder, tutorialEnvironmentPath, tutorialFolderOptions
 const accepted = '.cgns,.dat,.key,.k,.msh,.nas,.bdf,.inp,.vtk,.vtu'
 const stageLabel: Record<TutorialEnvironmentStage, string> = {
   staging: 'Stage uploaded mesh', 'creating-project': 'Create and inspect mesh root',
-  'creating-plans': 'Compile two Case Plans', ready: 'Ready for review',
+  'creating-drafts': 'Configure two Case Drafts', ready: 'Ready for review',
 }
 
 export default function T02EnvironmentBuilder({ status }: { status: Flow360Status | null }) {
@@ -43,7 +43,7 @@ export default function T02EnvironmentBuilder({ status }: { status: Flow360Statu
   }
 
   return <div className="tutorial-environment-builder">
-    <div className="environment-builder-heading"><div className="run-ready-icon"><Rocket size={25}/></div><div><span>CREATE THE EXPERIMENT</span><strong>Build a T02 mesh-entry Project</strong><p>Upload a reviewed mesh, create its Project root, and prepare α 0°/5° Case Plans without running them.</p></div></div>
+    <div className="environment-builder-heading"><div className="run-ready-icon"><Rocket size={25}/></div><div><span>CREATE THE EXPERIMENT</span><strong>Build a T02 mesh-entry Project</strong><p>Upload a reviewed mesh, create its Project root, and configure α 0°/5° Case Drafts without running them.</p></div></div>
     <div className="alpha-control" role="group" aria-label="Project entry type">
       <button className={entry === 'surface-mesh' ? 'active' : ''} onClick={() => chooseEntry('surface-mesh')} disabled={busy}><span>SurfaceMesh root</span><strong>VolumeMesh → Case remains</strong></button>
       <button className={entry === 'volume-mesh' ? 'active' : ''} onClick={() => chooseEntry('volume-mesh')} disabled={busy}><span>VolumeMesh root</span><strong>Direct to Case</strong></button>
@@ -57,10 +57,10 @@ export default function T02EnvironmentBuilder({ status }: { status: Flow360Statu
       <div><Folder size={15}/><span><strong>{selectedFolder?.label || 'Choose a destination'}</strong><small>Flow360 Project · release-25.10 · unit m</small></span></div>
       <div><FileUp size={15}/><span><strong>{file?.name || 'Choose a supported mesh'}</strong><small>{entry === 'surface-mesh' ? 'Volume meshing and Case validation remain' : 'Only Case validation remains'}</small></span></div>
     </div>
-    {stage && <div className="lesson-callout success"><RefreshCw className={busy ? 'spin' : ''} size={17}/><p><strong>{stageLabel[stage]}</strong>The Project is being prepared for local Plan review.</p></div>}
+    {stage && <div className="lesson-callout success"><RefreshCw className={busy ? 'spin' : ''} size={17}/><p><strong>{stageLabel[stage]}</strong>The Project and remote Draft parameters are being prepared.</p></div>}
     {error && <div className="lesson-callout warning"><AlertTriangle size={17}/><p><strong>Environment creation stopped</strong>{error}</p></div>}
     {!status?.available && <div className="cloud-readiness"><Cloud size={17}/><span><strong>Flow360 connection required</strong><small>Connect the local profile before uploading.</small></span></div>}
-    <label className="environment-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={busy}/><span>I confirm the mesh unit is metres and authorize creation of this remote Project. Boundary semantics and both local Plans still require review before execution.</span></label>
-    <button className="environment-create-button" disabled={!canCreate} onClick={() => void create()}>{busy ? <RefreshCw size={16} className="spin"/> : <CheckCircle2 size={16}/>} {busy && stage ? stageLabel[stage] : 'Create Project + 2 Case Plans'}</button>
+    <label className="environment-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={busy}/><span>I confirm the mesh unit is metres and authorize creation of this remote Project and two configured Case Drafts. Boundary semantics still require review before execution.</span></label>
+    <button className="environment-create-button" disabled={!canCreate} onClick={() => void create()}>{busy ? <RefreshCw size={16} className="spin"/> : <CheckCircle2 size={16}/>} {busy && stage ? stageLabel[stage] : 'Create Project + 2 Case Drafts'}</button>
   </div>
 }

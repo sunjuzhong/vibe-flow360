@@ -9,5 +9,5 @@ inputs:
 deliverables:
   - A reviewed curvature-sensitive cylinder surface mesh
   - A continuous near-wall boundary-layer stack
-  - Baseline and refined VolumeMesh Plans with an explicit semantic diff
+  - Baseline and refined VolumeMesh Drafts with an explicit semantic diff
   - A mesh-quality evidence contract that precedes solver execution

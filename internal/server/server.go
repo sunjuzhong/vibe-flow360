@@ -276,6 +276,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/tree", s.flow360ProjectTree)
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
 		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
+		api.POST("/flow360/projects/:project_id/drafts", s.createConfiguredFlow360Draft)
 		api.GET("/flow360/drafts/:draft_id/parameters/schema", s.flow360DraftParameterSchema)
 		api.POST("/flow360/drafts/:draft_id/parameters/validate", s.validateFlow360DraftParameters)
 		api.PUT("/flow360/drafts/:draft_id/parameters", s.updateFlow360DraftParameters)

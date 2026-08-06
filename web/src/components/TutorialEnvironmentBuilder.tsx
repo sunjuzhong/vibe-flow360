@@ -28,26 +28,20 @@ export function preferredTutorialFolder(options: FolderOption[]): string {
 }
 
 export function tutorialEnvironmentPath(
-  result: { projectId: string; baselinePlan: { id: string } },
+  result: { projectId: string; baselineDraft: { id: string } },
   tutorialId: string,
 ): string {
-  return `/projects/${encodeURIComponent(result.projectId)}?plan=${encodeURIComponent(result.baselinePlan.id)}&tutorial=${encodeURIComponent(tutorialId)}`
+  return `/projects/${encodeURIComponent(result.projectId)}?draft=${encodeURIComponent(result.baselineDraft.id)}&tutorial=${encodeURIComponent(tutorialId)}`
 }
 
-const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-plans', 'ready']
-function stageCopy(planKind: string): Record<TutorialEnvironmentStage, string> {
+const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-drafts', 'ready']
+function stageCopy(draftKind: string): Record<TutorialEnvironmentStage, string> {
   return {
     staging: 'Stage bundled geometry',
     'creating-project': 'Create and process Geometry',
-    'creating-plans': `Compile two configured ${planKind} Plans`,
+    'creating-drafts': `Configure two ${draftKind} Drafts`,
     ready: 'Ready for review',
   }
-}
-
-function planState(plan: TutorialEnvironmentResult['baselinePlan']) {
-  if (plan.preflight?.valid) return 'Preflight passed'
-  if (plan.preflight) return 'Needs review'
-  return 'Draft created'
 }
 
 type EnvironmentCreator = (
@@ -63,7 +57,7 @@ export type TutorialEnvironmentBuilderProps = {
   heading?: string
   description?: string
   configurationSummary?: string
-  planKind?: string
+  draftKind?: string
   baselineValue?: string
   variantValue?: string
   successDescription?: string
@@ -75,12 +69,12 @@ export default function TutorialEnvironmentBuilder({
   tutorialId = 'T01',
   defaultProjectName = 'Tutorial T01 · Lift and drag',
   heading = 'Build the T01 environment from this lesson',
-  description = 'The app uploads the bundled aircraft, waits for its Geometry, and creates two fully configured draft Case Plans.',
+  description = 'The app uploads the bundled aircraft, waits for its Geometry, and creates two configured Flow360 Case Drafts.',
   configurationSummary = 'Mesh, physics, boundaries, outputs, α 0° and α 5°',
-  planKind = 'Case',
+  draftKind = 'Case',
   baselineValue = 'α = 0°',
   variantValue = 'α = 5°',
-  successDescription = 'The Geometry is processed and both Case Plans are configured. No mesh or Case computation has been submitted.',
+  successDescription = 'The Geometry is processed and both Case Drafts have their parameters configured. No mesh or Case computation has been submitted.',
   createEnvironment = createT01Environment,
 }: TutorialEnvironmentBuilderProps) {
   const navigate = useNavigate()
@@ -92,7 +86,7 @@ export default function TutorialEnvironmentBuilder({
   const [result, setResult] = useState<TutorialEnvironmentResult | null>(null)
   const [error, setError] = useState('')
   const busy = stage !== null && stage !== 'ready'
-  const stages = stageCopy(planKind)
+  const stages = stageCopy(draftKind)
 
   useEffect(() => {
     api.folders()
@@ -129,11 +123,11 @@ export default function TutorialEnvironmentBuilder({
     return <div className="tutorial-environment-success">
       <div className="environment-success-heading"><CheckCircle2 size={28}/><div><span>EXPERIMENT ENVIRONMENT READY</span><strong>{projectName}</strong><p>{successDescription}</p></div></div>
       <div className="environment-plan-pair">
-        <article><span>BASELINE</span><strong>{baselineValue}</strong><small>{planState(result.baselinePlan)}</small></article>
-        <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>{planState(result.variantPlan)}</small></article>
+        <article><span>BASELINE</span><strong>{baselineValue}</strong><small>Draft parameters synced</small></article>
+        <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>Draft parameters synced</small></article>
       </div>
       <button className="lesson-workspace-button" onClick={() => navigate(tutorialEnvironmentPath(result, tutorialId))}>
-        <span>Review configured Plans</span><Rocket size={17}/>
+        <span>Review configured Drafts</span><Rocket size={17}/>
       </button>
     </div>
   }
@@ -168,10 +162,10 @@ export default function TutorialEnvironmentBuilder({
 
     <label className="environment-confirm">
       <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={busy}/>
-      <span>I reviewed the destination and authorize creation of this remote Flow360 Project. The two {planKind} Plans remain local drafts until I separately approve and run them.</span>
+      <span>I reviewed the destination and authorize creation of this remote Flow360 Project and two configured {draftKind} Drafts. Nothing is submitted until I review and run a Draft.</span>
     </label>
     <button className="environment-create-button" disabled={!canCreate} onClick={() => void create()}>
-      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stages[stage] : `Create Project + 2 ${planKind} Plans`}
+      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stages[stage] : `Create Project + 2 ${draftKind} Drafts`}
     </button>
   </div>
 }

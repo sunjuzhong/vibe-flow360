@@ -90,6 +90,50 @@ fi
 	}
 }
 
+func TestCreateConfiguredDraftMergesPatchIntoRemoteBaseline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	paramsPath := filepath.Join(dir, "params.json")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+case "$*" in
+  "draft list --project-id prj-1") printf '{"records":[]}' ;;
+  "draft create geo-1 --name Tutorial baseline") printf '{"id":"dft-1","type":"Draft","name":"Tutorial baseline"}' ;;
+  "draft info dft-1") printf '{"id":"dft-1","type":"Draft","source_id":"geo-1","source_type":"Geometry"}' ;;
+  "draft state dft-1") printf '{"status":"draft"}' ;;
+  "draft simulation-params get dft-1") printf '{"simulation_params":{"models":[],"operating_condition":{"alpha":{"value":0,"units":"degree"}}}}' ;;
+  draft\ simulation-params\ set\ dft-1*) cp "$5" "` + paramsPath + `"; printf '{"status":"updated"}' ;;
+  *) printf 'unexpected arguments: %s' "$*" >&2; exit 2 ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Params = gin.Params{{Key: "project_id", Value: "prj-1"}}
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/projects/prj-1/drafts", strings.NewReader(`{
+		"source_id":"geo-1","name":"Tutorial baseline",
+		"patch":{"operating_condition":{"alpha":{"value":5,"units":"degree"}}}
+	}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	app.createConfiguredFlow360Draft(context)
+	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), `"id":"dft-1"`) {
+		t.Fatalf("unexpected configured Draft response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), `"simulation_params":{"simulation_params"`) {
+		t.Fatalf("configured Draft response kept the CLI wrapper: %s", recorder.Body.String())
+	}
+	written, err := os.ReadFile(paramsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(written), `"models":[]`) || !strings.Contains(string(written), `"value":5`) {
+		t.Fatalf("Draft baseline was not preserved and patched: %s", written)
+	}
+}
+
 func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 	tests := map[string]struct {
 		environment string

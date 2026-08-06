@@ -7,7 +7,7 @@ import {
   tutorialProgress,
   validateT01Setup,
 } from './t01'
-import type { ImportPlan, SimulationPlan } from '../api/client'
+import type { ConfiguredDraft, ImportPlan } from '../api/client'
 
 describe('T01 browser tutorial', () => {
   it('uses the committed SimulationParams artifact as its baseline', () => {
@@ -39,9 +39,9 @@ describe('T01 browser tutorial', () => {
     expect(tutorialProgress(['question', 'geometry', 'setup', 'variant', 'evidence', 'run'])).toBe(100)
   })
 
-  it('creates a processed Project and two configured draft Plans', async () => {
+  it('creates a processed Project and two configured remote Drafts', async () => {
     const calls: string[] = []
-    const planInputs: Array<Record<string, unknown>> = []
+    const draftInputs: Array<Record<string, unknown>> = []
     const staged = { id: 'import-1', status: 'draft' } as ImportPlan
     const approved = { ...staged, status: 'approved' } as ImportPlan
     const submitted = {
@@ -56,9 +56,9 @@ describe('T01 browser tutorial', () => {
       },
       approveImport: async (id: string) => { calls.push(`approve:${id}`); return approved },
       runImport: async (id: string, sync?: boolean) => { calls.push(`run:${id}:${sync}`); return submitted },
-      createPlan: async (input: Record<string, unknown>) => {
-        planInputs.push(input)
-        return { id: `plan-${planInputs.length}`, ...input, status: 'draft' } as unknown as SimulationPlan
+      createConfiguredDraft: async (projectId: string, input: Record<string, unknown>) => {
+        draftInputs.push({ projectId, ...input })
+        return { id: `draft-${draftInputs.length}`, project_id: projectId, simulation_params: input.patch, ...input } as ConfiguredDraft
       },
     }
     const stages: string[] = []
@@ -71,10 +71,12 @@ describe('T01 browser tutorial', () => {
     )
 
     expect(calls).toEqual(['stage:T01 experiment:folder-1:geometry.csm', 'approve:import-1', 'run:import-1:true'])
-    expect(stages).toEqual(['staging', 'creating-project', 'creating-plans', 'ready'])
+    expect(stages).toEqual(['staging', 'creating-project', 'creating-drafts', 'ready'])
     expect(result.projectId).toBe('prj-1')
-    expect(planInputs).toHaveLength(2)
-    expect((planInputs[0].patch as Record<string, Record<string, unknown>>).operating_condition.alpha).toEqual({ units: 'degree', value: 0 })
-    expect((planInputs[1].patch as Record<string, Record<string, unknown>>).operating_condition.alpha).toEqual({ units: 'degree', value: 5 })
+    expect(draftInputs).toHaveLength(2)
+    expect(draftInputs[0].projectId).toBe('prj-1')
+    expect((draftInputs[0].patch as Record<string, Record<string, unknown>>).operating_condition.alpha).toEqual({ units: 'degree', value: 0 })
+    expect((draftInputs[1].patch as Record<string, Record<string, unknown>>).operating_condition.alpha).toEqual({ units: 'degree', value: 5 })
+    expect(result.baselineDraft.id).toBe('draft-1')
   })
 })

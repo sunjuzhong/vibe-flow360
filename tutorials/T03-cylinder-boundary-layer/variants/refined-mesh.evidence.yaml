@@ -20,4 +20,4 @@ criteria:
     check: {method: manual, metric: mesh.comparison.reviewed}
 limitations:
   - A finer mesh is not automatically a better engineering model.
-  - The refined Plan still requires cloud meshing and evidence review.
+  - The refined Draft still requires cloud meshing and evidence review.

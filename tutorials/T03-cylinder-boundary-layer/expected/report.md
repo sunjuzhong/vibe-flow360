@@ -7,7 +7,7 @@
 
 ## Surface mesh
 
-- Capture the circular cross-section at the same camera position for both Plans.
+- Capture the circular cross-section at the same camera position for both Drafts.
 - Compare maximum edge length and curvature resolution without changing geometry.
 
 ## Boundary layer
@@ -17,5 +17,5 @@
 
 ## Decision
 
-- State which Plan is acceptable for the next solver experiment and why.
+- State which Draft is acceptable for the next solver experiment and why.
 - Record that mesh independence and target y-plus remain unresolved.

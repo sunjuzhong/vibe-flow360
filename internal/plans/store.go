@@ -691,16 +691,23 @@ func (s *Store) applyInputs(id string, revision int, values json.RawMessage, sch
 }
 
 func MergedSimulationParams(plan Plan) (json.RawMessage, error) {
+	return MergeSimulationParams(plan.Baseline, plan.Patch)
+}
+
+// MergeSimulationParams applies an RFC 7396 patch to a Flow360 parameter tree.
+// Flow360 CLI responses may wrap the tree in simulation_params, so unwrap the
+// baseline before merging and return the canonical object shape expected by set.
+func MergeSimulationParams(baselineRaw, patchRaw json.RawMessage) (json.RawMessage, error) {
 	var baseline any = map[string]any{}
-	if len(plan.Baseline) > 0 {
-		if err := json.Unmarshal(plan.Baseline, &baseline); err != nil {
-			return nil, errors.New("stored Flow360 baseline SimulationParams is invalid")
+	if len(baselineRaw) > 0 {
+		if err := json.Unmarshal(baselineRaw, &baseline); err != nil {
+			return nil, errors.New("Flow360 baseline SimulationParams is invalid")
 		}
 		baseline = unwrapSimulationParams(baseline)
 	}
 	var patch any
-	if err := json.Unmarshal(plan.Patch, &patch); err != nil {
-		return nil, errors.New("stored plan patch is invalid")
+	if err := json.Unmarshal(patchRaw, &patch); err != nil {
+		return nil, errors.New("SimulationParams patch is invalid")
 	}
 	result, err := json.Marshal(mergePatch(baseline, patch))
 	if err != nil {

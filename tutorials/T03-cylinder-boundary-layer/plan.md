@@ -13,7 +13,7 @@ make tutorials-validate
 2. Compare the baseline and refined mesh assumptions.
 3. Complete the mesh evidence contract.
 4. In the final step, select the destination folder and explicitly authorize Project creation.
-5. The app creates the Geometry Project and two local VolumeMesh Plan drafts.
-6. Review and approve a Plan in Workspace before starting paid cloud meshing.
+5. The app creates the Geometry Project and two configured Flow360 VolumeMesh Drafts.
+6. Review a Draft in the Project before starting paid cloud meshing.
 
 No surface or volume mesh is submitted automatically by the tutorial.

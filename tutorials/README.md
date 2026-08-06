@@ -44,10 +44,10 @@ The coverage gate reports four disjoint states:
   a 5° angle-of-attack variant, and explicit mesh/convergence/force evidence.
 - [T02 — Choose the right Project entry path](T02-project-entry-paths/README.md):
   a browser-native comparison of Geometry, SurfaceMesh, and VolumeMesh roots,
-  with user-selected mesh upload and two local Case Plan drafts.
+  with user-selected mesh upload and two configured Flow360 Case Drafts.
 - [T03 — Curvature-sensitive cylinder mesh](T03-cylinder-boundary-layer/README.md):
   global meshing defaults, local SurfaceRefinement, BoundaryLayer controls, and
-  browser-created baseline/refined VolumeMesh Plan drafts.
+  browser-created baseline/refined VolumeMesh Drafts.
 
 T01, T02, and T03 can be experienced locally without cloud execution charges:
 

@@ -21,9 +21,9 @@ describe('T03 browser tutorial', () => {
     expect(t03Progress(['question', 'question', 'geometry', 'unknown'])).toBe(33)
   })
 
-  it('creates a Geometry Project and two local VolumeMesh Plans', async () => {
+  it('creates a Geometry Project and two configured VolumeMesh Drafts', async () => {
     const calls: string[] = []
-    const createPlan = vi.fn(async (input: any) => ({ id: `${input.name}-id`, preflight: { valid: true } }))
+    const createConfiguredDraft = vi.fn(async (projectId: string, input: any) => ({ id: `${input.name}-id`, project_id: projectId, simulation_params: input.patch, ...input }))
     const result = await createT03Environment(
       { folderId: 'folder-3', projectName: 'T03 experiment' },
       {
@@ -36,14 +36,14 @@ describe('T03 browser tutorial', () => {
           calls.push(`run:${id}:${sync}`)
           return { id, result: { project_id: 'project-3', root_resource_id: 'geometry-3' } } as any
         },
-        createPlan: createPlan as any,
+        createConfiguredDraft: createConfiguredDraft as any,
       },
       () => undefined,
       vi.fn(async () => new Response('cylinder geometry')) as typeof fetch,
     )
     expect(calls).toEqual(['stage:T03 experiment:folder-3:cylinder.csm', 'approve:import-3', 'run:import-3:true'])
-    expect(createPlan).toHaveBeenCalledTimes(2)
-    expect(createPlan.mock.calls.map(([input]) => input.target)).toEqual(['volume-mesh', 'volume-mesh'])
-    expect(result).toMatchObject({ projectId: 'project-3', geometryId: 'geometry-3' })
+    expect(createConfiguredDraft).toHaveBeenCalledTimes(2)
+    expect(createConfiguredDraft.mock.calls.map(([projectId]) => projectId)).toEqual(['project-3', 'project-3'])
+    expect(result).toMatchObject({ projectId: 'project-3', rootResourceId: 'geometry-3' })
   })
 })

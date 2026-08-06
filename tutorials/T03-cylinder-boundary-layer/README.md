@@ -11,5 +11,5 @@ The baseline uses a 0.25 m local maximum edge length, 10° curvature resolution,
 three spatial controls while preserving geometry, farfield, and mesher choice.
 
 Use the browser lesson at `/tutorials/T03`. The final action creates a Geometry
-Project and two fully configured VolumeMesh Plan drafts. It does not submit
+Project and two fully configured Flow360 VolumeMesh Drafts. It does not submit
 cloud meshing automatically.

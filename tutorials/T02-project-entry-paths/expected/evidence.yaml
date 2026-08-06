@@ -15,7 +15,7 @@ criteria:
   - id: boundary-semantics-reviewed
     category: mesh
     description: Uploaded boundary names are mapped to physical models before execution.
-    artifact: Case Plan preflight
+    artifact: Case Draft parameter review
     required: true
     check: {method: manual, metric: model.boundaries-mapped}
 limitations:

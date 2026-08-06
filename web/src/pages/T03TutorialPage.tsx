@@ -97,7 +97,7 @@ export default function T03TutorialPage() {
         <div className="lesson-kicker"><Sparkles size={15}/> Engineering intent</div>
         <h1>Can this mesh resolve both the cylinder shape and its near-wall gradient?</h1>
         <p className="lesson-lead">You will make surface curvature and boundary-layer assumptions explicit before a solver Case exists. The decision is mesh credibility—not whether a job finishes.</p>
-        <div className="lesson-decision-card"><span>DECISION</span><strong>Which mesh is ready to support the next cylinder experiment?</strong><p>Use the same geometry and farfield for both Plans so the comparison isolates resolution choices.</p></div>
+        <div className="lesson-decision-card"><span>DECISION</span><strong>Which mesh is ready to support the next cylinder experiment?</strong><p>Use the same geometry and farfield for both Drafts so the comparison isolates resolution choices.</p></div>
         <div className="lesson-objectives">
           <div><CircleDot/><span><strong>Resolve curvature</strong>Connect normal-angle change to facets around the circular profile.</span></div>
           <div><Layers3/><span><strong>Protect the wall</strong>Make first-layer thickness and growth rate reviewable.</span></div>
@@ -127,7 +127,7 @@ export default function T03TutorialPage() {
       case 'variant': return <>
         <div className="lesson-kicker"><ScanLine size={15}/> Controlled refinement</div>
         <h1>Tighten spatial controls without changing the model.</h1>
-        <p className="lesson-lead">The refined Plan changes local edge length, local curvature angle, and first-layer thickness. Geometry, mesher, growth rate, and farfield stay fixed.</p>
+        <p className="lesson-lead">The refined Draft changes local edge length, local curvature angle, and first-layer thickness. Geometry, mesher, growth rate, and farfield stay fixed.</p>
         <div className="mesh-experiment">
           <div className="alpha-control" role="group" aria-label="Mesh fidelity">
             <button className={!refined ? 'active' : ''} onClick={() => setRefined(false)}><span>Baseline</span><strong>0.25 m · 10°</strong></button>
@@ -143,24 +143,24 @@ export default function T03TutorialPage() {
         <h1>A finer parameter value is a hypothesis until the mesh is inspected.</h1>
         <p className="lesson-lead">Review all four conditions. They establish what the generated SurfaceMesh and VolumeMesh must demonstrate before the solver stage.</p>
         <div className="evidence-checklist">{t03Evidence.map((item) => { const selected = evidenceReviewed.includes(item.title); return <button className={selected ? 'reviewed' : ''} key={item.title} onClick={() => setEvidenceReviewed((current) => selected ? current.filter((value) => value !== item.title) : [...current, item.title])}><span className="evidence-check">{selected && <Check size={15}/>}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span></button> })}</div>
-        <div className={`lesson-callout ${evidenceReviewed.length === t03Evidence.length ? 'success' : ''}`}>{evidenceReviewed.length === t03Evidence.length ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<p><strong>{evidenceReviewed.length}/4 reviewed</strong>{evidenceReviewed.length === t03Evidence.length ? 'The mesh acceptance contract is ready for both Plans.' : 'Review all four requirements before creating the experiment.'}</p></div>
+        <div className={`lesson-callout ${evidenceReviewed.length === t03Evidence.length ? 'success' : ''}`}>{evidenceReviewed.length === t03Evidence.length ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<p><strong>{evidenceReviewed.length}/4 reviewed</strong>{evidenceReviewed.length === t03Evidence.length ? 'The mesh acceptance contract is ready for both Drafts.' : 'Review all four requirements before creating the experiment.'}</p></div>
       </>
       default: return <>
         <div className="lesson-kicker"><Cloud size={15}/> Execution boundary</div>
         <h1>Create the mesh experiment without starting cloud meshing.</h1>
-        <p className="lesson-lead">The app can now create the cylinder Geometry Project and two configured VolumeMesh Plans. Surface and volume meshing remain explicit, separately approved actions.</p>
+        <p className="lesson-lead">The app can now create the cylinder Geometry Project and two configured VolumeMesh Drafts. Surface and volume meshing remain explicit, separately approved actions.</p>
         <div className="run-readiness-card"><div className="run-ready-icon"><CheckCircle2 size={30}/></div><div><span>LOCAL TUTORIAL STATUS</span><strong>Baseline and refined mesh validated</strong><p>38 meshing schema capabilities are backed by the pinned Flow360 25.10.3 artifact.</p></div></div>
         <TutorialEnvironmentBuilder
           status={status}
           tutorialId="T03"
           defaultProjectName="Tutorial T03 · Cylinder mesh"
           heading="Build the T03 mesh environment from this lesson"
-          description="The app uploads the bundled cylinder, waits for its Geometry, and creates two fully configured draft VolumeMesh Plans."
+          description="The app uploads the bundled cylinder, waits for its Geometry, and creates two configured Flow360 VolumeMesh Drafts."
           configurationSummary="Curvature, surface spacing, first layer, growth rates, farfield, beta mesher"
-          planKind="VolumeMesh"
+          draftKind="VolumeMesh"
           baselineValue="0.25 m · 10° · 0.01 m"
           variantValue="0.15 m · 6° · 0.005 m"
-          successDescription="The Geometry is processed and both VolumeMesh Plans are configured. No surface or volume mesh computation has been submitted."
+          successDescription="The Geometry is processed and both VolumeMesh Draft parameters are synced. No surface or volume mesh computation has been submitted."
           createEnvironment={createT03Environment}
         />
       </>

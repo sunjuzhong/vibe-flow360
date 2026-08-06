@@ -303,6 +303,12 @@ export type ProjectDraftsResponse = {
   items?: DraftRecord[]
 }
 
+export type ConfiguredDraft = DraftRecord & {
+  project_id: string
+  source_id: string
+  simulation_params: Record<string, unknown>
+}
+
 export type ProjectSyncResource = {
   id: string
   type: string
@@ -860,6 +866,8 @@ export const api = {
     flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
   projectDrafts: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectDraftsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts${cacheOnly ? '?cache=only' : ''}`),
+  createConfiguredDraft: (projectId: string, input: { source_id: string; name: string; patch: Record<string, unknown> }) =>
+    mutate<ConfiguredDraft>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts`, input),
   draftParameterSchema: (draftId: string) =>
     json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
   validateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, paths: string[]) =>
