@@ -1,24 +1,13 @@
 package main
 
 import (
-	"flag"
-	"log"
-
-	"github.com/sunjuzhong/vibe-flow360/internal/config"
-	"github.com/sunjuzhong/vibe-flow360/internal/server"
+	"fmt"
+	"os"
 )
 
 func main() {
-	addr := flag.String("addr", ":9292", "HTTP listen address")
-	flag.Parse()
-
-	if err := config.LoadDotEnv(".env"); err != nil {
-		log.Fatalf("load .env: %v", err)
-	}
-
-	app := server.New()
-	log.Printf("Vibe Flow360 is available at http://localhost%s", *addr)
-	if err := app.Run(*addr); err != nil {
-		log.Fatal(err)
+	if err := runCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
 }

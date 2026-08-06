@@ -61,11 +61,12 @@ func GenerationFailure(err error) GenerationFailureKind {
 }
 
 type CadQueryGenerator struct {
-	UVBinary string
-	Python   string
-	CacheDir string
-	Timeout  time.Duration
-	Offline  bool
+	UVBinary  string
+	Python    string
+	CacheDir  string
+	PythonDir string
+	Timeout   time.Duration
+	Offline   bool
 }
 
 func NewCadQueryGenerator() *CadQueryGenerator {
@@ -84,11 +85,12 @@ func NewCadQueryGenerator() *CadQueryGenerator {
 	return &CadQueryGenerator{
 		// An empty value enables deterministic runtime discovery. Services such
 		// as launchd commonly have a narrower PATH than an interactive shell.
-		UVBinary: strings.TrimSpace(os.Getenv("VIBESIM_UV_BINARY")),
-		Python:   firstConfigured(os.Getenv("VIBESIM_CAD_PYTHON"), "3.11"),
-		CacheDir: cacheDir,
-		Timeout:  timeout,
-		Offline:  strings.EqualFold(strings.TrimSpace(os.Getenv("VIBESIM_CAD_OFFLINE")), "true"),
+		UVBinary:  strings.TrimSpace(os.Getenv("VIBESIM_UV_BINARY")),
+		Python:    firstConfigured(os.Getenv("VIBESIM_CAD_PYTHON"), "3.11"),
+		CacheDir:  cacheDir,
+		PythonDir: strings.TrimSpace(os.Getenv("VIBESIM_UV_PYTHON_INSTALL_DIR")),
+		Timeout:   timeout,
+		Offline:   strings.EqualFold(strings.TrimSpace(os.Getenv("VIBESIM_CAD_OFFLINE")), "true"),
 	}
 }
 
@@ -145,6 +147,9 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 	}
 	if g.CacheDir != "" {
 		command.Env = append(command.Env, "UV_CACHE_DIR="+g.CacheDir)
+	}
+	if g.PythonDir != "" {
+		command.Env = append(command.Env, "UV_PYTHON_INSTALL_DIR="+g.PythonDir)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

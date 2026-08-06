@@ -1,4 +1,4 @@
-.PHONY: dev web server build test clean cad-runtime install
+.PHONY: dev web server build init test clean cad-runtime install
 
 web:
 	cd web && npm run build
@@ -6,18 +6,21 @@ web:
 	cp -R web/dist internal/server/dist
 
 server: web
-	go run ./cmd/server
+	go run ./cmd/server serve
 
 dev: web
-	go run ./cmd/server
+	go run ./cmd/server serve
 
 build: web
 	go build -buildvcs=false -o vibe-flow360 ./cmd/server
 
+init: build
+	./vibe-flow360 init
+
 cad-runtime:
 	uv run --no-project --python 3.11 --with cadquery==2.6.1 python -c 'import cadquery; print("CadQuery runtime ready:", cadquery.__version__)'
 
-install: build cad-runtime
+install: build
 	install -d /Users/juzhongsun/.local/bin
 	install -m 755 vibe-flow360 /Users/juzhongsun/.local/bin/vibe-flow360
 

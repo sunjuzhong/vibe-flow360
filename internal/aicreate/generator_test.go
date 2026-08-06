@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+func TestNewCadQueryGeneratorPreservesManagedPythonDirectory(t *testing.T) {
+	pythonDirectory := filepath.Join(t.TempDir(), "managed-python")
+	t.Setenv("VIBESIM_UV_PYTHON_INSTALL_DIR", pythonDirectory)
+
+	generator := NewCadQueryGenerator()
+	if generator.PythonDir != pythonDirectory {
+		t.Fatalf("PythonDir = %q, want %q", generator.PythonDir, pythonDirectory)
+	}
+}
+
 func TestCadQueryGeneratorUsesAbsoluteRuntimePathsForRelativeOutput(t *testing.T) {
 	uvDirectory := t.TempDir()
 	fakeUV := filepath.Join(uvDirectory, "uv")
@@ -26,6 +36,7 @@ done
 test -n "$script_path" && test -f "$script_path" || exit 21
 test -n "$recipe_path" && test -f "$recipe_path" || exit 22
 case "$script_path:$recipe_path:$output_path" in /*:/*:/*) ;; *) exit 23 ;; esac
+test "$UV_PYTHON_INSTALL_DIR" = "/managed/python" || exit 24
 printf 'ISO-10303-21;\nDATA;\n#1=MANIFOLD_SOLID_BREP('"'"'shape'"'"',#2);\nENDSEC;\nEND-ISO-10303-21;\n' > "$output_path"
 printf '%s' '{"solid_count":1,"face_count":6,"volume":1,"kernel":"fake"}'
 `
@@ -42,7 +53,7 @@ printf '%s' '{"solid_count":1,"face_count":6,"volume":1,"kernel":"fake"}'
 		Operations: []Operation{{ID: "body", Op: "cylinder", Params: map[string]any{"radius": 0.5, "height": 1.0, "axis": "z"}}},
 	}
 	outputPath := filepath.Join(relativeDirectory, "cylinder.step")
-	validation, err := (&CadQueryGenerator{UVBinary: fakeUV, Timeout: time.Second}).Generate(context.Background(), geometry, outputPath)
+	validation, err := (&CadQueryGenerator{UVBinary: fakeUV, PythonDir: "/managed/python", Timeout: time.Second}).Generate(context.Background(), geometry, outputPath)
 	if err != nil {
 		t.Fatal(err)
 	}

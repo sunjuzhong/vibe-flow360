@@ -71,13 +71,35 @@ Requirements:
 
 - Go 1.24+
 - Node.js 22+
-- an installed and authenticated `flow360` CLI
-- `uv` for the isolated CadQuery/OpenCascade runtime used by AI Create
+
+Build once, then let the application prepare its own isolated runtime:
+
+```bash
+make build
+./vibe-flow360 init
+```
+
+`init` is safe to rerun. It bootstraps a pinned `uv`, Python 3.11, Flow360
+`25.10.*`, and CadQuery 2.6.1 under the user configuration directory; merges
+the required absolute paths and defaults into a mode-0600 `.env`; preserves
+unmanaged values and comments; verifies the Flow360 CLI; and performs a
+read-only authenticated project request. If no credential is available, an
+interactive run opens Flow360's official browser login. For headless setup,
+provide `FLOW360_APIKEY` in the process environment and use `--no-login`.
+
+Useful setup overrides include:
+
+```bash
+./vibe-flow360 init --flow360-version '25.10.*' --profile default --environment uat
+./vibe-flow360 init --tools-dir /absolute/runtime/path --env-file /absolute/path/.env
+```
 
 Start the backend:
 
 ```bash
-go run -buildvcs=false ./cmd/server
+./vibe-flow360 serve
+# Source-tree equivalent:
+go run -buildvcs=false ./cmd/server serve
 ```
 
 Start the frontend in a second terminal:
@@ -125,14 +147,16 @@ AI Create requires a configured model provider. The model produces a validated,
 declarative CAD operation graph rather than arbitrary Python; the local
 CadQuery/OpenCascade runtime executes that graph, exports exact STEP, and checks
 that it round-trips as one valid closed solid before anything is sent to
-Flow360. `make install` preloads the pinned CadQuery runtime. Optional runtime
-settings are `VIBESIM_UV_BINARY`, `VIBESIM_UV_CACHE_DIR`, `VIBESIM_CAD_PYTHON`,
+Flow360. `vibe-flow360 init` preloads the pinned CadQuery runtime. Optional
+runtime settings are `VIBESIM_UV_BINARY`, `VIBESIM_UV_CACHE_DIR`,
+`VIBESIM_UV_PYTHON_INSTALL_DIR`, `VIBESIM_CAD_PYTHON`,
 `VIBESIM_CAD_TIMEOUT_SECONDS`, and `VIBESIM_CAD_OFFLINE=true`.
 
 ## Flow360 configuration
 
 The Go backend loads `.env` at startup without overriding variables already set
-by the shell. Copy the example and choose one authentication mode:
+by the shell. Normally `vibe-flow360 init` creates this file. To configure it
+manually instead, copy the example and choose one authentication mode:
 
 ```bash
 cp .env.example .env
@@ -240,7 +264,8 @@ The production build is embedded into the Go binary:
 
 ```bash
 make build
-./vibe-flow360
+./vibe-flow360 init
+./vibe-flow360 serve
 ```
 
 ## Core loop
