@@ -1,4 +1,4 @@
-import { ArrowLeft, Braces, ChevronRight, GitPullRequestDraft, Play, Plus, RefreshCw } from 'lucide-react'
+import { Braces, ChevronRight, GitPullRequestDraft, Play, Plus, RefreshCw } from 'lucide-react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 
@@ -7,13 +7,11 @@ type Props = {
   drafts: DraftRecord[]
   selectedId: string
   selectedDetail: ResourceDetail | null
-  sourceLabel: string
   loading: boolean
   detailLoading: boolean
   error: string
   onSelect: (draftId: string) => void
   onEnter: (draftId: string) => void
-  onExit: () => void
   onCreate: () => void
   onInspect: () => void
   onReview: () => void
@@ -45,13 +43,11 @@ export default function ProjectDraftBar({
   drafts,
   selectedId,
   selectedDetail,
-  sourceLabel,
   loading,
   detailLoading,
   error,
   onSelect,
   onEnter,
-  onExit,
   onCreate,
   onInspect,
   onReview,
@@ -98,15 +94,9 @@ export default function ProjectDraftBar({
 
   return (
     <section className="project-draft-inline" aria-label="Project drafts" aria-busy={loading}>
-      <button type="button" className="project-draft-return" onClick={onExit} aria-label="Return to Resource mode" title="Return to Resource mode">
-        <ArrowLeft size={14} />
-      </button>
-      <div className="project-draft-heading">
+      <div className="project-draft-heading" aria-label="Draft mode">
         <span><GitPullRequestDraft size={15} /></span>
-        <div>
-          <strong>Draft</strong>
-          <small title={`Based on ${sourceLabel}`}>Based on {sourceLabel}</small>
-        </div>
+        <strong>Draft</strong>
       </div>
 
       <label className="project-draft-select">

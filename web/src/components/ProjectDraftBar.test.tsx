@@ -25,13 +25,11 @@ describe('ProjectDraftBar', () => {
         ]}
         selectedId="draft-1"
         selectedDetail={null}
-        sourceLabel="Geometry resource"
         loading={false}
         detailLoading={false}
         error=""
         onSelect={() => undefined}
         onEnter={() => undefined}
-        onExit={() => undefined}
         onCreate={() => undefined}
         onInspect={() => undefined}
         onReview={() => undefined}
@@ -57,13 +55,11 @@ describe('ProjectDraftBar', () => {
         ]}
         selectedId="draft-2"
         selectedDetail={{ id: 'draft-2', type: 'Draft', state: { status: 'submitted' } }}
-        sourceLabel="Wing Geometry"
         loading={false}
         detailLoading={false}
         error=""
         onSelect={() => undefined}
         onEnter={() => undefined}
-        onExit={() => undefined}
         onCreate={() => undefined}
         onInspect={() => undefined}
         onReview={() => undefined}
@@ -71,9 +67,10 @@ describe('ProjectDraftBar', () => {
       />,
     )
     expect(markup).toContain('aria-label="Project drafts"')
+    expect(markup).toContain('aria-label="Draft mode"')
     expect(markup).toContain('<strong>Draft</strong>')
-    expect(markup).toContain('Based on Wing Geometry')
-    expect(markup).toContain('Return to Resource mode')
+    expect(markup).not.toContain('Based on')
+    expect(markup).not.toContain('Return to Resource mode')
     expect(markup).toContain('aria-label="Switch active Draft"')
     expect(markup).toContain('value="draft-2" selected=""')
     expect(markup).toContain('Parameters')

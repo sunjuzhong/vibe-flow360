@@ -391,10 +391,6 @@ export default function ProjectPage() {
     () => geometryContextId(items, selectedItem?.id),
     [items, selectedItem],
   )
-  const activeDraftSource = useMemo(
-    () => items.find((item) => item.id === activeDraft?.source_id) ?? null,
-    [activeDraft?.source_id, items],
-  )
   const workspaceDetail = useMemo(() => (
     detail && draftMode && draftDetail?.simulation_params
       ? { ...detail, simulation_params: draftDetail.simulation_params }
@@ -422,11 +418,6 @@ export default function ProjectPage() {
     const targetResourceId = source?.id ?? selected?.id
     if (!targetResourceId) return
     navigate(`/projects/${projectId}/resources/${targetResourceId}?draft=${encodeURIComponent(draftId)}`)
-  }
-
-  const exitDraftContext = () => {
-    if (selected) navigate(`/projects/${projectId}/resources/${selected.id}`)
-    setActivePanel(null)
   }
 
   const stages = useMemo(() => {
@@ -657,13 +648,11 @@ export default function ProjectPage() {
                   drafts={drafts}
                   selectedId={activeDraftId}
                   selectedDetail={draftDetail}
-                  sourceLabel={activeDraftSource?.name || activeDraft?.source_type || 'Source resource'}
                   loading={draftsLoading}
                   detailLoading={draftDetailLoading}
                   error={draftsError}
                   onSelect={openDraftContext}
                   onEnter={openDraftContext}
-                  onExit={exitDraftContext}
                   onCreate={() => {
                     setChatOpen(false)
                     setInitialPlanId('')
