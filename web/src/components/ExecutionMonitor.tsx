@@ -20,6 +20,10 @@ export function displayedExecutionProgress(status: SimulationPlan['status'], rep
   return status === 'completed' || status === 'failed' ? 100 : undefined
 }
 
+export function manualRefreshDisabled(paused: boolean, terminal: boolean) {
+  return !paused && !terminal
+}
+
 export default function ExecutionMonitor({
   plan,
   onPlanUpdate,
@@ -97,7 +101,13 @@ export default function ExecutionMonitor({
               {paused ? 'Resume updates' : 'Pause updates'}
             </button>
           )}
-          <button type="button" onClick={() => void refresh()} disabled={loading}>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={manualRefreshDisabled(paused, terminal)}
+            aria-busy={loading}
+            title={!paused && !terminal ? 'Live updates refresh automatically every 4 seconds.' : 'Refresh Flow360 status now.'}
+          >
             <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
           </button>
         </div>

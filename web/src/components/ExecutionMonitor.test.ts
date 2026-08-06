@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SimulationPlan } from '../api/client'
-import { displayedExecutionProgress, isExecutionTrackable } from './ExecutionMonitor'
+import { displayedExecutionProgress, isExecutionTrackable, manualRefreshDisabled } from './ExecutionMonitor'
 
 function plan(status: SimulationPlan['status']): SimulationPlan {
   return {
@@ -45,5 +45,16 @@ describe('execution progress', () => {
     expect(displayedExecutionProgress('submitted', 42)).toBe(42)
     expect(displayedExecutionProgress('completed')).toBe(100)
     expect(displayedExecutionProgress('failed')).toBe(100)
+  })
+})
+
+describe('manual execution refresh', () => {
+  it('stays disabled for the whole live auto-refresh lifecycle', () => {
+    expect(manualRefreshDisabled(false, false)).toBe(true)
+  })
+
+  it('is available when updates are paused or the run is terminal', () => {
+    expect(manualRefreshDisabled(true, false)).toBe(false)
+    expect(manualRefreshDisabled(false, true)).toBe(false)
   })
 })
