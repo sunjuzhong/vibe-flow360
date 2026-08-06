@@ -29,3 +29,13 @@ func TestServerURL(t *testing.T) {
 		}
 	}
 }
+
+func TestInitHelpExplainsAuthenticationSkipIsForAutomation(t *testing.T) {
+	var output bytes.Buffer
+	if err := runCLI([]string{"init", "--help"}, strings.NewReader(""), &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "skip-auth-check") || !strings.Contains(output.String(), "CI/image builds only") {
+		t.Fatalf("init help does not constrain authentication skipping:\n%s", output.String())
+	}
+}

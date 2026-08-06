@@ -100,6 +100,7 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	environment := flags.String("environment", "", "Flow360 environment: production, dev, uat, or a named environment")
 	uvBinary := flags.String("uv", "", "existing uv executable to use")
 	noLogin := flags.Bool("no-login", false, "do not launch browser login when authentication is missing")
+	skipAuthCheck := flags.Bool("skip-auth-check", false, "prepare runtimes without verifying a Flow360 account (CI/image builds only)")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "Usage: %s init [options]\n", commandName)
 		flags.PrintDefaults()
@@ -150,20 +151,24 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	quietRunner := bootstrap.ExecRunner{Stdout: io.Discard, Stderr: stderr, Stdin: stdin}
-	authErr := bootstrap.VerifyAuthentication(ctx, quietRunner, result.Flow360Binary, selectedProfile, selectedEnvironment, apiKey)
-	if authErr != nil && !*noLogin && interactiveInput(stdin) {
-		fmt.Fprintln(stdout, "Flow360 authentication is required; opening the official browser login flow...")
-		if err := bootstrap.Login(ctx, runner, result.Flow360Binary, selectedProfile, selectedEnvironment); err != nil {
-			return fmt.Errorf("Flow360 login: %w", err)
+	authenticationVerified := false
+	if !*skipAuthCheck {
+		quietRunner := bootstrap.ExecRunner{Stdout: io.Discard, Stderr: stderr, Stdin: stdin}
+		authErr := bootstrap.VerifyAuthentication(ctx, quietRunner, result.Flow360Binary, selectedProfile, selectedEnvironment, apiKey)
+		if authErr != nil && !*noLogin && interactiveInput(stdin) {
+			fmt.Fprintln(stdout, "Flow360 authentication is required; opening the official browser login flow...")
+			if err := bootstrap.Login(ctx, runner, result.Flow360Binary, selectedProfile, selectedEnvironment); err != nil {
+				return fmt.Errorf("Flow360 login: %w", err)
+			}
+			// A stored browser credential must not be shadowed by a stale key from
+			// the old dotenv file or process environment.
+			apiKey = ""
+			authErr = bootstrap.VerifyAuthentication(ctx, quietRunner, result.Flow360Binary, selectedProfile, selectedEnvironment, apiKey)
 		}
-		// A stored browser credential must not be shadowed by a stale key from
-		// the old dotenv file or process environment.
-		apiKey = ""
-		authErr = bootstrap.VerifyAuthentication(ctx, quietRunner, result.Flow360Binary, selectedProfile, selectedEnvironment, apiKey)
-	}
-	if authErr != nil {
-		return fmt.Errorf("%w; set FLOW360_APIKEY or rerun interactively to log in", authErr)
+		if authErr != nil {
+			return fmt.Errorf("%w; set FLOW360_APIKEY or rerun interactively to log in", authErr)
+		}
+		authenticationVerified = true
 	}
 
 	dataDir := firstValue(existing["VIBESIM_DATA_DIR"], os.Getenv("VIBESIM_DATA_DIR"))
@@ -193,7 +198,11 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "\nInitialization complete. Configuration: %s\n", envPath)
 	fmt.Fprintf(stdout, "Flow360 CLI: %s (%s)\n", result.Flow360Binary, *flow360Version)
 	fmt.Fprintf(stdout, "CadQuery: %s on Python %s\n", bootstrap.DefaultCadQuery, bootstrap.DefaultPythonVersion)
-	fmt.Fprintf(stdout, "Authentication: verified (profile %s, environment %s)\n", selectedProfile, displayEnvironment(selectedEnvironment))
+	if authenticationVerified {
+		fmt.Fprintf(stdout, "Authentication: verified (profile %s, environment %s)\n", selectedProfile, displayEnvironment(selectedEnvironment))
+	} else {
+		fmt.Fprintln(stdout, "Authentication: skipped; run init again without --skip-auth-check before normal use")
+	}
 	if envPath == filepath.Join(mustWorkingDirectory(), ".env") {
 		fmt.Fprintf(stdout, "Start with: %s serve\n", commandName)
 	} else {

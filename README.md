@@ -86,6 +86,9 @@ unmanaged values and comments; verifies the Flow360 CLI; and performs a
 read-only authenticated project request. If no credential is available, an
 interactive run opens Flow360's official browser login. For headless setup,
 provide `FLOW360_APIKEY` in the process environment and use `--no-login`.
+CI and image-build validation may use `--skip-auth-check`; this still installs
+and verifies every local runtime, but it is not a substitute for authenticated
+initialization before normal use.
 
 Useful setup overrides include:
 
@@ -112,6 +115,18 @@ npm run dev
 
 The Vite server prints the browser URL and proxies `/api` to
 `http://localhost:9292`.
+
+### Init cold-start CI
+
+`.github/workflows/init-smoke.yml` repeats a credential-free first installation
+every day and on relevant pull requests or pushes, using clean Ubuntu and macOS
+runners. It verifies the generated dotenv, Flow360 executable, offline reuse of
+the pinned Python/CadQuery runtime, and the running server health endpoint.
+
+Add a repository Actions secret named `FLOW360_APIKEY` to enable the additional
+read-only live account gate on scheduled, manual, and main-branch runs. The
+workflow deliberately withholds this secret from every pull-request run,
+including branches created by repository collaborators.
 
 ## Agent configuration
 

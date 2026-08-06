@@ -1,0 +1,142 @@
+name: Init cold-start
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/init-smoke.yml"
+      - ".env.example"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - "web/package.json"
+      - "web/package-lock.json"
+      - "cmd/server/**"
+      - "internal/aicreate/**"
+      - "internal/bootstrap/**"
+      - "internal/config/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/init-smoke.yml"
+      - ".env.example"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - "web/package.json"
+      - "web/package-lock.json"
+      - "cmd/server/**"
+      - "internal/aicreate/**"
+      - "internal/bootstrap/**"
+      - "internal/config/**"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: init-cold-start-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cold-start:
+    name: Cold start (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      # Never expose account credentials to pull-request code, including
+      # branches from collaborators in the same repository.
+      FLOW360_APIKEY: ${{ github.event_name != 'pull_request' && secrets.FLOW360_APIKEY || '' }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Define isolated runtime paths
+        run: |
+          echo "INIT_ENV_FILE=$RUNNER_TEMP/vibe-flow360.env" >> "$GITHUB_ENV"
+          echo "INIT_TOOLS_DIR=$RUNNER_TEMP/vibe-flow360-runtime" >> "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+          package-manager-cache: false
+
+      - name: Build production binary
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          rm -rf internal/server/dist
+          cp -R web/dist internal/server/dist
+          go build -buildvcs=false -o vibe-flow360 ./cmd/server
+
+      - name: Run credential-free cold init
+        run: |
+          ./vibe-flow360 init \
+            --env-file "$INIT_ENV_FILE" \
+            --tools-dir "$INIT_TOOLS_DIR" \
+            --no-login \
+            --skip-auth-check
+
+      - name: Verify generated configuration and installed runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$INIT_ENV_FILE"
+
+          flow360_binary="$(sed -n 's/^VIBESIM_FLOW360_BINARY=//p' "$INIT_ENV_FILE")"
+          uv_binary="$(sed -n 's/^VIBESIM_UV_BINARY=//p' "$INIT_ENV_FILE")"
+          uv_cache="$(sed -n 's/^VIBESIM_UV_CACHE_DIR=//p' "$INIT_ENV_FILE")"
+          uv_python="$(sed -n 's/^VIBESIM_UV_PYTHON_INSTALL_DIR=//p' "$INIT_ENV_FILE")"
+
+          test -x "$flow360_binary"
+          test -x "$uv_binary"
+          "$flow360_binary" version
+          UV_CACHE_DIR="$uv_cache" UV_PYTHON_INSTALL_DIR="$uv_python" \
+            "$uv_binary" run --no-project --offline --python 3.11 \
+            --with cadquery==2.6.1 python -c \
+            "import cadquery; assert cadquery.__version__ == '2.6.1'"
+
+      - name: Run authenticated init
+        if: env.FLOW360_APIKEY != ''
+        run: |
+          ./vibe-flow360 init \
+            --env-file "$INIT_ENV_FILE" \
+            --tools-dir "$INIT_TOOLS_DIR" \
+            --no-login
+
+      - name: Explain skipped account gate
+        if: env.FLOW360_APIKEY == ''
+        run: echo "FLOW360_APIKEY is not configured; local cold-start passed and the live account gate was skipped."
+
+      - name: Start serve and check health
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./vibe-flow360 serve --env-file "$INIT_ENV_FILE" --addr 127.0.0.1:19292 >"$RUNNER_TEMP/vibe-flow360.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:19292/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat "$RUNNER_TEMP/vibe-flow360.log"
+          exit 1
