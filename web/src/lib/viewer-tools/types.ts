@@ -74,6 +74,26 @@ export type OverlayPrimitive =
       readonly opacity?: number
     }
   | {
+      readonly kind: 'box'
+      readonly key: string
+      readonly center: Vector3Tuple
+      readonly size: Vector3Tuple
+      readonly rotationAxis?: Vector3Tuple
+      readonly rotationAngleRadians?: number
+      readonly color?: string
+      readonly opacity?: number
+    }
+  | {
+      readonly kind: 'cylinder'
+      readonly key: string
+      readonly center: Vector3Tuple
+      readonly axis: Vector3Tuple
+      readonly height: number
+      readonly radius: number
+      readonly color?: string
+      readonly opacity?: number
+    }
+  | {
       readonly kind: 'label'
       readonly key: string
       readonly position: Vector3Tuple

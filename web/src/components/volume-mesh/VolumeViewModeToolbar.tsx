@@ -1,4 +1,4 @@
-import { Box, Layers3, Palette, PanelTop, Slice } from 'lucide-react'
+import { Box, Boxes, Layers3, Palette, PanelTop, Slice } from 'lucide-react'
 import type { VolumeViewMode } from '../../lib/volumeMeshReview'
 
 export function VolumeViewModeToolbar({
@@ -13,6 +13,7 @@ export function VolumeViewModeToolbar({
     { mode: 'zones' as const, label: 'Zones', icon: Layers3 },
     { mode: 'quality' as const, label: 'Quality', icon: Palette },
     { mode: 'boundary-layer' as const, label: 'Layers', icon: PanelTop },
+    { mode: 'refinements' as const, label: 'Refine', icon: Boxes },
     { mode: 'slices' as const, label: 'Section', icon: Slice },
   ]
   return (

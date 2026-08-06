@@ -6,13 +6,14 @@ import {
   unwrapSimulationParams,
   valueAtPath,
 } from './planStages'
+import { buildVolumeRefinementReview } from './volumeRefinementReview'
 
-export type VolumeViewMode = 'overview' | 'zones' | 'quality' | 'boundary-layer' | 'slices'
+export type VolumeViewMode = 'overview' | 'zones' | 'quality' | 'boundary-layer' | 'refinements' | 'slices'
 
 export type VolumeCapabilityStatus = 'available' | 'proxy' | 'unavailable'
 
 export type VolumeCapability = {
-  key: 'asset' | 'zones' | 'quality' | 'boundary-layer' | 'slices' | 'parameters'
+  key: 'asset' | 'zones' | 'quality' | 'boundary-layer' | 'refinements' | 'slices' | 'parameters'
   label: string
   status: VolumeCapabilityStatus
   detail: string
@@ -323,6 +324,10 @@ export function volumeMeshCapabilities({
     groups,
     fields,
   })
+  const refinements = buildVolumeRefinementReview({
+    simulationParams: detail?.simulation_params,
+    groups,
+  })
   const aggregateQuality = findMetric(
     [detail?.summary, detail?.state],
     ['minimum_orthogonality', 'min_orthogonality', 'max_skewness', 'maximum_skewness', 'min_cell_size', 'minimum_cell_size'],
@@ -370,6 +375,16 @@ export function volumeMeshCapabilities({
         : boundaryLayer.evidenceFields.length > 0
           ? 'Generated layer fields exist, but the source meshing intent is unavailable.'
           : 'No boundary-layer defaults, local rules, or generated evidence fields were found.',
+    },
+    {
+      key: 'refinements',
+      label: 'Refinement zones',
+      status: refinements.visualizableCount > 0 ? 'available' : refinements.configured ? 'proxy' : 'unavailable',
+      detail: refinements.visualizableCount > 0
+        ? `${refinements.rules.length} refinement rule(s) and ${refinements.visualizableCount} spatial region(s) are traceable.`
+        : refinements.configured
+          ? 'Refinement intent exists, but no Box, Cylinder, or Sphere geometry can be reconstructed.'
+          : 'No non-boundary-layer volume refinement configuration was found.',
     },
     {
       key: 'slices',

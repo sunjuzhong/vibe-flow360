@@ -11,7 +11,7 @@ import {
   Triangle,
   Volume2,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D } from './viewer/LazyViewer3D'
@@ -35,6 +35,8 @@ import { VolumeViewModeToolbar } from './volume-mesh/VolumeViewModeToolbar'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
 import { BoundaryLayerInspector } from './volume-mesh/BoundaryLayerInspector'
 import { VolumeQualityAssessmentPanel } from './volume-mesh/VolumeQualityAssessmentPanel'
+import { VolumeRefinementInspector } from './volume-mesh/VolumeRefinementInspector'
+import { volumeRefinementOverlays } from '../lib/volumeRefinementReview'
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -144,6 +146,16 @@ export default function VolumeMeshWorkspace({
     annotationsModel,
     unit: viewerContext.unit,
   })
+  const [selectedRefinementRegionId, setSelectedRefinementRegionId] = useState<string | null>(null)
+  const refinementOverlays = useMemo(() => volumeRefinementOverlays(
+    review.refinements,
+    viewerContext.assetRef,
+    selectedRefinementRegionId,
+  ), [review.refinements, selectedRefinementRegionId, viewerContext.assetRef])
+  const viewerOverlays = useMemo(() => review.mode === 'refinements' ? {
+    ...tools.overlays,
+    saved: [...(tools.overlays.saved ?? []), ...refinementOverlays],
+  } : tools.overlays, [refinementOverlays, review.mode, tools.overlays])
   const metrics = [
     { label: 'Cell count', value: findMetric(metricSources, ['cell_count', 'num_cells', 'cells', 'element_count', 'volume_cell_count']), icon: Layers },
     { label: 'Node count', value: findMetric(metricSources, ['node_count', 'num_nodes', 'nodes', 'vertex_count']), icon: Share2 },
@@ -223,7 +235,7 @@ export default function VolumeMeshWorkspace({
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
             toolInput={tools.toolInput}
-            overlays={tools.overlays}
+            overlays={viewerOverlays}
             onDoubleClick={tools.onDoubleClick}
             toolbar={(
               <div className="volume-combined-toolbar">
@@ -313,6 +325,19 @@ export default function VolumeMeshWorkspace({
               entityNames={entityNames}
               onSelectTarget={(groupId) => review.setSelection({ groupId })}
               onLocateExtreme={review.locateExtreme}
+            />
+          ) : review.mode === 'refinements' ? (
+            <VolumeRefinementInspector
+              review={review.refinements}
+              selectedRegionId={selectedRefinementRegionId}
+              onSelectRegion={setSelectedRefinementRegionId}
+              onFocusRegion={(regionId) => {
+                const region = review.refinements.regions.find((candidate) => candidate.id === regionId)
+                if (!region) return
+                setSelectedRefinementRegionId(regionId)
+                review.focusPoint([...region.center])
+              }}
+              onSelectTarget={(groupId) => review.setSelection({ groupId })}
             />
           ) : review.mode === 'slices' ? (
             <VolumeSliceInspector

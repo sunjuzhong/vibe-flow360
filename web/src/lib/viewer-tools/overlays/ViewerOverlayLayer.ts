@@ -88,6 +88,13 @@ export function disposeOverlayObject(object: OverlayRenderable): void {
 function isRenderable(primitive: OverlayPrimitive): boolean {
   if (primitive.kind === 'polyline') return primitive.points.length > 0
   if (primitive.kind === 'sphere') return Number.isFinite(primitive.radius) && primitive.radius > 0
+  if (primitive.kind === 'box') return primitive.size.every((value) => Number.isFinite(value) && value > 0)
+  if (primitive.kind === 'cylinder') {
+    return Number.isFinite(primitive.radius) && primitive.radius > 0
+      && Number.isFinite(primitive.height) && primitive.height > 0
+      && primitive.axis.every(Number.isFinite)
+      && Math.hypot(...primitive.axis) > 0
+  }
   if (primitive.kind === 'label') return primitive.text.length > 0
   return true
 }
@@ -204,6 +211,7 @@ export class ViewerOverlayLayer {
         annotation,
         state,
         this.radiusScale(annotation.coordinateFrame, frame.assetWorldMatrix),
+        this.frameQuaternion(annotation.coordinateFrame, frame.assetWorldMatrix),
       )
     }
   }
@@ -214,12 +222,9 @@ export class ViewerOverlayLayer {
     resourceRef: ResourceRef,
     assetWorldMatrix?: THREE.Matrix4,
   ): THREE.Vector3[] | null {
-    const tuples =
-      primitive.kind === 'point' || primitive.kind === 'label'
-        ? [primitive.position]
-        : primitive.kind === 'sphere'
-          ? [primitive.center]
-          : primitive.points
+    const tuples = primitive.kind === 'point' || primitive.kind === 'label'
+      ? [primitive.position]
+      : primitive.kind === 'polyline' ? primitive.points : [primitive.center]
     const positions: THREE.Vector3[] = []
     for (const tuple of tuples) {
       const position = transformOverlayPosition(tuple, coordinateFrame, resourceRef, assetWorldMatrix)
@@ -268,6 +273,21 @@ export class ViewerOverlayLayer {
           depthWrite: false,
         }),
       )
+    } else if (primitive.kind === 'box' || primitive.kind === 'cylinder') {
+      const geometry = primitive.kind === 'box'
+        ? new THREE.BoxGeometry(1, 1, 1)
+        : new THREE.CylinderGeometry(1, 1, 1, 32, 1, true)
+      object = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({
+          color,
+          opacity: primitive.opacity ?? 0.55,
+          transparent: true,
+          wireframe: true,
+          depthTest: this.options.depthTest,
+          depthWrite: false,
+        }),
+      )
     } else {
       const label = createLabelTexture(
         primitive.text,
@@ -299,6 +319,7 @@ export class ViewerOverlayLayer {
     annotation: OverlayAnnotation,
     state: OverlayState,
     radiusScale: number,
+    frameQuaternion: THREE.Quaternion,
   ): void {
     const color = primitive.color ?? stateColor(state)
     const previousLabelSignature = object.userData.labelSignature as string | undefined
@@ -357,6 +378,26 @@ export class ViewerOverlayLayer {
       material.needsUpdate = true
       return
     }
+    if (primitive.kind === 'box' && object instanceof THREE.Mesh) {
+      object.position.copy(positions[0])
+      object.scale.set(...primitive.size).multiplyScalar(radiusScale)
+      const rotationAxis = new THREE.Vector3(...(primitive.rotationAxis ?? [0, 0, 1]))
+      const localRotation = rotationAxis.lengthSq() > 0
+        ? new THREE.Quaternion().setFromAxisAngle(rotationAxis.normalize(), primitive.rotationAngleRadians ?? 0)
+        : new THREE.Quaternion()
+      object.quaternion.copy(frameQuaternion).multiply(localRotation)
+      this.updateRegionMaterial(object, color, primitive.opacity)
+      return
+    }
+    if (primitive.kind === 'cylinder' && object instanceof THREE.Mesh) {
+      object.position.copy(positions[0])
+      object.scale.set(primitive.radius * radiusScale, primitive.height * radiusScale, primitive.radius * radiusScale)
+      const axis = new THREE.Vector3(...primitive.axis).normalize()
+      const localRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis)
+      object.quaternion.copy(frameQuaternion).multiply(localRotation)
+      this.updateRegionMaterial(object, color, primitive.opacity)
+      return
+    }
     if (primitive.kind === 'label' && object instanceof THREE.Sprite) {
       object.position.copy(positions[0])
       const labelSignature = `${primitive.text}\u0000${color}`
@@ -383,6 +424,21 @@ export class ViewerOverlayLayer {
     const scale = new THREE.Vector3()
     assetWorldMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale)
     return Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z))
+  }
+
+  private frameQuaternion(coordinateFrame: CoordinateFrame, assetWorldMatrix?: THREE.Matrix4): THREE.Quaternion {
+    if (coordinateFrame.kind === 'world' || !assetWorldMatrix) return new THREE.Quaternion()
+    const quaternion = new THREE.Quaternion()
+    assetWorldMatrix.decompose(new THREE.Vector3(), quaternion, new THREE.Vector3())
+    return quaternion
+  }
+
+  private updateRegionMaterial(object: THREE.Mesh, color: string, opacity?: number): void {
+    const material = object.material as THREE.MeshBasicMaterial
+    material.color.set(color)
+    material.opacity = opacity ?? 0.55
+    material.transparent = true
+    material.needsUpdate = true
   }
 
   private entryKey(annotationId: string, primitiveKey: string): string {

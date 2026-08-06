@@ -35,13 +35,15 @@ describe('ViewerOverlayLayer', () => {
             width: 4,
           },
           { kind: 'sphere', key: 'sphere', center: [3, 2, 1], radius: 2, opacity: 0.4 },
+          { kind: 'box', key: 'box', center: [1, 1, 1], size: [2, 4, 6], rotationAxis: [0, 0, 1], rotationAngleRadians: Math.PI / 2 },
+          { kind: 'cylinder', key: 'cylinder', center: [2, 1, 0], axis: [1, 0, 0], height: 6, radius: 2 },
           { kind: 'label', key: 'label', position: [2, 3, 4], text: '12.3 mm' },
         ]),
       ],
     })
 
     expect(scene.children).toContain(layer.group)
-    expect(layer.size).toBe(5)
+    expect(layer.size).toBe(7)
     expect(layer.getObject('all', 'point')).toBeInstanceOf(THREE.Points)
     expect(layer.getObject('all', 'line-2')).toBeInstanceOf(THREE.Line)
     expect(layer.getObject('all', 'line-n')?.userData).toMatchObject({
@@ -62,12 +64,20 @@ describe('ViewerOverlayLayer', () => {
     expect((sphere.material as THREE.MeshBasicMaterial).opacity).toBe(0.4)
     expect((sphere.material as THREE.MeshBasicMaterial).depthTest).toBe(true)
     expect((sphere.material as THREE.MeshBasicMaterial).depthWrite).toBe(false)
+    const box = layer.getObject('all', 'box') as THREE.Mesh
+    expect(box.position.toArray()).toEqual([1, 1, 1])
+    expect(box.scale.toArray()).toEqual([2, 4, 6])
+    expect(new THREE.Vector3(1, 0, 0).applyQuaternion(box.quaternion).toArray()[1]).toBeCloseTo(1)
+    const cylinder = layer.getObject('all', 'cylinder') as THREE.Mesh
+    expect(cylinder.position.toArray()).toEqual([2, 1, 0])
+    expect(cylinder.scale.toArray()).toEqual([2, 6, 2])
+    expect(new THREE.Vector3(0, 1, 0).applyQuaternion(cylinder.quaternion).toArray()[0]).toBeCloseTo(1)
     const label = layer.getObject('all', 'label') as THREE.Sprite
     expect(label.position.toArray()).toEqual([2, 3, 4])
     expect((label.material as THREE.SpriteMaterial).sizeAttenuation).toBe(false)
     expect((label.material as THREE.SpriteMaterial).depthTest).toBe(false)
     expect((label.material as THREE.SpriteMaterial).depthWrite).toBe(false)
-    for (const primitiveKey of ['point', 'line-2', 'line-n', 'sphere', 'label']) {
+    for (const primitiveKey of ['point', 'line-2', 'line-n', 'sphere', 'box', 'cylinder', 'label']) {
       expect(layer.getObject('all', primitiveKey)?.frustumCulled).toBe(false)
     }
   })

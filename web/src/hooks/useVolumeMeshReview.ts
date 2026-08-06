@@ -16,6 +16,7 @@ import {
   volumeMeshParameterSummary,
   type VolumeViewMode,
 } from '../lib/volumeMeshReview'
+import { buildVolumeRefinementReview } from '../lib/volumeRefinementReview'
 
 type ReviewGroup = MeshGroupData
 
@@ -50,6 +51,7 @@ export type VolumeMeshReviewAction =
   | { type: 'extrema'; extrema: UVFFieldExtrema | null }
   | { type: 'probe'; probe: UVFFieldProbe | null }
   | { type: 'locate-extreme'; direction: 'min' | 'max' }
+  | { type: 'focus-point'; position: [number, number, number] }
   | { type: 'clip-enabled'; enabled: boolean }
   | { type: 'clip-axis'; axis: 'x' | 'y' | 'z'; position: number }
   | { type: 'clip-position'; position: number }
@@ -168,6 +170,8 @@ export function reduceVolumeMeshReviewState(
         focusTarget: [...probe.position],
       }
     }
+    case 'focus-point':
+      return { ...state, focusTarget: [...action.position] }
     case 'clip-enabled':
       return { ...state, clipEnabled: action.enabled }
     case 'clip-axis':
@@ -198,6 +202,11 @@ export function useVolumeMeshReview({
     groups,
     fields: state.allFields,
   }), [detail?.simulation_params, groups, state.allFields])
+  const refinements = useMemo(() => buildVolumeRefinementReview({
+    simulationParams: detail?.simulation_params,
+    groups,
+    boundingBox,
+  }), [boundingBox, detail?.simulation_params, groups])
   const capabilities = useMemo(() => volumeMeshCapabilities({
     detail,
     previewSource,
@@ -253,6 +262,7 @@ export function useVolumeMeshReview({
     zones,
     parameters,
     boundaryLayer,
+    refinements,
     capabilities,
     selectedZone,
     qualityFieldNames,
@@ -274,6 +284,7 @@ export function useVolumeMeshReview({
     setExtrema: (extrema: UVFFieldExtrema | null) => dispatch({ type: 'extrema', extrema }),
     setProbe: (probe: UVFFieldProbe | null) => dispatch({ type: 'probe', probe }),
     locateExtreme: (direction: 'min' | 'max') => dispatch({ type: 'locate-extreme', direction }),
+    focusPoint: (position: [number, number, number]) => dispatch({ type: 'focus-point', position }),
     setClipEnabled: (enabled: boolean) => dispatch({ type: 'clip-enabled', enabled }),
     setClipAxis,
     setClipPosition: (position: number) => dispatch({ type: 'clip-position', position }),
