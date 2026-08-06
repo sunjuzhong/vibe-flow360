@@ -262,7 +262,7 @@ func BuildRecoveryPrompt(input RecoveryPromptInput) (string, ChatContextPayload)
 	if input.Plan != nil {
 		ctx.SourceName = input.Plan.SourceName
 		ctx.Target = input.Plan.Target
-		if len(input.Plan.Patch) > 0 {
+		if len(input.Plan.Patch) > 0 && len(input.SimulationParams) == 0 {
 			ctx.SimulationParams = truncateRaw(input.Plan.Patch, maxSimulationParamsBytes)
 		}
 		if input.Plan.Preflight != nil {
@@ -277,7 +277,7 @@ func BuildRecoveryPrompt(input RecoveryPromptInput) (string, ChatContextPayload)
 		}
 	}
 
-	if len(input.SimulationParams) > 0 && len(ctx.SimulationParams) == 0 {
+	if len(input.SimulationParams) > 0 {
 		ctx.SimulationParams = truncateRaw(input.SimulationParams, maxSimulationParamsBytes)
 	}
 	if len(input.FormSchema) > 0 && len(ctx.FormSchema) == 0 {
@@ -320,6 +320,7 @@ Propose fix actions as an AgentAction v1 JSON object with:
 - kind: "request-missing-input" when a consequential engineering value is unknown; include typed questions for a dynamic form
 - Each proposal should include specific parameter changes in the patch field
 - Include reasoning and confidence in the fields
+- Never ask the user to paste logs, SimulationParams, remote state, or form_schema. Those are application-owned context and must be inspected from the supplied Simulation Context. Ask a question only for a consequential engineering choice that cannot be derived from that evidence.
 - If user feedback is present, use its language for all human-readable text. Otherwise, use the language of the error reason. Keep JSON protocol keys and enum values unchanged.
 
 Respond with the JSON object in a fenced code block.`)

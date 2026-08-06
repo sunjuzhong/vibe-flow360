@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
 
 func TestAgentSystemPromptDeclaresAgentActionV1(t *testing.T) {
@@ -199,6 +201,25 @@ func TestBuildRecoveryPromptIncludesSchemaContext(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Simulation Context") {
 		t.Error("missing simulation context section")
+	}
+}
+
+func TestBuildRecoveryPromptPrefersCanonicalParamsAndOwnsDiagnosticContext(t *testing.T) {
+	intervention := Intervention{ProjectID: "prj-1", PlanID: "plan-1", Type: TypeRemoteError, Reason: "remote error"}
+	plan := plans.Plan{Patch: json.RawMessage(`{"models":[{"type":"Periodic"}]}`)}
+	canonical := json.RawMessage(`{"models":[{"type":"Periodic"},{"type":"Fluid"}],"version":"25.10"}`)
+	prompt, payload := BuildRecoveryPrompt(RecoveryPromptInput{
+		Intervention: intervention, Plan: &plan, SimulationParams: canonical,
+		RecentLogs: "PeriodicBoundariesParsingError",
+	})
+	if !strings.Contains(string(payload.SimulationParams), `"version":"25.10"`) {
+		t.Fatalf("canonical SimulationParams were replaced by the sparse patch: %s", payload.SimulationParams)
+	}
+	if !strings.Contains(payload.RecentLogs, "PeriodicBoundariesParsingError") {
+		t.Fatalf("remote logs were not supplied to recovery: %#v", payload)
+	}
+	if !strings.Contains(prompt, "Never ask the user to paste logs") {
+		t.Fatal("recovery prompt does not keep application-owned context away from the user")
 	}
 }
 

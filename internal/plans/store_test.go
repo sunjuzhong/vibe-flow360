@@ -286,6 +286,36 @@ func TestStoreSetRemoteIDsBackfillsWithoutOverwriting(t *testing.T) {
 	}
 }
 
+func TestApplyInputsPreservesRemovalOfInheritedBaselineField(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry", Target: "case",
+		Name: "repair", Intent: "remove incompatible inherited field",
+		Baseline: json.RawMessage(`{"simulation_params":{"version":"25.10","time_stepping":{"type_name":"Unsteady","max_steps":2000,"steps":1500}}}`),
+		Patch:    json.RawMessage(`{"time_stepping":{"step_size":{"value":0.02,"units":"s"}}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.ApplySchemaInputs(created.ID, created.Revision, json.RawMessage(`{"time_stepping":{"max_steps":null}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated.Patch), `"max_steps":null`) {
+		t.Fatalf("baseline removal tombstone was discarded: %s", updated.Patch)
+	}
+	merged, err := MergedSimulationParams(updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(merged), `"max_steps"`) {
+		t.Fatalf("inherited field still exists after merge-patch removal: %s", merged)
+	}
+}
+
 func TestStoreMarkSubmittedPreservesPreboundDraftID(t *testing.T) {
 	store, err := NewStore(t.TempDir())
 	if err != nil {

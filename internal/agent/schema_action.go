@@ -224,10 +224,16 @@ func Parse(raw string) (Action, error) {
 		if len(action.Questions) > 6 {
 			return action, fmt.Errorf("%w: at most six questions are allowed", ErrInvalidQuestion)
 		}
+		questionFields := make(map[string]struct{}, len(action.Questions))
 		for _, question := range action.Questions {
 			if err := validateQuestion(question); err != nil {
 				return action, err
 			}
+			field := strings.TrimSpace(question.Field)
+			if _, duplicate := questionFields[field]; duplicate {
+				return action, fmt.Errorf("%w: duplicate question field %q", ErrInvalidQuestion, field)
+			}
+			questionFields[field] = struct{}{}
 		}
 	}
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clarificationAnswerSummary,
+  clarificationQuestionsSignature,
   agentClarificationPortalTarget,
   inferredClarificationDefault,
   inferredClarificationQuestionType,
@@ -27,6 +28,12 @@ describe('Agent clarification form helpers', () => {
   it('uses typed defaults and serializes numbers', () => {
     expect(initialClarificationAnswers(questions)).toEqual({ velocity: 40, model: 'sa' })
     expect(serializedClarificationAnswers(questions, { velocity: '55', model: 'sa' })).toEqual({ velocity: 55, model: 'sa' })
+  })
+
+  it('keeps an unchanged polled form contract stable', () => {
+    const refreshed = questions.map((question) => ({ ...question }))
+    expect(refreshed).not.toBe(questions)
+    expect(clarificationQuestionsSignature(refreshed)).toBe(clarificationQuestionsSignature(questions))
   })
 
   it('creates a readable session record', () => {

@@ -62,6 +62,13 @@ export function resolvedClarificationQuestions(questions: AgentQuestion[]): Reso
   })
 }
 
+// Polling returns a new questions array every few seconds. Key initialization
+// to the actual form contract so an unchanged refresh cannot erase a user's
+// in-progress answer.
+export function clarificationQuestionsSignature(questions: AgentQuestion[]): string {
+  return JSON.stringify(questions)
+}
+
 export function initialClarificationAnswers(questions: AgentQuestion[]): ClarificationAnswers {
   return Object.fromEntries(questions.map((question) => {
     if (question.default !== undefined) return [question.field, question.default]
@@ -116,10 +123,11 @@ export default function AgentClarificationDialog({
   const [answers, setAnswers] = useState<ClarificationAnswers>({})
   const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose, 'input,select,textarea,button[type="submit"]')
   const resolvedQuestions = useMemo(() => resolvedClarificationQuestions(questions), [questions])
+  const questionsSignature = clarificationQuestionsSignature(questions)
 
   useEffect(() => {
     if (open) setAnswers(initialClarificationAnswers(resolvedQuestions))
-  }, [open, resolvedQuestions])
+  }, [open, questionsSignature])
 
   useEffect(() => {
     const target = agentClarificationPortalTarget()

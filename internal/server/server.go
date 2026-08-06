@@ -1131,20 +1131,56 @@ func (s *Server) autoCreateInterventionForRunError(ctx context.Context, plan pla
 	if s.interventions == nil || s.interventionEngine == nil {
 		return
 	}
+	failure := s.collectRunFailureContext(ctx, plan)
 	existing, _ := s.interventions.List(plan.ProjectID, "", "")
 	for _, inv := range existing {
 		if inv.PlanID == plan.ID && inv.PlanRevision == plan.Revision &&
 			inv.State != agent.InterventionResolved && inv.State != agent.InterventionClosed {
+			if refreshed, refreshErr := s.interventionEngine.RefreshRunFailureContext(inv.ID, failure); refreshErr == nil && refreshed.State == agent.InterventionObservation {
+				go s.runInterventionAutoCycle(inv.ID)
+			}
 			return
 		}
 	}
-	intervention, err := s.interventionEngine.CreateFromRunError(plan, runErr)
+	intervention, err := s.interventionEngine.CreateFromRunErrorContext(plan, runErr, failure)
 	if err != nil {
 		log.Printf("Could not auto-create intervention for run failure on plan %s: %v", plan.ID, err)
 		return
 	}
 	log.Printf("Auto-created intervention %s for run failure on plan %s", intervention.ID, plan.ID)
 	go s.runInterventionAutoCycle(intervention.ID)
+}
+
+func (s *Server) collectRunFailureContext(_ context.Context, plan plans.Plan) agent.RunFailureContext {
+	resourceType, resourceID, ok := planMonitorTarget(plan)
+	if !ok || s.flow360 == nil {
+		return agent.RunFailureContext{}
+	}
+	result := agent.RunFailureContext{ResourceType: resourceType, ResourceID: resourceID}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		state, err := s.flow360.ResourceState(ctx, resourceType, resourceID)
+		if err != nil {
+			result.StateError = "Flow360 remote state could not be read during recovery."
+			return
+		}
+		result.State = state
+	}()
+	go func() {
+		defer wait.Done()
+		logs, err := s.flow360.ResourceLogs(ctx, resourceType, resourceID, 300)
+		if err != nil {
+			result.LogsError = "Flow360 logs could not be read during recovery."
+			return
+		}
+		result.Logs = redactExecutionLogs(string(logs))
+	}()
+	wait.Wait()
+	return result
 }
 
 func (s *Server) runInterventionAutoCycle(interventionID string) {
@@ -1174,7 +1210,16 @@ func (s *Server) runInterventionAutoCycle(interventionID string) {
 		}
 
 		switch intervention.State {
-		case agent.InterventionProposal, agent.InterventionMissingInput:
+		case agent.InterventionProposal:
+			if proposal, ok := autoApplicableRecoveryProposal(intervention); ok {
+				if _, err = s.interventionEngine.SelectProposalAndAdvance(interventionID, proposal.ID, ""); err != nil {
+					log.Printf("Auto-cycle could not select deterministic proposal for intervention %s: %v", interventionID, err)
+					return
+				}
+				continue
+			}
+			return
+		case agent.InterventionMissingInput:
 			return
 		case agent.InterventionUserFeedback:
 			intervention, err = s.interventionEngine.RunEngineStep(interventionID)
@@ -1205,6 +1250,23 @@ func (s *Server) runInterventionAutoCycle(interventionID string) {
 	}
 }
 
+func autoApplicableRecoveryProposal(intervention agent.Intervention) (agent.Proposal, bool) {
+	if len(intervention.Proposals) != 1 {
+		return agent.Proposal{}, false
+	}
+	proposal := intervention.Proposals[0]
+	if proposal.ID == "periodic-node-mismatch-symmetry" {
+		return proposal, true
+	}
+	for _, field := range proposal.Fields {
+		confidence, ok := field.Value.(float64)
+		if field.Key == "confidence" && ok && confidence >= 0.9 {
+			return proposal, true
+		}
+	}
+	return agent.Proposal{}, false
+}
+
 func (s *Server) validateAndApplyIntervention(interventionID string) (agent.Intervention, error) {
 	intervention, err := s.interventionEngine.Get(interventionID)
 	if err != nil {
@@ -1222,7 +1284,7 @@ func (s *Server) validateAndApplyIntervention(interventionID string) (agent.Inte
 	}
 
 	var updated plans.Plan
-	if plan.Preflight != nil && len(plan.Preflight.FormSchema) > 0 &&
+	if plan.Preflight != nil && schemaHasEditableProperties(plan.Preflight.FormSchema) &&
 		plans.ValidateFormValues(plan.Preflight.FormSchema, intervention.CompiledPatch) == nil {
 		current, mergeErr := plans.MergedSimulationParams(plan)
 		if mergeErr != nil {
@@ -1268,6 +1330,13 @@ func (s *Server) validateAndApplyIntervention(interventionID string) (agent.Inte
 		PreflightID: fmt.Sprintf("pf-plan-%s-r%d", updated.ID, updated.Revision),
 	}
 	return s.interventionEngine.CompletePlanValidation(intervention.ID, result)
+}
+
+func schemaHasEditableProperties(schema json.RawMessage) bool {
+	var root struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	return json.Unmarshal(schema, &root) == nil && len(root.Properties) > 0
 }
 
 func (s *Server) monitorSubmissionTerminalState(planID, resourceType, resourceID string) {

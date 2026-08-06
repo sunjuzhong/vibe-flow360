@@ -1031,6 +1031,26 @@ fi
 	}
 }
 
+func TestDeterministicRemoteRecoveryCanAutoAdvance(t *testing.T) {
+	proposal := agent.Proposal{ID: "periodic-node-mismatch-symmetry", Patch: json.RawMessage(`{"models":[]}`)}
+	selected, ok := autoApplicableRecoveryProposal(agent.Intervention{Proposals: []agent.Proposal{proposal}})
+	if !ok || selected.ID != proposal.ID {
+		t.Fatal("schema-validated periodic mismatch repair should auto-advance locally")
+	}
+	if _, ok := autoApplicableRecoveryProposal(agent.Intervention{Proposals: []agent.Proposal{{ID: "manual"}}}); ok {
+		t.Fatal("ambiguous recovery proposal must remain review-only")
+	}
+}
+
+func TestEmptyPreflightSchemaDoesNotConsumeCompiledPatchAsFormValues(t *testing.T) {
+	if schemaHasEditableProperties(json.RawMessage(`{"type":"object","properties":{}}`)) {
+		t.Fatal("empty preflight schema must not discard a compiled SimulationParams patch")
+	}
+	if !schemaHasEditableProperties(json.RawMessage(`{"type":"object","properties":{"models":{"type":"entity_assignment"}}}`)) {
+		t.Fatal("schema-backed recovery form should use form expansion")
+	}
+}
+
 func TestPublicExecutionErrorDoesNotExposeTraceback(t *testing.T) {
 	got := publicExecutionError(errors.New("Traceback /Users/private/source Fail to generate simulation config"))
 	if strings.Contains(got.Error(), "Traceback") || strings.Contains(got.Error(), "/Users/") {

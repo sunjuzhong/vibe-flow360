@@ -126,6 +126,77 @@ func TestEngineCreateFromRunError(t *testing.T) {
 	}
 }
 
+func TestEngineUsesRemoteLogsToRepairPeriodicNodeMismatch(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	plan := makeTestPlan("proj-1", "plan-periodic", "geo-1", true, nil)
+	plan.Preflight = nil
+	plan.Patch = json.RawMessage(`{"models":[
+		{"type":"Wall","name":"Wall"},
+		{"type":"Periodic","name":"Periodic","surface_pairs":{"items":[{"pair":[{"name":"face-min"},{"name":"face-max"}]}]},"spec":{"type_name":"Translational"}},
+		{"type":"Fluid"}
+	]}`)
+	intervention, err := engine.CreateFromRunErrorContext(plan, errors.New("remote simulation ended with state: error"), RunFailureContext{
+		ResourceID: "case-1", ResourceType: "Case",
+		State: json.RawMessage(`{"status":"error"}`),
+		Logs:  `(ERROR 2020) PeriodicBoundariesParsingError: Number of nodes=12409 in patch face-min does not equal number of nodes=12456 in patch face-max`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intervention.ResourceID != "case-1" || intervention.ResourceType != "Case" || len(intervention.Evidence) != 3 {
+		t.Fatalf("remote failure context was not preserved: %#v", intervention)
+	}
+	diagnosed, err := engine.RunEngineStep(intervention.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnosed.Diagnosis == nil || diagnosed.Diagnosis.Category != ErrorMeshQuality || !strings.Contains(diagnosed.Diagnosis.RootCause, "node counts") {
+		t.Fatalf("periodic mismatch was not diagnosed from Flow360 logs: %#v", diagnosed.Diagnosis)
+	}
+	proposed, err := engine.RunEngineStep(intervention.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proposed.State != InterventionProposal || len(proposed.Proposals) != 1 {
+		t.Fatalf("expected an automatic deterministic proposal, got %#v", proposed)
+	}
+	patch := string(proposed.Proposals[0].Patch)
+	if strings.Contains(patch, `"type":"Periodic"`) || !strings.Contains(patch, `"type":"SymmetryPlane"`) {
+		t.Fatalf("periodic repair did not replace the rejected pair: %s", patch)
+	}
+}
+
+func TestRefreshRunFailureReleasesApplicationOwnedClarification(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	plan := makeTestPlan("proj-1", "plan-refresh", "geo-1", true, nil)
+	plan.Preflight = nil
+	intervention, err := engine.CreateFromRunError(plan, errors.New("remote simulation ended with state: error"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.RunEngineStep(intervention.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = engine.store.Update(intervention.ID, func(current *Intervention) error {
+		return current.RequestClarification("Need context", []Question{{
+			Field: "SimulationParams", Message: "Provide the canonical SimulationParams and log excerpt.", Urgency: "required", Type: "text",
+		}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := engine.RefreshRunFailureContext(intervention.ID, RunFailureContext{
+		ResourceID: "case-1", ResourceType: "Case", State: json.RawMessage(`{"status":"error"}`),
+		Logs: "PeriodicBoundariesParsingError: Number of nodes differs on the periodic pair",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.State != InterventionObservation || len(refreshed.PendingQuestions) != 0 || len(recentExecutionLogs(refreshed.Evidence)) == 0 {
+		t.Fatalf("stale application-owned question was not released: %#v", refreshed)
+	}
+}
+
 func TestEngineFullLifecycle(t *testing.T) {
 	engine, _ := setupTestEngine(t)
 

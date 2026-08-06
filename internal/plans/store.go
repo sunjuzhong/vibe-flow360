@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -639,7 +640,23 @@ func (s *Store) applyInputs(id string, revision int, values json.RawMessage, sch
 		if err := json.Unmarshal(plan.Patch, &patchObject); err != nil {
 			return errors.New("stored plan patch is invalid")
 		}
-		mergedPatch := mergePatch(patchObject, valueObject)
+		var baseline any = map[string]any{}
+		if len(plan.Baseline) > 0 {
+			if err := json.Unmarshal(plan.Baseline, &baseline); err != nil {
+				return errors.New("stored Flow360 baseline SimulationParams is invalid")
+			}
+			baseline = unwrapSimulationParams(baseline)
+		}
+		current := mergePatch(baseline, patchObject)
+		desired := mergePatch(current, valueObject)
+		mergedValue, changed := mergePatchDifference(baseline, desired)
+		if !changed {
+			mergedValue = map[string]any{}
+		}
+		mergedPatch, ok := mergedValue.(map[string]any)
+		if !ok {
+			return errors.New("dynamic form values must produce a SimulationParams object")
+		}
 		patch, err := json.Marshal(mergedPatch)
 		if err != nil {
 			return err
@@ -886,6 +903,37 @@ func mergePatch(target, patch any) any {
 		result[key] = mergePatch(result[key], value)
 	}
 	return result
+}
+
+// mergePatchDifference creates the sparse RFC 7396 document that transforms
+// baseline into desired. Unlike merging two patch documents directly, this
+// preserves null tombstones for fields inherited from the Flow360 baseline.
+func mergePatchDifference(baseline, desired any) (any, bool) {
+	if reflect.DeepEqual(baseline, desired) {
+		return nil, false
+	}
+	baselineObject, baselineIsObject := baseline.(map[string]any)
+	desiredObject, desiredIsObject := desired.(map[string]any)
+	if !baselineIsObject || !desiredIsObject {
+		return desired, true
+	}
+	result := map[string]any{}
+	for key := range baselineObject {
+		if _, exists := desiredObject[key]; !exists {
+			result[key] = nil
+		}
+	}
+	for key, desiredValue := range desiredObject {
+		baselineValue, exists := baselineObject[key]
+		if !exists {
+			result[key] = desiredValue
+			continue
+		}
+		if difference, changed := mergePatchDifference(baselineValue, desiredValue); changed {
+			result[key] = difference
+		}
+	}
+	return result, len(result) > 0
 }
 
 func diffValues(path string, before, after any, result *[]Difference) {

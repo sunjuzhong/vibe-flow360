@@ -300,6 +300,20 @@ func TestParseAcceptsTypedClarificationQuestion(t *testing.T) {
 	}
 }
 
+func TestParseRejectsDuplicateClarificationFields(t *testing.T) {
+	raw := `{
+  "version":"v1","kind":"request-missing-input","message":"Need details",
+  "questions":[
+    {"field":"SimulationParams","message":"Which stage failed?","urgency":"required","type":"text"},
+    {"field":"SimulationParams","message":"Paste the logs","urgency":"required","type":"text"}
+  ]
+}`
+	_, err := Parse(raw)
+	if !errors.Is(err, ErrInvalidQuestion) || !strings.Contains(err.Error(), "duplicate question field") {
+		t.Fatalf("expected duplicate clarification fields to enter repair, got %v", err)
+	}
+}
+
 func TestParseRejectsSelectQuestionWithoutOptions(t *testing.T) {
 	raw := `{
   "version":"v1",

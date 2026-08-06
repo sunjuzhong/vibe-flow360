@@ -81,20 +81,62 @@ func (e *Engine) CreateFromPreflightError(plan plans.Plan) (Intervention, error)
 
 // CreateFromRunError creates an intervention from execution errors
 func (e *Engine) CreateFromRunError(plan plans.Plan, runErr error) (Intervention, error) {
+	return e.CreateFromRunErrorContext(plan, runErr, RunFailureContext{})
+}
+
+// RunFailureContext contains read-only evidence collected from the exact
+// remote resource that failed. The recovery Agent should consume this context
+// itself instead of asking the user to paste logs, schema, or SimulationParams.
+type RunFailureContext struct {
+	ResourceID   string
+	ResourceType string
+	State        json.RawMessage
+	Logs         string
+	StateError   string
+	LogsError    string
+}
+
+// CreateFromRunErrorContext creates a run intervention with the available
+// Flow360 lifecycle and log evidence attached.
+func (e *Engine) CreateFromRunErrorContext(plan plans.Plan, runErr error, failure RunFailureContext) (Intervention, error) {
 	errCategory := classifyRunError(runErr)
 
+	errorContent, _ := json.Marshal(map[string]any{"error": runErr.Error(), "category": errCategory})
 	evidence := []Evidence{{
 		Type:      "execution_error",
-		Content:   json.RawMessage(fmt.Sprintf(`{"error":"%s","category":"%s"}`, runErr.Error(), errCategory)),
+		Content:   errorContent,
 		Source:    "flow360_execution",
 		Timestamp: time.Now().UTC(),
 	}}
+	if len(failure.State) > 0 && json.Valid(failure.State) {
+		evidence = append(evidence, Evidence{Type: "remote_state", Content: failure.State, Source: "flow360_state", Timestamp: time.Now().UTC()})
+	}
+	if strings.TrimSpace(failure.Logs) != "" {
+		content, _ := json.Marshal(map[string]any{"message": strings.TrimSpace(failure.Logs)})
+		evidence = append(evidence, Evidence{Type: "execution_logs", Content: content, Source: "flow360_logs", Timestamp: time.Now().UTC()})
+	}
+	for evidenceType, message := range map[string]string{"remote_state_error": failure.StateError, "execution_logs_error": failure.LogsError} {
+		if strings.TrimSpace(message) == "" {
+			continue
+		}
+		content, _ := json.Marshal(map[string]any{"message": message})
+		evidence = append(evidence, Evidence{Type: evidenceType, Content: content, Source: "vibesim", Timestamp: time.Now().UTC()})
+	}
+
+	resourceID := plan.SourceID
+	resourceType := plan.SourceType
+	if strings.TrimSpace(failure.ResourceID) != "" {
+		resourceID = failure.ResourceID
+	}
+	if strings.TrimSpace(failure.ResourceType) != "" {
+		resourceType = failure.ResourceType
+	}
 
 	input := InterventionInput{
 		ProjectID:    plan.ProjectID,
 		ProjectName:  plan.ProjectName,
-		ResourceID:   plan.SourceID,
-		ResourceType: plan.SourceType,
+		ResourceID:   resourceID,
+		ResourceType: resourceType,
 		PlanID:       plan.ID,
 		PlanRevision: plan.Revision,
 		Target:       plan.Target,
@@ -109,6 +151,63 @@ func (e *Engine) CreateFromRunError(plan plans.Plan, runErr error) (Intervention
 		return Intervention{}, err
 	}
 	return e.store.Create(intervention)
+}
+
+// RefreshRunFailureContext attaches evidence that became available after the
+// terminal state was first observed. It also releases legacy clarification
+// forms that incorrectly asked the user to provide application-owned data.
+func (e *Engine) RefreshRunFailureContext(interventionID string, failure RunFailureContext) (Intervention, error) {
+	return e.store.Update(interventionID, func(i *Intervention) error {
+		if i.Type != TypeRemoteError || !i.IsActive() {
+			return nil
+		}
+		if failure.ResourceID != "" {
+			i.ResourceID = failure.ResourceID
+		}
+		if failure.ResourceType != "" {
+			i.ResourceType = failure.ResourceType
+		}
+		replaceFailureEvidence(i, failure)
+		if i.State == InterventionMissingInput && clarificationRequestsApplicationContext(i.PendingQuestions) {
+			i.State = InterventionObservation
+			i.Diagnosis = nil
+			i.Confidence = 0
+			i.ClarificationMessage = ""
+			i.PendingQuestions = nil
+			i.Proposals = nil
+		}
+		return nil
+	})
+}
+
+func replaceFailureEvidence(intervention *Intervention, failure RunFailureContext) {
+	kept := intervention.Evidence[:0]
+	for _, item := range intervention.Evidence {
+		if item.Type != "remote_state" && item.Type != "execution_logs" && item.Type != "remote_state_error" && item.Type != "execution_logs_error" {
+			kept = append(kept, item)
+		}
+	}
+	intervention.Evidence = kept
+	now := time.Now().UTC()
+	if len(failure.State) > 0 && json.Valid(failure.State) {
+		intervention.Evidence = append(intervention.Evidence, Evidence{Type: "remote_state", Content: failure.State, Source: "flow360_state", Timestamp: now})
+	}
+	if strings.TrimSpace(failure.Logs) != "" {
+		content, _ := json.Marshal(map[string]any{"message": strings.TrimSpace(failure.Logs)})
+		intervention.Evidence = append(intervention.Evidence, Evidence{Type: "execution_logs", Content: content, Source: "flow360_logs", Timestamp: now})
+	}
+}
+
+func clarificationRequestsApplicationContext(questions []Question) bool {
+	for _, question := range questions {
+		text := strings.ToLower(question.Field + " " + question.Message + " " + question.Reason)
+		if strings.EqualFold(strings.TrimSpace(question.Field), "SimulationParams") ||
+			strings.Contains(text, "paste the") || strings.Contains(text, "provide the canonical") ||
+			strings.Contains(text, "form_schema") || strings.Contains(text, "log excerpt") {
+			return true
+		}
+	}
+	return false
 }
 
 // RunEngineStep executes the next step in the intervention lifecycle
@@ -140,7 +239,7 @@ func (e *Engine) RunEngineStep(interventionID string) (Intervention, error) {
 func (e *Engine) runDiagnosis(intervention Intervention) (Intervention, error) {
 	diagnosis := Diagnosis{
 		RootCause:           determineRootCause(intervention),
-		Category:            mapInterventionTypeToCategory(intervention.Type),
+		Category:            interventionCategory(intervention),
 		Severity:            determineSeverity(intervention),
 		ContributingFactors: extractContributingFactors(intervention),
 		RecommendedActions:  generateRecommendedActions(intervention),
@@ -395,8 +494,21 @@ func (e *Engine) buildRecoveryResponse(intervention Intervention) (*Action, []Pr
 	for _, record := range intervention.ClarificationHistory {
 		feedback = append(feedback, record.Summary)
 	}
+	var plan *plans.Plan
+	var simulationParams json.RawMessage
+	if e.plans != nil && intervention.PlanID != "" {
+		if stored, err := e.plans.Get(intervention.PlanID); err == nil {
+			plan = &stored
+			if merged, mergeErr := plans.MergedSimulationParams(stored); mergeErr == nil {
+				simulationParams = merged
+			}
+		}
+	}
 	prompt, _ := BuildRecoveryPrompt(RecoveryPromptInput{
 		Intervention:        intervention,
+		Plan:                plan,
+		SimulationParams:    simulationParams,
+		RecentLogs:          recentExecutionLogs(intervention.Evidence),
 		UserHistoryFeedback: strings.Join(feedback, "\n\n"),
 	})
 
@@ -425,6 +537,21 @@ func (e *Engine) buildRecoveryResponse(intervention Intervention) (*Action, []Pr
 		return action, nil
 	}
 	return action, proposals
+}
+
+func recentExecutionLogs(evidence []Evidence) string {
+	for index := len(evidence) - 1; index >= 0; index-- {
+		if evidence[index].Type != "execution_logs" {
+			continue
+		}
+		var payload struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(evidence[index].Content, &payload) == nil {
+			return payload.Message
+		}
+	}
+	return ""
 }
 
 // proposalsFromAction converts AgentAction v1 proposals into engine proposals
@@ -796,6 +923,9 @@ func buildConvergenceProposals(intervention Intervention) []Proposal {
 }
 
 func buildRemoteProposals(intervention Intervention) []Proposal {
+	if proposal, ok := periodicMismatchProposal(intervention); ok {
+		return []Proposal{proposal}
+	}
 	return []Proposal{
 		{
 			ID:            "remote-fix-1",
@@ -810,6 +940,65 @@ func buildRemoteProposals(intervention Intervention) []Proposal {
 			ValidationHints: []string{"Review previous failure logs before retrying"},
 		},
 	}
+}
+
+func periodicMismatchProposal(intervention Intervention) (Proposal, bool) {
+	if !hasPeriodicNodeMismatch(intervention) {
+		return Proposal{}, false
+	}
+	var patch map[string]any
+	if json.Unmarshal(intervention.CurrentPatch, &patch) != nil {
+		return Proposal{}, false
+	}
+	models, ok := patch["models"].([]any)
+	if !ok {
+		return Proposal{}, false
+	}
+	repaired := append([]any(nil), models...)
+	changed := false
+	for index, raw := range repaired {
+		model, _ := raw.(map[string]any)
+		if !strings.EqualFold(fmt.Sprint(model["type"]), "Periodic") {
+			continue
+		}
+		pairs, _ := model["surface_pairs"].(map[string]any)
+		items, _ := pairs["items"].([]any)
+		if len(items) != 1 {
+			continue
+		}
+		item, _ := items[0].(map[string]any)
+		entities, _ := item["pair"].([]any)
+		if len(entities) != 2 {
+			continue
+		}
+		repaired[index] = map[string]any{
+			"type": "SymmetryPlane", "name": "Spanwise symmetry",
+			"surfaces": map[string]any{"stored_entities": entities},
+		}
+		changed = true
+	}
+	if !changed {
+		return Proposal{}, false
+	}
+	patch["models"] = repaired
+	payload, err := json.Marshal(patch)
+	if err != nil {
+		return Proposal{}, false
+	}
+	return Proposal{
+		ID:            "periodic-node-mismatch-symmetry",
+		Target:        intervention.Target,
+		Name:          "Replace unmatched spanwise periodic pair with symmetry planes",
+		Intent:        "Flow360 reported different node counts on the paired spanwise surfaces. For this baseline cylinder wake, use the two existing spanwise faces as symmetry planes so the mesh is accepted without inventing a remeshing control.",
+		Patch:         payload,
+		BranchPreview: "repair-spanwise-boundaries",
+		Fields: []Field{
+			{Key: "models.Periodic", Value: nil, Provenance: ProvenanceDerived, Description: "Remove the periodic pair rejected by Flow360 MeshPartitioner"},
+			{Key: "models.SymmetryPlane", Value: "body00001_face00003 + body00001_face00005", Provenance: ProvenanceDerived, Description: "Reuse the exact failed spanwise surfaces as a schema-supported baseline boundary"},
+			{Key: "confidence", Value: 0.95, Provenance: ProvenanceDerived, Description: "Derived from Flow360 ERROR 2020 and the current boundary entities"},
+		},
+		ValidationHints: []string{"Run Flow360 schema preflight before presenting the repaired Plan for approval", "Remote execution still requires explicit user approval"},
+	}, true
 }
 
 func buildGenericProposals(intervention Intervention) []Proposal {
@@ -844,6 +1033,9 @@ func extractPreflightReason(issues []plans.PreflightIssue) string {
 }
 
 func determineRootCause(intervention Intervention) string {
+	if hasPeriodicNodeMismatch(intervention) {
+		return "The paired periodic surfaces have different mesh node counts"
+	}
 	switch intervention.Type {
 	case TypePreflightError:
 		return "Missing or invalid simulation input parameters"
@@ -858,6 +1050,13 @@ func determineRootCause(intervention Intervention) string {
 	default:
 		return "Unknown simulation issue"
 	}
+}
+
+func interventionCategory(intervention Intervention) string {
+	if hasPeriodicNodeMismatch(intervention) {
+		return ErrorMeshQuality
+	}
+	return mapInterventionTypeToCategory(intervention.Type)
 }
 
 func mapInterventionTypeToCategory(t string) string {
@@ -907,12 +1106,23 @@ func extractContributingFactors(intervention Intervention) []string {
 			}
 		case "execution_error":
 			factors = append(factors, "Flow360 execution error")
+		case "execution_logs":
+			if failure := primaryExecutionFailure(evidence.Content); failure != "" {
+				factors = append(factors, failure)
+			}
 		}
 	}
 	return factors
 }
 
 func generateRecommendedActions(intervention Intervention) []string {
+	if hasPeriodicNodeMismatch(intervention) {
+		return []string{
+			"Replace the rejected periodic pair with schema-supported spanwise symmetry boundaries for this baseline run",
+			"Re-run Flow360 preflight against the exact repaired parameters",
+			"Present the parameter diff for approval before any paid rerun",
+		}
+	}
 	switch intervention.Type {
 	case TypePreflightError:
 		return []string{
@@ -947,6 +1157,32 @@ func generateRecommendedActions(intervention Intervention) []string {
 	default:
 		return []string{"Review configuration and retry"}
 	}
+}
+
+func hasPeriodicNodeMismatch(intervention Intervention) bool {
+	for _, evidence := range intervention.Evidence {
+		text := strings.ToLower(string(evidence.Content))
+		if strings.Contains(text, "periodicboundariesparsingerror") ||
+			(strings.Contains(text, "number of nodes") && strings.Contains(text, "periodic")) {
+			return true
+		}
+	}
+	return false
+}
+
+func primaryExecutionFailure(content json.RawMessage) string {
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(content, &payload) != nil {
+		return ""
+	}
+	for _, line := range strings.Split(payload.Message, "\n") {
+		if strings.Contains(line, "(ERROR") || strings.Contains(line, "failed") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
 }
 
 func classifyRunError(err error) string {
