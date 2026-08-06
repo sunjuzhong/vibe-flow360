@@ -123,11 +123,6 @@ export function geometryContextId(items: ProjectItem[], selectedId: string | nul
   return items.find((item) => item.type === 'Geometry')?.id ?? null
 }
 
-export function draftsForResource(drafts: DraftRecord[], resourceId: string | null | undefined) {
-  if (!resourceId) return []
-  return drafts.filter((draft) => draft.source_id === resourceId)
-}
-
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -413,10 +408,6 @@ export default function ProjectPage() {
     () => geometryContextId(items, selectedItem?.id),
     [items, selectedItem],
   )
-  const linkedDrafts = useMemo(
-    () => draftsForResource(drafts, selectedItem?.id),
-    [drafts, selectedItem?.id],
-  )
   const activeDraftSource = useMemo(
     () => items.find((item) => item.id === activeDraft?.source_id) ?? null,
     [activeDraft?.source_id, items],
@@ -676,7 +667,6 @@ export default function ProjectPage() {
                 <ProjectDraftBar
                   mode={draftMode ? 'draft' : 'resource'}
                   drafts={drafts}
-                  linkedDrafts={linkedDrafts}
                   selectedId={activeDraftId}
                   selectedDetail={draftDetail}
                   sourceLabel={activeDraftSource?.name || activeDraft?.source_type || 'Source resource'}

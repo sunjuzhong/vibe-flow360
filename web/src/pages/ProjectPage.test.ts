@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
-import { draftsForResource, geometryContextId, initialProjectPanel, projectSyncProgress, resourceContextLabel } from './ProjectPage'
+import { geometryContextId, initialProjectPanel, projectSyncProgress, resourceContextLabel } from './ProjectPage'
 
 describe('Project panel defaults', () => {
   it('opens Project resources on first entry', () => {
@@ -12,19 +12,6 @@ describe('resourceContextLabel', () => {
   it('does not repeat a Project name for its same-named root resource', () => {
     expect(resourceContextLabel('Cylinder wake', 'Cylinder wake', 'Geometry')).toBe('Geometry resource')
     expect(resourceContextLabel('Cylinder wake', 'Baseline mesh', 'SurfaceMesh')).toBe('Baseline mesh')
-  })
-})
-
-describe('draftsForResource', () => {
-  it('links Drafts to their source Resource by stable ID instead of name', () => {
-    const drafts = [
-      { id: 'draft-1', name: 'Same name', source_id: 'geo-1' },
-      { id: 'draft-2', name: 'Same name', source_id: 'sm-1' },
-      { id: 'draft-3', name: 'Legacy Draft' },
-    ]
-
-    expect(draftsForResource(drafts, 'geo-1').map((draft) => draft.id)).toEqual(['draft-1'])
-    expect(draftsForResource(drafts, 'sm-1').map((draft) => draft.id)).toEqual(['draft-2'])
   })
 })
 

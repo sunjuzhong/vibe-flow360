@@ -5,7 +5,6 @@ import { resourceStatus } from './ResourceDetailPanel'
 type Props = {
   mode: 'resource' | 'draft'
   drafts: DraftRecord[]
-  linkedDrafts: DraftRecord[]
   selectedId: string
   selectedDetail: ResourceDetail | null
   sourceLabel: string
@@ -43,7 +42,6 @@ function draftStatus(draft: DraftRecord, detail: ResourceDetail | null, selected
 export default function ProjectDraftBar({
   mode,
   drafts,
-  linkedDrafts,
   selectedId,
   selectedDetail,
   sourceLabel,
@@ -58,15 +56,15 @@ export default function ProjectDraftBar({
   onRefresh,
 }: Props) {
   if (mode === 'resource') {
-    const linkedDraft = linkedDrafts.find((draft) => draft.id === selectedId) ?? linkedDrafts[0]
+    const projectDraft = drafts.find((draft) => draft.id === selectedId) ?? drafts[0]
     const unavailable = !loading && Boolean(error)
-    const hasDrafts = linkedDrafts.length > 0
+    const hasDrafts = drafts.length > 0
     const label = loading
       ? 'Loading Drafts…'
       : unavailable
         ? 'Drafts unavailable'
         : hasDrafts
-          ? `Drafts ${linkedDrafts.length}`
+          ? `Drafts ${drafts.length}`
           : 'Create Draft'
 
     return (
@@ -74,16 +72,16 @@ export default function ProjectDraftBar({
         <button
           type="button"
           className="project-draft-entry__primary"
-          aria-label={hasDrafts ? `Open ${linkedDrafts.length} Drafts for this Resource` : 'Create Draft from this Resource'}
+          aria-label={hasDrafts ? `Open ${drafts.length} Drafts in this Project` : 'Create Draft from this Resource'}
           disabled={loading || unavailable}
-          onClick={() => hasDrafts && linkedDraft ? onEnter(linkedDraft.id) : onCreate()}
+          onClick={() => hasDrafts && projectDraft ? onEnter(projectDraft.id) : onCreate()}
         >
           <span className="project-draft-entry__icon">
             {hasDrafts ? <GitPullRequestDraft size={15} /> : <Plus size={15} />}
           </span>
           <span className="project-draft-entry__copy">
             <strong>{label}</strong>
-            <small>{hasDrafts ? 'Editable configurations for this Resource' : 'Start an editable configuration'}</small>
+            <small>{hasDrafts ? 'Editable configurations in this Project' : 'Start an editable configuration'}</small>
           </span>
           <ChevronRight size={14} aria-hidden="true" />
         </button>

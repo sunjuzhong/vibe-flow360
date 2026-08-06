@@ -19,8 +19,10 @@ describe('ProjectDraftBar', () => {
     const markup = renderToStaticMarkup(
       <ProjectDraftBar
         mode="resource"
-        drafts={[]}
-        linkedDrafts={[{ id: 'draft-1', name: 'Baseline', source_id: 'geo-1' }]}
+        drafts={[
+          { id: 'draft-1', name: 'Geometry setup', source_id: 'geo-1' },
+          { id: 'draft-2', name: 'Surface setup', source_id: 'sm-1' },
+        ]}
         selectedId="draft-1"
         selectedDetail={null}
         sourceLabel="Geometry resource"
@@ -37,8 +39,9 @@ describe('ProjectDraftBar', () => {
     )
 
     expect(markup).toContain('aria-label="Draft workspace"')
-    expect(markup).toContain('Drafts 1')
-    expect(markup).toContain('Open 1 Drafts for this Resource')
+    expect(markup).toContain('Drafts 2')
+    expect(markup).toContain('Open 2 Drafts in this Project')
+    expect(markup).toContain('Editable configurations in this Project')
     expect(markup).not.toContain('Switch active Draft')
     expect(markup).not.toContain('Parameters')
   })
@@ -51,7 +54,6 @@ describe('ProjectDraftBar', () => {
           { id: 'draft-1', name: 'Baseline', status: 'draft' },
           { id: 'draft-2', name: 'High AoA', status: 'submitted' },
         ]}
-        linkedDrafts={[]}
         selectedId="draft-2"
         selectedDetail={{ id: 'draft-2', type: 'Draft', state: { status: 'submitted' } }}
         sourceLabel="Wing Geometry"
