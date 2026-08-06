@@ -206,4 +206,50 @@ describe('schema-driven Flow360 form', () => {
       meshing: { defaults: { target_surface_node_count: 500000 } },
     })
   })
+
+  it('renders Draft root groups as tabs and nested objects as collapsible sections', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      title: 'Simulation parameters',
+      properties: {
+        meshing: {
+          type: 'object',
+          title: 'Meshing',
+          properties: {
+            defaults: {
+              type: 'object',
+              title: 'Defaults',
+              properties: {
+                target_count: { type: 'integer', title: 'Target count' },
+              },
+            },
+          },
+        },
+        models: {
+          type: 'object',
+          title: 'Models',
+          properties: {},
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { meshing: { defaults: { target_count: 500000 } } },
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('role="tablist"')
+    expect(markup).toContain('role="tab"')
+    expect(markup).toContain('aria-selected="true"')
+    expect(markup).toContain('Meshing')
+    expect(markup).toContain('Models')
+    expect(markup).toContain('schema-section')
+    expect(markup).toContain('Defaults')
+    expect(markup).toContain('Target count')
+    expect(markup).toContain('role="tabpanel"')
+  })
 })

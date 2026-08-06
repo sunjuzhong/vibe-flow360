@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
@@ -106,6 +106,8 @@ export function SchemaFormFields({
   baseline,
   addLabel = 'Change',
   removeLabel = 'Keep inherited',
+  rootTabs = false,
+  collapsibleObjects = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -115,8 +117,97 @@ export function SchemaFormFields({
   baseline?: unknown
   addLabel?: string
   removeLabel?: string
+  rootTabs?: boolean
+  collapsibleObjects?: boolean
 }) {
-  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} showAll={showAll} configured baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} />
+  const tabKeys = useMemo(() => rootTabs && schema.type === 'object' ? Object.keys(schema.properties ?? {}) : [], [rootTabs, schema])
+  const [activeTab, setActiveTab] = useState(tabKeys[0] ?? '')
+
+  useEffect(() => {
+    if (!tabKeys.includes(activeTab)) setActiveTab(tabKeys[0] ?? '')
+  }, [activeTab, tabKeys])
+
+  if (rootTabs && schema.type === 'object' && tabKeys.length > 0) {
+    const object = isRecord(value) ? value : {}
+    const baselineObject = isRecord(baseline) ? baseline : {}
+    const key = tabKeys.includes(activeTab) ? activeTab : tabKeys[0]
+    const child = schema.properties?.[key]
+    if (!child) return null
+    const present = Object.prototype.hasOwnProperty.call(object, key)
+    const requiredKeys = Array.isArray(schema.required) ? schema.required : []
+    const required = child.required === true || requiredKeys.includes(key)
+    const tabID = (tabKey: string) => `schema-root-tab-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+    const panelID = (tabKey: string) => `schema-root-panel-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+    const selectAdjacentTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabKeys.length - 1
+          : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabKeys.length) % tabKeys.length
+      const nextKey = tabKeys[nextIndex]
+      setActiveTab(nextKey)
+      document.getElementById(tabID(nextKey))?.focus()
+    }
+    return (
+      <div className="schema-tab-layout">
+        <div className="schema-root-tabs" role="tablist" aria-label={schema.title || 'Simulation parameter groups'}>
+          {tabKeys.map((tabKey, index) => {
+            const tabSchema = schema.properties?.[tabKey]
+            const configured = Object.prototype.hasOwnProperty.call(object, tabKey)
+            return (
+              <button
+                id={tabID(tabKey)}
+                key={tabKey}
+                type="button"
+                role="tab"
+                aria-selected={tabKey === key}
+                aria-controls={panelID(tabKey)}
+                tabIndex={tabKey === key ? 0 : -1}
+                className={tabKey === key ? 'active' : ''}
+                onClick={() => setActiveTab(tabKey)}
+                onKeyDown={(event) => selectAdjacentTab(event, index)}
+              >
+                <span>{tabSchema?.title || humanize(tabKey)}</span>
+                <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>
+              </button>
+            )
+          })}
+        </div>
+        <div className="schema-root-panel" id={panelID(key)} role="tabpanel" aria-labelledby={tabID(key)}>
+          <SchemaField
+            schema={child}
+            path={key}
+            value={present ? object[key] : initialValue(child, sparse)}
+            baseline={baselineObject[key]}
+            sparse={sparse}
+            showAll={showAll}
+            configured={present}
+            addLabel={addLabel}
+            removeLabel={removeLabel}
+            collapsibleObjects={collapsibleObjects}
+            onChange={(next) => onChange({ ...object, [key]: next })}
+          />
+          {sparse && !required && present && (
+            <button
+              type="button"
+              className="schema-remove-change schema-root-remove"
+              onClick={() => {
+                const next = { ...object }
+                delete next[key]
+                onChange(next)
+              }}
+            >
+              <Trash2 size={12} /> {removeLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} showAll={showAll} configured baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} />
 }
 
 function SchemaField({
@@ -130,6 +221,7 @@ function SchemaField({
   baseline,
   addLabel,
   removeLabel,
+  collapsibleObjects,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -141,16 +233,17 @@ function SchemaField({
   baseline?: unknown
   addLabel: string
   removeLabel: string
+  collapsibleObjects: boolean
 }) {
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
+  const [sectionOpen, setSectionOpen] = useState(path.split('.').length === 1)
   if (schema.type === 'object') {
     const object = isRecord(value) ? value : {}
     const baselineObject = isRecord(baseline) ? baseline : {}
     const requiredKeys = Array.isArray(schema.required) ? schema.required : []
-    return (
-      <fieldset className="schema-object">
-        {path && <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>}
+    const fields = (
+      <>
         {schema.description && path && <p>{schema.description}</p>}
         {Object.entries(schema.properties ?? {}).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
@@ -182,6 +275,7 @@ function SchemaField({
                 configured={present}
                 addLabel={addLabel}
                 removeLabel={removeLabel}
+                collapsibleObjects={collapsibleObjects}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
               {sparse && !required && present && (
@@ -200,6 +294,24 @@ function SchemaField({
             </div>
           )
         })}
+      </>
+    )
+    if (path && collapsibleObjects) {
+      return (
+        <details className="schema-section" open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+          <summary>
+            <span>{title}</span>
+            {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+            <ChevronDown size={16} />
+          </summary>
+          <div className="schema-section-body">{fields}</div>
+        </details>
+      )
+    }
+    return (
+      <fieldset className="schema-object">
+        {path && <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>}
+        {fields}
       </fieldset>
     )
   }
@@ -298,6 +410,7 @@ function SchemaField({
               configured
               addLabel={addLabel}
               removeLabel={removeLabel}
+              collapsibleObjects={collapsibleObjects}
               onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
             />
             <button type="button" className="icon-button" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${title} ${index + 1}`}>
@@ -331,7 +444,7 @@ function SchemaField({
             ))}
           </select>
         </label>
-        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} onChange={(next) => onChange({ ...draft, value: next })} />
+        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} onChange={(next) => onChange({ ...draft, value: next })} />
       </fieldset>
     )
   }

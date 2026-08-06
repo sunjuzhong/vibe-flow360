@@ -127,6 +127,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
             showAll
             addLabel="Add"
             removeLabel="Remove"
+            rootTabs
+            collapsibleObjects
             onChange={(next) => {
               setFormValue(next)
               setDirty(true)
