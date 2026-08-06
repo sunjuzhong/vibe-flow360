@@ -123,6 +123,11 @@ export function geometryContextId(items: ProjectItem[], selectedId: string | nul
   return items.find((item) => item.type === 'Geometry')?.id ?? null
 }
 
+export function draftsForResource(drafts: DraftRecord[], resourceId: string | null | undefined) {
+  if (!resourceId) return []
+  return drafts.filter((draft) => draft.source_id === resourceId)
+}
+
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -367,6 +372,7 @@ export default function ProjectPage() {
     () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
     [activeDraftId, drafts],
   )
+  const draftMode = Boolean(requestedDraftId && activeDraft)
 
   const loadDraftDetail = useCallback(async () => {
     if (!activeDraftId) {
@@ -405,6 +411,14 @@ export default function ProjectPage() {
     () => geometryContextId(items, selectedItem?.id),
     [items, selectedItem],
   )
+  const linkedDrafts = useMemo(
+    () => draftsForResource(drafts, selectedItem?.id),
+    [drafts, selectedItem?.id],
+  )
+  const activeDraftSource = useMemo(
+    () => items.find((item) => item.id === activeDraft?.source_id) ?? null,
+    [activeDraft?.source_id, items],
+  )
   const surfaceMeshVersions = useMemo(
     () => items.filter((item) => (
       item.type === 'SurfaceMesh'
@@ -415,6 +429,22 @@ export default function ProjectPage() {
 
   const selectResource = (resource: ResourceNode | ProjectItem) => {
     navigate(`/projects/${projectId}/resources/${resource.id}`)
+    setActivePanel(null)
+  }
+
+  const openDraftContext = (draftId: string) => {
+    const target = drafts.find((draft) => draft.id === draftId)
+    if (!target) return
+    setActiveDraftId(draftId)
+    setActivePanel(null)
+    const source = items.find((item) => item.id === target.source_id)
+    const targetResourceId = source?.id ?? selected?.id
+    if (!targetResourceId) return
+    navigate(`/projects/${projectId}/resources/${targetResourceId}?draft=${encodeURIComponent(draftId)}`)
+  }
+
+  const exitDraftContext = () => {
+    if (selected) navigate(`/projects/${projectId}/resources/${selected.id}`)
     setActivePanel(null)
   }
 
@@ -642,13 +672,23 @@ export default function ProjectPage() {
               resourceIcon={<ResourceIcon type={selected.type} size={17} />}
               draftControls={(
                 <ProjectDraftBar
+                  mode={draftMode ? 'draft' : 'resource'}
                   drafts={drafts}
+                  linkedDrafts={linkedDrafts}
                   selectedId={activeDraftId}
                   selectedDetail={draftDetail}
+                  sourceLabel={activeDraftSource?.name || activeDraft?.source_type || 'Source resource'}
                   loading={draftsLoading}
                   detailLoading={draftDetailLoading}
                   error={draftsError}
-                  onSelect={setActiveDraftId}
+                  onSelect={openDraftContext}
+                  onEnter={openDraftContext}
+                  onExit={exitDraftContext}
+                  onCreate={() => {
+                    setChatOpen(false)
+                    setInitialPlanId('')
+                    setPlanOpen(true)
+                  }}
                   onInspect={() => setActivePanel('parameters')}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
                 />
@@ -814,7 +854,7 @@ export default function ProjectPage() {
                 <div><dt>Tags</dt><dd>{project.tags.length ? project.tags.join(', ') : 'None'}</dd></div>
               </dl>
             </div>
-            {activeDraft && (
+            {draftMode && activeDraft && (
               <div className="inspector-section">
                 <p className="eyebrow">ACTIVE DRAFT</p>
                 <dl>

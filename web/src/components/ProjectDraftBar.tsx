@@ -1,15 +1,21 @@
-import { Braces, GitPullRequestDraft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Braces, ChevronRight, GitPullRequestDraft, Plus, RefreshCw } from 'lucide-react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 
 type Props = {
+  mode: 'resource' | 'draft'
   drafts: DraftRecord[]
+  linkedDrafts: DraftRecord[]
   selectedId: string
   selectedDetail: ResourceDetail | null
+  sourceLabel: string
   loading: boolean
   detailLoading: boolean
   error: string
   onSelect: (draftId: string) => void
+  onEnter: (draftId: string) => void
+  onExit: () => void
+  onCreate: () => void
   onInspect: () => void
   onRefresh: () => void
 }
@@ -17,7 +23,13 @@ type Props = {
 export function draftRecords(payload: { records?: DraftRecord[]; drafts?: DraftRecord[]; items?: DraftRecord[] } | null): DraftRecord[] {
   if (!payload) return []
   const records = payload.records ?? payload.drafts ?? payload.items ?? []
-  return records.filter((draft) => typeof draft.id === 'string' && draft.id.length > 0)
+  return records
+    .filter((draft) => typeof draft.id === 'string' && draft.id.length > 0)
+    .map((draft) => ({
+      ...draft,
+      source_id: draft.source_id || draft.source_item_id,
+      source_type: draft.source_type || draft.source_item_type,
+    }))
 }
 
 function draftStatus(draft: DraftRecord, detail: ResourceDetail | null, selected: boolean) {
@@ -29,21 +41,72 @@ function draftStatus(draft: DraftRecord, detail: ResourceDetail | null, selected
 }
 
 export default function ProjectDraftBar({
+  mode,
   drafts,
+  linkedDrafts,
   selectedId,
   selectedDetail,
+  sourceLabel,
   loading,
   detailLoading,
   error,
   onSelect,
+  onEnter,
+  onExit,
+  onCreate,
   onInspect,
   onRefresh,
 }: Props) {
+  if (mode === 'resource') {
+    const linkedDraft = linkedDrafts.find((draft) => draft.id === selectedId) ?? linkedDrafts[0]
+    const unavailable = !loading && Boolean(error)
+    const hasDrafts = linkedDrafts.length > 0
+    const label = loading
+      ? 'Loading Drafts…'
+      : unavailable
+        ? 'Drafts unavailable'
+        : hasDrafts
+          ? `Drafts ${linkedDrafts.length}`
+          : 'Create Draft'
+
+    return (
+      <section className="project-draft-entry" aria-label="Draft workspace" aria-busy={loading}>
+        <button
+          type="button"
+          className="project-draft-entry__primary"
+          aria-label={hasDrafts ? `Open ${linkedDrafts.length} Drafts for this Resource` : 'Create Draft from this Resource'}
+          disabled={loading || unavailable}
+          onClick={() => hasDrafts && linkedDraft ? onEnter(linkedDraft.id) : onCreate()}
+        >
+          <span className="project-draft-entry__icon">
+            {hasDrafts ? <GitPullRequestDraft size={15} /> : <Plus size={15} />}
+          </span>
+          <span className="project-draft-entry__copy">
+            <strong>{label}</strong>
+            <small>{hasDrafts ? 'Editable configurations for this Resource' : 'Start an editable configuration'}</small>
+          </span>
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
+        {unavailable && (
+          <button type="button" className="project-draft-entry__refresh" onClick={onRefresh} aria-label="Retry loading Drafts" title="Retry loading Drafts">
+            <RefreshCw size={14} />
+          </button>
+        )}
+      </section>
+    )
+  }
+
   return (
     <section className="project-draft-inline" aria-label="Project drafts" aria-busy={loading}>
+      <button type="button" className="project-draft-return" onClick={onExit} aria-label="Return to Resource mode" title="Return to Resource mode">
+        <ArrowLeft size={14} />
+      </button>
       <div className="project-draft-heading">
         <span><GitPullRequestDraft size={15} /></span>
-        <strong>Draft</strong>
+        <div>
+          <strong>Draft</strong>
+          <small title={`Based on ${sourceLabel}`}>Based on {sourceLabel}</small>
+        </div>
       </div>
 
       <label className="project-draft-select">
