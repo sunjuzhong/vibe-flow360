@@ -29,6 +29,7 @@ func TestServerURL(t *testing.T) {
 		}
 	}
 }
+
 func TestInitHelpExplainsAuthenticationSkipIsForAutomation(t *testing.T) {
 	var output bytes.Buffer
 	if err := runCLI([]string{"init", "--help"}, strings.NewReader(""), &output, &output); err != nil {
@@ -38,7 +39,6 @@ func TestInitHelpExplainsAuthenticationSkipIsForAutomation(t *testing.T) {
 		t.Fatalf("init help does not constrain authentication skipping:\n%s", output.String())
 	}
 }
-
 func TestVersionReportsInjectedBuildVersion(t *testing.T) {
 	previous := buildVersion
 	buildVersion = "25.10.3"
