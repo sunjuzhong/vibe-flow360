@@ -4592,11 +4592,6 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .project-draft-actions > button span { white-space: nowrap; }
 .project-draft-actions > button:disabled { opacity: .45; cursor: not-allowed; }
-.project-draft-actions > .project-draft-refresh {
-  width: 34px;
-  flex: 0 0 34px;
-  padding: 0;
-}
 .draft-review-note {
   margin: 12px 0 0;
   padding: 10px;
@@ -6003,7 +5998,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .project-draft-inline { grid-template-columns: auto minmax(100px, 1fr) auto; gap: 5px; }
   .project-draft-entry__copy small { display: none; }
   .project-draft-entry__primary { min-height: 38px; }
-  .project-draft-actions > button:not(.project-draft-refresh) { width: 34px; padding: 0; }
+  .project-draft-actions > button { width: 34px; padding: 0; }
   .project-draft-actions > button span { display: none; }
   .canvas-resource-title small { max-width: 180px; }
   .canvas-stage-strip { display: none; }

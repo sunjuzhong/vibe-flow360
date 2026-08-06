@@ -147,16 +147,6 @@ export default function ProjectDraftBar({
           <Braces size={14} />
           <span>{detailLoading ? 'Reading…' : 'Parameters'}</span>
         </button>
-        <button
-          type="button"
-          className="project-draft-refresh"
-          onClick={onRefresh}
-          disabled={loading}
-          aria-label="Refresh Drafts"
-          title="Reload the Draft list and active Draft parameters"
-        >
-          <RefreshCw size={14} className={loading ? 'spin' : ''} />
-        </button>
       </div>
     </section>
   )
