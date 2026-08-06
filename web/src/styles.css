@@ -2150,67 +2150,21 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   z-index: 12;
   top: 8px;
   right: 8px;
-  filter: drop-shadow(0 5px 10px rgb(34 41 29 / 16%));
+  width: 180px;
+  height: 180px;
+  pointer-events: none;
 }
 .viewer-navcube {
-  position: relative;
-  width: 166px;
-  height: 132px;
-}
-.viewer-navcube > svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.viewer-navcube-panel {
-  stroke: rgb(113 121 109 / 72%);
-  stroke-width: 1.2;
-  stroke-linejoin: round;
-}
-.viewer-navcube-panel.top { fill: url('#navcube-top'); }
-.viewer-navcube-panel.left { fill: url('#navcube-left'); }
-.viewer-navcube-panel.right { fill: url('#navcube-right'); }
-.viewer-navcube-face-label {
-  fill: #252c25;
-  font: 700 16px 'DM Mono', monospace;
-  text-anchor: middle;
-  dominant-baseline: middle;
-}
-.viewer-navcube-face-label.z { fill: #1748e8; font-size: 18px; }
-.viewer-navcube-axes circle { fill: #383e37; }
-.viewer-navcube-axes line { stroke-width: 4; stroke-linecap: round; }
-.viewer-navcube-axes .axis-x { stroke: #e53935; }
-.viewer-navcube-axes .axis-y { stroke: #12b82e; }
-.viewer-navcube-axes .axis-z { stroke: #1748e8; }
-.viewer-navcube-axes text { font: 800 17px 'DM Sans', sans-serif; dominant-baseline: middle; }
-.viewer-navcube-axes .axis-x-label { fill: #e53935; }
-.viewer-navcube-axes .axis-y-label { fill: #12b82e; }
-.viewer-navcube-axes .axis-z-label { fill: #1748e8; }
-.viewer-navcube-hit {
   position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
   border: 0;
-  background: transparent;
-  cursor: pointer;
 }
-.viewer-navcube-hit.top { top: 18px; left: 35px; width: 90px; height: 40px; clip-path: polygon(15% 0, 78% 15%, 100% 85%, 37% 100%, 0 55%); }
-.viewer-navcube-hit.left { top: 42px; left: 30px; width: 39px; height: 65px; clip-path: polygon(12% 0, 100% 23%, 92% 100%, 0 80%); }
-.viewer-navcube-hit.right { top: 52px; left: 66px; width: 58px; height: 52px; clip-path: polygon(4% 10%, 100% 0, 90% 91%, 0 100%); }
-.viewer-navcube-hit:hover,
-.viewer-navcube-hit:focus-visible { background: rgb(184 215 91 / 22%); outline: 0; }
-.viewer-navcube-iso {
-  position: absolute;
-  right: 5px;
-  top: 53px;
-  display: grid;
-  width: 28px;
-  height: 21px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid rgb(137 145 130 / 65%);
-  border-radius: 7px;
-  color: #596252;
-  background: rgb(255 255 252 / 94%);
-  font: 700 6px 'DM Mono';
-  cursor: pointer;
-}
-.viewer-navcube-iso:hover { color: #34420f; background: #e8f2cc; }
 .viewer-icon-tooltip::after {
   position: absolute;
   z-index: 80;

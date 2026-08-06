@@ -9,6 +9,7 @@ import type { UVFAsset, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFF
 import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
+import { ViewerNavCubeController, type NavCubeOrientation } from '../../lib/viewerNavCube'
 import {
   VIEWER_OVERLAY_LAYER,
   ViewerInputController,
@@ -133,46 +134,13 @@ export function ViewerNavCube({
   return (
     <div className="viewer-navigation" aria-label="3D view navigation">
       <div className="viewer-navcube" role="group" aria-label="NavCube orientation controls">
-        <svg viewBox="0 0 166 132" aria-hidden="true">
-          <defs>
-            <linearGradient id="navcube-top" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#f7f8f5" />
-              <stop offset="1" stopColor="#dfe2dc" />
-            </linearGradient>
-            <linearGradient id="navcube-left" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#eef0eb" />
-              <stop offset="1" stopColor="#cfd3cc" />
-            </linearGradient>
-            <linearGradient id="navcube-right" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#e8ebe5" />
-              <stop offset="1" stopColor="#c4c9c1" />
-            </linearGradient>
-            <marker id="navcube-x-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#e53935" /></marker>
-            <marker id="navcube-y-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#12b82e" /></marker>
-            <marker id="navcube-z-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#1748e8" /></marker>
-          </defs>
-          <g className="viewer-navcube-body">
-            <path className="viewer-navcube-panel top" d="M50 20 Q47 20 44 24 L35 42 68 57 123 53 108 29 Q106 26 102 26Z" />
-            <path className="viewer-navcube-panel left" d="M35 42 68 57 66 102 Q65 106 61 105 L35 94 Q31 92 31 88 L31 51 Q31 46 35 42Z" />
-            <path className="viewer-navcube-panel right" d="M68 57 123 53 119 93 Q118 99 112 101 L66 102Z" />
-            <text x="73" y="40" className="viewer-navcube-face-label z">Z</text>
-            <text x="43" y="77" className="viewer-navcube-face-label">+X</text>
-            <text x="88" y="79" className="viewer-navcube-face-label">−Y</text>
-          </g>
-          <g className="viewer-navcube-axes">
-            <circle cx="65" cy="104" r="3.5" />
-            <line x1="65" y1="104" x2="147" y2="111" className="axis-x" markerEnd="url(#navcube-x-arrow)" />
-            <line x1="65" y1="104" x2="14" y2="71" className="axis-y" markerEnd="url(#navcube-y-arrow)" />
-            <line x1="65" y1="104" x2="65" y2="29" className="axis-z" markerEnd="url(#navcube-z-arrow)" />
-            <text x="151" y="119" className="axis-x-label">X</text>
-            <text x="3" y="69" className="axis-y-label">Y</text>
-            <text x="69" y="20" className="axis-z-label">Z</text>
-          </g>
-        </svg>
-        <button className="viewer-navcube-hit top viewer-icon-tooltip" data-tooltip="Top view (+Z)" title="Top view (+Z)" type="button" onClick={() => onCommand('z')} aria-label="View from positive Z" />
-        <button className="viewer-navcube-hit left viewer-icon-tooltip" data-tooltip="Left face view (+X)" title="Left face view (+X)" type="button" onClick={() => onCommand('x')} aria-label="View from positive X" />
-        <button className="viewer-navcube-hit right viewer-icon-tooltip" data-tooltip="Right face view (−Y)" title="Right face view (−Y)" type="button" onClick={() => onCommand('-y')} aria-label="View from negative Y" />
-        <button className="viewer-navcube-iso viewer-icon-tooltip" data-tooltip="Isometric view" title="Isometric view" type="button" onClick={() => onCommand('iso')} aria-label="Isometric view">ISO</button>
+        <button type="button" onClick={() => onCommand('x')} aria-label="View from positive X">+X</button>
+        <button type="button" onClick={() => onCommand('-x')} aria-label="View from negative X">−X</button>
+        <button type="button" onClick={() => onCommand('y')} aria-label="View from positive Y">+Y</button>
+        <button type="button" onClick={() => onCommand('-y')} aria-label="View from negative Y">−Y</button>
+        <button type="button" onClick={() => onCommand('z')} aria-label="View from positive Z">+Z</button>
+        <button type="button" onClick={() => onCommand('-z')} aria-label="View from negative Z">−Z</button>
+        <button type="button" onClick={() => onCommand('iso')} aria-label="Isometric view">ISO</button>
       </div>
     </div>
   )
@@ -303,6 +271,8 @@ export function Viewer3D({
   const snapCycleRef = useRef<SnapCycleState>(createSnapCycleState())
   const cadTopologyRef = useRef<{ asset: THREE.Object3D; provider: CadTopologyProvider } | null>(null)
   const normalsOverlayRef = useRef<THREE.Group | null>(null)
+  const navCubeRef = useRef<ViewerNavCubeController | null>(null)
+  const navCubeAnimationRef = useRef<number | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
   const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
@@ -402,6 +372,39 @@ export function Viewer3D({
     const fit = fitPerspectiveCameraToObject(camera, controls, object)
     cameraBoundsRadiusRef.current = fit?.radius ?? null
     return fit
+  }, [])
+
+  const navigateFromNavCube = useCallback(({ direction, up }: NavCubeOrientation) => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls) return
+    if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
+
+    const center = controls.target.clone()
+    const distance = Math.max(camera.position.distanceTo(center), 0.001)
+    const startDirection = camera.position.clone().sub(center).normalize()
+    const startUp = camera.up.clone().normalize()
+    const rotation = new THREE.Quaternion().setFromUnitVectors(startDirection, direction.clone().normalize())
+    const startedAt = performance.now()
+    const duration = 260
+    const animateCamera = (now: number) => {
+      const linear = Math.min(1, (now - startedAt) / duration)
+      const progress = linear * linear * (3 - 2 * linear)
+      const stepRotation = new THREE.Quaternion().identity().slerp(rotation, progress)
+      const stepDirection = startDirection.clone().applyQuaternion(stepRotation).normalize()
+      const stepUp = startUp.clone().lerp(up, progress)
+      if (stepUp.lengthSq() < 1e-8) stepUp.copy(up)
+      camera.position.copy(center).add(stepDirection.multiplyScalar(distance))
+      camera.up.copy(stepUp.normalize())
+      camera.lookAt(center)
+      controls.update()
+      if (linear < 1) {
+        navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
+      } else {
+        navCubeAnimationRef.current = null
+      }
+    }
+    navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
   }, [])
 
   useEffect(() => {
@@ -553,6 +556,8 @@ export function Viewer3D({
     if (!container) return
 
     const { renderer, scene } = createScene(container)
+    const navCube = new ViewerNavCubeController(renderer, navigateFromNavCube)
+    navCubeRef.current = navCube
     const annotationOverlay = new ViewerOverlayLayer(scene, { layer: VIEWER_OVERLAY_LAYER })
     annotationOverlayRef.current = annotationOverlay
 
@@ -568,12 +573,20 @@ export function Viewer3D({
       if (camera && uvfAssetRef.current) {
         updateWireframeOverlayForCamera(uvfAssetRef.current, camera, renderer.domElement.clientHeight)
       }
-      if (camera) renderer.render(scene, camera)
+      if (camera) {
+        renderer.render(scene, camera)
+        navCube.update(camera, controls?.target ?? new THREE.Vector3())
+        navCube.renderOverlay()
+      }
     }
     animate()
 
     return () => {
       cancelAnimationFrame(rafId)
+      if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
+      navCubeAnimationRef.current = null
+      navCube.dispose()
+      if (navCubeRef.current === navCube) navCubeRef.current = null
       annotationOverlay.dispose()
       if (annotationOverlayRef.current === annotationOverlay) annotationOverlayRef.current = null
       inputControllerRef.current = null
@@ -585,7 +598,7 @@ export function Viewer3D({
         renderer.domElement.parentNode.removeChild(renderer.domElement)
       }
     }
-  }, [createScene])
+  }, [createScene, navigateFromNavCube])
 
   const fitAssetToViewport = useCallback(() => {
     const asset = assetRef.current
@@ -1010,6 +1023,12 @@ export function Viewer3D({
   }, [toolInput])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (navCubeRef.current?.handlePointerDown(event.nativeEvent)) {
+      if (controlsRef.current) controlsRef.current.enabled = false
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     const controlPointIndex = nearestControlPointIndex(
       toolInput?.controlPoints,
       event.clientX,
@@ -1032,6 +1051,14 @@ export function Viewer3D({
   }
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (camera && controls && navCubeRef.current?.handlePointerUp(event.nativeEvent, camera, controls.target)) {
+      controls.enabled = true
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     const dragged = draggedControlPointRef.current
     if (dragged?.pointerId === event.pointerId) {
       const pick = resolvePointerPick(pointerEvent(event))
@@ -1053,6 +1080,13 @@ export function Viewer3D({
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (navCubeRef.current?.handlePointerMove(event.nativeEvent)) {
+      inputControllerRef.current?.onPointerLeave()
+      inputControllerRef.current = null
+      setHoveredGroup(null)
+      event.preventDefault()
+      return
+    }
     const dragged = draggedControlPointRef.current
     if (dragged?.pointerId === event.pointerId) {
       const pick = resolvePointerPick(pointerEvent(event))
@@ -1066,6 +1100,7 @@ export function Viewer3D({
   }
 
   const handlePointerLeave = () => {
+    navCubeRef.current?.clearHighlight()
     if (draggedControlPointRef.current) return
     inputControllerRef.current?.onPointerLeave()
     inputControllerRef.current = null
@@ -1148,6 +1183,7 @@ export function Viewer3D({
         onPointerLeave={handlePointerLeave}
         onDoubleClick={onDoubleClick}
         onPointerCancel={() => {
+          navCubeRef.current?.handlePointerCancel()
           draggedControlPointRef.current = null
           setDraggingControlPoint(null)
           if (controlsRef.current) controlsRef.current.enabled = true

@@ -49,8 +49,9 @@ describe('Viewer3D layout state', () => {
     expect(html).toContain('aria-label="View from positive X"')
     expect(html).toContain('aria-label="View from negative Y"')
     expect(html).toContain('aria-label="View from positive Z"')
+    expect(html).toContain('aria-label="View from negative Z"')
     expect(html).toContain('aria-label="Isometric view"')
-    expect(html).toContain('data-tooltip="Top view (+Z)"')
+    expect(html).not.toContain('<svg')
     expect(html).not.toContain('Fit selected')
   })
 
