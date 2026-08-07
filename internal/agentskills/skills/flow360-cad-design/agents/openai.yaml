@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flow360 CAD Design"
+  short_description: "Design exact CFD-ready CAD and boundary topology"
+  default_prompt: "Use $flow360-cad-design to design exact Flow360-ready CAD from an engineering goal."

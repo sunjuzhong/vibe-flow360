@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flow360 Parameter Authoring"
+  short_description: "Build coherent schema-valid Flow360 parameters"
+  default_prompt: "Use $flow360-parameter-authoring to build a coherent schema-valid Flow360 setup."

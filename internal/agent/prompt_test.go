@@ -34,6 +34,24 @@ func TestBuildChatPromptKeepsConfirmedInputsOutsideTruncatedInstruction(t *testi
 	}
 }
 
+func TestBuildChatPromptKeepsRuntimeSkillsOutsideTruncatedInstruction(t *testing.T) {
+	contextPayload, err := json.Marshal(ChatContextPayload{
+		ProjectID:     "prj-skill",
+		RuntimeSkills: "flow360-preflight-repair: accumulate validated corrections and close every imported boundary",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, payload := BuildChatPrompt(ChatRequest{
+		Message: strings.Repeat("long parameter instruction ", 500), Context: string(contextPayload),
+	})
+	for _, expected := range []string{"flow360-preflight-repair", "accumulate validated corrections", "close every imported boundary"} {
+		if !strings.Contains(prompt, expected) || !strings.Contains(payload.RuntimeSkills, expected) {
+			t.Fatalf("runtime skill %q was lost when the ordinary instruction was truncated: %s", expected, prompt)
+		}
+	}
+}
+
 func TestBuildChatPromptInjectsUserMessageAndContext(t *testing.T) {
 	req := ChatRequest{
 		Message: "analyze lift at Mach 0.5",

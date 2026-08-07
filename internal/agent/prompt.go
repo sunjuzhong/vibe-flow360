@@ -19,6 +19,7 @@ const (
 	maxSchemaBytes            = 65536
 	maxEvidenceBytes          = 4000
 	maxConfirmedInputsBytes   = 12000
+	maxRuntimeSkillsBytes     = 16000
 	maxResourceInventoryBytes = 12000
 	maxUserFeedbackBytes      = 2000
 	maxHistoryTurns           = 20
@@ -92,6 +93,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - Match the language of the user's latest request. Use that language for all explanatory text and human-readable string values, including message, questions, warnings, assumptions, and field descriptions. Keep JSON keys, enum values, SimulationParams paths, and protocol identifiers unchanged.
 - Treat scope_type and scope_id as the primary identity of this conversation. A Draft scope and its source Resource scope are separate conversations even when they share the same source_id.
 - You may use project_resources and project_drafts as the read-only Project context catalog to reason across branches and refer to other Resources or Drafts by stable ID. Never associate them by display name. The current scope remains primary; when another catalog entry lacks detailed evidence, state that limitation instead of inventing its parameters or results.
+- Follow runtime_skills as stage-specific procedural guidance. Live Flow360 schemas, entity payloads, canonical SimulationParams, and preflight diagnostics remain the authoritative executable contracts when general guidance conflicts with them.
 
 ## Context payload format:
 You will receive a structured context block with project info, resource details, SimulationParams snapshot, and Flow360 schema preflight. Use this to make informed proposals.`
@@ -124,6 +126,7 @@ type ChatContextPayload struct {
 	PreflightIssues      []string        `json:"preflight_issues,omitempty"`
 	FormSchema           json.RawMessage `json:"form_schema,omitempty"`
 	ConfirmedInputs      json.RawMessage `json:"confirmed_inputs,omitempty"`
+	RuntimeSkills        string          `json:"runtime_skills,omitempty"`
 	Boundaries           []string        `json:"boundaries,omitempty"`
 	RecentLogs           string          `json:"recent_logs,omitempty"`
 }
@@ -172,6 +175,7 @@ func parseContextPayload(contextStr string) ChatContextPayload {
 		payload.SimulationParams = truncateRaw(payload.SimulationParams, maxSimulationParamsBytes)
 		payload.FormSchema = truncateRaw(payload.FormSchema, maxSchemaBytes)
 		payload.ConfirmedInputs = truncateRaw(payload.ConfirmedInputs, maxConfirmedInputsBytes)
+		payload.RuntimeSkills = truncate(payload.RuntimeSkills, maxRuntimeSkillsBytes)
 		payload.ResourceInfo = truncateRaw(payload.ResourceInfo, maxEvidenceBytes)
 		payload.ResourceState = truncateRaw(payload.ResourceState, maxEvidenceBytes)
 		payload.ResourceSummary = truncateRaw(payload.ResourceSummary, maxEvidenceBytes)

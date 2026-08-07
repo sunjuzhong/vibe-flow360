@@ -201,8 +201,11 @@ printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"f
 	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
 
 	modelCalls := 0
-	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	modelRequests := make([]string, 0, 4)
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		modelCalls++
+		body, _ := io.ReadAll(request.Body)
+		modelRequests = append(modelRequests, string(body))
 		content := `{"version":"v1","kind":"create-plan","message":"Initial candidate.","proposals":[{"id":"generic","action":"Geometry","target":"case","name":"Generic setup","intent":"ready to run","patch":{"required_value":false},"branch_preview":"generic","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
 		if modelCalls == 2 || modelCalls == 3 {
 			content = `{"version":"v1","kind":"request-missing-input","message":"Please configure the missing schema field.","questions":[{"field":"required_value","message":"Choose the required configuration value.","urgency":"required"}]}`
@@ -244,6 +247,70 @@ printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"f
 	if result.Action.Kind == agent.ActionRequestMissingInput {
 		t.Fatal("schema-mechanical questions escaped to the user")
 	}
+	joinedRequests := strings.Join(modelRequests, "\n")
+	for _, expected := range []string{"flow360-parameter-authoring", "flow360-preflight-repair", "runtime_skills"} {
+		if !strings.Contains(joinedRequests, expected) {
+			t.Fatalf("stage-scoped runtime skill %q did not reach the model context", expected)
+		}
+	}
+}
+
+func TestGenerateSchemaNativePlanReappliesFinalDeterministicBoundaryRepair(t *testing.T) {
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	preflightScript := `#!/bin/sh
+has_required=false
+has_boundary=false
+grep -q '"required_value":true' "$3" && has_required=true
+grep -q '"type":"SymmetryPlane"' "$3" && has_boundary=true
+if [ "$has_required" = true ] && [ "$has_boundary" = true ]; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}},"VolumeMesh":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}},"Case":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}}}}'
+elif [ "$has_boundary" = false ]; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"value_error","path":"models","message":"One imported ghost boundary is unassigned.","stages":["Case"]}],"form_schema":{"type":"object","properties":{"models":{"type":"entity_assignment","model_choices":[{"value":"new:SymmetryPlane","model_type":"SymmetryPlane","entity_property":"surfaces"}],"entity_choices":[{"value":"ghost-17","payload":{"name":"ghost-17","private_attribute_id":"entity-17","private_attribute_entity_type_name":"GhostCircularPlane"}}],"default_model":"new:SymmetryPlane","default_entities":["ghost-17"],"recommendation":{"confidence":"high","provenance":"flow360_schema_validation"}}}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}},"VolumeMesh":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}},"Case":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}}}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"missing","path":"required_value","message":"A required setting is missing.","stages":["Case"]}],"form_schema":{"type":"object","properties":{"required_value":{"type":"boolean"}}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}},"VolumeMesh":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}},"Case":{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}}}}'
+fi
+`
+	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+
+	modelCalls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		modelCalls++
+		required := "false"
+		if modelCalls == 4 {
+			required = "true"
+		}
+		content := `{"version":"v1","kind":"create-plan","message":"Repair candidate.","proposals":[{"id":"generic","action":"Geometry","target":"case","name":"Generic","intent":"ready","patch":{"required_value":` + required + `,"models":[{"type":"Wall"}]},"branch_preview":"generic","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		encoded, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer model.Close()
+
+	schema := json.RawMessage(`{"type":"object","properties":{"required_value":{"type":"boolean"},"models":{"type":"array"}}}`)
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360: &flow360.Client{Binary: "flow360"},
+	}
+	result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
+		Request: planComposerRequest{ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case", Intent: "Build a ready setup.", Autonomous: true},
+		Name:    "Geometry", Baseline: json.RawMessage(`{}`),
+		Form: flow360.PlanFormSchema{Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{"Case": schema}},
+	})
+	if err != nil {
+		t.Fatalf("generation failed after %d model calls: %v", modelCalls, err)
+	}
+	if modelCalls != 4 || result.Preflight == nil || !result.Preflight.Valid || result.Proposal == nil {
+		t.Fatalf("final deterministic repair did not recover the setup: calls=%d result=%#v", modelCalls, result)
+	}
+	for _, expected := range []string{`"required_value":true`, `"type":"SymmetryPlane"`, `"name":"ghost-17"`} {
+		if !strings.Contains(string(result.Proposal.Patch), expected) {
+			t.Fatalf("final repaired patch is missing %s: %s", expected, result.Proposal.Patch)
+		}
+	}
 }
 
 func TestPlanAssistFormRepairPromptForbidsCanonicalDiscriminatorEcho(t *testing.T) {
@@ -283,6 +350,27 @@ func TestRecommendedPlanAssistPatchExpandsHighConfidenceBoundaryAssignment(t *te
 	)
 	if err != nil || !strings.Contains(string(merged), `"time_stepping"`) || !strings.Contains(string(merged), `"models"`) {
 		t.Fatalf("recommendation did not merge with the candidate patch: %s / %v", merged, err)
+	}
+}
+
+func TestAccumulatePlanAssistRepairPreservesEarlierBoundaryCorrection(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"models":{"type":"array"},"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"}}}}}`)
+	current := agent.Proposal{
+		Patch:           json.RawMessage(`{"models":[{"type":"SymmetryPlane","surfaces":{"stored_entities":[{"name":"ghost-plane-17","private_attribute_id":"entity-17"}]}}]}`),
+		ValidationHints: []string{"Applied high-confidence boundary coverage repair."},
+	}
+	repaired := agent.Proposal{Patch: json.RawMessage(`{"time_stepping":{"steps":2000}}`)}
+	accumulated, err := accumulatePlanAssistRepair(current, repaired, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"name":"ghost-plane-17"`, `"steps":2000`} {
+		if !strings.Contains(string(accumulated.Patch), expected) {
+			t.Fatalf("accumulated repair lost %s: %s", expected, accumulated.Patch)
+		}
+	}
+	if len(accumulated.ValidationHints) != 1 {
+		t.Fatalf("repair evidence was lost: %#v", accumulated.ValidationHints)
 	}
 }
 

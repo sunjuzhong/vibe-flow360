@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flow360 Preflight Repair"
+  short_description: "Repair Flow360 preflight issues autonomously"
+  default_prompt: "Use $flow360-preflight-repair to repair Flow360 preflight failures without losing valid settings."

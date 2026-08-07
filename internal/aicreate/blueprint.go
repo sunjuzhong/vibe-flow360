@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/sunjuzhong/vibe-flow360/internal/agentskills"
 )
 
 const BlueprintVersion = "v1"
@@ -168,7 +170,7 @@ func DesignConversation(ctx context.Context, model Completer, intent string, his
 		}
 		userPrompt += "\n\nClarification history (authoritative user answers; do not ask these again):\n" + string(encoded)
 	}
-	raw, err := model.Complete(ctx, geometrySystemPrompt, userPrompt, "")
+	raw, err := model.Complete(ctx, geometryAgentSystemPrompt(), userPrompt, "")
 	if err != nil {
 		return Blueprint{}, fmt.Errorf("geometry agent failed: %w", err)
 	}
@@ -194,7 +196,7 @@ func RepairAfterGenerationFailure(ctx context.Context, model Completer, intent s
 		"\n\nClarification history (authoritative user answers):\n" + string(historyJSON) +
 		"\n\nThe deterministic CadQuery/OpenCascade execution or Flow360 boundary-contract validation of the previous plan failed. Treat topology, selector coverage, boundary naming, and imported entity mismatches as mechanical defects that you must repair autonomously. Diagnose the CAD construction, then return a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Preserve the user's intent and confirmed answers. Ask for input only if a missing physical choice would materially change the user's engineering goal; never ask the user to choose how to repair STEP topology or boundary naming. Do not explain the correction outside JSON." +
 		"\nExecution diagnostic:\n" + diagnostic + "\nPrevious blueprint:\n" + string(currentJSON)
-	repaired, err := model.Complete(ctx, geometrySystemPrompt, userPrompt, "")
+	repaired, err := model.Complete(ctx, geometryAgentSystemPrompt(), userPrompt, "")
 	if err != nil {
 		return Blueprint{}, fmt.Errorf("geometry self-repair failed: %w", err)
 	}
@@ -228,7 +230,7 @@ func designFromAgentResponse(ctx context.Context, model Completer, userPrompt, r
 		if allowRepair {
 			repairPrompt := userPrompt + "\n\nThe previous CAD plan failed deterministic validation: " + err.Error() +
 				"\nReturn a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Preserve the user's intent and answers. Do not explain the correction.\nPrevious response:\n" + raw
-			repaired, repairErr := model.Complete(ctx, geometrySystemPrompt, repairPrompt, "")
+			repaired, repairErr := model.Complete(ctx, geometryAgentSystemPrompt(), repairPrompt, "")
 			if repairErr != nil {
 				return Blueprint{}, fmt.Errorf("geometry agent repair failed: %w", repairErr)
 			}
@@ -261,6 +263,10 @@ func designFromAgentResponse(ctx context.Context, model Completer, userPrompt, r
 			"time_stepping": map[string]any{"max_steps": response.Simulation.MaxSteps},
 		},
 	}, nil
+}
+
+func geometryAgentSystemPrompt() string {
+	return geometrySystemPrompt + "\n\n" + agentskills.Instructions(agentskills.CADDesign)
 }
 
 var unsafeIdentifierCharacters = regexp.MustCompile(`[^A-Za-z0-9_-]+`)

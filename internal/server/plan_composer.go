@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
+	"github.com/sunjuzhong/vibe-flow360/internal/agentskills"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
@@ -107,6 +108,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		SourceName: composer.Name, Target: composer.Request.Target,
 		SimulationParams: composer.Baseline, FormSchema: catalog,
 		ConfirmedInputs: composer.Request.ConfirmedInputs,
+		RuntimeSkills:   agentskills.Instructions(agentskills.ParameterAuthoring),
 	})
 	if err != nil {
 		return planAssistResponse{}, errors.New("could not prepare the plan context")
@@ -197,6 +199,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			SimulationParams: merged, FormSchema: repairCatalog,
 			PreflightIssues: planAssistIssueContext(preflight.Issues),
 			ConfirmedInputs: composer.Request.ConfirmedInputs,
+			RuntimeSkills:   agentskills.Instructions(agentskills.PreflightRepair),
 		})
 		if contextErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not prepare the validation context.")
@@ -233,6 +236,11 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			action.Warnings = append(action.Warnings, "Automatic parameter repair returned values outside the active Flow360 schema.")
 			break
 		}
+		repairedProposal, proposalErr = accumulatePlanAssistRepair(proposal, repairedProposal, repairSchema)
+		if proposalErr != nil {
+			action.Warnings = append(action.Warnings, "Automatic parameter repair conflicted with an earlier validated correction.")
+			break
+		}
 		action = repairedAction
 		proposal = repairedProposal
 		preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
@@ -242,6 +250,21 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		}
 		if preflight.Valid {
 			autoRepaired = true
+		}
+	}
+	// An Agent repair may resolve one issue while replacing an array-valued
+	// field that contained a deterministic schema recommendation. Always give
+	// the latest Flow360 recovery schema one final authoritative pass before
+	// surfacing failure; this is independent of the bounded model-call budget.
+	if !preflight.Valid {
+		if recommendedPatch, applied, recommendationErr := recommendedPlanAssistPatch(preflight.FormSchema, merged); recommendationErr == nil && applied {
+			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch); err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+				}
+			}
 		}
 	}
 	if composer.Request.Autonomous && !preflight.Valid {
@@ -257,6 +280,19 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		Action: *action, Proposal: &proposal, Preflight: &preflight,
 		RepairAttempts: repairAttempts, AutoRepaired: autoRepaired,
 	}, nil
+}
+
+func accumulatePlanAssistRepair(current, repaired agent.Proposal, schema json.RawMessage) (agent.Proposal, error) {
+	patch, err := mergePlanAssistPatches(current.Patch, repaired.Patch)
+	if err != nil {
+		return agent.Proposal{}, err
+	}
+	if err := plans.ValidateFormValues(schema, patch); err != nil {
+		return agent.Proposal{}, err
+	}
+	repaired.Patch = patch
+	repaired.ValidationHints = append(append([]string(nil), current.ValidationHints...), repaired.ValidationHints...)
+	return repaired, nil
 }
 
 func includePlanRecoverySchema(form flow360.PlanFormSchema, recovery json.RawMessage) flow360.PlanFormSchema {
@@ -486,7 +522,7 @@ func (s *Server) preflightPlanAssistProposal(ctx context.Context, composer planC
 func planAssistRepairPrompt(request planComposerRequest, proposal agent.Proposal, preflight flow360.PreflightResult, attempt int) string {
 	patch, _ := json.Marshal(proposal.Patch)
 	issues, _ := json.Marshal(preflight.Issues)
-	return fmt.Sprintf(`Your candidate Flow360 parameter patch did not pass schema preflight. Repair it now.
+	base := fmt.Sprintf(`Your candidate Flow360 parameter patch did not pass schema preflight. Repair it now.
 Return exactly one create-plan proposal containing the COMPLETE corrected patch for the same %s-to-%s route. Use the newly supplied stage schema, which reflects the candidate model variants. Resolve every listed issue rather than merely describing it. Preserve valid candidate values. JSON merge-patch semantics apply: set an obsolete inherited field to null when Flow360 reports it as extra or forbidden. Do not request user input for a schema-mechanical correction such as a missing required field, renamed field, discriminator-dependent field, or removal of a field from the previous model variant.
 
 Use the language of the Original intent for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
@@ -495,6 +531,7 @@ Original intent: %s
 Repair attempt: %d
 Candidate patch: %s
 Flow360 preflight issues: %s`, request.SourceType, request.Target, request.Intent, attempt, patch, issues)
+	return base
 }
 
 func recommendedPlanAssistPatch(schema, current json.RawMessage) (json.RawMessage, bool, error) {
@@ -587,7 +624,7 @@ func mergePlanAssistObjects(base, addition map[string]any) map[string]any {
 }
 
 func planAssistPrompt(request planComposerRequest) string {
-	return fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
+	base := fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
 This is parameter assistance, not geometry generation. Never claim CAD dimensions, format, topology, or provenance unless they are explicitly present in the supplied context. Refer to it as the existing %s resource when evidence is absent.
 
 Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
@@ -606,6 +643,7 @@ Use the language of the Plan intent and User form instruction for all human-read
 
 Plan intent: %s
 User form instruction: %s`, request.SourceType, request.SourceType, request.SourceType, request.Target, request.Intent, request.Prompt)
+	return base
 }
 
 func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
