@@ -47,6 +47,39 @@ func TestParseAcceptsCreatePlanAction(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsDraftUpdateAction(t *testing.T) {
+	raw := `{
+  "version":"v1",
+  "kind":"update-draft",
+  "message":"Review the requested Draft edit.",
+  "proposals":[{
+    "id":"update-alpha",
+    "draft_id":"draft-1",
+    "target":"draft",
+    "name":"Set angle of attack",
+    "intent":"Change alpha without running Flow360.",
+    "patch":{"operating_condition":{"alpha":{"value":5,"units":"degree"}}},
+    "fields":[{"key":"operating_condition.alpha","value":5,"provenance":"provided"}]
+  }]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Kind != ActionUpdateDraft || len(action.Proposals) != 1 || action.Proposals[0].DraftID != "draft-1" {
+		t.Fatalf("unexpected Draft update action: %#v", action)
+	}
+
+	for _, invalid := range []string{
+		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[]}`,
+		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"draft-1","target":"case","name":"x","intent":"x","patch":{},"fields":[]}]}`,
+	} {
+		if _, err := Parse(invalid); err == nil {
+			t.Fatalf("invalid Draft update action was accepted: %s", invalid)
+		}
+	}
+}
+
 func TestParseNormalizesSingletonObjectField(t *testing.T) {
 	raw := `{
   "version":"v1","kind":"create-plan","message":"Plan",

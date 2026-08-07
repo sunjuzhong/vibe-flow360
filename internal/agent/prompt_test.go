@@ -11,7 +11,7 @@ import (
 
 func TestAgentSystemPromptDeclaresAgentActionV1(t *testing.T) {
 	prompt := AgentSystemPrompt()
-	for _, keyword := range []string{"AgentAction v1", "create-plan", "request-missing-input", "version", "proposals", "questions", "explicit type", "recommended default", "recommendation", "STL", "exact CAD", "STEP"} {
+	for _, keyword := range []string{"AgentAction v1", "create-plan", "update-draft", "request-missing-input", "version", "proposals", "questions", "explicit type", "recommended default", "recommendation", "STL", "exact CAD", "STEP"} {
 		if !strings.Contains(prompt, keyword) {
 			t.Errorf("system prompt missing %q", keyword)
 		}

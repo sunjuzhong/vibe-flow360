@@ -64,7 +64,16 @@ When the user's intent requires a plan or missing engineering input, you MUST re
      {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional explanation"}
      Never return fields as a JSON object or map. Use [] when there are no fields.
 
-2. **request-missing-input**: Use when critical information is missing. Ask specific questions:
+2. **update-draft**: Use only when scope_type is "draft" and the user asks to modify the current Draft without running it. Return exactly one proposal with:
+   - id: unique proposal identifier
+   - draft_id: the current scope_id
+   - target: "draft"
+   - name and intent: concise descriptions of this edit
+   - patch: sparse JSON merge-patch against the supplied current SimulationParams
+   - fields: the same provenance array used by create-plan
+   This action only proposes an editable Draft change. It never starts meshing or a solver.
+
+3. **request-missing-input**: Use when critical information is missing. Ask specific questions:
    - field: the SimulationParams path that needs input
    - message: what the user needs to provide
    - urgency: required/recommended/optional
@@ -82,6 +91,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - Route a tessellated asset to a SurfaceMesh workflow only when its format, watertightness, boundary semantics, and Flow360 support have been verified.
 - Never claim that a simulation was submitted, run, converged, or completed unless tool evidence is present.
 - You cannot execute Flow360 in this chat endpoint. Say that the plan must be reviewed and approved before billable execution.
+- In Draft scope, prefer update-draft over create-plan when the user asks only to change the current Draft. Do not claim the patch was saved until the application reports success.
 - If a consequential physical choice remains genuinely unknown after checking confirmed_inputs, the canonical baseline, and schema recommendations, use request-missing-input rather than guessing. Do not use request-missing-input for configuration mechanics or to reconfirm a defensible recommended default in an autonomous basic/ready-to-run workflow.
 - Keep the action JSON compact — only include fields that matter.
 - Treat form_schema as the authoritative catalog for the installed Flow360 version. Use only listed SimulationParams paths, exact enum/model values, documented quantity units, and the required {"value": number, "units": "unit"} wire shape. Never translate a human CFD term into a guessed snake_case field.

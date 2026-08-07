@@ -10,9 +10,10 @@ import (
 )
 
 type createConfiguredDraftRequest struct {
-	SourceID string          `json:"source_id"`
-	Name     string          `json:"name"`
-	Patch    json.RawMessage `json:"patch"`
+	SourceID         string          `json:"source_id"`
+	Name             string          `json:"name"`
+	Patch            json.RawMessage `json:"patch"`
+	SimulationParams json.RawMessage `json:"simulation_params"`
 }
 
 func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
@@ -34,12 +35,20 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 		return
 	}
 	var patchObject map[string]any
-	if json.Unmarshal(request.Patch, &patchObject) != nil || patchObject == nil {
+	var paramsObject map[string]any
+	if len(request.SimulationParams) > 0 {
+		if json.Unmarshal(request.SimulationParams, &paramsObject) != nil || paramsObject == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Draft SimulationParams must be a JSON object"})
+			return
+		}
+	} else if json.Unmarshal(request.Patch, &patchObject) != nil || patchObject == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Draft patch must be a JSON object"})
 		return
 	}
 
-	created, err := s.flow360.EnsureDraft(c.Request.Context(), projectID, request.SourceID, request.Name)
+	// This endpoint represents an intentional user creation. Unlike recovery
+	// flows, it must allow multiple Drafts based on the same source Resource.
+	created, err := s.flow360.CreateDraft(c.Request.Context(), request.SourceID, request.Name)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not create the configured Draft"})
 		return
@@ -55,17 +64,20 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Draft was created but its SimulationParams are unavailable", "draft_id": draftID})
 		return
 	}
-	merged, err := plans.MergeSimulationParams(detail.SimulationParams, request.Patch)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "draft_id": draftID})
-		return
+	configured := request.SimulationParams
+	if len(configured) == 0 {
+		configured, err = plans.MergeSimulationParams(detail.SimulationParams, request.Patch)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "draft_id": draftID})
+			return
+		}
 	}
-	canonical, err := s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, merged)
+	canonical, err := s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, configured)
 	if err != nil {
-		canonical, err = s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, merged)
+		canonical, err = s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, configured)
 	}
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Draft was created but Flow360 did not accept its tutorial parameters", "draft_id": draftID})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Draft was created but Flow360 did not accept its parameters", "draft_id": draftID})
 		return
 	}
 	if !json.Valid(canonical) {

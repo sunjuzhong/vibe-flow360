@@ -2,6 +2,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Cloud,
+  FilePlus2,
   GitBranch,
   GitCompare,
   Info,
@@ -28,6 +29,7 @@ import {
 } from '../api/client'
 import CopilotPanel from '../components/CopilotPanel'
 import DraftParametersDialog from '../components/DraftParametersDialog'
+import DraftManagerPanel from '../components/DraftManagerPanel'
 import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
 import LanguageSettings from '../components/LanguageSettings'
@@ -63,7 +65,7 @@ import {
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
-type ProjectPanel = 'resources' | 'details' | 'annotations' | 'parameters'
+type ProjectPanel = 'resources' | 'details' | 'annotations' | 'parameters' | 'drafts'
 
 export const initialProjectPanel = null
 
@@ -475,6 +477,44 @@ export default function ProjectPage() {
       : current)
   }
 
+  const createDraftFromResource = async (name: string) => {
+    if (!selected) throw new Error('A source Resource is required to create a Draft.')
+    const created = await api.createConfiguredDraft(projectId, {
+      source_id: selected.id,
+      name,
+      patch: {},
+    })
+    await loadDrafts()
+    setActivePanel(null)
+    navigate(projectDraftResourcePath(projectId, selected.id, created.id))
+  }
+
+  const copyDraft = async (draft: DraftRecord, name: string) => {
+    const sourceDetail = draft.id === draftDetail?.id
+      ? draftDetail
+      : (await api.resourceDetail('Draft', draft.id)).data
+    const source = draftSourceResource(items, draft, sourceDetail)
+    if (!source) throw new Error('The source Resource for this Draft is unavailable.')
+    if (!sourceDetail?.simulation_params) throw new Error('The Draft SimulationParams are unavailable.')
+    const created = await api.createConfiguredDraft(projectId, {
+      source_id: source.id,
+      name,
+      simulation_params: sourceDetail.simulation_params,
+    })
+    await loadDrafts()
+    setActivePanel(null)
+    navigate(projectDraftResourcePath(projectId, source.id, created.id))
+  }
+
+  const deleteDraft = async (draftId: string) => {
+    await api.deleteDraft(draftId, true)
+    await loadDrafts()
+    if (draftId === activeDraftId) {
+      setActiveDraftId('')
+      navigate(projectDraftResourcePath(projectId, selected?.id ?? root?.id ?? ''))
+    }
+  }
+
   const stages = useMemo(() => {
     if (!root) return allStages
     const rootType = root.type
@@ -712,9 +752,7 @@ export default function ProjectPage() {
                   onSelect={openDraftContext}
                   onEnter={openDraftContext}
                   onCreate={() => {
-                    setChatOpen(false)
-                    setInitialPlanId('')
-                    setPlanOpen(true)
+                    setActivePanel('drafts')
                   }}
                   onInspect={() => setActivePanel('parameters')}
                   onReview={() => {
@@ -724,6 +762,7 @@ export default function ProjectPage() {
                     setPlanOpen(true)
                   }}
                   onRename={renameDraft}
+                  onManage={() => setActivePanel('drafts')}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
                 />
               )}
@@ -872,6 +911,9 @@ export default function ProjectPage() {
                 <div><dt>Children</dt><dd>{selected.children.length}</dd></div>
                 <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>{resourceStatus(detail)}</span></dd></div>
               </dl>
+              <button type="button" className="geometry-plan-action" onClick={() => setActivePanel('drafts')}>
+                <FilePlus2 size={14} /> Manage Drafts
+              </button>
             </InspectorDisclosure>
             <InspectorDisclosure label="Project">
               <dl>
@@ -907,6 +949,29 @@ export default function ProjectPage() {
               initialTab={detailTab}
             />
           </aside>
+          )}
+
+          {activePanel === 'drafts' && selected && (
+            <DraftManagerPanel
+              ref={panelRef}
+              drafts={drafts}
+              selectedId={activeDraftId}
+              resource={{
+                id: selected.id,
+                name: selected.name,
+                type: selected.type,
+                parent_id: selectedItem?.parent_id ?? null,
+              }}
+              onClose={closePanel}
+              onSelect={(draftId) => {
+                openDraftContext(draftId)
+                closePanel()
+              }}
+              onCreate={createDraftFromResource}
+              onCopy={copyDraft}
+              onRename={renameDraft}
+              onDelete={deleteDraft}
+            />
           )}
 
           {activePanel === 'annotations' && (
@@ -963,6 +1028,11 @@ export default function ProjectPage() {
           }
           navigate(`/projects/${projectId}/resources/${encodeURIComponent(plan.source_id)}?plan=${encodeURIComponent(plan.id)}&planMode=review`)
         }}
+        draftParameters={draftMode ? draftDetail?.simulation_params : undefined}
+        onApplyDraftPatch={draftMode && activeDraft ? async (patch) => {
+          const response = await api.patchDraftParameters(activeDraft.id, patch)
+          setDraftDetail((current) => current ? { ...current, simulation_params: response.simulation_params } : current)
+        } : undefined}
         contextLabel={draftMode && activeDraft
           ? `${activeDraft.name} · based on ${selected?.name || activeDraft.source_type || 'Resource'}`
           : selected

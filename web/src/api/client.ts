@@ -129,6 +129,7 @@ export type AgentProposalField = {
 
 export type AgentProposal = {
   id: string
+  draft_id?: string
   project_id?: string
   project_name?: string
   source_id?: string
@@ -146,7 +147,7 @@ export type AgentProposal = {
 
 export type AgentAction = {
   version: string
-  kind: 'create-plan' | 'request-missing-input'
+  kind: 'create-plan' | 'update-draft' | 'request-missing-input'
   message: string
   proposals?: AgentProposal[]
   questions?: AgentQuestion[]
@@ -803,6 +804,17 @@ async function replace<T>(path: string, body: unknown): Promise<T> {
   return payload as T
 }
 
+async function partialUpdate<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || payload.message || response.statusText)
+  return payload as T
+}
+
 async function remove<T>(path: string): Promise<T> {
   const response = await fetch(path, { method: 'DELETE' })
   const payload = await response.json().catch(() => ({}))
@@ -866,10 +878,17 @@ export const api = {
     flow360JSON<ProjectItemsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/items${cacheOnly ? '?cache=only' : ''}`),
   projectDrafts: (projectId: string, cacheOnly = false) =>
     flow360JSON<ProjectDraftsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts${cacheOnly ? '?cache=only' : ''}`),
-  createConfiguredDraft: (projectId: string, input: { source_id: string; name: string; patch: Record<string, unknown> }) =>
+  createConfiguredDraft: (projectId: string, input: {
+    source_id: string
+    name: string
+    patch?: Record<string, unknown>
+    simulation_params?: Record<string, unknown>
+  }) =>
     mutate<ConfiguredDraft>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts`, input),
   renameDraft: (draftId: string, name: string) =>
     replace<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/name`, { name }),
+  deleteDraft: (draftId: string, confirmed: boolean) =>
+    remove<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}?confirmed=${confirmed ? 'true' : 'false'}`),
   draftParameterSchema: (draftId: string) =>
     json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
   validateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, paths: string[]) =>
@@ -881,6 +900,11 @@ export const api = {
     replace<{ simulation_params: Record<string, unknown> }>(
       `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters`,
       { simulation_params: simulationParams },
+    ),
+  patchDraftParameters: (draftId: string, patch: Record<string, unknown>) =>
+    partialUpdate<{ simulation_params: Record<string, unknown> }>(
+      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters`,
+      { patch },
     ),
   startProjectSync: (projectId: string, force = false) =>
     mutate<ProjectSyncManifest>(

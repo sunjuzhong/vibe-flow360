@@ -25,6 +25,7 @@ type ActionKind string
 
 const (
 	ActionCreatePlan          ActionKind = "create-plan"
+	ActionUpdateDraft         ActionKind = "update-draft"
 	ActionRequestMissingInput ActionKind = "request-missing-input"
 )
 
@@ -40,6 +41,7 @@ type Action struct {
 
 type Proposal struct {
 	ID              string          `json:"id"`
+	DraftID         string          `json:"draft_id,omitempty"`
 	ProjectID       string          `json:"project_id,omitempty"`
 	ProjectName     string          `json:"project_name,omitempty"`
 	SourceID        string          `json:"source_id,omitempty"`
@@ -144,6 +146,7 @@ var (
 	ErrIncompatibleSource = errors.New("schema: source type is incompatible with target")
 	ErrInvalidPatch       = errors.New("schema: patch must be valid JSON")
 	ErrMissingProposals   = errors.New("schema: create-plan kind requires at least one proposal")
+	ErrInvalidDraftUpdate = errors.New("schema: update-draft kind requires exactly one Draft patch proposal")
 	ErrMissingQuestions   = errors.New("schema: request-missing-input kind requires at least one question")
 	ErrAmbiguousAction    = errors.New("schema: proposals and questions are mutually exclusive")
 	ErrInvalidQuestion    = errors.New("schema: question missing required fields")
@@ -153,6 +156,7 @@ var (
 
 var validKinds = map[ActionKind]struct{}{
 	ActionCreatePlan:          {},
+	ActionUpdateDraft:         {},
 	ActionRequestMissingInput: {},
 }
 
@@ -216,6 +220,13 @@ func Parse(raw string) (Action, error) {
 			if err := validateProposal(proposal); err != nil {
 				return action, err
 			}
+		}
+	case ActionUpdateDraft:
+		if len(action.Proposals) != 1 {
+			return action, ErrInvalidDraftUpdate
+		}
+		if err := validateDraftUpdate(action.Proposals[0]); err != nil {
+			return action, err
 		}
 	case ActionRequestMissingInput:
 		if len(action.Questions) == 0 {
@@ -286,6 +297,12 @@ func validateActionSelfConsistency(action Action) error {
 			}
 		}
 	}
+	if action.Kind == ActionUpdateDraft {
+		if len(action.Proposals) != 1 {
+			return ErrInvalidDraftUpdate
+		}
+		return validateDraftUpdate(action.Proposals[0])
+	}
 	if action.Kind == ActionRequestMissingInput {
 		if len(action.Questions) == 0 {
 			return ErrMissingQuestions
@@ -298,6 +315,26 @@ func validateActionSelfConsistency(action Action) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func validateDraftUpdate(p Proposal) error {
+	if strings.TrimSpace(p.ID) == "" || strings.TrimSpace(p.DraftID) == "" ||
+		strings.TrimSpace(p.Name) == "" || strings.TrimSpace(p.Intent) == "" || p.Target != "draft" {
+		return ErrInvalidDraftUpdate
+	}
+	for _, field := range p.Fields {
+		if strings.TrimSpace(field.Key) == "" || !validProvenance(field.Provenance) {
+			return ErrMissingFields
+		}
+	}
+	if len(p.Patch) == 0 || !json.Valid(p.Patch) {
+		return ErrInvalidPatch
+	}
+	var patchObject map[string]json.RawMessage
+	if err := json.Unmarshal(p.Patch, &patchObject); err != nil || patchObject == nil {
+		return fmt.Errorf("%w: Draft update must be a JSON object", ErrInvalidPatch)
 	}
 	return nil
 }

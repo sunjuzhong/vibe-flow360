@@ -326,6 +326,12 @@ func (c *Client) RenameDraft(ctx context.Context, draftID, name string) (json.Ra
 	return c.jsonCommand(ctx, "draft", "rename", strings.TrimSpace(draftID), "--name", strings.TrimSpace(name))
 }
 
+// DeleteDraft permanently removes an editable Draft after the caller has
+// collected explicit user confirmation.
+func (c *Client) DeleteDraft(ctx context.Context, draftID string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "draft", "delete", strings.TrimSpace(draftID), "--yes")
+}
+
 // EnsureDraft makes Draft creation idempotent by checking the Project-scoped
 // list before creation and reconciling the name again after an uncertain create
 // response. Draft creation is remote but does not start billable execution.

@@ -4,13 +4,16 @@ import ReactMarkdown from 'react-markdown'
 import { api, type ActionPlanResult, type AgentAction, type AgentState, type ChatMessage, type SimulationPlan } from '../api/client'
 import { readSSE } from '../lib/sse'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useI18n } from '../i18n'
 import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
+import AgentDraftUpdateDialog from './AgentDraftUpdateDialog'
 
 type Message = ChatMessage & {
   error?: boolean
   action?: AgentAction
   conversion?: ActionPlanResult
   conversionError?: string
+  draftUpdateApplied?: boolean
 }
 
 export function shouldShowCopilotClarification(panelOpen: boolean, action: AgentAction | null) {
@@ -31,6 +34,11 @@ export function copilotScopeLabel(scopeType: CopilotScopeType) {
   return 'Project session'
 }
 
+export function scopedDraftUpdateProposal(action: AgentAction | undefined, scopeType: CopilotScopeType, scopeId?: string) {
+  const proposal = action?.kind === 'update-draft' ? action.proposals?.[0] : undefined
+  return scopeType === 'draft' && scopeId && proposal?.draft_id === scopeId ? proposal : null
+}
+
 export default function CopilotPanel({
   open,
   onClose,
@@ -44,6 +52,8 @@ export default function CopilotPanel({
   resourceType,
   resourceName,
   onOpenPlan,
+  draftParameters = {},
+  onApplyDraftPatch,
   suggestions = [],
 }: {
   open: boolean
@@ -58,8 +68,11 @@ export default function CopilotPanel({
   resourceType?: string
   resourceName?: string
   onOpenPlan: (plan: SimulationPlan) => void
+  draftParameters?: Record<string, unknown>
+  onApplyDraftPatch?: (patch: Record<string, unknown>) => Promise<void>
   suggestions?: string[]
 }) {
+  const { t } = useI18n()
   const [agent, setAgent] = useState<AgentState | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -71,6 +84,9 @@ export default function CopilotPanel({
 
   const [convertingIndex, setConvertingIndex] = useState<number | null>(null)
   const [clarificationAction, setClarificationAction] = useState<AgentAction | null>(null)
+  const [draftUpdateIndex, setDraftUpdateIndex] = useState<number | null>(null)
+  const [draftUpdateBusy, setDraftUpdateBusy] = useState(false)
+  const [draftUpdateError, setDraftUpdateError] = useState('')
 
   useEffect(() => {
     api.agentState().then(setAgent).catch(() => setAgent(null))
@@ -353,6 +369,25 @@ export default function CopilotPanel({
                   )}
                 </div>
               )}
+              {scopedDraftUpdateProposal(message.action, scopeType, scopeId) && (() => {
+                const proposal = scopedDraftUpdateProposal(message.action, scopeType, scopeId)!
+                return (
+                <div className="action-plan-card agent-draft-update-card">
+                  <div className="action-plan-header">
+                    <strong>✦ {t('Draft parameter edit')}</strong>
+                    <span className="action-plan-count">{t(`${proposal.fields.length} changes`)}</span>
+                  </div>
+                  <p>{proposal.intent}</p>
+                  {message.draftUpdateApplied ? (
+                    <div className="action-plan-conversion-summary"><CheckCircle2 size={15} /><span><strong>{t('Draft updated')}</strong><small>{t('Parameters were saved. Nothing was run.')}</small></span></div>
+                  ) : (
+                    <button className="action-plan-convert" type="button" disabled={!onApplyDraftPatch} onClick={() => { setDraftUpdateError(''); setDraftUpdateIndex(index) }}>
+                      <ChevronRight size={14} /> {t('Review changes')}
+                    </button>
+                  )}
+                </div>
+                )
+              })()}
               {message.action?.kind === 'request-missing-input' && Boolean(message.action.questions?.length) && (
                 <button className="action-plan-convert" type="button" onClick={() => setClarificationAction(message.action ?? null)}>
                   <ChevronRight size={14} /> {`Input required · Answer ${message.action.questions?.length} engineering ${message.action.questions?.length === 1 ? 'question' : 'questions'}`}
@@ -382,6 +417,27 @@ export default function CopilotPanel({
         onSubmit={(_answers: ClarificationAnswers, summary) => {
           setClarificationAction(null)
           void submit(summary)
+        }}
+      />
+      <AgentDraftUpdateDialog
+        proposal={draftUpdateIndex === null ? null : scopedDraftUpdateProposal(messages[draftUpdateIndex]?.action, scopeType, scopeId)}
+        parameters={draftParameters}
+        busy={draftUpdateBusy}
+        error={draftUpdateError}
+        onCancel={() => { if (!draftUpdateBusy) setDraftUpdateIndex(null) }}
+        onConfirm={() => {
+          if (draftUpdateIndex === null || !onApplyDraftPatch) return
+          const patch = scopedDraftUpdateProposal(messages[draftUpdateIndex]?.action, scopeType, scopeId)?.patch
+          if (!patch) return
+          setDraftUpdateBusy(true)
+          setDraftUpdateError('')
+          void onApplyDraftPatch(patch)
+            .then(() => {
+              setMessages((current) => current.map((message, index) => index === draftUpdateIndex ? { ...message, draftUpdateApplied: true } : message))
+              setDraftUpdateIndex(null)
+            })
+            .catch((cause) => setDraftUpdateError(String(cause).replace(/^Error:\s*/, '')))
+            .finally(() => setDraftUpdateBusy(false))
         }}
       />
     </aside>

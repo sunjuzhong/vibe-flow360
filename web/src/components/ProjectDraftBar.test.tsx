@@ -40,6 +40,7 @@ describe('ProjectDraftBar', () => {
         onInspect={() => undefined}
         onReview={() => undefined}
         onRename={async () => undefined}
+        onManage={() => undefined}
         onRefresh={() => undefined}
       />,
     )
@@ -74,6 +75,7 @@ describe('ProjectDraftBar', () => {
         onInspect={() => undefined}
         onReview={() => undefined}
         onRename={async () => undefined}
+        onManage={() => undefined}
         onRefresh={() => undefined}
       />,
     )

@@ -1,4 +1,4 @@
-import { Braces, Check, ChevronRight, GitPullRequestDraft, Pencil, Play, Plus, RefreshCw, X } from 'lucide-react'
+import { Braces, Check, ChevronRight, GitPullRequestDraft, Pencil, Play, Plus, RefreshCw, Settings2, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
 import { useI18n } from '../i18n'
@@ -19,6 +19,7 @@ type Props = {
   onInspect: () => void
   onReview: () => void
   onRename: (draftId: string, name: string) => Promise<void>
+  onManage: () => void
   onRefresh: () => void
 }
 
@@ -56,6 +57,7 @@ export default function ProjectDraftBar({
   onInspect,
   onReview,
   onRename,
+  onManage,
   onRefresh,
 }: Props) {
   const { t } = useI18n()
@@ -127,6 +129,9 @@ export default function ProjectDraftBar({
             ? 'Drafts are editable configurations. Open one to inspect parameters, review changes, or run it.'
             : 'A Draft is an editable configuration created from this Resource. Creating one does not start a remote run.'}
         </HelpTooltip>
+        <button type="button" className="project-draft-entry__refresh" onClick={onManage} aria-label={t('Manage Drafts')} title={t('Manage Drafts')}>
+          <Settings2 size={14} />
+        </button>
         {unavailable && (
           <button type="button" className="project-draft-entry__refresh" onClick={onRefresh} aria-label="Retry loading Drafts" title="Retry loading Drafts">
             <RefreshCw size={14} />
@@ -194,6 +199,10 @@ export default function ProjectDraftBar({
       </div>
 
       <div className="project-draft-actions">
+        <button type="button" onClick={onManage} title={t('Manage Drafts')} aria-label={t('Manage Drafts')}>
+          <Settings2 size={14} />
+          <span>{t('Manage')}</span>
+        </button>
         <button
           type="button"
           onClick={startRename}

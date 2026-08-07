@@ -250,6 +250,27 @@ printf '{"id":"draft-1","name":"Renamed Draft"}'
 	}
 }
 
+func TestDeleteDraftUsesConfirmedTypedCLICommand(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s ' "$@" > %q
+printf '{"id":"draft-1","deleted":true}'
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	if _, err := client.DeleteDraft(context.Background(), " draft-1 "); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := os.ReadFile(argsPath)
+	if got := string(args); got != "draft delete draft-1 --yes " {
+		t.Fatalf("unexpected Draft delete arguments: %q", got)
+	}
+}
+
 func TestFolderMutationsUseTypedCLICommands(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")

@@ -278,8 +278,10 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
 		api.POST("/flow360/projects/:project_id/drafts", s.createConfiguredFlow360Draft)
 		api.PUT("/flow360/drafts/:draft_id/name", s.renameFlow360Draft)
+		api.DELETE("/flow360/drafts/:draft_id", s.deleteFlow360Draft)
 		api.GET("/flow360/drafts/:draft_id/parameters/schema", s.flow360DraftParameterSchema)
 		api.POST("/flow360/drafts/:draft_id/parameters/validate", s.validateFlow360DraftParameters)
+		api.PATCH("/flow360/drafts/:draft_id/parameters", s.patchFlow360DraftParameters)
 		api.PUT("/flow360/drafts/:draft_id/parameters", s.updateFlow360DraftParameters)
 		api.GET("/flow360/projects/:project_id/sync", s.projectSyncStatus)
 		api.POST("/flow360/projects/:project_id/sync", s.startProjectSync)
@@ -2556,6 +2558,24 @@ func (s *Server) renameFlow360Draft(c *gin.Context) {
 	s.writeLiveJSON(c, raw)
 }
 
+func (s *Server) deleteFlow360Draft(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" || len(draftID) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft ID"})
+		return
+	}
+	if !strings.EqualFold(c.Query("confirmed"), "true") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Draft deletion requires confirmed=true"})
+		return
+	}
+	raw, err := s.flow360.DeleteDraft(c.Request.Context(), draftID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not delete this Draft; refresh and try again"})
+		return
+	}
+	s.writeLiveJSON(c, raw)
+}
+
 func (s *Server) flow360DraftParameterSchema(c *gin.Context) {
 	draftID := strings.TrimSpace(c.Param("draft_id"))
 	if draftID == "" {
@@ -2592,6 +2612,10 @@ const maxDraftParametersRequestBytes = 2 << 20
 
 type updateDraftParametersRequest struct {
 	SimulationParams json.RawMessage `json:"simulation_params"`
+}
+
+type patchDraftParametersRequest struct {
+	Patch json.RawMessage `json:"patch"`
 }
 
 type validateDraftParametersRequest struct {
@@ -2674,6 +2698,41 @@ func (s *Server) updateFlow360DraftParameters(c *gin.Context) {
 		return
 	}
 	canonical, err := s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, request.SimulationParams)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"simulation_params": canonical})
+}
+
+func (s *Server) patchFlow360DraftParameters(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDraftParametersRequestBytes)
+	var request patchDraftParametersRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft patch request"})
+		return
+	}
+	var patchObject map[string]any
+	if !json.Valid(request.Patch) || json.Unmarshal(request.Patch, &patchObject) != nil || patchObject == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Draft patch must be a JSON object"})
+		return
+	}
+	detail, err := s.flow360.ResourceDetail(c.Request.Context(), "Draft", draftID)
+	if err != nil || len(detail.SimulationParams) == 0 {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Draft SimulationParams are unavailable"})
+		return
+	}
+	merged, err := plans.MergeSimulationParams(detail.SimulationParams, request.Patch)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	canonical, err := s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, merged)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return

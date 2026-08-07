@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentAction } from '../api/client'
-import { actionPlanConversionSummary, copilotHorizontalContainment, copilotScopeLabel, shouldShowCopilotClarification } from './CopilotPanel'
+import { actionPlanConversionSummary, copilotHorizontalContainment, copilotScopeLabel, scopedDraftUpdateProposal, shouldShowCopilotClarification } from './CopilotPanel'
 
 const clarification: AgentAction = {
   version: 'v1',
@@ -39,5 +39,20 @@ describe('Ask AI plan conversion feedback', () => {
     expect(actionPlanConversionSummary({
       message: 'ready', results: [], total: 2, created: 1, failed: 1,
     })).toBe('1/2 Draft reviews ready')
+  })
+})
+
+describe('Ask AI Draft update scope', () => {
+  const update: AgentAction = {
+    version: 'v1', kind: 'update-draft', message: 'Change alpha', proposals: [{
+      id: 'edit-1', draft_id: 'draft-1', action: 'Draft', target: 'draft', name: 'Alpha',
+      intent: 'Set alpha', patch: { alpha: 5 }, branch_preview: '', fields: [],
+    }],
+  }
+
+  it('only exposes a patch for the current Draft scope', () => {
+    expect(scopedDraftUpdateProposal(update, 'draft', 'draft-1')?.patch).toEqual({ alpha: 5 })
+    expect(scopedDraftUpdateProposal(update, 'draft', 'draft-2')).toBeNull()
+    expect(scopedDraftUpdateProposal(update, 'resource', 'draft-1')).toBeNull()
   })
 })

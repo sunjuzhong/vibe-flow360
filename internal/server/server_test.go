@@ -134,6 +134,126 @@ esac
 	}
 }
 
+func TestCreateConfiguredDraftCopiesExactSimulationParams(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	paramsPath := filepath.Join(dir, "params.json")
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "` + argsPath + `"
+case "$*" in
+  "draft create geo-1 --name Copied Draft") printf '{"id":"dft-copy","type":"Draft"}' ;;
+  "draft info dft-copy") printf '{"id":"dft-copy","type":"Draft","source_id":"geo-1"}' ;;
+  "draft state dft-copy") printf '{"status":"draft"}' ;;
+  "draft simulation-params get dft-copy") printf '{"simulation_params":{"baseline_only":true}}' ;;
+  draft\ simulation-params\ set\ dft-copy*) cp "$5" "` + paramsPath + `"; printf '{"status":"updated"}' ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Params = gin.Params{{Key: "project_id", Value: "prj-1"}}
+	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/projects/prj-1/drafts", strings.NewReader(`{
+		"source_id":"geo-1","name":"Copied Draft","simulation_params":{"copied":true}
+	}`))
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+	app.createConfiguredFlow360Draft(requestContext)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("unexpected copy response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	written, _ := os.ReadFile(paramsPath)
+	if string(written) != `{"copied":true}` {
+		t.Fatalf("copy did not replace with exact SimulationParams: %s", written)
+	}
+	args, _ := os.ReadFile(argsPath)
+	if strings.Contains(string(args), "draft list") {
+		t.Fatalf("explicit creation reused a source Draft: %s", args)
+	}
+}
+
+func TestPatchDraftParametersMergesWithoutRunning(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	paramsPath := filepath.Join(dir, "params.json")
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "` + argsPath + `"
+case "$*" in
+  "draft info draft-1") printf '{"id":"draft-1","type":"Draft"}' ;;
+  "draft state draft-1") printf '{"status":"draft"}' ;;
+  "draft simulation-params get draft-1") printf '{"simulation_params":{"operating_condition":{"alpha":0,"beta":2}}}' ;;
+  draft\ simulation-params\ set\ draft-1*) cp "$5" "` + paramsPath + `"; printf '{"status":"updated"}' ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	requestContext.Request = httptest.NewRequest(http.MethodPatch, "/api/flow360/drafts/draft-1/parameters", strings.NewReader(`{"patch":{"operating_condition":{"alpha":5}}}`))
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+	app.patchFlow360DraftParameters(requestContext)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected patch response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	written, _ := os.ReadFile(paramsPath)
+	if !strings.Contains(string(written), `"alpha":5`) || !strings.Contains(string(written), `"beta":2`) {
+		t.Fatalf("Draft patch did not preserve the baseline: %s", written)
+	}
+	args, _ := os.ReadFile(argsPath)
+	if strings.Contains(string(args), "draft run") {
+		t.Fatalf("Draft parameter patch started a run: %s", args)
+	}
+}
+
+func TestDeleteDraftRequiresConfirmationAndUsesTypedClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := `#!/bin/sh
+printf '%s ' "$@" > "` + argsPath + `"
+printf '{"id":"draft-1","deleted":true}'
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+
+	unconfirmed := httptest.NewRecorder()
+	unconfirmedContext, _ := gin.CreateTestContext(unconfirmed)
+	unconfirmedContext.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	unconfirmedContext.Request = httptest.NewRequest(http.MethodDelete, "/api/flow360/drafts/draft-1", nil)
+	app.deleteFlow360Draft(unconfirmedContext)
+	if unconfirmed.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed deletion returned %d", unconfirmed.Code)
+	}
+
+	confirmed := httptest.NewRecorder()
+	confirmedContext, _ := gin.CreateTestContext(confirmed)
+	confirmedContext.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	confirmedContext.Request = httptest.NewRequest(http.MethodDelete, "/api/flow360/drafts/draft-1?confirmed=true", nil)
+	app.deleteFlow360Draft(confirmedContext)
+	if confirmed.Code != http.StatusOK {
+		t.Fatalf("confirmed deletion returned %d: %s", confirmed.Code, confirmed.Body.String())
+	}
+	args, _ := os.ReadFile(argsPath)
+	if got := string(args); got != "draft delete draft-1 --yes " {
+		t.Fatalf("unexpected Draft delete command: %q", got)
+	}
+}
+
 func TestCacheNamespaceUsesEnvironmentAndProfile(t *testing.T) {
 	tests := map[string]struct {
 		environment string

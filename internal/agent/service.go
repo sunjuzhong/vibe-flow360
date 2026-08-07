@@ -268,13 +268,15 @@ func ValidateAndRepair(ctx context.Context, rawResponse string, s *Service, requ
 	repairPrompt := fmt.Sprintf(`Your previous response could not be parsed as a valid AgentAction v1 JSON object.
 Please respond with ONLY a valid JSON object in a fenced code block. The schema is:
 - version: "v1"
-- kind: "create-plan" or "request-missing-input"
+- kind: "create-plan", "update-draft", or "request-missing-input"
 - message: string (required)
 - proposals: array (for create-plan). Every proposal must contain id, action, target, name,
   intent, patch (a JSON object), branch_preview, and fields.
 - proposals[].fields: ARRAY of objects shaped exactly as
   {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional"}.
   Never emit fields as an object/map; use [] when empty.
+- update-draft must contain exactly one proposal with id, draft_id, target "draft", name,
+  intent, patch, and fields. Use it only for a current Draft edit that must not run.
 - questions: array (for request-missing-input), each with field, message, urgency, reason, type
   (text|number|select|boolean), and optional unit/options/default/min/max/placeholder/recommendation.
   Always include type. Include a safe evidence-based default and recommendation whenever possible.
