@@ -504,6 +504,44 @@ def expression_schema(node, inherited_unit=None):
             result["expected_unit"] = inherited_unit
     return result
 
+def expression_unit_syntax(unit):
+    if not unit:
+        return ""
+    return re.sub(r"(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_]*)", r"u.\1", unit)
+
+def expression_schema(node, inherited_unit=None):
+    public_math_names = (
+        "abs", "acos", "add", "asin", "atan", "cos", "cross", "dot", "exp",
+        "log", "magnitude", "max", "min", "sin", "sqrt", "subtract", "tan",
+    )
+    result = {
+        **metadata(node),
+        "type": "expression",
+        "wire_discriminator": {"field": "type_name", "value": "expression"},
+        "allow_runtime": False,
+        "function_suggestions": [
+            f"math.{name}()"
+            for name in public_math_names
+            if hasattr(flow360_math, name)
+        ],
+    }
+    if inherited_unit:
+        try:
+            parsed = Unit(inherited_unit.replace("^", "**"))
+            result["expected_unit"] = str(parsed.expr)
+            dimension = str(parsed.dimensions)
+            result["expected_dimension"] = {
+                "(time)": "time",
+                "(length)": "length",
+                "(length)/(time)": "velocity",
+                "(length)**2": "area",
+                "(length)**3": "volume",
+                "(mass)/(length)**3": "density",
+            }.get(dimension, dimension)
+        except Exception:
+            result["expected_unit"] = inherited_unit
+    return result
+
 def normalize(node, inherited_unit=None):
     if not isinstance(node, dict):
         return {"type": "json"}

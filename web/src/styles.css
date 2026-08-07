@@ -3319,6 +3319,17 @@ button { color: inherit; }
 .plan-repair-candidate footer { display: flex; justify-content: flex-end; gap: 8px; padding: 13px; }
 .plan-repair-candidate footer button { display: inline-flex; min-height: 36px; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #d1d4cc; border-radius: 7px; background: #fff; cursor: pointer; }
 .plan-repair-candidate footer button.primary { border-color: #9eb644; color: #29320f; background: #b7d74f; font-weight: 700; }
+.plan-parameter-review { margin-top: 12px; padding: 16px; border: 1px solid #d7dbd0; border-radius: 10px; background: #fff; }
+.plan-parameter-review > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.plan-parameter-review > header h3 { margin: 0 0 4px; color: #41483d; font-size: 15px; }
+.plan-parameter-review > header p { max-width: 430px; margin: 0; color: #7b8276; font-size: 11px; line-height: 1.45; }
+.plan-parameter-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
+.plan-ai-repair { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #a9a2cf; border-radius: 8px; color: #4e467b; background: #f3f0ff; font-size: 12px; font-weight: 700; cursor: pointer; }
+.plan-ai-repair:disabled { cursor: not-allowed; opacity: .45; }
+.plan-parameter-status { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; padding: 9px 11px; border-radius: 7px; font-size: 12px; font-weight: 650; }
+.plan-parameter-status.error { color: #974332; background: #fae8e3; }
+.plan-parameter-status.ready { color: #587016; background: #ebf2da; }
+.plan-complete-parameter-form .schema-root-panel { height: clamp(380px, 54vh, 620px); }
 .plan-technical-details { margin-top: 12px; border: 1px solid #dfe1da; border-radius: 9px; background: #f8f9f5; }
 .plan-technical-details > summary { display: flex; min-height: 44px; align-items: center; gap: 7px; padding: 0 13px; color: #636a5f; font-size: 12px; font-weight: 700; cursor: pointer; list-style: none; }
 .plan-technical-details > summary::-webkit-details-marker { display: none; }
