@@ -1,4 +1,4 @@
-import { createContext, FormEvent, KeyboardEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, ChevronDown, Code2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
@@ -247,6 +247,7 @@ function SchemaField({
   removeLabel,
   collapsibleObjects,
   rootTabContent = false,
+  embeddedObjectContent = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -260,6 +261,7 @@ function SchemaField({
   removeLabel: string
   collapsibleObjects: boolean
   rootTabContent?: boolean
+  embeddedObjectContent?: boolean
 }) {
   const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
@@ -295,7 +297,7 @@ function SchemaField({
               </div>
             )
           }
-          return (
+          const editor = (
             <div className="schema-edit-field" key={key}>
               <SchemaField
                 schema={child}
@@ -308,6 +310,8 @@ function SchemaField({
                 addLabel={addLabel}
                 removeLabel={removeLabel}
                 collapsibleObjects={collapsibleObjects}
+                rootTabContent={rootTabContent && child.type !== 'object'}
+                embeddedObjectContent={rootTabContent && child.type === 'object'}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
               {sparse && !required && present && (
@@ -325,10 +329,27 @@ function SchemaField({
               )}
             </div>
           )
+          if (rootTabContent && collapsibleObjects) {
+            const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, childPath)) ?? false
+            const childTitle = child.title || humanize(key)
+            return (
+              <RootFieldSection
+                key={key}
+                title={childTitle}
+                description={child.description}
+                configured={present}
+                showAll={showAll}
+                invalid={invalid}
+              >
+                {editor}
+              </RootFieldSection>
+            )
+          }
+          return editor
         })}
       </>
     )
-    if (rootTabContent) {
+    if (rootTabContent || embeddedObjectContent) {
       return <div className="schema-root-object-content">{fields}</div>
     }
     if (path && collapsibleObjects) {
@@ -361,7 +382,7 @@ function SchemaField({
     const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
     return (
       <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
         <span className="schema-quantity">
           <input
             id={fieldID}
@@ -388,7 +409,7 @@ function SchemaField({
     )
   }
   if (schema.type === 'expression') {
-    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={title} />{fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}</div>
+    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={title} sectionContent={rootTabContent} />{fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}</div>
   }
   if (schema.type === 'entity_assignment') {
     return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} configured={configured} showAll={showAll} />
@@ -419,7 +440,7 @@ function SchemaField({
     return (
       <label className={`schema-field schema-boolean${fieldIssues.length ? ' schema-field-invalid' : ''}`}>
         <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
         {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
       </label>
     )
@@ -427,7 +448,7 @@ function SchemaField({
   if (schema.type === 'enum') {
     return (
       <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
@@ -522,7 +543,7 @@ function SchemaField({
     }
     const selectedEditor = selected.type === 'expression' && valueOrExpression
       ? <ExpressionField schema={selected} value={draft.value} path={path} title={title} embedded onChange={(next) => onChange({ ...draft, value: next })} />
-      : <SchemaField schema={selected} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} onChange={(next) => onChange({ ...draft, value: next })} />
+      : <SchemaField schema={selected} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} onChange={(next) => onChange({ ...draft, value: next })} />
     const unionEditor = (
       <>
         {valueOrExpression ? (
@@ -556,7 +577,7 @@ function SchemaField({
   if (schema.type === 'json') {
     return (
       <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
         {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
       </label>
@@ -564,7 +585,7 @@ function SchemaField({
   }
   return (
     <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
+      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
       <input
         id={fieldID}
         type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
@@ -579,6 +600,41 @@ function SchemaField({
       />
       {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
     </label>
+  )
+}
+
+function RootFieldSection({
+  title,
+  description,
+  configured,
+  showAll,
+  invalid,
+  children,
+}: {
+  title: string
+  description?: string
+  configured: boolean
+  showAll: boolean
+  invalid: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details
+      className={`schema-section schema-root-field-section${invalid ? ' schema-invalid' : ''}`}
+      open={open || invalid}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span className="schema-section-title">
+          <span>{title}</span>
+          <SchemaDescriptionHelp description={description} title={title} />
+        </span>
+        {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+        <ChevronDown size={16} />
+      </summary>
+      <div className="schema-section-body">{children}</div>
+    </details>
   )
 }
 
@@ -599,6 +655,7 @@ function ExpressionField({
   path,
   title,
   embedded = false,
+  sectionContent = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -606,6 +663,7 @@ function ExpressionField({
   path: string
   title: string
   embedded?: boolean
+  sectionContent?: boolean
 }) {
   const validator = useContext(ExpressionValidationContext)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -661,7 +719,7 @@ function ExpressionField({
   const suggestions = [...(schema.unit_suggestions ?? []), ...(schema.function_suggestions ?? []).slice(0, 6)]
   return (
     <div className={`schema-expression ${embedded ? 'embedded' : ''}`}>
-      {!embedded && <FieldLabel schema={schema} title={title} path={path} descriptionTooltip />}
+      {!embedded && <FieldLabel schema={schema} title={title} path={path} descriptionTooltip hideTitle={sectionContent} />}
       <div className="schema-expression-input-wrap">
         <Code2 size={16} aria-hidden="true" />
         <textarea
@@ -825,6 +883,7 @@ function FieldLabel({
   configured = true,
   showAll = false,
   descriptionTooltip = false,
+  hideTitle = false,
 }: {
   schema: DynamicFormSchema
   title: string
@@ -832,14 +891,17 @@ function FieldLabel({
   configured?: boolean
   showAll?: boolean
   descriptionTooltip?: boolean
+  hideTitle?: boolean
 }) {
   return (
     <span className="schema-field-label">
-      <strong>
-        {title}{schema.required === true ? ' *' : ''}
-        {descriptionTooltip && <SchemaDescriptionHelp description={schema.description} title={title} />}
-        {showAll && !configured && <small className="schema-field-state">Not configured</small>}
-      </strong>
+      {!hideTitle && (
+        <strong>
+          {title}{schema.required === true ? ' *' : ''}
+          {descriptionTooltip && <SchemaDescriptionHelp description={schema.description} title={title} />}
+          {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+        </strong>
+      )}
       <code>{path}</code>
       {schema.description && !descriptionTooltip && <small>{schema.description}</small>}
     </span>

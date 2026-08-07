@@ -2181,6 +2181,16 @@ button { color: inherit; }
 .draft-parameter-form .schema-section-body .schema-object > legend,
 .draft-parameter-form .schema-array-card-body .schema-field-label strong,
 .draft-parameter-form .schema-array-card-body .schema-object > legend { font-size: 12px; }
+.draft-parameter-form .schema-root-field-section > .schema-section-body > .schema-edit-field { padding: 0; border-bottom: 0; }
+.draft-parameter-form .schema-root-field-section > .schema-section-body > .schema-edit-field > .schema-field > .schema-field-label > strong,
+.draft-parameter-form .schema-root-field-section > .schema-section-body > .schema-edit-field > .schema-expression > .schema-field-label > strong { display: none; }
+.draft-parameter-form .schema-root-field-section > .schema-section-body > .schema-edit-field > .schema-object {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.draft-parameter-form .schema-root-field-section > .schema-section-body > .schema-edit-field > .schema-object > legend { display: none; }
 .draft-parameter-form .schema-edit-field { padding: 11px 0; }
 .draft-parameter-form .schema-field { margin-bottom: 15px; }
 .draft-parameter-form .schema-field-label { margin-bottom: 7px; }

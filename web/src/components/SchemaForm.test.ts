@@ -348,6 +348,44 @@ describe('schema-driven Flow360 form', () => {
     expect(markup.match(/>Meshing</g)).toHaveLength(1)
   })
 
+  it('renders every first-level Draft field as the same collapsible section', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        meshing: {
+          type: 'object',
+          title: 'Meshing',
+          properties: {
+            defaults: {
+              type: 'object',
+              title: 'Defaults',
+              properties: { target_count: { type: 'integer', title: 'Target count' } },
+            },
+            gap_treatment_strength: { type: 'number', title: 'Gap Treatment Strength' },
+            outputs: { type: 'array', title: 'Outputs', items: { type: 'string' } },
+          },
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { meshing: {} },
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      issues: [{ path: 'meshing.gap_treatment_strength', message: 'Required', level: 'error' }],
+      onChange: () => undefined,
+    }))
+
+    expect(markup.match(/schema-root-field-section/g)).toHaveLength(3)
+    expect(markup.match(/>Gap Treatment Strength</g)).toHaveLength(1)
+    expect(markup.match(/>Outputs</g)).toHaveLength(1)
+    expect(markup).toMatch(/schema-root-field-section schema-invalid" open=""/)
+    expect(markup).toContain('schema-root-array')
+    expect(markup).not.toContain('<legend')
+  })
+
   it('moves Draft descriptions into help tooltips and removes schema reference noise', () => {
     const description = 'Solver settings and numerical models. See ref: `Volume Models <volume_models>` and :ref:`Surface Models <surface_models>` for more details.'
     const schema: DynamicFormSchema = {
