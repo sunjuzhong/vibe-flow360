@@ -365,6 +365,13 @@ export type DraftParameterSchemaResponse = {
   baseline: Record<string, unknown>
 }
 
+export type DraftParameterValidationResponse = {
+  schema_version: number
+  validator_version?: string
+  valid: boolean
+  issues: Array<{ level: string; code: string; path?: string; message: string; stages?: string[] }>
+}
+
 export type GeometryDiagnosticCapability = {
   key: string
   status: 'available' | 'proxy' | 'unavailable'
@@ -480,7 +487,7 @@ export type DynamicFormRecommendation = {
 }
 
 export type DynamicFormSchema = {
-  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'union' | 'entity_assignment' | 'field_removal' | 'json'
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'expression' | 'union' | 'entity_assignment' | 'field_removal' | 'json'
   title?: string
   description?: string
   default?: unknown
@@ -495,6 +502,13 @@ export type DynamicFormSchema = {
   unit_options?: string[]
   unit_aliases?: Record<string, string>
   value_schema?: DynamicFormSchema
+  expected_unit?: string
+  expected_dimension?: string
+  allow_runtime?: boolean
+  wire_discriminator?: { field: string; value: string }
+  unit_suggestions?: string[]
+  function_suggestions?: string[]
+  example?: string
   model_choices?: DynamicFormChoice[]
   entity_choices?: DynamicFormChoice[]
   default_model?: string
@@ -839,6 +853,11 @@ export const api = {
     flow360JSON<ProjectDraftsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts${cacheOnly ? '?cache=only' : ''}`),
   draftParameterSchema: (draftId: string) =>
     json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
+  validateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, paths: string[]) =>
+    mutate<DraftParameterValidationResponse>(
+      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/validate`,
+      { simulation_params: simulationParams, paths },
+    ),
   updateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>) =>
     replace<{ simulation_params: Record<string, unknown> }>(
       `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters`,
@@ -963,6 +982,8 @@ export const api = {
   }) => mutate<PlanAssistResponse>('/api/plans/assist', input),
   preflightPlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/preflight`),
+  updatePlanParameters: (planId: string, revision: number, values: Record<string, unknown>) =>
+    replace<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/parameters`, { revision, values }),
   applyPlanInputs: (planId: string, revision: number, values: Record<string, unknown>) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/inputs`, { revision, values }),
   recoverPlan: (planId: string) =>

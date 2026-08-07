@@ -135,6 +135,10 @@ func sanitizeFormValue(schema formNode, value any, path string, depth int) (any,
 		return result, removed, nil
 	case "quantity":
 		return sanitizeFixedFormObject(value, path, map[string]bool{"value": true, "units": true})
+	case "expression":
+		return sanitizeFixedFormObject(value, path, map[string]bool{
+			"type_name": true, "expression": true, "output_units": true,
+		})
 	case "entity_assignment":
 		return sanitizeFixedFormObject(value, path, map[string]bool{"model": true, "entities": true})
 	case "union":
@@ -261,6 +265,28 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 		canonical := canonicalFormUnit(schema, unit)
 		if len(schema.UnitOptions) > 0 && !containsString(schema.UnitOptions, canonical) {
 			return fmt.Errorf("%s.units is not supported by the active Flow360 schema", label)
+		}
+	case "expression":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be a Flow360 expression", label)
+		}
+		for key := range object {
+			if key != "type_name" && key != "expression" && key != "output_units" {
+				return fmt.Errorf("%s.%s is not supported", label, key)
+			}
+		}
+		if discriminator, ok := object["type_name"].(string); !ok || discriminator != "expression" {
+			return fmt.Errorf("%s.type_name must be expression", label)
+		}
+		expression, ok := object["expression"].(string)
+		if !ok || strings.TrimSpace(expression) == "" {
+			return fmt.Errorf("%s.expression is required", label)
+		}
+		if outputUnits, exists := object["output_units"]; exists && outputUnits != nil {
+			if _, ok := outputUnits.(string); !ok {
+				return fmt.Errorf("%s.output_units must be a string", label)
+			}
 		}
 	case "entity_assignment":
 		object, ok := value.(map[string]any)

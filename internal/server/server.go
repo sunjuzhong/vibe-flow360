@@ -271,6 +271,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
 		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
 		api.GET("/flow360/drafts/:draft_id/parameters/schema", s.flow360DraftParameterSchema)
+		api.POST("/flow360/drafts/:draft_id/parameters/validate", s.validateFlow360DraftParameters)
 		api.PUT("/flow360/drafts/:draft_id/parameters", s.updateFlow360DraftParameters)
 		api.GET("/flow360/projects/:project_id/sync", s.projectSyncStatus)
 		api.POST("/flow360/projects/:project_id/sync", s.startProjectSync)
@@ -299,6 +300,7 @@ func (s *Server) routes() {
 		api.GET("/plans/:plan_id", s.getPlan)
 		api.GET("/plans/:plan_id/execution", s.planExecution)
 		api.POST("/plans/:plan_id/preflight", s.preflightPlan)
+		api.PUT("/plans/:plan_id/parameters", s.updatePlanParameters)
 		api.POST("/plans/:plan_id/inputs", s.applyPlanInputs)
 		api.POST("/plans/:plan_id/recover", s.recoverPlan)
 		api.POST("/plans/:plan_id/approve", s.approvePlan)
@@ -887,6 +889,31 @@ type applyPlanInputsRequest struct {
 }
 
 const maxPlanInputsRequestBytes = 300 << 10
+
+// updatePlanParameters applies a browser-authored JSON Merge Patch to the
+// reviewed SimulationParams revision. Store.ApplyInputs enforces the public
+// patch allow-list, so canonical Flow360 private metadata can be displayed by
+// the review UI but cannot be modified or injected through this endpoint.
+func (s *Server) updatePlanParameters(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPlanInputsRequestBytes)
+	var request applyPlanInputsRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "parameter patch is too large"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid parameter patch"})
+		return
+	}
+	updated, err := s.plans.ApplyInputs(c.Param("plan_id"), request.Revision, request.Values)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	updated = s.runPlanPreflight(c.Request.Context(), updated)
+	c.JSON(http.StatusOK, updated)
+}
 
 func (s *Server) applyPlanInputs(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPlanInputsRequestBytes)
@@ -2500,6 +2527,63 @@ const maxDraftParametersRequestBytes = 2 << 20
 
 type updateDraftParametersRequest struct {
 	SimulationParams json.RawMessage `json:"simulation_params"`
+}
+
+type validateDraftParametersRequest struct {
+	SimulationParams json.RawMessage `json:"simulation_params"`
+	Paths            []string        `json:"paths"`
+}
+
+func (s *Server) validateFlow360DraftParameters(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDraftParametersRequestBytes)
+	var request validateDraftParametersRequest
+	if err := c.ShouldBindJSON(&request); err != nil || !json.Valid(request.SimulationParams) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft parameter validation request"})
+		return
+	}
+	if len(request.Paths) == 0 || len(request.Paths) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "one to 64 parameter paths are required"})
+		return
+	}
+	paths := make([]string, 0, len(request.Paths))
+	for _, path := range request.Paths {
+		path = strings.Trim(strings.TrimSpace(path), ".")
+		if path == "" || len(path) > 512 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid parameter validation path"})
+			return
+		}
+		paths = append(paths, path)
+	}
+	detail, err := s.flow360.ResourceDetail(c.Request.Context(), "Draft", draftID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Draft context is unavailable for validation"})
+		return
+	}
+	result, err := s.flow360.PreflightSimulationParams(
+		c.Request.Context(), draftSourceType(detail.Info), "case", request.SimulationParams,
+	)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	issues := make([]flow360.PreflightIssue, 0)
+	for _, issue := range result.Issues {
+		for _, path := range paths {
+			if issue.Path == path || strings.HasPrefix(issue.Path, path+".") || strings.HasPrefix(path, issue.Path+".") {
+				issues = append(issues, issue)
+				break
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"schema_version": result.SchemaVersion, "validator_version": result.ValidatorVersion,
+		"valid": len(issues) == 0, "issues": issues,
+	})
 }
 
 func (s *Server) updateFlow360DraftParameters(c *gin.Context) {

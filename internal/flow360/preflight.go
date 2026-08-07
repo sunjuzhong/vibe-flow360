@@ -218,12 +218,14 @@ import json
 import re
 import sys
 import warnings
+from importlib.metadata import version as package_version
 from typing import get_args
 
 from pydantic import BaseModel, BeforeValidator
 from flow360.component.simulation import services
 from flow360_schema import __version__ as schema_version
 from flow360_schema.framework.physical_dimensions.dimension_meta import PhysicalDimensionMeta
+from flow360_schema.models.functions import math as flow360_math
 from flow360_schema.models.simulation.simulation_params import SimulationParams
 from unyt import Unit
 
@@ -234,8 +236,13 @@ with open(request_path, "r", encoding="utf-8") as stream:
 if request.get("schema_version") != 1:
     raise ValueError("unsupported preflight request version")
 
-params = request["params"]
+params = copy.deepcopy(request["params"])
 original_params = copy.deepcopy(params)
+# Draft.get_simulation_params() can omit wire metadata that is implicit in the
+# server-side Draft context. Local validation needs it explicitly, otherwise
+# Flow360 accepts typed Expressions without running their dimension checks.
+params.setdefault("version", package_version("flow360"))
+params.setdefault("unit_system", {"name": "SI"})
 root_type = request.get("root_type")
 if root_type == "Case":
     root_type = None
@@ -455,11 +462,51 @@ def external_numeric(ref):
         result["minimum"] = 0
     return result
 
+def expression_unit_syntax(unit):
+    if not unit:
+        return ""
+    return re.sub(r"(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_]*)", r"u.\1", unit)
+
+def expression_schema(node, inherited_unit=None):
+    public_math_names = (
+        "abs", "acos", "add", "asin", "atan", "cos", "cross", "dot", "exp",
+        "log", "magnitude", "max", "min", "sin", "sqrt", "subtract", "tan",
+    )
+    result = {
+        **metadata(node),
+        "type": "expression",
+        "wire_discriminator": {"field": "type_name", "value": "expression"},
+        "allow_runtime": False,
+        "function_suggestions": [
+            f"math.{name}()"
+            for name in public_math_names
+            if hasattr(flow360_math, name)
+        ],
+    }
+    if inherited_unit:
+        try:
+            parsed = Unit(inherited_unit.replace("^", "**"))
+            result["expected_unit"] = str(parsed.expr)
+            dimension = str(parsed.dimensions)
+            result["expected_dimension"] = {
+                "(time)": "time",
+                "(length)": "length",
+                "(length)/(time)": "velocity",
+                "(length)**2": "area",
+                "(length)**3": "volume",
+                "(mass)/(length)**3": "density",
+            }.get(dimension, dimension)
+        except Exception:
+            result["expected_unit"] = inherited_unit
+    return result
+
 def normalize(node, inherited_unit=None):
     if not isinstance(node, dict):
         return {"type": "json"}
     unit = node.get("$units", inherited_unit)
     outer = metadata(node)
+    if node.get("$ref") == "#/$defs/Expression":
+        return expression_schema(node, unit)
     if "$ref" in node and not node["$ref"].startswith("#/"):
         outer.update(external_numeric(node["$ref"]))
         if unit:
@@ -477,7 +524,23 @@ def normalize(node, inherited_unit=None):
             resolved["nullable"] = any(item.get("type") == "null" for item in node[choice_key])
             return resolved
         variants = [normalize(choice, unit) for choice in choices]
-        priority = {"quantity": 0, "number": 1, "integer": 2, "string": 3, "boolean": 4}
+        quantity_variant = next((item for item in variants if item.get("type") == "quantity"), None)
+        if quantity_variant:
+            expected_unit = quantity_variant.get("unit")
+            unit_suggestions = [
+                expression_unit_syntax(candidate)
+                for candidate in quantity_variant.get("unit_options", [])
+                if expression_unit_syntax(candidate)
+            ]
+            for variant in variants:
+                if variant.get("type") != "expression":
+                    continue
+                enriched = expression_schema({}, expected_unit)
+                variant.update({key: value for key, value in enriched.items() if key not in variant})
+                variant["unit_suggestions"] = unit_suggestions[:8]
+                if expected_unit:
+                    variant["example"] = f"1 * {expression_unit_syntax(expected_unit)}"
+        priority = {"quantity": 0, "number": 1, "integer": 2, "expression": 3, "string": 4, "boolean": 5}
         variants.sort(key=lambda item: priority.get(item.get("type"), 10))
         return {
             **base,

@@ -1,5 +1,5 @@
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { createContext, FormEvent, KeyboardEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, CheckCircle2, ChevronDown, Code2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 import HelpTooltip from './HelpTooltip'
@@ -14,7 +14,28 @@ type SchemaFormDialogProps = {
   sparse?: boolean
 }
 
-type UnionDraft = { variant: number; value: unknown }
+type UnionDraft = { variant: number; value: unknown; values?: unknown[] }
+
+export type ExpressionValidationResult = { valid: boolean; message?: string }
+export type ExpressionValidator = (path: string) => Promise<ExpressionValidationResult>
+
+type SchemaFormFieldsProps = {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  sparse?: boolean
+  showAll?: boolean
+  baseline?: unknown
+  addLabel?: string
+  removeLabel?: string
+  rootTabs?: boolean
+  collapsibleObjects?: boolean
+  expressionValidator?: ExpressionValidator
+  issues?: Array<{ path?: string; message: string; level?: 'error' | 'warning' }>
+}
+
+const ExpressionValidationContext = createContext<ExpressionValidator | undefined>(undefined)
+const FieldIssueContext = createContext<SchemaFormFieldsProps['issues']>([])
 
 export default function SchemaFormDialog({
   schema,
@@ -98,7 +119,17 @@ export default function SchemaFormDialog({
   )
 }
 
-export function SchemaFormFields({
+export function SchemaFormFields(props: SchemaFormFieldsProps) {
+  return (
+    <FieldIssueContext.Provider value={props.issues ?? []}>
+      <ExpressionValidationContext.Provider value={props.expressionValidator}>
+        <SchemaFormFieldsContent {...props} />
+      </ExpressionValidationContext.Provider>
+    </FieldIssueContext.Provider>
+  )
+}
+
+function SchemaFormFieldsContent({
   schema,
   value,
   onChange,
@@ -109,18 +140,8 @@ export function SchemaFormFields({
   removeLabel = 'Keep inherited',
   rootTabs = false,
   collapsibleObjects = false,
-}: {
-  schema: DynamicFormSchema
-  value: unknown
-  onChange: (value: unknown) => void
-  sparse?: boolean
-  showAll?: boolean
-  baseline?: unknown
-  addLabel?: string
-  removeLabel?: string
-  rootTabs?: boolean
-  collapsibleObjects?: boolean
-}) {
+}: SchemaFormFieldsProps) {
+  const issues = useContext(FieldIssueContext)
   const tabKeys = useMemo(() => rootTabs && schema.type === 'object' ? Object.keys(schema.properties ?? {}) : [], [rootTabs, schema])
   const [activeTab, setActiveTab] = useState(tabKeys[0] ?? '')
 
@@ -157,6 +178,7 @@ export function SchemaFormFields({
           {tabKeys.map((tabKey, index) => {
             const tabSchema = schema.properties?.[tabKey]
             const configured = Object.prototype.hasOwnProperty.call(object, tabKey)
+            const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, tabKey))
             return (
               <button
                 id={tabID(tabKey)}
@@ -166,12 +188,12 @@ export function SchemaFormFields({
                 aria-selected={tabKey === key}
                 aria-controls={panelID(tabKey)}
                 tabIndex={tabKey === key ? 0 : -1}
-                className={tabKey === key ? 'active' : ''}
+                className={`${tabKey === key ? 'active' : ''}${invalid ? ' invalid' : ''}`.trim()}
                 onClick={() => setActiveTab(tabKey)}
                 onKeyDown={(event) => selectAdjacentTab(event, index)}
               >
                 <span>{tabSchema?.title || humanize(tabKey)}</span>
-                <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>
+                <small className={invalid ? 'invalid' : configured ? 'configured' : ''}>{invalid ? 'Error' : configured ? 'Set' : 'Empty'}</small>
               </button>
             )
           })}
@@ -239,8 +261,11 @@ function SchemaField({
   collapsibleObjects: boolean
   rootTabContent?: boolean
 }) {
+  const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
+  const fieldIssues = issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path, true)) ?? []
+  const branchInvalid = Boolean(path) && issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path))
   const [sectionOpen, setSectionOpen] = useState(path.split('.').length === 1)
   if (schema.type === 'object') {
     const object = isRecord(value) ? value : {}
@@ -249,7 +274,7 @@ function SchemaField({
     const fields = (
       <>
         {schema.description && path && !collapsibleObjects && <p>{schema.description}</p>}
-        {Object.entries(schema.properties ?? {}).map(([key, child]) => {
+        {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key)
           const required = child.required === true || requiredKeys.includes(key)
@@ -308,7 +333,7 @@ function SchemaField({
     }
     if (path && collapsibleObjects) {
       return (
-        <details className="schema-section" open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
+        <details className={`schema-section${branchInvalid ? ' schema-invalid' : ''}`} open={sectionOpen || branchInvalid} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
           <summary>
             <span className="schema-section-title">
               <span>{title}</span>
@@ -322,7 +347,7 @@ function SchemaField({
       )
     }
     return (
-      <fieldset className="schema-object">
+      <fieldset className={`schema-object${branchInvalid ? ' schema-invalid' : ''}`}>
         {path && <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>}
         {fields}
       </fieldset>
@@ -335,7 +360,7 @@ function SchemaField({
     const selectedUnit = canonicalQuantityUnit(schema, storedUnit)
     const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
     return (
-      <label className="schema-field" htmlFor={fieldID}>
+      <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
         <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
         <span className="schema-quantity">
           <input
@@ -358,8 +383,12 @@ function SchemaField({
             {unitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
           </select>
         </span>
+        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
       </label>
     )
+  }
+  if (schema.type === 'expression') {
+    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={title} />{fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}</div>
   }
   if (schema.type === 'entity_assignment') {
     return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} configured={configured} showAll={showAll} />
@@ -388,21 +417,23 @@ function SchemaField({
   }
   if (schema.type === 'boolean') {
     return (
-      <label className="schema-field schema-boolean">
+      <label className={`schema-field schema-boolean${fieldIssues.length ? ' schema-field-invalid' : ''}`}>
         <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
         <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
+        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
       </label>
     )
   }
   if (schema.type === 'enum') {
     return (
-      <label className="schema-field" htmlFor={fieldID}>
+      <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
         <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
           ))}
         </select>
+        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
       </label>
     )
   }
@@ -476,30 +507,47 @@ function SchemaField({
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
     const selected = schema.variants?.[draft.variant] ?? { type: 'json' as const }
+    const variants = schema.variants ?? []
+    const expressionVariant = variants.findIndex((variant) => variant.type === 'expression')
+    const valueVariant = variants.findIndex((variant) => ['quantity', 'number', 'integer'].includes(variant.type))
+    const valueOrExpression = expressionVariant >= 0 && valueVariant >= 0 && variants.length === 2
+    const selectVariant = (variant: number) => {
+      const values = [...(draft.values ?? [])]
+      values[draft.variant] = draft.value
+      onChange({
+        variant,
+        value: values[variant] ?? initialValue(variants[variant] ?? { type: 'json' }, sparse),
+        values,
+      })
+    }
+    const selectedEditor = selected.type === 'expression' && valueOrExpression
+      ? <ExpressionField schema={selected} value={draft.value} path={path} title={title} embedded onChange={(next) => onChange({ ...draft, value: next })} />
+      : <SchemaField schema={selected} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} onChange={(next) => onChange({ ...draft, value: next })} />
     const unionEditor = (
       <>
-        <label className="schema-field">
-          <span>Value type</span>
-          <select
-            value={draft.variant}
-            onChange={(event) => {
-              const variant = Number(event.target.value)
-              onChange({ variant, value: initialValue(schema.variants?.[variant] ?? { type: 'json' }, sparse) })
-            }}
-          >
-            {(schema.variants ?? []).map((variant, index) => (
-              <option value={index} key={index}>{variant.title || humanize(variant.type)}</option>
-            ))}
-          </select>
-        </label>
-        <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} onChange={(next) => onChange({ ...draft, value: next })} />
+        {valueOrExpression ? (
+          <div className="schema-value-kind" role="group" aria-label={`${title} value type`}>
+            <button type="button" className={draft.variant === valueVariant ? 'active' : ''} aria-pressed={draft.variant === valueVariant} onClick={() => selectVariant(valueVariant)}>Fixed value</button>
+            <button type="button" className={draft.variant === expressionVariant ? 'active' : ''} aria-pressed={draft.variant === expressionVariant} onClick={() => selectVariant(expressionVariant)}><Code2 size={13} /> Expression</button>
+          </div>
+        ) : (
+          <label className="schema-field">
+            <span>Value type</span>
+            <select value={draft.variant} onChange={(event) => selectVariant(Number(event.target.value))}>
+              {variants.map((variant, index) => (
+                <option value={index} key={index}>{variant.title || humanize(variant.type)}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className={valueOrExpression ? 'schema-value-or-expression-editor' : ''}>{selectedEditor}</div>
       </>
     )
     if (rootTabContent) {
       return <div className="schema-root-union">{unionEditor}</div>
     }
     return (
-      <fieldset className="schema-object">
+      <fieldset className={`schema-object ${valueOrExpression ? 'schema-value-or-expression' : ''}`}>
         <legend>{title}</legend>
         {unionEditor}
       </fieldset>
@@ -507,14 +555,15 @@ function SchemaField({
   }
   if (schema.type === 'json') {
     return (
-      <label className="schema-field" htmlFor={fieldID}>
+      <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
         <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
+        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
       </label>
     )
   }
   return (
-    <label className="schema-field" htmlFor={fieldID}>
+    <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
       <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
       <input
         id={fieldID}
@@ -528,7 +577,139 @@ function SchemaField({
         value={String(value ?? '')}
         onChange={(event) => onChange(event.target.value)}
       />
+      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
     </label>
+  )
+}
+
+function issueMatchesPath(issuePath: string | undefined, fieldPath: string, exact = false): boolean {
+  if (!issuePath || !fieldPath) return false
+  const normalized = issuePath
+    .replace(/^simulation_params\.?/, '')
+    .replace(/\[(\d+)\]/g, '.$1')
+    .replace(/^\./, '')
+  if (exact) return normalized === fieldPath
+  return normalized === fieldPath || normalized.startsWith(`${fieldPath}.`)
+}
+
+function ExpressionField({
+  schema,
+  value,
+  onChange,
+  path,
+  title,
+  embedded = false,
+}: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  path: string
+  title: string
+  embedded?: boolean
+}) {
+  const validator = useContext(ExpressionValidationContext)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const validationSequence = useRef(0)
+  const object = isRecord(value) ? value : {}
+  const expression = String(object.expression ?? '')
+  const [status, setStatus] = useState<'idle' | 'checking' | 'valid' | 'error'>('idle')
+  const [message, setMessage] = useState('')
+  const update = (nextExpression: string, outputUnits: unknown = object.output_units) => {
+    const next: Record<string, unknown> = {
+      type_name: schema.wire_discriminator?.value ?? 'expression',
+      expression: nextExpression,
+    }
+    if (typeof outputUnits === 'string' && outputUnits.trim()) next.output_units = outputUnits
+    onChange(next)
+    setStatus('idle')
+    setMessage('')
+  }
+  const validate = async () => {
+    const trimmed = expression.trim()
+    if (!trimmed) {
+      setStatus('error')
+      setMessage('Enter an expression before validation.')
+      return
+    }
+    if (trimmed.includes('^')) {
+      setStatus('error')
+      setMessage('Use ** for powers; Flow360 does not allow ^ in typed expressions.')
+      return
+    }
+    if (!validator) return
+    const sequence = ++validationSequence.current
+    setStatus('checking')
+    setMessage('Checking with the installed Flow360 schema…')
+    try {
+      const result = await validator(path)
+      if (sequence !== validationSequence.current) return
+      setStatus(result.valid ? 'valid' : 'error')
+      setMessage(result.message ?? (result.valid ? 'Valid Flow360 expression.' : 'Flow360 rejected this expression.'))
+    } catch (cause) {
+      if (sequence !== validationSequence.current) return
+      setStatus('error')
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const insertSuggestion = (suggestion: string) => {
+    const token = suggestion.endsWith('()') ? suggestion.slice(0, -1) : suggestion
+    const separator = expression && !/\s$/.test(expression) ? ' ' : ''
+    update(`${expression}${separator}${token}`)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+  const statusID = `${path.replace(/[^a-zA-Z0-9_-]/g, '-')}-expression-status`
+  const suggestions = [...(schema.unit_suggestions ?? []), ...(schema.function_suggestions ?? []).slice(0, 6)]
+  return (
+    <div className={`schema-expression ${embedded ? 'embedded' : ''}`}>
+      {!embedded && <FieldLabel schema={schema} title={title} path={path} descriptionTooltip />}
+      <div className="schema-expression-input-wrap">
+        <Code2 size={16} aria-hidden="true" />
+        <textarea
+          ref={inputRef}
+          aria-label={`${title} expression`}
+          aria-describedby={statusID}
+          rows={2}
+          spellCheck={false}
+          placeholder={schema.example || (schema.expected_unit ? `1 * u.${schema.expected_unit}` : 'Enter a Flow360 expression')}
+          value={expression}
+          onChange={(event) => update(event.target.value)}
+          onBlur={() => void validate()}
+        />
+      </div>
+      <div className="schema-expression-meta">
+        <span>
+          Expected: <strong>{schema.expected_dimension || schema.expected_unit || 'schema-compatible value'}</strong>
+          {schema.expected_unit && schema.expected_dimension && <small> · {schema.expected_unit}</small>}
+        </span>
+        {!schema.allow_runtime && <span>Compile-time expression</span>}
+      </div>
+      {suggestions.length > 0 && (
+        <div className="schema-expression-suggestions" aria-label="Expression suggestions">
+          {suggestions.map((suggestion) => (
+            <button key={suggestion} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => insertSuggestion(suggestion)}>
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
+      <div id={statusID} className={`schema-expression-status ${status}`} aria-live="polite">
+        {status === 'checking' && <RefreshCw size={13} className="spin" />}
+        {status === 'valid' && <CheckCircle2 size={13} />}
+        {status === 'error' && <AlertCircle size={13} />}
+        {status !== 'idle' && <span>{message}</span>}
+      </div>
+      <details className="schema-expression-advanced">
+        <summary>Advanced</summary>
+        <label>
+          Output units
+          <input
+            value={String(object.output_units ?? '')}
+            placeholder="Infer from the expression"
+            onChange={(event) => update(expression, event.target.value)}
+          />
+        </label>
+      </details>
+    </div>
   )
 }
 
@@ -694,7 +875,7 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
       const requiredKeys = Array.isArray(schema.required) ? schema.required : []
       return Object.fromEntries(
         Object.entries(schema.properties ?? {})
-          .filter(([key, child]) => !sparse || child.required === true || requiredKeys.includes(key))
+          .filter(([key, child]) => !sparse || child.required === true || requiredKeys.includes(key) || isDiscriminatorDefault(key, child))
           .map(([key, child]) => [key, initialValue(child, sparse)]),
       )
     }
@@ -702,6 +883,11 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
       return []
     case 'quantity':
       return { value: '', units: schema.unit ?? '' }
+    case 'expression':
+      return {
+        [schema.wire_discriminator?.field ?? 'type_name']: schema.wire_discriminator?.value ?? 'expression',
+        expression: '',
+      }
     case 'entity_assignment':
       return {
         model: schema.default_model ?? schema.model_choices?.[0]?.value ?? '',
@@ -742,6 +928,14 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
       return Array.isArray(value)
         ? value.map((item) => hydrateSchemaValue(schema.items ?? { type: 'json' }, item, sparse))
         : initialValue(schema, sparse)
+    case 'expression': {
+      const object = isRecord(value) ? value : {}
+      return {
+        ...object,
+        [schema.wire_discriminator?.field ?? 'type_name']: schema.wire_discriminator?.value ?? 'expression',
+        expression: String(object.expression ?? ''),
+      }
+    }
     case 'union': {
       const variants = schema.variants ?? []
       const variant = Math.max(0, variants.findIndex((candidate) => schemaValueMatches(candidate, value)))
@@ -781,6 +975,18 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
         throw new Error(`${schema.title || schema.path || 'Quantity'} has an unsupported stored unit.`)
       }
       return { value: numeric, units }
+    }
+    case 'expression': {
+      const object = isRecord(value) ? value : {}
+      const expression = String(object.expression ?? '').trim()
+      if (!expression) throw new Error(`${schema.title || schema.path || 'Expression'} requires an expression.`)
+      const result: Record<string, unknown> = {
+        [schema.wire_discriminator?.field ?? 'type_name']: schema.wire_discriminator?.value ?? 'expression',
+        expression,
+      }
+      const outputUnits = String(object.output_units ?? '').trim()
+      if (outputUnits) result.output_units = outputUnits
+      return result
     }
     case 'entity_assignment': {
       const object = isRecord(value) ? value : {}
@@ -829,10 +1035,20 @@ function isUnionDraft(value: unknown): value is UnionDraft {
   return isRecord(value) && typeof value.variant === 'number' && 'value' in value
 }
 
+function isDiscriminatorDefault(key: string, schema: DynamicFormSchema): boolean {
+  return (key === 'type' || key === 'type_name')
+    && schema.type === 'enum'
+    && schema.default !== undefined
+    && schema.options?.length === 1
+}
+
 function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean {
   switch (schema.type) {
     case 'quantity':
       return isRecord(value) && 'value' in value && 'units' in value
+    case 'expression':
+      return isRecord(value)
+        && (value.type_name === 'expression' || typeof value.expression === 'string')
     case 'object':
     case 'entity_assignment':
       return isRecord(value)

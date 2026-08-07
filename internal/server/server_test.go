@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -630,6 +631,49 @@ fi
 	app.updateFlow360DraftParameters(context)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("array payload got %d, want 400", recorder.Code)
+	}
+}
+
+func TestValidateDraftParametersFiltersExpressionIssuesWithoutWritingDraft(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	binaryScript := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+case "$1 $2" in
+  "draft info") printf '{"source_type":"Geometry"}' ;;
+  "draft state") printf '{"state":"draft"}' ;;
+  "draft simulation-params") printf '{"unit_system":{"name":"SI"}}' ;;
+esac
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(binaryScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pythonPath := filepath.Join(dir, "python")
+	pythonScript := `#!/bin/sh
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"value_error","path":"time_stepping.step_size","message":"Dimension mismatch","stages":["Case"]},{"level":"error","code":"missing","path":"models","message":"Models required","stages":["Case"]}],"form_schema":{"type":"object","properties":{}}}'
+`
+	if err := os.WriteFile(pythonPath, []byte(pythonScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", pythonPath)
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/drafts/draft-1/parameters/validate", strings.NewReader(`{
+		"simulation_params":{"time_stepping":{"step_size":{"type_name":"expression","expression":"1 * u.m"}}},
+		"paths":["time_stepping.step_size"]
+	}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	app.validateFlow360DraftParameters(context)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"valid":false`) || strings.Contains(recorder.Body.String(), "Models required") {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	args, _ := os.ReadFile(argsPath)
+	if strings.Contains(string(args), "simulation-params set") {
+		t.Fatalf("validation mutated the Draft: %s", args)
 	}
 }
 

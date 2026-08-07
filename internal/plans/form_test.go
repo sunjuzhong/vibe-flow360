@@ -62,6 +62,30 @@ func TestSanitizeFormValuesRemovesCanonicalQuantityDiscriminator(t *testing.T) {
 	}
 }
 
+func TestValidateFormValuesPreservesExpressionDiscriminator(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"step_size":{"type":"union","variants":[{"type":"quantity","unit_options":["s"],"value_schema":{"type":"number"}},{"type":"expression"}]}}}`)
+	valid := json.RawMessage(`{"step_size":{"type_name":"expression","expression":"(123 - 5) * u.s"}}`)
+	if err := ValidateFormValues(schema, valid); err != nil {
+		t.Fatal(err)
+	}
+	sanitized, removed, err := SanitizeFormValues(schema, valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 || !strings.Contains(string(sanitized), `"type_name":"expression"`) {
+		t.Fatalf("Expression discriminator was removed: removed=%#v values=%s", removed, sanitized)
+	}
+	for _, invalid := range []json.RawMessage{
+		json.RawMessage(`{"step_size":{"expression":"1 * u.s"}}`),
+		json.RawMessage(`{"step_size":{"type_name":"number","expression":"1 * u.s"}}`),
+		json.RawMessage(`{"step_size":{"type_name":"expression","expression":""}}`),
+	} {
+		if err := ValidateFormValues(schema, invalid); err == nil {
+			t.Fatalf("invalid Expression envelope was accepted: %s", invalid)
+		}
+	}
+}
+
 func TestQuantityUnitsNormalizeOnlyDeclaredFlow360Aliases(t *testing.T) {
 	schema := json.RawMessage(`{
 		"type":"object","required":["length"],"properties":{

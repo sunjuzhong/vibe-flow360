@@ -73,6 +73,75 @@ describe('schema-driven Flow360 form', () => {
     })
   })
 
+  it('round-trips Flow360 typed Expressions with their discriminator', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      title: 'Step Size',
+      variants: [
+        { type: 'quantity', unit: 's', value_schema: { type: 'number' } },
+        {
+          type: 'expression',
+          expected_unit: 's',
+          expected_dimension: 'time',
+          wire_discriminator: { field: 'type_name', value: 'expression' },
+          unit_suggestions: ['u.s'],
+          function_suggestions: ['math.sqrt()'],
+        },
+      ],
+    }
+    const canonical = { type_name: 'expression', expression: '(123 - 5) * u.s' }
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+    expect(hydrated).toEqual({ variant: 1, value: canonical })
+    expect(serializeValue(schema, hydrated)).toEqual(canonical)
+
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: hydrated,
+      onChange: () => undefined,
+    }))
+    expect(markup).toContain('Fixed value')
+    expect(markup).toContain('Expression')
+    expect(markup).toContain('Expected:')
+    expect(markup).toContain('(123 - 5) * u.s')
+  })
+
+  it('keeps a selected object union discriminator in sparse form state', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      variants: [
+        {
+          type: 'object',
+          title: 'Steady',
+          properties: {
+            type_name: { type: 'enum', options: ['Steady'], default: 'Steady' },
+          },
+        },
+        {
+          type: 'object',
+          title: 'Unsteady',
+          properties: {
+            type_name: { type: 'enum', options: ['Unsteady'], default: 'Unsteady' },
+            steps: { type: 'integer', required: true },
+          },
+        },
+      ],
+    }
+
+    const unsteady = initialValue(schema.variants![1], true)
+    expect(unsteady).toEqual({ type_name: 'Unsteady', steps: '' })
+    expect(serializeValue(schema, { variant: 1, value: unsteady }, true)).toEqual({
+      type_name: 'Unsteady',
+      steps: 0,
+    })
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { variant: 1, value: unsteady },
+      onChange: () => undefined,
+      sparse: true,
+    }))
+    expect(markup).not.toContain('Type Name')
+  })
+
   it('normalizes declared legacy unit names to Flow360 wire tokens', () => {
     const schema: DynamicFormSchema = {
       type: 'quantity',

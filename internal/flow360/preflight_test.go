@@ -3,6 +3,7 @@ package flow360
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -154,6 +155,54 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	if aliases, _ := velocity["unit_aliases"].(map[string]any); aliases["meter/second"] != "m/s" {
 		t.Fatalf("expected legacy velocity alias normalization, got %#v", velocity)
 	}
+	velocityField := findSchemaByTitle(caseSchema, "Velocity Magnitude")
+	expression := findSchemaByType(velocityField, "expression")
+	if expression == nil || expression["expected_unit"] != "m/s" || expression["allow_runtime"] != false {
+		t.Fatalf("expected a typed compile-time velocity Expression, got expression=%#v field=%#v", expression, velocityField)
+	}
+	discriminator, _ := expression["wire_discriminator"].(map[string]any)
+	if discriminator["field"] != "type_name" || discriminator["value"] != "expression" {
+		t.Fatalf("Expression wire discriminator is missing: %#v", expression)
+	}
+	functions, _ := expression["function_suggestions"].([]any)
+	if !slices.Contains(functions, any("math.sqrt()")) {
+		t.Fatalf("installed Flow360 math suggestions were not projected: %#v", functions)
+	}
+}
+
+func TestInstalledSchemaValidatesTypedExpressionWireAndDimensions(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	// Draft.get_simulation_params() omits version/unit_system because that
+	// metadata is implicit in the remote Draft context. Preflight must still
+	// exercise Flow360's typed Expression dimension validation.
+	base := `{"time_stepping":{"type_name":"Unsteady","steps":10,"step_size":%s}}`
+	invalid := fmt.Sprintf(base, `{"type_name":"expression","expression":"1 * u.m"}`)
+	result, err := NewClient().PreflightSimulationParams(context.Background(), "Geometry", "case", json.RawMessage(invalid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preflightHasIssueAt(result, "time_stepping.step_size") {
+		t.Fatalf("wrong Expression dimensions were not reported: %#v", result.Issues)
+	}
+	valid := fmt.Sprintf(base, `{"type_name":"expression","expression":"(123 - 5) * u.s"}`)
+	result, err = NewClient().PreflightSimulationParams(context.Background(), "Geometry", "case", json.RawMessage(valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preflightHasIssueAt(result, "time_stepping.step_size") {
+		t.Fatalf("valid typed Expression was rejected: %#v", result.Issues)
+	}
+}
+
+func preflightHasIssueAt(result PreflightResult, path string) bool {
+	for _, issue := range result.Issues {
+		if issue.Path == path || strings.HasPrefix(issue.Path, path+".") {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLegacyMesherTargetCountProducesRemovalRecovery(t *testing.T) {
@@ -236,6 +285,15 @@ func findSchemaByType(node map[string]any, nodeType string) map[string]any {
 	}
 	if properties, ok := node["properties"].(map[string]any); ok {
 		for _, child := range properties {
+			if object, ok := child.(map[string]any); ok {
+				if found := findSchemaByType(object, nodeType); found != nil {
+					return found
+				}
+			}
+		}
+	}
+	if variants, ok := node["variants"].([]any); ok {
+		for _, child := range variants {
 			if object, ok := child.(map[string]any); ok {
 				if found := findSchemaByType(object, nodeType); found != nil {
 					return found

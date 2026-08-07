@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, Code2, ListTree, RefreshCw, Save } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type DynamicFormSchema } from '../api/client'
-import { hydrateSchemaValue, SchemaFormFields, serializeValue } from './SchemaForm'
+import { hydrateSchemaValue, SchemaFormFields, serializeValue, type ExpressionValidator } from './SchemaForm'
 
 type EditorMode = 'form' | 'json'
 
@@ -66,6 +66,16 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
     }
   }
 
+  const validateExpression: ExpressionValidator = useCallback(async (path) => {
+    if (!schema) return { valid: false, message: 'The Flow360 form schema is unavailable.' }
+    const candidate = buildDraftParameters(schema, formValue)
+    const result = await api.validateDraftParameters(draftId, candidate, [path])
+    return {
+      valid: result.valid,
+      message: result.valid ? 'Valid with the installed Flow360 schema.' : result.issues[0]?.message,
+    }
+  }, [draftId, formValue, schema])
+
   const save = async () => {
     try {
       setSaving(true)
@@ -76,6 +86,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
         : schema
           ? buildDraftParameters(schema, formValue)
           : baseline
+      if (schema) {
+        const expressionPaths = configuredExpressionPaths(schema, next)
+        if (expressionPaths.length) {
+          const validation = await api.validateDraftParameters(draftId, next, expressionPaths)
+          if (!validation.valid) {
+            throw new Error(validation.issues.map((issue) => `${issue.path || 'Expression'}: ${issue.message}`).join('\n'))
+          }
+        }
+      }
       const response = await api.updateDraftParameters(draftId, next)
       const canonical = response.simulation_params
       setJSONValue(JSON.stringify(canonical, null, 2))
@@ -129,6 +148,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
             removeLabel="Remove"
             rootTabs
             collapsibleObjects
+            expressionValidator={validateExpression}
             onChange={(next) => {
               setFormValue(next)
               setDirty(true)
@@ -158,6 +178,44 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
       </p>
     </div>
   )
+}
+
+export function configuredExpressionPaths(schema: DynamicFormSchema, value: unknown, path = ''): string[] {
+  if (schema.type === 'expression') {
+    return isRecord(value) && value.type_name === 'expression' && typeof value.expression === 'string'
+      ? [path]
+      : []
+  }
+  if (schema.type === 'object') {
+    if (!isRecord(value)) return []
+    return Object.entries(schema.properties ?? {}).flatMap(([key, child]) => (
+      Object.prototype.hasOwnProperty.call(value, key)
+        ? configuredExpressionPaths(child, value[key], path ? `${path}.${key}` : key)
+        : []
+    ))
+  }
+  if (schema.type === 'array') {
+    return Array.isArray(value)
+      ? value.flatMap((item, index) => configuredExpressionPaths(schema.items ?? { type: 'json' }, item, `${path}.${index}`))
+      : []
+  }
+  if (schema.type === 'union') {
+    const variant = (schema.variants ?? []).find((candidate) => schemaValueMatchesForValidation(candidate, value))
+    return variant ? configuredExpressionPaths(variant, value, path) : []
+  }
+  return []
+}
+
+function schemaValueMatchesForValidation(schema: DynamicFormSchema, value: unknown): boolean {
+  if (schema.type === 'expression') return isRecord(value) && value.type_name === 'expression'
+  if (schema.type === 'quantity') return isRecord(value) && 'value' in value && 'units' in value
+  if (schema.type === 'object') return isRecord(value)
+  if (schema.type === 'array') return Array.isArray(value)
+  if (schema.type === 'string') return typeof value === 'string'
+  if (schema.type === 'boolean') return typeof value === 'boolean'
+  if (schema.type === 'integer') return typeof value === 'number' && Number.isInteger(value)
+  if (schema.type === 'number') return typeof value === 'number'
+  return false
 }
 
 export function parseParameterJSON(value: string): Record<string, unknown> {
