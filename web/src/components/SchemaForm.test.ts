@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { hydrateSchemaValue, initialValue, SchemaFormFields, serializeValue } from './SchemaForm'
+import { cleanSchemaDescription, hydrateSchemaValue, initialValue, SchemaFormFields, serializeValue } from './SchemaForm'
 
 describe('schema-driven Flow360 form', () => {
   it('creates and serializes nested values without field-specific code', () => {
@@ -251,5 +251,37 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).toContain('Defaults')
     expect(markup).toContain('Target count')
     expect(markup).toContain('role="tabpanel"')
+  })
+
+  it('moves Draft descriptions into help tooltips and removes schema reference noise', () => {
+    const description = 'Solver settings and numerical models. See ref: `Volume Models <volume_models>` and :ref:`Surface Models <surface_models>` for more details.'
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        models: {
+          type: 'array',
+          title: 'Models',
+          description,
+          items: { type: 'string' },
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: {},
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+
+    expect(cleanSchemaDescription(description)).toBe('Solver settings and numerical models.')
+    expect(markup).toContain('aria-label="About Models"')
+    expect(markup).toContain('role="tooltip"')
+    expect(markup).toContain('Solver settings and numerical models.')
+    expect(markup).not.toContain('volume_models')
+    expect(markup).not.toContain('surface_models')
+    expect(markup).not.toContain('See ref')
   })
 })

@@ -1774,6 +1774,10 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .draft-parameter-form .schema-section > summary { display: flex; min-height: 46px; align-items: center; gap: 8px; padding: 0 13px; color: #4d5547; background: #f4f5f0; font-size: 13px; font-weight: 700; cursor: pointer; list-style: none; }
 .draft-parameter-form .schema-section > summary::-webkit-details-marker { display: none; }
 .draft-parameter-form .schema-section > summary > span { min-width: 0; flex: 1; }
+.draft-parameter-form .schema-section-title,
+.draft-parameter-form .schema-legend-content,
+.draft-parameter-form .schema-title-with-help { display: inline-flex; align-items: center; gap: 5px; }
+.draft-parameter-form .schema-section-title > span { min-width: 0; }
 .draft-parameter-form .schema-section > summary > svg { flex: 0 0 auto; color: #81887c; transition: transform .18s ease; }
 .draft-parameter-form .schema-section[open] > summary > svg { transform: rotate(180deg); }
 .draft-parameter-form .schema-section-body { padding: 14px; border-top: 1px solid #e1e4dc; }
@@ -1795,6 +1799,8 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .draft-parameter-form .schema-remove-change { padding: 7px 10px; font-size: 11px; }
 .draft-parameter-form .schema-field-state { font-size: 9px !important; }
 .draft-parameter-form .schema-root-remove { margin-top: 12px; }
+.draft-parameter-form .help-tooltip__trigger { width: 22px; height: 22px; }
+.draft-parameter-form .help-tooltip__content { width: max-content; max-width: min(340px, calc(100vw - 48px)); font-size: 11px; line-height: 1.5; font-weight: 500; }
 .detail-empty,.detail-state { display: flex; min-height: 180px; align-items: center; justify-content: center; gap: 8px; color: #92978d; font-size: 9px; text-align: center; }
 .detail-state { flex-direction: column; border-style: dashed; }
 .detail-state.error { color: #a45240; }

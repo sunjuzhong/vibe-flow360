@@ -23,6 +23,8 @@ export default function HelpTooltip({
         className="help-tooltip__trigger"
         aria-label={label}
         aria-describedby={tooltipId}
+        onClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <CircleHelp size={12} strokeWidth={1.8} aria-hidden="true" />
       </button>

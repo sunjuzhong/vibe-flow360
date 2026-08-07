@@ -2,6 +2,7 @@ import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
+import HelpTooltip from './HelpTooltip'
 
 type SchemaFormDialogProps = {
   schema: DynamicFormSchema
@@ -244,7 +245,7 @@ function SchemaField({
     const requiredKeys = Array.isArray(schema.required) ? schema.required : []
     const fields = (
       <>
-        {schema.description && path && <p>{schema.description}</p>}
+        {schema.description && path && !collapsibleObjects && <p>{schema.description}</p>}
         {Object.entries(schema.properties ?? {}).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key)
@@ -253,9 +254,12 @@ function SchemaField({
             return (
               <div className="schema-add-field" key={key}>
                 <span>
-                  <strong>{child.title || humanize(key)}</strong>
+                  <strong className="schema-title-with-help">
+                    {child.title || humanize(key)}
+                    {collapsibleObjects && <SchemaDescriptionHelp description={child.description} title={child.title || humanize(key)} />}
+                  </strong>
                   {baselineObject[key] !== undefined && <small>Inherited: {compactValue(baselineObject[key])}</small>}
-                  {child.description && <small>{child.description}</small>}
+                  {child.description && !collapsibleObjects && <small>{child.description}</small>}
                 </span>
                 <button type="button" onClick={() => onChange({ ...object, [key]: initialValue(child, true) })}>
                   <Plus size={13} /> {addLabel}
@@ -300,7 +304,10 @@ function SchemaField({
       return (
         <details className="schema-section" open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
           <summary>
-            <span>{title}</span>
+            <span className="schema-section-title">
+              <span>{title}</span>
+              <SchemaDescriptionHelp description={schema.description} title={title} />
+            </span>
             {showAll && !configured && <small className="schema-field-state">Not configured</small>}
             <ChevronDown size={16} />
           </summary>
@@ -323,7 +330,7 @@ function SchemaField({
     const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
     return (
       <label className="schema-field" htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
         <span className="schema-quantity">
           <input
             id={fieldID}
@@ -377,14 +384,14 @@ function SchemaField({
     return (
       <label className="schema-field schema-boolean">
         <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
       </label>
     )
   }
   if (schema.type === 'enum') {
     return (
       <label className="schema-field" htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
@@ -397,8 +404,14 @@ function SchemaField({
     const array = Array.isArray(value) ? value : []
     return (
       <fieldset className="schema-object schema-array">
-        <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>
-        {schema.description && <p>{schema.description}</p>}
+        <legend>
+          <span className="schema-legend-content">
+            {title}
+            {collapsibleObjects && <SchemaDescriptionHelp description={schema.description} title={title} />}
+            {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+          </span>
+        </legend>
+        {schema.description && !collapsibleObjects && <p>{schema.description}</p>}
         {array.map((item, index) => (
           <div className="schema-array-item" key={index}>
             <SchemaField
@@ -451,14 +464,14 @@ function SchemaField({
   if (schema.type === 'json') {
     return (
       <label className="schema-field" htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
+        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
       </label>
     )
   }
   return (
     <label className="schema-field" htmlFor={fieldID}>
-      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} />
+      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />
       <input
         id={fieldID}
         type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
@@ -586,23 +599,48 @@ function FieldLabel({
   path,
   configured = true,
   showAll = false,
+  descriptionTooltip = false,
 }: {
   schema: DynamicFormSchema
   title: string
   path: string
   configured?: boolean
   showAll?: boolean
+  descriptionTooltip?: boolean
 }) {
   return (
     <span className="schema-field-label">
       <strong>
         {title}{schema.required === true ? ' *' : ''}
+        {descriptionTooltip && <SchemaDescriptionHelp description={schema.description} title={title} />}
         {showAll && !configured && <small className="schema-field-state">Not configured</small>}
       </strong>
       <code>{path}</code>
-      {schema.description && <small>{schema.description}</small>}
+      {schema.description && !descriptionTooltip && <small>{schema.description}</small>}
     </span>
   )
+}
+
+function SchemaDescriptionHelp({ description, title }: { description?: string; title: string }) {
+  const help = cleanSchemaDescription(description)
+  if (!help) return null
+  return (
+    <HelpTooltip label={`About ${title}`} placement="bottom" align="start">
+      {help}
+    </HelpTooltip>
+  )
+}
+
+export function cleanSchemaDescription(description?: string): string {
+  if (!description) return ''
+  const readable = description
+    .replace(/:(?:ref|class|meth|attr):`([^`<]+?)(?:\s*<[^>]+>)?`/gi, '$1')
+    .replace(/`([^`<]+?)\s*<[^>]+>`/g, '$1')
+    .replace(/\s+See\s+(?:also\s+)?(?:ref(?:erence)?s?|details?)\s*:?.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:])/g, '$1')
+    .trim()
+  return readable || description.replace(/\s+/g, ' ').trim()
 }
 
 export function initialValue(schema: DynamicFormSchema, sparse = false): unknown {
