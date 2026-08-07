@@ -30,6 +30,7 @@ import CopilotPanel from '../components/CopilotPanel'
 import DraftParametersDialog from '../components/DraftParametersDialog'
 import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
+import InspectorDisclosure from '../components/InspectorDisclosure'
 import PlanPanel from '../components/PlanPanel'
 import { ProjectShellAction } from '../components/ProjectShellAction'
 import ProjectContextBar from '../components/ProjectContextBar'
@@ -810,8 +811,7 @@ export default function ProjectPage() {
               <Info size={15} /><span>Resource details</span>
               <button onClick={closePanel} aria-label="Close details"><X size={15} /></button>
             </div>
-            <div className="inspector-section">
-              <p className="eyebrow">RESOURCE</p>
+            <InspectorDisclosure label="Resource">
               <dl>
                 <div><dt>Name</dt><dd>{selected.name}</dd></div>
                 <div><dt>Type</dt><dd><span className="type-badge">{selected.type}</span></dd></div>
@@ -824,16 +824,15 @@ export default function ProjectPage() {
                 <div><dt>Children</dt><dd>{selected.children.length}</dd></div>
                 <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(detail).toLowerCase()}`}>{resourceStatus(detail)}</span></dd></div>
               </dl>
-            </div>
-            <div className="inspector-section">
-              <p className="eyebrow">PROJECT</p>
+            </InspectorDisclosure>
+            <InspectorDisclosure label="Project">
               <dl>
                 <div><dt>ID</dt><dd className="mono-value"><Flow360IdLink environment={flowStatus?.environment} projectId={projectId} /></dd></div>
                 <div><dt>Solver</dt><dd>{project.solver_version}</dd></div>
                 <div><dt>Root type</dt><dd>{project.root_item.type}</dd></div>
                 <div><dt>Tags</dt><dd>{project.tags.length ? project.tags.join(', ') : 'None'}</dd></div>
               </dl>
-            </div>
+            </InspectorDisclosure>
             {draftMode && activeDraft && (
               <div className="inspector-section">
                 <p className="eyebrow">ACTIVE DRAFT</p>
