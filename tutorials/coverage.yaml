@@ -58,6 +58,20 @@ mappings:
     selector:
       owners: [MeshingParams, MeshingDefaults, BoundaryLayer, SurfaceRefinement]
   - tutorial: T04
+    section: explicit-edge-baseline
+    status: verified
+    artifact: tutorials/T04-airfoil-edge-refinement/simulation.json
+    override: true
+    selector:
+      owners: [AngleBasedRefinement, AspectRatioBasedRefinement, Edge, HeightBasedRefinement, PassiveSpacing, ProjectAnisoSpacing, flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement]
+  - tutorial: T04
+    section: geometry-aware-variant
+    status: verified
+    artifact: tutorials/T04-airfoil-edge-refinement/variants/geometry-aware.patch.json
+    override: true
+    selector:
+      owners: [GeometryRefinement]
+  - tutorial: T04
     section: variants
     status: planned
     selector:

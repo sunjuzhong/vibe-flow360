@@ -148,8 +148,8 @@ vibe-flow360 version
 Open `/tutorials` from the top navigation to enter the tutorial library. T01
 teaches the engineering question, geometry semantics, parameter provenance,
 the controlled 0°/5° variant, and the evidence contract entirely in the Web UI.
-Its final step can create a processed Flow360 Geometry and two preconfigured,
-two configured Flow360 Case Drafts after an explicit Project-creation confirmation;
+Its final step can create a processed Flow360 Geometry and two configured
+Flow360 Case Drafts after an explicit Project-creation confirmation;
 mesh and Case execution remain separately locked behind the normal approval gate.
 
 T03 adds a browser-native cylinder meshing lesson. Its final step creates the
@@ -161,6 +161,11 @@ T02 compares Geometry, SurfaceMesh, and VolumeMesh Project roots. Its final
 step accepts a reviewed SurfaceMesh or VolumeMesh upload, creates the matching
 Project, and prepares α=0°/5° configured Case Drafts while keeping boundary mapping
 and all cloud execution behind explicit review.
+
+T04 teaches multi-element airfoil edge refinement. It compares explicit angle,
+height, aspect-ratio, and projected edge spacing with a mutually exclusive
+Geometry AI passage-preservation strategy, then creates two configured
+VolumeMesh Drafts without submitting cloud meshing.
 
 ## Agent configuration
 

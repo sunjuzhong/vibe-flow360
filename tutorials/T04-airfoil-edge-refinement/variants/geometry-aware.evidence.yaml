@@ -1,0 +1,16 @@
+schema_version: 1
+criteria:
+  - id: geometry-ai-variant-valid
+    category: provenance
+    description: The merge patch replaces explicit edge refinements with GeometryRefinement and enables Geometry AI.
+    artifact: variants/geometry-aware.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: thin-features-preserved
+    category: mesh
+    description: Thin slat and flap features survive geometry preparation without unintended sealing.
+    artifact: surface mesh review
+    required: true
+    check: {method: manual, metric: geometry.thin-features.preserved}
+limitations:
+  - Geometry AI results still require visual review of every critical passage.

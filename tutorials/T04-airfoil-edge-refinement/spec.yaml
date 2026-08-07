@@ -1,0 +1,19 @@
+schema_version: 1
+scenario: multi-element-airfoil-edge-refinement
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_unit: {value: m, provenance: provided}
+  chord: {value: 1, unit: m, provenance: adapted}
+  span: {value: 0.01, unit: m, provenance: provided}
+  leading_edge_angle: {value: 8, unit: degree, provenance: adapted}
+  trailing_edge_height: {value: 0.0007, unit: m, provenance: provided}
+  gap_edge_aspect_ratio: {value: 10, provenance: inferred}
+  geometry_accuracy: {value: 0.00035, unit: m, provenance: inferred}
+  min_passage_size: {value: 0.0015, unit: m, provenance: inferred}
+  gap_treatment_strength: {value: 0.5, provenance: provided}
+review_required:
+  - Confirm faceName and edgeName groups survive CAD import.
+  - Inspect the slat and flap passages for closure, bridging, or under-resolution.
+  - Compare edge-normal spacing transitions before accepting either strategy.
+  - Treat all teaching sizes as a starting point, not a grid-independence result.

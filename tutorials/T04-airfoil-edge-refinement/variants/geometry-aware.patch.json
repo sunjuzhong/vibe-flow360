@@ -1,0 +1,88 @@
+{
+  "meshing": {
+    "defaults": {
+      "geometry_accuracy": {
+        "units": "m",
+        "value": 0.0005
+      },
+      "surface_edge_growth_rate": 1.2
+    },
+    "refinements": [
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "wing",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000201",
+              "private_attribute_sub_components": [
+                "wing-face-1",
+                "wing-face-2"
+              ],
+              "private_attribute_tag_key": "faceName"
+            },
+            {
+              "name": "flap",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000202",
+              "private_attribute_sub_components": [
+                "flap-face-1",
+                "flap-face-2"
+              ],
+              "private_attribute_tag_key": "faceName"
+            },
+            {
+              "name": "slat",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000203",
+              "private_attribute_sub_components": [
+                "slat-face-1",
+                "slat-face-2"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "geometry_accuracy": {
+          "units": "m",
+          "value": 0.00035
+        },
+        "min_passage_size": {
+          "units": "m",
+          "value": 0.0015
+        },
+        "name": "Preserve slat and flap passages",
+        "preserve_thin_geometry": true,
+        "refinement_type": "GeometryRefinement",
+        "sealing_size": {
+          "units": "m",
+          "value": 0.0
+        }
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "symmetry",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000204",
+              "private_attribute_sub_components": [
+                "symmetry-face-1",
+                "symmetry-face-2"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "name": "Keep symmetry spacing",
+        "refinement_type": "PassiveSpacing",
+        "type": "projected"
+      }
+    ]
+  },
+  "private_attribute_asset_cache": {
+    "cad_importer_version": "v2",
+    "use_geometry_AI": true,
+    "use_inhouse_mesher": false
+  }
+}

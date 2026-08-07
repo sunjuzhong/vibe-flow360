@@ -23,6 +23,7 @@ import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
 import T02TutorialPage from './T02TutorialPage'
 import T03TutorialPage from './T03TutorialPage'
+import T04TutorialPage from './T04TutorialPage'
 import {
   t01Evidence,
   t01ParameterCards,
@@ -73,6 +74,7 @@ export default function TutorialPage() {
   const { tutorialId = '' } = useParams()
   if (tutorialId.toUpperCase() === 'T02') return <T02TutorialPage />
   if (tutorialId.toUpperCase() === 'T03') return <T03TutorialPage />
+  if (tutorialId.toUpperCase() === 'T04') return <T04TutorialPage />
   if (tutorialId.toUpperCase() !== 'T01') return <Navigate to="/tutorials" replace />
   return <T01TutorialPage />
 }

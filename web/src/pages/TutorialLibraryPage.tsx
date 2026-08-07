@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CheckCircle2, CircleDot, Clock3, GitBranch, Plane, ShieldCheck } from 'lucide-react'
+import { ArrowRight, BookOpen, CheckCircle2, CircleDot, Clock3, GitBranch, Plane, ShieldCheck, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Start locally. Connect to cloud execution only after review.</p></div></div>
-          <span>3 available</span>
+          <span>4 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -73,6 +73,10 @@ export default function TutorialLibraryPage() {
               </div>
               <span className="tutorial-start">Start tutorial <ArrowRight size={15} /></span>
             </div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T04">
+            <div className="tutorial-card-visual airfoil-card-visual"><Waypoints size={52} strokeWidth={1.1}/><span className="tutorial-id">T04</span><span className="tutorial-level">ADVANCED MESHING</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">MULTI-ELEMENT AIRFOIL</p><h2>Preserve critical edges and narrow gaps</h2><p>Match angle, height, aspect-ratio, and projected spacing to edge risk—then compare a Geometry AI passage-preservation strategy.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 18–22 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>

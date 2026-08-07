@@ -1,0 +1,80 @@
+schema_version: 1
+id: T04
+slug: airfoil-edge-refinement
+title: Preserve multi-element airfoil edges and gaps
+summary: Match edge-spacing strategies to leading edges, sharp trailing edges, and narrow element passages.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: VolumeMesh
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:enum:PassiveSpacing.type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AngleBasedRefinement.type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AngleBasedRefinement.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AngleBasedRefinement.value.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AngleBasedRefinement.value.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AspectRatioBasedRefinement.type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AspectRatioBasedRefinement.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Edge.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Edge.private_attribute_entity_type_name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Edge.private_attribute_id', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Edge.private_attribute_sub_components', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Edge.private_attribute_tag_key', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:HeightBasedRefinement.type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:HeightBasedRefinement.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:HeightBasedRefinement.value.units', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:HeightBasedRefinement.value.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:PassiveSpacing.faces', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:PassiveSpacing.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:PassiveSpacing.refinement_type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:PassiveSpacing.type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ProjectAnisoSpacing.type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.edges', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.method', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.refinement_type', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:AngleBasedRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:AspectRatioBasedRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:Edge', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:HeightBasedRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:PassiveSpacing', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:ProjectAnisoSpacing', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.method=AngleBasedRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.method=AspectRatioBasedRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.method=HeightBasedRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement.method=ProjectAnisoSpacing', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:GeometryRefinement.faces', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.geometry_accuracy', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.geometry_accuracy.units', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.geometry_accuracy.value', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.min_passage_size', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.min_passage_size.units', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.min_passage_size.value', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.name', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.preserve_thin_geometry', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.refinement_type', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.sealing_size', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.sealing_size.units', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:field:GeometryRefinement.sealing_size.value', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+  - {feature: 'schema:type:GeometryRefinement', section: geometry-aware, artifact: variants/geometry-aware.patch.json}
+assets:
+  - path: assets/geometry.csm
+    sha256: fb657ce5007e14d5e655084f09d5febb217cc2a552c8630ba661a9cab6dbe17d
+    source: Flow360 public Tutorial2D30p30n geometry asset
+    license: LGPL-2.1-or-later
+variants:
+  - id: geometry-aware
+    title: Replace explicit edge rules with Geometry AI passage preservation
+    patch: variants/geometry-aware.patch.json
+    evidence: variants/geometry-aware.evidence.yaml

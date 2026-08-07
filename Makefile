@@ -44,6 +44,7 @@ tutorials-test:
 	python3 tutorials/T01-first-lift-drag/build_simulation.py --check
 	python3 tutorials/T02-project-entry-paths/build_simulation.py --check
 	python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
+	python3 tutorials/T04-airfoil-edge-refinement/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:

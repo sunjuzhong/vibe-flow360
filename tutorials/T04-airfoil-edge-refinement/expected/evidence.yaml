@@ -1,0 +1,36 @@
+schema_version: 1
+criteria:
+  - id: pinned-params-valid
+    category: provenance
+    description: Baseline and Geometry AI variant validate from Geometry through VolumeMesh with Flow360 25.10.3.
+    artifact: simulation.json and geometry-aware.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: element-passages-open
+    category: mesh
+    description: Slat and flap passages remain open and contain a smooth, reviewable cell path.
+    artifact: surface and volume mesh review
+    required: true
+    check: {method: manual, metric: mesh.passages.open}
+  - id: critical-edges-resolved
+    category: mesh
+    description: Leading-edge curvature and sharp trailing edges satisfy their selected spacing intent.
+    artifact: surface mesh review
+    required: true
+    check: {method: manual, metric: mesh.edges.approved}
+  - id: anisotropy-transition-reviewed
+    category: mesh
+    description: Projected and edge-normal anisotropic spacing transitions without abrupt jumps or collapsed cells.
+    artifact: volume mesh review
+    required: true
+    check: {method: manual, metric: mesh.anisotropy.approved}
+  - id: strategy-difference-recorded
+    category: report
+    description: The report records whether explicit edge controls or Geometry AI better preserves this CAD and why.
+    artifact: expected/report.md
+    required: true
+    check: {method: manual, metric: decision.strategy.recorded}
+limitations:
+  - The tutorial does not establish mesh convergence or aerodynamic accuracy.
+  - Geometry AI and explicit SurfaceEdgeRefinement are mutually exclusive in this Flow360 version.
+  - No surface mesh, volume mesh, or solver Case is submitted automatically.

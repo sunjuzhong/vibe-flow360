@@ -1,0 +1,13 @@
+schema_version: 1
+engineering_question: Preserve the leading edges, sharp trailing edges, and narrow slat/flap passages of a multi-element airfoil without refining the entire domain.
+decision: Choose whether explicit edge-by-edge spacing or Geometry AI passage preservation is the safer meshing strategy for the available CAD provenance.
+inputs:
+  geometry: assets/geometry.csm
+  length_unit: m
+  chord: 1 m
+  span: 0.01 m
+deliverables:
+  - A reviewable map from geometric risk to mesh control
+  - Explicit angle, height, aspect-ratio, and projected edge spacing examples
+  - A Geometry AI alternative that preserves thin geometry and minimum passages
+  - Baseline and geometry-aware VolumeMesh Drafts without cloud execution
