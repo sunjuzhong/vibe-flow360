@@ -1401,7 +1401,7 @@ export default function GeometryWorkspace({
           <div className="geometry-disclosure-content">
           <div className="geometry-panel-intent">
             <strong>{`Why preflight reports ${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'} / unknown`}</strong>
-            <span>Each item states its evidence. Unknown means no diagnostic result exists; it is never silently treated as passed.</span>
+            <span>Each item below states the available evidence. Unknown means the synchronized resource does not expose enough data for that check; it is not silently treated as passed.</span>
           </div>
           <div className="geometry-health-group-title">
             <div className="geometry-health-group-title__label">
