@@ -68,7 +68,7 @@ export function resolveGeometryAppearanceAssignments(
   semanticDraftAssignments: Record<string, string>,
   manualOverrides: Record<string, string>,
 ): Record<string, string> {
-  return { ...parameterAssignments, ...semanticDraftAssignments, ...manualOverrides }
+  return { ...semanticDraftAssignments, ...parameterAssignments, ...manualOverrides }
 }
 
 export function clearGeometryAppearanceOverrides(

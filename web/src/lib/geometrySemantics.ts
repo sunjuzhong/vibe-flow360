@@ -8,6 +8,7 @@ export type GeometrySurfaceRole =
   | 'wall'
   | 'farfield'
   | 'symmetry'
+  | 'periodic'
   | 'inlet'
   | 'outlet'
   | 'ground'
@@ -43,6 +44,7 @@ export const geometrySurfaceRoles: Array<{
   { value: 'wall', label: 'Wall', description: 'No-slip or physical solid surface' },
   { value: 'farfield', label: 'Farfield', description: 'External aerodynamic domain boundary' },
   { value: 'symmetry', label: 'Symmetry', description: 'Symmetry or slip plane' },
+  { value: 'periodic', label: 'Periodic', description: 'Paired periodic boundary surface' },
   { value: 'inlet', label: 'Inlet', description: 'Prescribed inflow boundary' },
   { value: 'outlet', label: 'Outlet', description: 'Outflow or pressure boundary' },
   { value: 'ground', label: 'Ground', description: 'Stationary or moving ground plane' },
@@ -50,6 +52,20 @@ export const geometrySurfaceRoles: Array<{
   { value: 'interface', label: 'Interface', description: 'Fluid or rotating-zone interface' },
   { value: 'exclude', label: 'Exclude', description: 'Do not include in the meshing intent' },
 ]
+
+export function geometrySurfaceRoleForBoundary(boundaryType: string): GeometrySurfaceRole | null {
+  const normalized = boundaryType.replace(/[^a-z0-9]/gi, '').toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes('periodic')) return 'periodic'
+  if (normalized.includes('symmetry') || normalized.includes('slip')) return 'symmetry'
+  if (normalized.includes('freestream') || normalized.includes('farfield')) return 'farfield'
+  if (normalized.includes('inflow') || normalized.includes('inlet')) return 'inlet'
+  if (normalized.includes('outflow') || normalized.includes('outlet')) return 'outlet'
+  if (normalized.includes('rotating') || normalized.includes('rotation')) return 'rotating'
+  if (normalized.includes('interface') || normalized.includes('porous') || normalized.includes('jump')) return 'interface'
+  if (normalized.includes('wall') || normalized === 'ground') return normalized === 'ground' ? 'ground' : 'wall'
+  return null
+}
 
 export function inferGeometrySurfaceRole(
   group: Pick<MeshGroupData, 'id' | 'name'>,

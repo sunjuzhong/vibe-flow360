@@ -45,6 +45,7 @@ import {
   suggestGeometrySemantics,
   type GeometryBodyIntent,
   type GeometrySemanticAssignment,
+  geometrySurfaceRoleForBoundary,
   type GeometrySemanticDraft,
   type GeometrySurfaceRole,
 } from '../lib/geometrySemantics'
@@ -279,8 +280,6 @@ export default function GeometryWorkspace({
     setCameraCommand({ type, nonce: Date.now() })
   }
   const readiness = readinessCopy[review.readiness]
-  const assignmentList = Object.values(assignments).sort((a, b) => a.groupName.localeCompare(b.groupName))
-  const unassignedCount = Math.max(0, (manifest?.groups.length ?? 0) - assignmentList.length)
   const appearanceById = useMemo(
     () => new Map(appearances.map((appearance) => [appearance.id, appearance])),
     [appearances],
@@ -301,6 +300,28 @@ export default function GeometryWorkspace({
     })),
     [parameterBoundaryInventory],
   )
+  const parameterSemanticAssignments = useMemo(
+    () => Object.fromEntries(parameterBoundaryInventory.flatMap((surface) => {
+      if (surface.status !== 'assigned') return []
+      const assignment = surface.assignments[0]
+      const role = geometrySurfaceRoleForBoundary(assignment?.modelType ?? '')
+      return role ? [[surface.id, {
+        groupId: surface.id,
+        groupName: surface.name,
+        role,
+        provenance: 'provided' as const,
+        reason: `Assigned by the active Flow360 ${assignment.modelType} boundary model.`,
+      }]] : []
+    })),
+    [parameterBoundaryInventory],
+  )
+  const effectiveSemanticAssignments = useMemo(
+    () => ({ ...assignments, ...parameterSemanticAssignments }),
+    [assignments, parameterSemanticAssignments],
+  )
+  const assignmentList = Object.values(effectiveSemanticAssignments)
+    .sort((a, b) => a.groupName.localeCompare(b.groupName))
+  const unassignedCount = Math.max(0, (manifest?.groups.length ?? 0) - assignmentList.length)
   const semanticAppearanceAssignments = useMemo(
     () => Object.fromEntries(Object.values(assignments).flatMap((assignment) => {
       const presetId = geometryAppearancePresetForBoundary(assignment.role)
@@ -676,9 +697,9 @@ export default function GeometryWorkspace({
                       {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
                     </small>
                   </span>
-                  <small className={assignments[group.id] ? 'assigned' : ''}>
-                    {assignments[group.id]
-                      ? assignments[group.id].role
+                  <small className={effectiveSemanticAssignments[group.id] ? 'assigned' : ''}>
+                    {effectiveSemanticAssignments[group.id]
+                      ? effectiveSemanticAssignments[group.id].role
                       : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
                   </small>
                 </button>

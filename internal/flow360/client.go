@@ -325,20 +325,77 @@ func (c *Client) CreateDraft(ctx context.Context, sourceID, name string) (json.R
 // list before creation and reconciling the name again after an uncertain create
 // response. Draft creation is remote but does not start billable execution.
 func (c *Client) EnsureDraft(ctx context.Context, projectID, sourceID, name string) (json.RawMessage, error) {
-	if existing, err := c.FindDraftByName(ctx, projectID, name); err == nil {
+	if existing, err := c.FindReusableDraft(ctx, projectID, sourceID, name); err == nil {
 		return existing, nil
 	}
 	created, createErr := c.CreateDraft(ctx, sourceID, name)
 	if createErr == nil && draftIDFromPayload(created) != "" {
 		return created, nil
 	}
-	if recovered, err := c.FindDraftByName(ctx, projectID, name); err == nil {
+	if recovered, err := c.FindReusableDraft(ctx, projectID, sourceID, name); err == nil {
 		return recovered, nil
 	}
 	if createErr != nil {
 		return nil, createErr
 	}
 	return nil, errors.New("Flow360 created a Draft but did not return its ID")
+}
+
+// FindReusableDraft prefers the Draft Flow360 creates with a new Project. A
+// source match is authoritative; the requested name is only a fallback for
+// older CLI payloads that do not expose source metadata. A sole Draft without
+// source metadata is safe to reuse because the list is Project-scoped.
+func (c *Client) FindReusableDraft(ctx context.Context, projectID, sourceID, name string) (json.RawMessage, error) {
+	raw, err := c.ProjectDrafts(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("parse Flow360 draft list: %w", err)
+	}
+	records := collectRecords(payload)
+	normalizedSource := strings.TrimSpace(sourceID)
+	normalizedName := strings.TrimSpace(name)
+	var named map[string]any
+	var sourceUnknown []map[string]any
+	for _, record := range records {
+		recordSource := firstString(record, "source_id", "source_item_id", "sourceId", "sourceItemId")
+		if normalizedSource != "" && recordSource == normalizedSource {
+			return draftRecordPayload(record)
+		}
+		if recordSource == "" {
+			sourceUnknown = append(sourceUnknown, record)
+		}
+		if recordName, _ := record["name"].(string); recordSource == "" && normalizedName != "" && strings.TrimSpace(recordName) == normalizedName {
+			named = record
+		}
+	}
+	if named != nil {
+		return draftRecordPayload(named)
+	}
+	if len(records) == 1 && len(sourceUnknown) == 1 {
+		return draftRecordPayload(sourceUnknown[0])
+	}
+	return nil, errors.New("reusable Flow360 draft was not found")
+}
+
+func firstString(record map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := record[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func draftRecordPayload(record map[string]any) (json.RawMessage, error) {
+	id := firstString(record, "draft_id", "id")
+	if id == "" {
+		return nil, errors.New("Flow360 Draft record did not include an ID")
+	}
+	record["draft_id"] = id
+	return json.Marshal(record)
 }
 
 // SetDraftSimulationParams replaces the editable SimulationParams stored on a

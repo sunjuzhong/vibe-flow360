@@ -20,7 +20,7 @@ var aiCreateProgressStages = []string{
 	"Creating and processing the Flow360 Project",
 	"Loading canonical Flow360 parameters and schemas",
 	"Generating and preflighting the simulation setup",
-	"Creating and configuring the Flow360 Draft",
+	"Resolving and configuring the Project's Flow360 Draft",
 }
 
 type aiCreateProgress struct {

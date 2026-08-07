@@ -365,7 +365,7 @@ func (s *Server) finishAICreateDraft(c *gin.Context, session aiCreateSession, pr
 	draftID := ""
 	warnings := []string(nil)
 	if checkpoint.Preflight.Valid {
-		s.updateAICreateProgress(progressID, 5, "Flow360 preflight passed; creating a Draft from the validated parameters and making it the Project's ready-to-review setup.")
+		s.updateAICreateProgress(progressID, 5, "Flow360 preflight passed; resolving the Project's existing Draft and loading the validated parameters into it.")
 		_, createdDraftID, draftErr := s.materializeAICreateDraftParameters(
 			c.Request.Context(), prepared.ProjectID, prepared.RootResourceID,
 			"AI Create · "+checkpoint.Blueprint.ProjectName, checkpoint.SimulationParams,
@@ -373,7 +373,7 @@ func (s *Server) finishAICreateDraft(c *gin.Context, session aiCreateSession, pr
 		draftID = createdDraftID
 		if draftErr != nil {
 			log.Printf("AI Create remote Draft setup failed for session %s: %v", session.ID, draftErr)
-			s.finishAICreateProgress(progressID, "needs_attention", "The Project and validated parameters are ready, but Flow360 Draft creation needs recovery.", prepared.ProjectID, prepared.RootResourceID)
+			s.finishAICreateProgress(progressID, "needs_attention", "The Project and validated parameters are ready, but Flow360 Draft configuration needs recovery.", prepared.ProjectID, prepared.RootResourceID)
 			c.JSON(http.StatusBadGateway, gin.H{
 				"error":      "The Project and schema-valid parameters were preserved, but Flow360 Draft configuration did not finish. Retry this session to continue from the Draft step: " + draftErr.Error(),
 				"project_id": prepared.ProjectID, "session_id": session.ID, "draft_id": draftID,
@@ -381,7 +381,7 @@ func (s *Server) finishAICreateDraft(c *gin.Context, session aiCreateSession, pr
 			return
 		}
 	} else {
-		s.finishAICreateProgress(progressID, "needs_attention", "The Project was created, but Flow360 parameter validation still needs review; no Draft was created.", prepared.ProjectID, prepared.RootResourceID)
+		s.finishAICreateProgress(progressID, "needs_attention", "The Project was created, but Flow360 parameter validation still needs review; its Draft was not modified.", prepared.ProjectID, prepared.RootResourceID)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Flow360 parameter validation did not pass", "project_id": prepared.ProjectID, "session_id": session.ID})
 		return
 	}
@@ -523,7 +523,7 @@ func aiCreateCompletionStages(preflightValid, draftReady bool) []string {
 	if preflightValid {
 		stages = append(stages, "Passed Flow360 schema preflight")
 		if draftReady {
-			return append(stages, "Created Flow360 Draft", "Stored canonical Draft SimulationParams", "Ready for review and approval")
+			return append(stages, "Resolved Project Flow360 Draft", "Stored canonical Draft SimulationParams", "Ready for review and approval")
 		}
 		return append(stages, "Flow360 Draft setup needs recovery")
 	}

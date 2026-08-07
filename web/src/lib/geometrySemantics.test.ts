@@ -3,6 +3,7 @@ import {
   geometryMeasurementDistance,
   geometrySemanticAgentAction,
   inferGeometrySurfaceRole,
+  geometrySurfaceRoleForBoundary,
   suggestGeometrySemantics,
 } from './geometrySemantics'
 
@@ -11,6 +12,15 @@ describe('Geometry semantic suggestions', () => {
     expect(inferGeometrySurfaceRole({ id: 'farfield', name: 'Outer Enclosure' })?.role).toBe('farfield')
     expect(inferGeometrySurfaceRole({ id: 'symm', name: 'symmetry-plane' })?.role).toBe('symmetry')
     expect(inferGeometrySurfaceRole({ id: 'face-1', name: 'body00001_face_6' })).toBeNull()
+  })
+
+  it('maps live Flow360 boundary models to matching CFD semantics', () => {
+    expect(geometrySurfaceRoleForBoundary('Wall')).toBe('wall')
+    expect(geometrySurfaceRoleForBoundary('Freestream')).toBe('farfield')
+    expect(geometrySurfaceRoleForBoundary('VelocityInlet')).toBe('inlet')
+    expect(geometrySurfaceRoleForBoundary('PressureOutflow')).toBe('outlet')
+    expect(geometrySurfaceRoleForBoundary('TranslationallyPeriodic')).toBe('periodic')
+    expect(geometrySurfaceRoleForBoundary('Unknown')).toBeNull()
   })
 
   it('leaves ambiguous CAD-generated faces unassigned', () => {

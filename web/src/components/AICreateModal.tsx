@@ -87,6 +87,16 @@ export function errorMessage(cause: unknown) {
 
 type TranscriptItem = { role: 'user' | 'agent'; text: string }
 
+export function appendSubmittedAICreateTurn(
+  current: TranscriptItem[],
+  intent: string,
+  answerSummary = '',
+): TranscriptItem[] {
+  const text = answerSummary.trim() || intent.trim()
+  if (!text || current.at(-1)?.role === 'user' && current.at(-1)?.text === text) return current
+  return [...current, { role: 'user', text }]
+}
+
 function initialAnswers(fields: AICreateClarificationField[]) {
   return Object.fromEntries(fields.map((field) => {
     if (field.default !== undefined) return [field.id, field.default]
@@ -226,6 +236,11 @@ export default function AICreateModal({
 
   const runCreate = async (submittedAnswers?: Record<string, unknown>) => {
     if (!folder || !intent.trim() || busy || intentLimit.overLimit) return
+    setTranscript((current) => appendSubmittedAICreateTurn(
+      current,
+      intent,
+      submittedAnswers ? answerSummary : '',
+    ))
     setBusy(true)
     setError('')
     setProgress(null)
@@ -277,8 +292,7 @@ export default function AICreateModal({
         setFields(result.fields)
         setAnswers(initialAnswers(result.fields))
         setTranscript((current) => [
-          ...(current.length ? current : [{ role: 'user' as const, text: intent.trim() }]),
-          ...(submittedAnswers ? [{ role: 'user' as const, text: answerSummary }] : []),
+          ...current,
           { role: 'agent', text: result.message },
         ])
         return
@@ -336,6 +350,8 @@ export default function AICreateModal({
     )
   }
 
+  const hasStarted = Boolean(sessionId || transcript.length > 0 || progress || completedResult)
+
   return (
     <div className="ai-create-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeWhenIdle() }}>
       <div ref={modalRef} className="ai-create-modal" role="dialog" aria-modal="true" aria-labelledby="ai-create-title" tabIndex={-1}>
@@ -345,12 +361,12 @@ export default function AICreateModal({
           <span className="ai-create-icon"><WandSparkles size={19} /></span>
           <div>
             <p className="eyebrow">AI CREATE</p>
-            <h2 id="ai-create-title">{sessionId ? 'Let’s define the simulation' : 'Describe the simulation you want'}</h2>
+            <h2 id="ai-create-title">{hasStarted ? 'Let’s define the simulation' : 'Describe the simulation you want'}</h2>
             <p>This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.</p>
           </div>
         </div>
 
-        {!sessionId && (
+        {!hasStarted && (
           <form onSubmit={submit}>
             <div className={`ai-create-intent-input${intentLimit.overLimit ? ' over-limit' : intentLimit.nearLimit ? ' near-limit' : ''}`}>
               <textarea
@@ -387,7 +403,7 @@ export default function AICreateModal({
           </form>
         )}
 
-        {sessionId && (
+        {transcript.length > 0 && (
           <div className="ai-create-conversation" aria-live="polite">
             {transcript.map((item, index) => (
               <div className={`ai-create-message ${item.role}`} key={`${item.role}-${index}`}>
@@ -411,7 +427,7 @@ export default function AICreateModal({
 
         {!busy && !intent && <p className="ai-create-example">Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.</p>}
         {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />Connecting to the AI Create backend…</div>}
-        {progress && (busy || progress.status !== 'completed') && <AICreateProgressView progress={progress} environment={environment} />}
+        {progress && <AICreateProgressView progress={progress} environment={environment} />}
         {error && <div className="ai-create-error" role="alert">{error}</div>}
         {error && sessionId && !busy && (
           <button className="ai-create-retry" type="button" onClick={() => { void runCreate() }}>

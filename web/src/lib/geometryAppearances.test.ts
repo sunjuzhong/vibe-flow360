@@ -96,8 +96,13 @@ describe('geometry appearance persistence', () => {
     expect(resolveGeometryAppearanceAssignments(
       { wing: 'cfd-wall', farfield: 'cfd-farfield' },
       { wing: 'cfd-slip-wall' },
+      {},
+    )).toEqual({ wing: 'cfd-wall', farfield: 'cfd-farfield' })
+    expect(resolveGeometryAppearanceAssignments(
+      { wing: 'cfd-wall' },
+      { wing: 'cfd-slip-wall' },
       { wing: 'custom-red' },
-    )).toEqual({ wing: 'custom-red', farfield: 'cfd-farfield' })
+    )).toEqual({ wing: 'custom-red' })
     expect(clearGeometryAppearanceOverrides({ wing: 'custom-red', farfield: 'custom-blue' }, ['wing']))
       .toEqual({ farfield: 'custom-blue' })
   })

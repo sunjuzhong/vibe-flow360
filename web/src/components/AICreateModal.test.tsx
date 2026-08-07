@@ -7,6 +7,7 @@ import AICreateModal, {
   aiCreateIntentCharacterCount,
   aiCreateIntentLimit,
   aiCreateProgressStageState,
+  appendSubmittedAICreateTurn,
   errorMessage,
 } from './AICreateModal'
 
@@ -45,6 +46,16 @@ describe('AICreateModal', () => {
 
   it('shows the actual browser network error without mangling its type name', () => {
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Failed to fetch')
+  })
+
+  it('keeps submitted requirements and clarification answers in the session transcript', () => {
+    const initial = appendSubmittedAICreateTurn([], 'Create a cylinder-flow simulation')
+    const answered = appendSubmittedAICreateTurn(initial, 'ignored', 'Reynolds number: 3900')
+    expect(answered).toEqual([
+      { role: 'user', text: 'Create a cylinder-flow simulation' },
+      { role: 'user', text: 'Reynolds number: 3900' },
+    ])
+    expect(appendSubmittedAICreateTurn(answered, 'ignored', 'Reynolds number: 3900')).toBe(answered)
   })
 
   it('requires a destination folder', () => {
@@ -114,6 +125,22 @@ describe('AICreateModal', () => {
     expect(progress.stages.map((_, index) => aiCreateProgressStageState(progress, index))).toEqual([
       'complete', 'failed', 'pending',
     ])
+  })
+
+  it('renders completed backend progress as an auditable checkpoint', () => {
+    const progress = {
+      request_id: 'aip-completed',
+      status: 'completed' as const,
+      stage: 2,
+      stages: ['Design CAD', 'Create Project', 'Configure Draft'],
+      detail: 'Project and existing Draft are ready for review.',
+      started_at: '2026-08-05T00:00:00Z',
+      updated_at: '2026-08-05T00:00:01Z',
+    }
+    const markup = renderToStaticMarkup(<AICreateProgressView progress={progress} />)
+    expect(markup).toContain('status-completed')
+    expect(markup.match(/class="complete"/g)).toHaveLength(3)
+    expect(markup).toContain('Project and existing Draft are ready for review.')
   })
 
   it('pauses the real stage while a persisted backend request is recovering', () => {

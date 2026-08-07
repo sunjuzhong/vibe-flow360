@@ -383,6 +383,36 @@ fi
 	}
 }
 
+func TestEnsureDraftReusesProjectDefaultDraftForSameSource(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s ' "$@" >> %q
+printf '\n' >> %q
+if [ "$1 $2" = "draft list" ]; then
+  printf '{"records":[{"id":"draft-default-1","type":"Draft","name":"Draft 1","source_item_id":"geo-1"}]}'
+elif [ "$1 $2" = "draft create" ]; then
+  printf '{"id":"draft-unexpected","type":"Draft"}'
+fi
+`, argsPath, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	raw, err := client.EnsureDraft(context.Background(), "prj-1", "geo-1", "AI Create · Cylinder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draftIDFromPayload(raw) != "draft-default-1" {
+		t.Fatalf("default Draft was not reused: %s", raw)
+	}
+	args, _ := os.ReadFile(argsPath)
+	if strings.Contains(string(args), "draft create") {
+		t.Fatalf("EnsureDraft created a duplicate: %s", args)
+	}
+}
+
 func TestRunExistingDraftDoesNotSendNameOrPatch(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
