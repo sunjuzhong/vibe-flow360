@@ -480,7 +480,7 @@ Object.assign(messages, {
   'Create Project': '创建项目',
   'Load schemas': '加载参数结构',
   'Create setup': '创建配置',
-  'Create Draft': '创建 Draft',
+  'Create Draft': '创建草稿',
   'Configure Draft': '配置草稿',
   'Flow360 is processing the uploaded Geometry.': 'Flow360 正在处理上传的几何资源。',
   'STEP round-trip validation failed.': 'STEP 往返验证失败。',
