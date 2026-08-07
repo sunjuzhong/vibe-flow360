@@ -318,14 +318,15 @@ export default function CopilotPanel({
                         {message.conversion.failed ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
                         <span>
                           <strong>{actionPlanConversionSummary(message.conversion)}</strong>
-                          <small>Nothing was run in Flow360. Open a Draft to validate and review it.</small>
+                          <small>Nothing was run in Flow360. Continue chatting, or review the proposed parameter changes.</small>
                         </span>
                       </div>
                       <div className="action-plan-conversion-results">
                         {message.conversion.results.map((item) => item.plan ? (
-                          <button type="button" key={item.id} onClick={() => onOpenPlan(item.plan!)}>
+                          <button type="button" key={item.id} onClick={() => onOpenPlan(item.plan!)} aria-label={`Review parameter changes for ${item.plan.name}`}>
                             <CheckCircle2 size={14} />
-                            <span><strong>{item.plan.name}</strong><small>Draft review · approval required</small></span>
+                            <span><strong>{item.plan.name}</strong><small>Parameter changes · nothing will run</small></span>
+                            <b>Review changes</b>
                             <ChevronRight size={14} />
                           </button>
                         ) : (

@@ -119,6 +119,7 @@ export default function ProjectPage() {
   const [searchParams] = useSearchParams()
   const requestedDraftId = searchParams.get('draft')?.trim() ?? ''
   const requestedPlanId = searchParams.get('plan')?.trim() ?? ''
+  const requestedPlanMode = searchParams.get('planMode') === 'review' ? 'review' : 'run'
   const resourceId = projectPath.startsWith('resources/') ? projectPath.slice('resources/'.length) : ''
   const navigate = useNavigate()
   const navigateRef = useRef(navigate)
@@ -144,6 +145,7 @@ export default function ProjectPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [initialPlanId, setInitialPlanId] = useState('')
+  const [planEntryMode, setPlanEntryMode] = useState<'review' | 'run'>('run')
   const openedRequestedPlan = useRef('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
@@ -161,12 +163,14 @@ export default function ProjectPage() {
   const annotations = useProjectAnnotations(projectId)
 
   useEffect(() => {
-    if (!requestedPlanId || openedRequestedPlan.current === requestedPlanId) return
-    openedRequestedPlan.current = requestedPlanId
+    const requestKey = `${requestedPlanId}:${requestedPlanMode}`
+    if (!requestedPlanId || openedRequestedPlan.current === requestKey) return
+    openedRequestedPlan.current = requestKey
     setChatOpen(false)
     setInitialPlanId(requestedPlanId)
+    setPlanEntryMode(requestedPlanMode)
     setPlanOpen(true)
-  }, [requestedPlanId])
+  }, [requestedPlanId, requestedPlanMode])
   const closePanel = useCallback(() => setActivePanel(null), [])
   const closePanelFromAmbientInteraction = useCallback(() => {
     if (panelDismissesFromAmbientInteraction(activePanel)) closePanel()
@@ -676,6 +680,7 @@ export default function ProjectPage() {
                   onReview={() => {
                     setChatOpen(false)
                     setInitialPlanId('')
+                    setPlanEntryMode('run')
                     setPlanOpen(true)
                   }}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
@@ -911,10 +916,11 @@ export default function ProjectPage() {
           setChatOpen(false)
           if (selected?.id === plan.source_id) {
             setInitialPlanId(plan.id)
+            setPlanEntryMode('review')
             setPlanOpen(true)
             return
           }
-          navigate(`/projects/${projectId}/resources/${encodeURIComponent(plan.source_id)}?plan=${encodeURIComponent(plan.id)}`)
+          navigate(`/projects/${projectId}/resources/${encodeURIComponent(plan.source_id)}?plan=${encodeURIComponent(plan.id)}&planMode=review`)
         }}
         contextLabel={draftMode && activeDraft
           ? `${activeDraft.name} · based on ${selected?.name || activeDraft.source_type || 'Resource'}`
@@ -962,12 +968,15 @@ export default function ProjectPage() {
           onClose={() => {
             setPlanOpen(false)
             setInitialPlanId('')
+            setPlanEntryMode('run')
           }}
           project={project}
           resource={selected}
           detail={draftMode ? draftDetail : detail}
           draftId={draftMode ? activeDraft?.id : undefined}
           initialPlanId={initialPlanId}
+          entryMode={planEntryMode}
+          onEnterRun={() => setPlanEntryMode('run')}
           onSubmitted={() => {
             void Promise.all([loadProject(), loadDrafts()])
           }}

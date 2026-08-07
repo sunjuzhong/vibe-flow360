@@ -99,6 +99,18 @@ function parameterLabel(path: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+export type PlanEntryMode = 'review' | 'run'
+
+export function planEntryPresentation(mode: PlanEntryMode) {
+  return mode === 'run'
+    ? { title: 'Review & Run', subtitle: 'Validate complete parameters before Flow360', dialogLabel: 'Draft review and execution' }
+    : { title: 'Draft changes', subtitle: 'Improve and approve parameters without running Flow360', dialogLabel: 'Draft parameter changes' }
+}
+
+export function shouldLoadExistingReview(draftId?: string, initialPlanId?: string) {
+  return Boolean(draftId || initialPlanId)
+}
+
 export default function PlanPanel({
   open,
   onClose,
@@ -107,6 +119,8 @@ export default function PlanPanel({
   detail,
   draftId,
   initialPlanId,
+  entryMode = 'run',
+  onEnterRun,
   onSubmitted,
 }: {
   open: boolean
@@ -116,12 +130,15 @@ export default function PlanPanel({
   detail: ResourceDetail | null
   draftId?: string
   initialPlanId?: string
+  entryMode?: PlanEntryMode
+  onEnterRun?: () => void
   onSubmitted: () => void
 }) {
   const options = targetOptions[resource.type] ?? []
   const [plans, setPlans] = useState<SimulationPlan[]>([])
   const [selected, setSelected] = useState<SimulationPlan | null>(null)
   const [showForm, setShowForm] = useState(true)
+  const [reviewLoading, setReviewLoading] = useState(false)
   const [name, setName] = useState('')
   const [intent, setIntent] = useState('')
   const [target, setTarget] = useState<SimulationPlan['target']>(options[0]?.value ?? 'case')
@@ -169,8 +186,10 @@ export default function PlanPanel({
 
   useEffect(() => {
     if (!open) return
+    const openingExistingReview = shouldLoadExistingReview(draftId, initialPlanId)
     setSelected(null)
-    setShowForm(true)
+    setShowForm(!openingExistingReview)
+    setReviewLoading(openingExistingReview)
     setName(`${resource.name} · ${options[0]?.label ?? 'Case'}`)
     setIntent('')
     setTarget(options[0]?.value ?? 'case')
@@ -191,42 +210,46 @@ export default function PlanPanel({
     setRunConfirmationOpen(false)
     setError('')
     void (async () => {
-      const loaded = await loadPlans()
-      if (!initialPlanId) {
-        if (draftId && loaded[0]) {
-          setSelected(loaded[0])
-          setShowForm(false)
-        } else if (draftId && !loaded.length) {
-          try {
-            const reviewPlan = await api.createPlan({
-              project_id: project.id,
-              project_name: project.name,
-              source_id: resource.id,
-              source_type: resource.type,
-              source_name: resource.name,
-              target: 'case',
-              name: `${resource.name} · Case`,
-              intent: 'Validate the current Draft parameters before run.',
-              patch: {},
-              draft_id: draftId,
-            })
-            setSelected(reviewPlan)
-            setPlans([reviewPlan])
-            setShowForm(false)
-          } catch (cause) {
-            setError(errorMessage(cause))
-          }
-        }
-        return
-      }
       try {
-        const initial = loaded.find((plan) => plan.id === initialPlanId)
-          ?? await api.plan(initialPlanId)
-        setSelected(initial)
-        setPlans((current) => [initial, ...current.filter((plan) => plan.id !== initial.id)])
-        setShowForm(false)
-      } catch (cause) {
-        setError(String(cause).replace('Error: ', ''))
+        const loaded = await loadPlans()
+        if (!initialPlanId) {
+          if (draftId && loaded[0]) {
+            setSelected(loaded[0])
+            setShowForm(false)
+          } else if (draftId && !loaded.length) {
+            try {
+              const reviewPlan = await api.createPlan({
+                project_id: project.id,
+                project_name: project.name,
+                source_id: resource.id,
+                source_type: resource.type,
+                source_name: resource.name,
+                target: 'case',
+                name: `${resource.name} · Case`,
+                intent: 'Validate and review the current Draft parameters.',
+                patch: {},
+                draft_id: draftId,
+              })
+              setSelected(reviewPlan)
+              setPlans([reviewPlan])
+              setShowForm(false)
+            } catch (cause) {
+              setError(errorMessage(cause))
+            }
+          }
+          return
+        }
+        try {
+          const initial = loaded.find((plan) => plan.id === initialPlanId)
+            ?? await api.plan(initialPlanId)
+          setSelected(initial)
+          setPlans((current) => [initial, ...current.filter((plan) => plan.id !== initial.id)])
+          setShowForm(false)
+        } catch (cause) {
+          setError(String(cause).replace('Error: ', ''))
+        }
+      } finally {
+        setReviewLoading(false)
       }
     })()
   }, [draftId, initialPlanId, loadPlans, open, options, resource.name])
@@ -247,6 +270,8 @@ export default function PlanPanel({
     selected?.preflight?.valid
     && selected.preflight.validated_revision === selected.revision,
   )
+  const runMode = entryMode === 'run'
+  const entryPresentation = planEntryPresentation(entryMode)
   const activeStages = useMemo(
     () => downstreamStages(resource.type, target),
     [resource.type, target],
@@ -563,12 +588,15 @@ export default function PlanPanel({
         className="plan-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Draft review and execution"
+        aria-label={entryPresentation.dialogLabel}
       >
         <header className="plan-header">
           <span className="plan-header-icon"><GitPullRequestDraft size={18} /></span>
-          <div><strong>Review &amp; Run</strong><span>Validate complete parameters before Flow360</span></div>
-          <button className="icon-button" onClick={onClose} aria-label="Close Review and Run"><X size={18} /></button>
+          <div>
+            <strong>{entryPresentation.title}</strong>
+            <span>{entryPresentation.subtitle}</span>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label={runMode ? 'Close Review and Run' : 'Close Draft changes'}><X size={18} /></button>
         </header>
 
         <div className={`plan-layout${draftId ? ' current-draft' : ''}`}>
@@ -598,7 +626,13 @@ export default function PlanPanel({
           </aside>}
 
           <main className="plan-main">
-            {showForm ? (
+            {reviewLoading ? (
+              <div className="plan-review-loading" role="status" aria-live="polite">
+                <RefreshCw size={18} className="spin" />
+                <div><strong>Loading Draft validation…</strong><span>Preparing the current revision, parameter errors, and repair state.</span></div>
+                <i /><i /><i />
+              </div>
+            ) : showForm ? (
               <form className="plan-form" onSubmit={createPlan}>
                 <div className="plan-step-heading"><span>1</span><div><strong>Configure this Draft</strong><small>Review and validation do not start meshing or a solver run.</small></div></div>
                 <label>
@@ -835,14 +869,14 @@ export default function PlanPanel({
               <div className="plan-review">
                 {!draftId && <button className="plan-back" onClick={() => setShowForm(true)}><ChevronLeft size={13} /> New revision</button>}
                 <div className="plan-review-title">
-                  <div><p className="eyebrow">DRAFT REVIEW {selected.id}</p><h2>{selected.name}</h2><p>{selected.intent}</p></div>
+                  <div><p className="eyebrow">DRAFT REVIEW {selected.id}</p><h2>{selected.name}</h2><p>{runMode ? selected.intent : 'Review and improve this Draft’s parameter changes. Nothing will run from this panel.'}</p></div>
                   <span className={`plan-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
                 </div>
 
                 <div className={`plan-review-preflight-bar ${preflightReady ? 'ready' : 'error'}`}>
                   {preflightReady ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
                   <span>
-                    <strong>{preflightReady ? 'Ready to run' : `${preflightErrors.length} parameter error${preflightErrors.length === 1 ? '' : 's'}`}</strong>
+                    <strong>{preflightReady ? (runMode ? 'Ready to run' : 'Parameters valid') : `${preflightErrors.length} parameter error${preflightErrors.length === 1 ? '' : 's'}`}</strong>
                     <small>{selected.source_type} → {targetOptions[resource.type]?.find((option) => option.value === selected.target)?.label ?? selected.target} · revision {selected.revision}</small>
                   </span>
                   <button type="button" onClick={() => void refreshPreflight()} disabled={preflightLoading}>
@@ -862,7 +896,7 @@ export default function PlanPanel({
                 />
 
                 <details className="plan-technical-details">
-                  <summary><Code2 size={14} /> Run details <span>validation, changes & execution template</span><ChevronDown size={14} /></summary>
+                  <summary><Code2 size={14} /> {runMode ? 'Run details' : 'Change details'} <span>{runMode ? 'validation, changes & execution template' : 'validation and exact parameter diff'}</span><ChevronDown size={14} /></summary>
                 <section className="plan-review-section">
                   <h3><ShieldCheck size={15} /> Deterministic validation</h3>
                   <div className="validation-list">
@@ -891,7 +925,7 @@ export default function PlanPanel({
                   ) : <div className="plan-neutral">No parameter values change; the current SimulationParams will be reused.</div>}
                 </section>
 
-                <section className="plan-review-section">
+                {runMode && <section className="plan-review-section">
                   <h3><Code2 size={15} /> Execution template <span>Not copy-ready</span></h3>
                   <pre className="command-preview">{executionTemplate(selected.command_preview)}</pre>
                   <p className="plan-command-note">
@@ -899,7 +933,7 @@ export default function PlanPanel({
                     On submission Vibe Flow360 writes the reviewed patch to a private temporary file,
                     invokes this Flow360 CLI operation, then deletes the file. Nothing runs from this preview.
                   </p>
-                </section>
+                </section>}
                 </details>
 
                 {selected.error && (
@@ -938,7 +972,15 @@ export default function PlanPanel({
                   </div>
                 )}
 
-                {(selected.status === 'approved' || selected.status === 'failed') && preflightReady && (
+                {!runMode && selected.status === 'approved' && preflightReady && (
+                  <div className="draft-review-complete">
+                    <CheckCircle2 size={17} />
+                    <span><strong>Draft changes approved</strong><small>Nothing has run in Flow360. You can close this panel and return later.</small></span>
+                    {onEnterRun && <button type="button" onClick={onEnterRun}><Play size={13} /> Continue to Review &amp; Run</button>}
+                  </div>
+                )}
+
+                {runMode && (selected.status === 'approved' || selected.status === 'failed') && preflightReady && (
                   <div className="execution-card">
                     <div><Play size={17} /><span><strong>Remote execution</strong><small>This calls Flow360 and may create billable cloud resources.</small></span></div>
                     <label><input type="checkbox" checked={executeConfirmed} onChange={(event) => setExecuteConfirmed(event.target.checked)} /><span>I understand this will run the approved Draft revision.</span></label>
@@ -958,7 +1000,7 @@ export default function PlanPanel({
                   <ExecutionMonitor plan={selected} onPlanUpdate={updateExecutionPlan} />
                 )}
                 <div className="plan-timestamps"><Clock3 size={12} /> Last updated {new Date(selected.updated_at).toLocaleString()}</div>
-                <Flow360ConfirmationDialog
+                {runMode && <Flow360ConfirmationDialog
                   open={runConfirmationOpen}
                   eyebrow="Flow360 · Remote execution"
                   title="Run the approved Draft?"
@@ -977,9 +1019,9 @@ export default function PlanPanel({
                   busy={loading && submittingAction === 'run'}
                   onCancel={() => setRunConfirmationOpen(false)}
                   onConfirm={() => void run()}
-                />
+                />}
               </div>
-            ) : null}
+            ) : <div className="plan-review-load-error" role="alert"><AlertCircle size={17} /><span><strong>Draft review could not be loaded.</strong><small>{error || 'Close this panel and try again.'}</small></span></div>}
           </main>
         </div>
         <AgentClarificationDialog
