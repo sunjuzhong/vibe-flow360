@@ -964,6 +964,7 @@ export const api = {
     source_id: string
     source_type: string
     source_name: string
+    draft_id?: string
     target: string
     patch?: Record<string, unknown>
   }) => mutate<PlanFormSchemaResponse>('/api/plans/form-schema', input),
@@ -973,6 +974,7 @@ export const api = {
     source_id: string
     source_type: string
     source_name: string
+    draft_id?: string
     target: string
     intent: string
     prompt: string

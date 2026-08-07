@@ -33,12 +33,13 @@ import {
   type SimulationStage,
 } from '../lib/planStages'
 import { errorMessage } from '../lib/errors'
-import { executionTemplate, preflightPrimaryAction, schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
+import { executionTemplate } from '../lib/planPresentation'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 import ExecutionMonitor from './ExecutionMonitor'
-import SchemaFormDialog, { SchemaFormFields, serializeValue } from './SchemaForm'
+import { SchemaFormFields, serializeValue } from './SchemaForm'
 import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
+import PlanParameterReview from './PlanParameterReview'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
   Geometry: [
@@ -145,9 +146,9 @@ export default function PlanPanel({
   const [executeConfirmed, setExecuteConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [submittingAction, setSubmittingAction] = useState<'approve' | 'run' | 'compile' | null>(null)
-  const [schemaFormOpen, setSchemaFormOpen] = useState(false)
   const [runConfirmationOpen, setRunConfirmationOpen] = useState(false)
   const [preflightLoading, setPreflightLoading] = useState(false)
+  const [aiRepairLoading, setAIRepairLoading] = useState(false)
   const [error, setError] = useState('')
   const panelRef = useFocusTrap(open, onClose, 'input,textarea,select,button.primary,button.execute,button:not(.icon-button)')
 
@@ -185,27 +186,48 @@ export default function PlanPanel({
     setAssistFailure('')
     setReviewed(false)
     setExecuteConfirmed(false)
-    setSchemaFormOpen(false)
     setRunConfirmationOpen(false)
     setError('')
     void (async () => {
       const loaded = await loadPlans()
-      if (!initialPlanId) return
+      if (!initialPlanId) {
+        if (draftId && loaded[0]) {
+          setSelected(loaded[0])
+          setShowForm(false)
+        } else if (draftId && !loaded.length) {
+          try {
+            const reviewPlan = await api.createPlan({
+              project_id: project.id,
+              project_name: project.name,
+              source_id: resource.id,
+              source_type: resource.type,
+              source_name: resource.name,
+              target: 'case',
+              name: `${resource.name} · Case`,
+              intent: 'Validate the current Draft parameters before run.',
+              patch: {},
+              draft_id: draftId,
+            })
+            setSelected(reviewPlan)
+            setPlans([reviewPlan])
+            setShowForm(false)
+          } catch (cause) {
+            setError(errorMessage(cause))
+          }
+        }
+        return
+      }
       try {
         const initial = loaded.find((plan) => plan.id === initialPlanId)
           ?? await api.plan(initialPlanId)
         setSelected(initial)
         setPlans((current) => [initial, ...current.filter((plan) => plan.id !== initial.id)])
         setShowForm(false)
-        setSchemaFormOpen(Boolean(
-          !initial.preflight?.valid
-          && Object.keys(initial.preflight?.form_schema.properties ?? {}).length,
-        ))
       } catch (cause) {
         setError(String(cause).replace('Error: ', ''))
       }
     })()
-  }, [initialPlanId, loadPlans, open, options, resource.name])
+  }, [draftId, initialPlanId, loadPlans, open, options, resource.name])
 
   useEffect(() => {
     const refresh = () => void loadPlans()
@@ -223,17 +245,6 @@ export default function PlanPanel({
     selected?.preflight?.valid
     && selected.preflight.validated_revision === selected.revision,
   )
-  const hasStructuredInputs = Boolean(
-    selected?.preflight
-    && Object.keys(selected.preflight.form_schema.properties ?? {}).length > 0,
-  )
-  const hasPreflightRecommendation = Boolean(
-    selected?.preflight && schemaContainsRecommendation(selected.preflight.form_schema),
-  )
-  const hasPreflightEngineeringInput = Boolean(
-    selected?.preflight && schemaRequiresUserInput(selected.preflight.form_schema),
-  )
-  const primaryPreflightAction = preflightPrimaryAction(preflightReady, hasStructuredInputs)
   const activeStages = useMemo(
     () => downstreamStages(resource.type, target),
     [resource.type, target],
@@ -259,6 +270,7 @@ export default function PlanPanel({
       source_id: resource.id,
       source_type: resource.type,
       source_name: resource.name,
+      draft_id: draftId,
       target,
     }).then((response) => {
       if (cancelled) return
@@ -271,7 +283,7 @@ export default function PlanPanel({
       if (!cancelled) setSchemaLoading(false)
     })
     return () => { cancelled = true }
-  }, [activeStages, open, project.id, project.name, resource.id, resource.name, resource.type, showForm, target])
+  }, [activeStages, draftId, open, project.id, project.name, resource.id, resource.name, resource.type, showForm, target])
 
   const structuredStagePatches = () => Object.fromEntries(activeStages.map((stage) => {
     const schema = formSchema?.schemas[stage]
@@ -317,10 +329,6 @@ export default function PlanPanel({
       setSelected(plan)
       setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)])
       setShowForm(false)
-      setSchemaFormOpen(Boolean(
-        !plan.preflight?.valid
-        && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
-      ))
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -349,6 +357,7 @@ export default function PlanPanel({
         source_id: resource.id,
         source_type: resource.type,
         source_name: resource.name,
+        draft_id: draftId,
         target,
         intent,
         prompt: promptOverride ?? intent,
@@ -413,10 +422,6 @@ export default function PlanPanel({
       const plan = await api.preflightPlan(selected.id)
       setSelected(plan)
       setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
-      setSchemaFormOpen(Boolean(
-        !plan.preflight?.valid
-        && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
-      ))
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -424,40 +429,64 @@ export default function PlanPanel({
     }
   }
 
-  const recoverWithAgent = async () => {
+  const updateReviewedParameters = async (values: Record<string, unknown>) => {
     if (!selected || preflightLoading) return
     setPreflightLoading(true)
     setError('')
     try {
-      await api.recoverPlan(selected.id)
-      window.dispatchEvent(new CustomEvent('vibesim:open-intervention', {
-        detail: { planId: selected.id },
-      }))
-    } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
-    } finally {
-      setPreflightLoading(false)
-    }
-  }
-
-  const applySchemaInputs = async (values: Record<string, unknown>) => {
-    if (!selected || preflightLoading) return
-    setPreflightLoading(true)
-    setError('')
-    try {
-      const plan = await api.applyPlanInputs(selected.id, selected.revision, values)
+      const plan = await api.updatePlanParameters(selected.id, selected.revision, values)
       setSelected(plan)
       setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
       setReviewed(false)
       setExecuteConfirmed(false)
-      setSchemaFormOpen(Boolean(
-        !plan.preflight?.valid
-        && Object.keys(plan.preflight?.form_schema.properties ?? {}).length,
-      ))
     } catch (cause) {
-      setError(String(cause).replace('Error: ', ''))
+      const message = errorMessage(cause)
+      setError(message)
+      throw cause
     } finally {
       setPreflightLoading(false)
+    }
+  }
+
+  const repairReviewedParameters = async () => {
+    if (!selected || aiRepairLoading) return
+    setAIRepairLoading(true)
+    setError('')
+    try {
+      const issueText = selected.preflight?.issues
+        .filter((issue) => issue.level === 'error')
+        .map((issue) => `${issue.path || 'SimulationParams'}: ${issue.message}`)
+        .join('\n')
+      const response = await api.assistPlanForm({
+        project_id: project.id,
+        project_name: project.name,
+        source_id: resource.id,
+        source_type: resource.type,
+        source_name: resource.name,
+        draft_id: selected.remote_ids?.draft_id,
+        target: selected.target,
+        intent: selected.intent,
+        prompt: [
+          'Repair every current Flow360 preflight error autonomously. Preserve valid engineering values and return only the smallest schema-safe SimulationParams patch.',
+          issueText ? `Current validation errors:\n${issueText}` : '',
+        ].filter(Boolean).join('\n\n'),
+        patch: selected.patch,
+        autonomous: true,
+      })
+      if (!response.proposal) throw new Error(response.action.message || 'AI did not return a parameter repair.')
+      const plan = await api.updatePlanParameters(selected.id, selected.revision, response.proposal.patch)
+      setSelected(plan)
+      setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
+      setReviewed(false)
+      setExecuteConfirmed(false)
+      if (!plan.preflight?.valid) {
+        throw new Error(`AI applied a repair, but ${plan.preflight?.issues.filter((issue) => issue.level === 'error').length ?? 0} validation error(s) remain.`)
+      }
+    } catch (cause) {
+      setError(errorMessage(cause))
+      throw cause
+    } finally {
+      setAIRepairLoading(false)
     }
   }
 
@@ -534,12 +563,12 @@ export default function PlanPanel({
       >
         <header className="plan-header">
           <span className="plan-header-icon"><GitPullRequestDraft size={18} /></span>
-          <div><strong>Draft workspace</strong><span>{resource.type} · {resource.name}</span></div>
-          <button className="icon-button" onClick={onClose} aria-label="Close Draft workspace"><X size={18} /></button>
+          <div><strong>Review &amp; Run</strong><span>Validate complete parameters before Flow360</span></div>
+          <button className="icon-button" onClick={onClose} aria-label="Close Review and Run"><X size={18} /></button>
         </header>
 
-        <div className="plan-layout">
-          <aside className="plan-history">
+        <div className={`plan-layout${draftId ? ' current-draft' : ''}`}>
+          {!draftId && <aside className="plan-history">
             <button className={showForm ? 'active' : ''} onClick={() => { setShowForm(true); setSelected(null) }}>
               <span><CircleDot size={13} /> New revision</span><ArrowRight size={12} />
             </button>
@@ -553,7 +582,6 @@ export default function PlanPanel({
                   setShowForm(false)
                   setReviewed(false)
                   setExecuteConfirmed(false)
-                  setSchemaFormOpen(false)
                   setError('')
                 }}
               >
@@ -562,7 +590,7 @@ export default function PlanPanel({
               </button>
             ))}
             {!plans.length && <div className="plan-history-empty">No reviewed Draft revisions yet.</div>}
-          </aside>
+          </aside>}
 
           <main className="plan-main">
             {showForm ? (
@@ -800,135 +828,36 @@ export default function PlanPanel({
               </form>
             ) : selected ? (
               <div className="plan-review">
-                <button className="plan-back" onClick={() => setShowForm(true)}><ChevronLeft size={13} /> New revision</button>
+                {!draftId && <button className="plan-back" onClick={() => setShowForm(true)}><ChevronLeft size={13} /> New revision</button>}
                 <div className="plan-review-title">
                   <div><p className="eyebrow">DRAFT REVIEW {selected.id}</p><h2>{selected.name}</h2><p>{selected.intent}</p></div>
                   <span className={`plan-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
                 </div>
 
-                <div className="plan-route plan-stage-route">
-                  <span><small>Read-only source</small><strong>{selected.source_type}</strong><em>{selected.source_name}</em></span>
-                  {downstreamStages(selected.source_type, selected.target).map((stage) => {
-                    const issueCount = selected.preflight?.issues.filter((issue) =>
-                      issue.stages?.includes(stage) || (issue.path && stageForPath(issue.path) === stage),
-                    ).length ?? 0
-                    const changeCount = selected.differences.filter((difference) => stageForPath(difference.path) === stage).length
-                    return (
-                      <div className="plan-route-step" key={stage}>
-                        <ArrowRight size={16} />
-                        <span>
-                          <small>Run step</small>
-                          <strong>{stageDefinitions[stage].label}</strong>
-                          <em>{issueCount ? `${issueCount} required` : `${changeCount} change${changeCount === 1 ? '' : 's'}`}</em>
-                        </span>
-                      </div>
-                    )
-                  })}
+                <div className={`plan-review-preflight-bar ${preflightReady ? 'ready' : 'error'}`}>
+                  {preflightReady ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                  <span>
+                    <strong>{preflightReady ? 'Ready to run' : `${preflightErrors.length} parameter error${preflightErrors.length === 1 ? '' : 's'}`}</strong>
+                    <small>{selected.source_type} → {targetOptions[resource.type]?.find((option) => option.value === selected.target)?.label ?? selected.target} · revision {selected.revision}</small>
+                  </span>
+                  <button type="button" onClick={() => void refreshPreflight()} disabled={preflightLoading}>
+                    {preflightLoading ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />} Validate again
+                  </button>
                 </div>
 
-                <section className="plan-review-section">
-                  <h3>
-                    <ShieldCheck size={15} /> Flow360 schema preflight
-                    <span>{preflightReady ? 'Ready' : hasPreflightRecommendation ? `${preflightErrors.length} to resolve` : `${preflightErrors.length} required`}</span>
-                  </h3>
-                  {selected.preflight ? (
-                    <>
-                      <div className={`preflight-summary ${preflightReady ? 'ready' : 'needs-input'}`}>
-                        <span>
-                          <strong>
-                            {preflightReady
-                              ? 'SimulationParams are ready for this target'
-                              : hasPreflightRecommendation
-                                ? 'The Agent found a schema-safe repair'
-                                : hasStructuredInputs
-                                ? 'The Agent needs an engineering input from you'
-                                : 'The Agent found a preflight problem'}
-                          </strong>
-                          <small>
-                            {hasPreflightRecommendation && !preflightReady
-                              ? hasPreflightEngineeringInput
-                                ? `${preflightErrors.length} preflight issue${preflightErrors.length === 1 ? '' : 's'} · review the repair and remaining inputs`
-                                : `${preflightErrors.length} incompatible setting${preflightErrors.length === 1 ? '' : 's'} · no value entry is required`
-                              : hasStructuredInputs && !preflightReady
-                              ? `${preflightErrors.length} required value${preflightErrors.length === 1 ? '' : 's'} · no safe default will be guessed`
-                              : `Flow360 schema ${selected.preflight.validator_version || 'installed'} · Draft revision ${selected.revision}`}
-                          </small>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (primaryPreflightAction === 'validate') {
-                              void refreshPreflight()
-                              return
-                            }
-                            if (primaryPreflightAction === 'structured-inputs') {
-                              setSchemaFormOpen(true)
-                              return
-                            }
-                            void recoverWithAgent()
-                          }}
-                          disabled={preflightLoading}
-                        >
-                          {preflightLoading
-                            ? <RefreshCw size={14} className="spin" />
-                            : preflightReady
-                              ? <RefreshCw size={14} />
-                              : hasPreflightRecommendation
-                                ? <Sparkles size={14} />
-                                : hasStructuredInputs
-                                ? <GitPullRequestDraft size={14} />
-                                : <Sparkles size={14} />}
-                          {preflightReady
-                            ? 'Validate again'
-                            : hasPreflightRecommendation
-                              ? 'Review Agent repair'
-                              : hasStructuredInputs
-                              ? 'Review required inputs'
-                              : 'Open Agent diagnosis'}
-                        </button>
-                      </div>
-                      {!preflightReady && hasStructuredInputs && (
-                        <div className="preflight-agent-guidance">
-                          <Sparkles size={16} />
-                          <span>
-                            <strong>{hasPreflightRecommendation ? 'Why the Agent is repairing this' : 'Why the Agent is asking'}</strong>
-                            <small>
-                              {hasPreflightRecommendation
-                                ? hasPreflightEngineeringInput
-                                  ? 'Flow360 rejects one setting for the active mesher. The Agent will remove that incompatible field, preserve the remaining requested inputs, and rerun schema validation.'
-                                  : 'Flow360 rejects this setting for the active mesher. The Agent will remove only the incompatible field, rerun schema validation, and show the updated parameter diff.'
-                                : 'Flow360 requires a value that changes mesh fidelity and cost. Provide only the requested input; the Agent will apply it, rerun schema validation, and return an updated parameter diff before approval.'}
-                            </small>
-                          </span>
-                        </div>
-                      )}
-                      {selected.preflight.issues.length > 0 && (
-                        <div className="preflight-issues">
-                          {selected.preflight.issues.map((issue, index) => (
-                            <div className={`validation-${issue.level}`} key={`${issue.path}-${index}`}>
-                              {issue.level === 'warning'
-                                ? <TriangleAlert size={14} />
-                                : <AlertCircle size={14} />}
-                              <span>
-                                <strong>{issue.stages?.join(' → ') || issue.code}</strong>
-                                <code>{issue.path || 'schema'}</code>
-                                <small>{issue.message}</small>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="plan-neutral preflight-not-run">
-                      <span>Preflight has not run for this Draft revision.</span>
-                      <button type="button" onClick={() => void refreshPreflight()} disabled={preflightLoading}>
-                        Run preflight
-                      </button>
-                    </div>
-                  )}
-                </section>
+                <PlanParameterReview
+                  project={project}
+                  resource={resource}
+                  plan={selected}
+                  fallbackParameters={detail?.simulation_params}
+                  busy={preflightLoading}
+                  repairBusy={aiRepairLoading}
+                  onSave={updateReviewedParameters}
+                  onRepair={repairReviewedParameters}
+                />
 
+                <details className="plan-technical-details">
+                  <summary><Code2 size={14} /> Run details <span>validation, changes & execution template</span><ChevronDown size={14} /></summary>
                 <section className="plan-review-section">
                   <h3><ShieldCheck size={15} /> Deterministic validation</h3>
                   <div className="validation-list">
@@ -966,6 +895,7 @@ export default function PlanPanel({
                     invokes this Flow360 CLI operation, then deletes the file. Nothing runs from this preview.
                   </p>
                 </section>
+                </details>
 
                 {selected.error && (
                   <div className="plan-error">
@@ -1023,15 +953,6 @@ export default function PlanPanel({
                   <ExecutionMonitor plan={selected} onPlanUpdate={updateExecutionPlan} />
                 )}
                 <div className="plan-timestamps"><Clock3 size={12} /> Last updated {new Date(selected.updated_at).toLocaleString()}</div>
-                {schemaFormOpen && selected.preflight && (
-                  <SchemaFormDialog
-                    schema={selected.preflight.form_schema}
-                    issues={preflightErrors}
-                    submitting={preflightLoading}
-                    onCancel={() => setSchemaFormOpen(false)}
-                    onSubmit={(values) => void applySchemaInputs(values)}
-                  />
-                )}
                 <Flow360ConfirmationDialog
                   open={runConfirmationOpen}
                   eyebrow="Flow360 · Remote execution"

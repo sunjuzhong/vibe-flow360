@@ -770,6 +770,7 @@ func (s *Server) createPlan(c *gin.Context) {
 		return
 	}
 	draftID := strings.TrimSpace(request.DraftID)
+	baseline := detail.SimulationParams
 	if draftID != "" {
 		drafts, listErr := s.flow360.ProjectDrafts(c.Request.Context(), request.ProjectID)
 		if listErr != nil {
@@ -786,12 +787,18 @@ func (s *Server) createPlan(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "selected Draft is not based on this source resource"})
 			return
 		}
+		draftDetail, detailErr := s.flow360.ResourceDetail(c.Request.Context(), "Draft", draftID)
+		if detailErr != nil || len(draftDetail.SimulationParams) == 0 {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Draft SimulationParams are unavailable for review"})
+			return
+		}
+		baseline = draftDetail.SimulationParams
 	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: request.ProjectID, ProjectName: request.ProjectName,
 		SourceID: request.SourceID, SourceType: detail.Type, SourceName: info.Name,
 		Target: request.Target, Name: request.Name, Intent: request.Intent,
-		Patch: request.Patch, Baseline: detail.SimulationParams,
+		Patch: request.Patch, Baseline: baseline,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

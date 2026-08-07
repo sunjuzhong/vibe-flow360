@@ -1949,6 +1949,25 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .inspector-section dl > div:last-child { border-bottom: 0; }
 .inspector-section dt { color: #969a91; font-size: 7px; }
 .inspector-section dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #52574e; font-size: 8px; text-align: right; }
+.inspector-disclosure > summary {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 8px;
+  color: #73796e;
+  cursor: pointer;
+  list-style: none;
+}
+.inspector-disclosure > summary::-webkit-details-marker { display: none; }
+.inspector-disclosure > summary > .eyebrow { min-width: 0; flex: 1; margin: 0; }
+.inspector-disclosure > summary > svg { flex: 0 0 auto; transition: transform .16s ease; }
+.inspector-disclosure[open] > summary > svg { transform: rotate(180deg); }
+.inspector-disclosure > summary:hover { color: #4e5748; }
+.inspector-disclosure > summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid rgba(126, 151, 44, .42);
+  outline-offset: 3px;
+}
 .mono-value { font-family: 'DM Mono'; font-size: 6px !important; }
 .id-link {
   color: inherit;
@@ -2734,6 +2753,8 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .plan-header strong { font-size: 10px; }
 .plan-header > div > span { margin-top: 2px; overflow: hidden; color: #969b91; font-family: 'DM Mono'; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .plan-layout { display: grid; min-height: 0; flex: 1; grid-template-columns: 235px minmax(0,1fr); }
+.plan-layout.current-draft { grid-template-columns: minmax(0,1fr); }
+.plan-layout.current-draft .plan-review { max-width: 860px; }
 .plan-history { min-height: 0; overflow-y: auto; padding: 10px 8px; border-right: 1px solid #d8dad1; background: #eeeeea; }
 .plan-history > p { margin: 16px 8px 7px; color: #9a9e95; font-family: 'DM Mono'; font-size: 6px; letter-spacing: .08em; }
 .plan-history > button { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 0; border-radius: 7px; color: #5f655b; background: transparent; text-align: left; cursor: pointer; }
@@ -2862,6 +2883,14 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 .plan-review-section { margin-top: 12px; padding: 14px; border: 1px solid #dcddd6; border-radius: 9px; background: #fdfdfa; }
 .plan-review-section h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 11px; color: #565c52; font-size: 9px; }
 .plan-review-section h3 > span { display: grid; min-width: 16px; height: 16px; place-items: center; padding: 0 3px; border-radius: 999px; background: #e1e3db; font-family: 'DM Mono'; font-size: 6px; }
+.plan-review-preflight-bar { display: flex; align-items: center; gap: 9px; margin-top: 12px; padding: 10px 12px; border: 1px solid; border-radius: 9px; }
+.plan-review-preflight-bar.ready { color: #597117; border-color: #cbd9a7; background: #f0f5e4; }
+.plan-review-preflight-bar.error { color: #984433; border-color: #e9beb5; background: #fff2ef; }
+.plan-review-preflight-bar > span { min-width: 0; flex: 1; }
+.plan-review-preflight-bar strong,.plan-review-preflight-bar small { display: block; }
+.plan-review-preflight-bar strong { font-size: 12px; }
+.plan-review-preflight-bar small { margin-top: 2px; color: #7f857a; font: 10px 'DM Mono'; }
+.plan-review-preflight-bar button { display: inline-flex; min-height: 32px; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #d3d6cd; border-radius: 7px; color: #62695d; background: #fff; font-size: 11px; cursor: pointer; }
 .plan-parameter-review { margin-top: 12px; padding: 16px; border: 1px solid #d7dbd0; border-radius: 10px; background: #fff; }
 .plan-parameter-review > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
 .plan-parameter-review > header h3 { margin: 0 0 4px; color: #41483d; font-size: 15px; }
@@ -2962,6 +2991,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 
 /* Plan is a review-and-edit surface, so its type scale must remain readable. */
 .plan-layout { grid-template-columns: 260px minmax(0,1fr); }
+.plan-layout.current-draft { grid-template-columns: minmax(0,1fr); }
 .plan-header strong { font-size: 14px; }
 .plan-header > div > span { font-size: 11px; }
 .plan-history > p { font-size: 11px; }
@@ -3197,6 +3227,10 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   .plan-layout { display: block; overflow-y: auto; }
   .plan-history { max-height: 180px; border-right: 0; border-bottom: 1px solid #d8dad1; }
   .plan-main { overflow: visible; padding: 22px 14px 40px; }
+  .plan-parameter-review > header { flex-direction: column; }
+  .plan-parameter-actions { width: 100%; justify-content: flex-start; }
+  .plan-review-preflight-bar { align-items: flex-start; flex-wrap: wrap; }
+  .plan-review-preflight-bar > span { min-width: 180px; }
   .diff-list > div { grid-template-columns: minmax(120px,1fr) 50px minmax(90px,1fr); }
   .diff-list > div > svg,.diff-list .diff-after { display: none; }
 }

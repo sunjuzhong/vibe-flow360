@@ -1017,6 +1017,54 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 }
 
+func TestUpdatePlanParametersAppliesPublicMergePatchAndRevalidates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	fakeResult := `#!/bin/sh
+if grep -q '"value":0.02' "$3"; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"invalid","path":"meshing.defaults.length","message":"Use 0.02","stages":["SurfaceMesh"]}],"form_schema":{"type":"object","properties":{}}}'
+fi
+`
+	if err := os.WriteFile(fakePython, []byte(fakeResult), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+	store, err := plans.NewStore(filepath.Join(temp, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(plans.CreateInput{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry", Target: "surface-mesh",
+		Name: "mesh", Intent: "Build a surface mesh.",
+		Baseline: json.RawMessage(`{"simulation_params":{"version":"test","meshing":{"defaults":{"length":{"value":0.01,"units":"m"}}}}}`),
+		Patch:    json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{plans: store, flow360: &flow360.Client{Binary: "flow360"}}
+	body := bytes.NewBufferString(`{"revision":1,"values":{"meshing":{"defaults":{"length":{"value":0.02,"units":"m"}}}}}`)
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodPut, "/api/plans/"+created.ID+"/parameters", body)
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+	requestContext.Params = gin.Params{{Key: "plan_id", Value: created.ID}}
+	app.updatePlanParameters(requestContext)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("update status %d: %s", recorder.Code, recorder.Body)
+	}
+	var updated plans.Plan
+	if err := json.Unmarshal(recorder.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Revision != 2 || updated.Preflight == nil || !updated.Preflight.Valid {
+		t.Fatalf("parameter update was not revalidated: %#v", updated)
+	}
+}
+
 func TestPlanPreflightAutomaticallyAppliesHighConfidenceBoundaryRepair(t *testing.T) {
 	temp := t.TempDir()
 	fakePython := filepath.Join(temp, "python")

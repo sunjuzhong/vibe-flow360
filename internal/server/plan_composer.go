@@ -25,6 +25,7 @@ type planComposerRequest struct {
 	SourceID        string          `json:"source_id"`
 	SourceType      string          `json:"source_type"`
 	SourceName      string          `json:"source_name,omitempty"`
+	DraftID         string          `json:"draft_id,omitempty"`
 	Target          string          `json:"target"`
 	Intent          string          `json:"intent,omitempty"`
 	Prompt          string          `json:"prompt,omitempty"`
@@ -700,6 +701,23 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	}
 	if info.ProjectID != request.ProjectID {
 		return planComposerContext{}, errors.New("source resource does not belong to this project")
+	}
+	if strings.TrimSpace(request.DraftID) != "" {
+		draftDetail, draftErr := s.flow360.ResourceDetail(ctx, "Draft", strings.TrimSpace(request.DraftID))
+		if draftErr != nil || len(draftDetail.SimulationParams) == 0 {
+			return planComposerContext{}, errors.New("Draft SimulationParams are unavailable")
+		}
+		var draftInfo map[string]any
+		if len(draftDetail.Info) == 0 || json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
+			return planComposerContext{}, errors.New("Draft metadata is unavailable")
+		}
+		if draftProjectID := firstStringField(draftInfo, "project_id", "projectId"); draftProjectID != "" && draftProjectID != request.ProjectID {
+			return planComposerContext{}, errors.New("Draft does not belong to this project")
+		}
+		if draftSourceID := firstStringField(draftInfo, "source_id", "source_item_id"); draftSourceID != "" && draftSourceID != request.SourceID {
+			return planComposerContext{}, errors.New("Draft is not based on this source resource")
+		}
+		detail.SimulationParams = draftDetail.SimulationParams
 	}
 	baseline, err := plans.MergedSimulationParams(plans.Plan{Baseline: detail.SimulationParams, Patch: request.Patch})
 	if err != nil {
