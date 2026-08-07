@@ -83,7 +83,7 @@ export default function ProjectDraftBar({
           </span>
           <ChevronRight size={14} aria-hidden="true" />
         </button>
-        <HelpTooltip label="About Project Drafts" placement="top" align="end">
+        <HelpTooltip label="About Project Drafts" placement="bottom" align="end">
           {hasDrafts
             ? 'Drafts are editable configurations. Open one to inspect parameters, review changes, or run it.'
             : 'A Draft is an editable configuration created from this Resource. Creating one does not start a remote run.'}
@@ -100,9 +100,9 @@ export default function ProjectDraftBar({
   return (
     <section className="project-draft-inline" aria-label="Project drafts" aria-busy={loading}>
       <div className="project-draft-heading" aria-label="Draft mode">
-        <span><GitPullRequestDraft size={15} /></span>
+        <span className="project-draft-heading__icon"><GitPullRequestDraft size={15} /></span>
         <strong>Draft</strong>
-        <HelpTooltip label="About Draft mode" placement="top">
+        <HelpTooltip label="About Draft mode" placement="bottom">
           Draft mode lets you edit parameters and review changes before any Flow360 execution.
         </HelpTooltip>
       </div>

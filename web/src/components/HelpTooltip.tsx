@@ -24,7 +24,7 @@ export default function HelpTooltip({
         aria-label={label}
         aria-describedby={tooltipId}
       >
-        <CircleHelp size={14} aria-hidden="true" />
+        <CircleHelp size={12} strokeWidth={1.8} aria-hidden="true" />
       </button>
       <span className="help-tooltip__content" id={tooltipId} role="tooltip">
         {children}

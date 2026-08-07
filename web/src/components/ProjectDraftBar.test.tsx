@@ -71,6 +71,7 @@ describe('ProjectDraftBar', () => {
     )
     expect(markup).toContain('aria-label="Project drafts"')
     expect(markup).toContain('aria-label="Draft mode"')
+    expect(markup).toContain('class="project-draft-heading__icon"')
     expect(markup).toContain('<strong>Draft</strong>')
     expect(markup).toContain('aria-label="About Draft mode"')
     expect(markup).toContain('Draft mode lets you edit parameters')

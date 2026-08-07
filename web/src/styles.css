@@ -4309,26 +4309,28 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 
 .help-tooltip__trigger {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   place-items: center;
   padding: 0;
   border: 0;
   border-radius: 50%;
-  color: #7b8273;
+  color: #8d9389;
   background: transparent;
   cursor: help;
+  opacity: .62;
 }
 
 .help-tooltip__trigger:hover,
 .help-tooltip__trigger:focus-visible {
-  color: #43580d;
-  background: #edf3dc;
+  color: #656c61;
+  background: transparent;
   outline: none;
+  opacity: 1;
 }
 
 .help-tooltip__trigger:focus-visible {
-  box-shadow: 0 0 0 2px rgba(126, 151, 44, .42);
+  box-shadow: 0 0 0 1px rgba(101, 108, 97, .35);
 }
 
 .help-tooltip__content {
@@ -4496,7 +4498,7 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   align-items: center;
   gap: 6px;
 }
-.project-draft-heading > span {
+.project-draft-heading__icon {
   display: grid;
   width: 28px;
   height: 28px;
