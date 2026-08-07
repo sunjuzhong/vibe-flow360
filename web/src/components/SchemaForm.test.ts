@@ -251,6 +251,7 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).toContain('Defaults')
     expect(markup).toContain('Target count')
     expect(markup).toContain('role="tabpanel"')
+    expect(markup.match(/>Meshing</g)).toHaveLength(1)
   })
 
   it('moves Draft descriptions into help tooltips and removes schema reference noise', () => {
@@ -283,5 +284,48 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).not.toContain('volume_models')
     expect(markup).not.toContain('surface_models')
     expect(markup).not.toContain('See ref')
+  })
+
+  it('renders a root array with an empty state instead of a repeated fieldset heading', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        models: {
+          type: 'array',
+          title: 'Models',
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string', title: 'Model name' } },
+          },
+        },
+      },
+    }
+    const emptyMarkup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: {},
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+    const populatedMarkup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { models: [{ name: 'Fluid' }] },
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+
+    expect(emptyMarkup).toContain('schema-root-array')
+    expect(emptyMarkup).toContain('This list is empty')
+    expect(emptyMarkup).not.toContain('<legend')
+    expect(emptyMarkup.match(/>Models</g)).toHaveLength(1)
+    expect(populatedMarkup).toContain('Item 1')
+    expect(populatedMarkup).toContain('Model name')
+    expect(populatedMarkup).toContain('aria-label="Remove Models item 1"')
+    expect(populatedMarkup).not.toContain('>0<')
   })
 })

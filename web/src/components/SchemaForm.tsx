@@ -188,6 +188,7 @@ export function SchemaFormFields({
             addLabel={addLabel}
             removeLabel={removeLabel}
             collapsibleObjects={collapsibleObjects}
+            rootTabContent
             onChange={(next) => onChange({ ...object, [key]: next })}
           />
           {sparse && !required && present && (
@@ -200,7 +201,7 @@ export function SchemaFormFields({
                 onChange(next)
               }}
             >
-              <Trash2 size={12} /> {removeLabel}
+              <Trash2 size={12} /> {removeLabel === 'Remove' ? `Remove ${child.title || humanize(key)} configuration` : removeLabel}
             </button>
           )}
         </div>
@@ -223,6 +224,7 @@ function SchemaField({
   addLabel,
   removeLabel,
   collapsibleObjects,
+  rootTabContent = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -235,6 +237,7 @@ function SchemaField({
   addLabel: string
   removeLabel: string
   collapsibleObjects: boolean
+  rootTabContent?: boolean
 }) {
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
@@ -300,6 +303,9 @@ function SchemaField({
         })}
       </>
     )
+    if (rootTabContent) {
+      return <div className="schema-root-object-content">{fields}</div>
+    }
     if (path && collapsibleObjects) {
       return (
         <details className="schema-section" open={sectionOpen} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
@@ -402,8 +408,59 @@ function SchemaField({
   }
   if (schema.type === 'array') {
     const array = Array.isArray(value) ? value : []
+    const itemSchema = schema.items ?? { type: 'json' as const }
+    const arrayEditor = (
+      <>
+        <div className="schema-array-toolbar">
+          <span>
+            <strong>{array.length ? `${array.length} item${array.length === 1 ? '' : 's'}` : 'No items yet'}</strong>
+            {rootTabContent && <SchemaDescriptionHelp description={schema.description} title={title} />}
+          </span>
+          <button type="button" className="schema-array-add" onClick={() => onChange([...array, initialValue(itemSchema, sparse)])}>
+            <Plus size={14} /> Add item
+          </button>
+        </div>
+        {array.length === 0 ? (
+          <div className="schema-array-empty">
+            <strong>This list is empty</strong>
+            <span>Add an item to configure this parameter group.</span>
+          </div>
+        ) : (
+          <div className="schema-array-list">
+            {array.map((item, index) => (
+              <section className="schema-array-card" key={index}>
+                <header>
+                  <span>Item {index + 1}</span>
+                  <button type="button" className="schema-array-remove" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${title} item ${index + 1}`}>
+                    <Trash2 size={13} /> Remove
+                  </button>
+                </header>
+                <div className="schema-array-card-body">
+                  <SchemaField
+                    schema={itemSchema.title ? itemSchema : { ...itemSchema, title: 'Value' }}
+                    path={`${path}.${index}`}
+                    value={item}
+                    sparse={sparse}
+                    showAll={showAll}
+                    configured
+                    addLabel={addLabel}
+                    removeLabel={removeLabel}
+                    collapsibleObjects={collapsibleObjects}
+                    rootTabContent={itemSchema.type === 'object'}
+                    onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
+                  />
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </>
+    )
+    if (rootTabContent) {
+      return <div className="schema-array-editor schema-root-array">{arrayEditor}</div>
+    }
     return (
-      <fieldset className="schema-object schema-array">
+      <fieldset className="schema-object schema-array schema-array-editor">
         <legend>
           <span className="schema-legend-content">
             {title}
@@ -412,28 +469,7 @@ function SchemaField({
           </span>
         </legend>
         {schema.description && !collapsibleObjects && <p>{schema.description}</p>}
-        {array.map((item, index) => (
-          <div className="schema-array-item" key={index}>
-            <SchemaField
-              schema={schema.items ?? { type: 'json' }}
-              path={`${path}.${index}`}
-              value={item}
-              sparse={sparse}
-              showAll={showAll}
-              configured
-              addLabel={addLabel}
-              removeLabel={removeLabel}
-              collapsibleObjects={collapsibleObjects}
-              onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
-            />
-            <button type="button" className="icon-button" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${title} ${index + 1}`}>
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
-        <button type="button" onClick={() => onChange([...array, initialValue(schema.items ?? { type: 'json' }, sparse)])}>
-          <Plus size={14} /> Add item
-        </button>
+        {arrayEditor}
       </fieldset>
     )
   }
