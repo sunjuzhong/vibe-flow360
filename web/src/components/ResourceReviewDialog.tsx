@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useId } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronRight, X } from 'lucide-react'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useI18n } from '../i18n'
@@ -24,7 +25,7 @@ export function ResourceReviewDialog({
   const subtitleId = useId()
   const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, '.resource-review-dialog-close')
 
-  return (
+  const content = (
     <div
       className="resource-review-dialog-overlay"
       role="presentation"
@@ -60,6 +61,7 @@ export function ResourceReviewDialog({
       </div>
     </div>
   )
+  return typeof document === 'undefined' ? content : createPortal(content, document.body)
 }
 
 export function ResourceReviewLaunchers({ children }: { children: ReactNode }) {

@@ -7,9 +7,7 @@ import {
   Ruler,
   ScanLine,
   Settings2,
-  SlidersHorizontal,
   Triangle,
-  Wrench,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
@@ -106,7 +104,7 @@ export default function SurfaceMeshWorkspace({
   onPlanVolumeMesh: () => void
 }) {
   const { t } = useI18n()
-  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | 'advanced' | null>(null)
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -299,6 +297,17 @@ export default function SurfaceMeshWorkspace({
                   onRangeChange={review.setRange}
                   onLocateExtreme={review.locateExtreme}
                 />
+                <SurfaceQualityFilterPanel
+                  fields={review.qualityFields}
+                  filter={qualityFilter.filter}
+                  matchCount={qualityFilter.matchCount}
+                  onAddRule={qualityFilter.addRule}
+                  onRemoveRule={qualityFilter.removeRule}
+                  onUpdateRule={qualityFilter.updateRule}
+                  onEnabledChange={qualityFilter.setEnabled}
+                  onOperatorChange={qualityFilter.setOperator}
+                  onReset={qualityFilter.reset}
+                />
               </>
             ) : review.mode === 'boundaries' ? (
               review.selectedBoundary ? (
@@ -328,16 +337,6 @@ export default function SurfaceMeshWorkspace({
                 .replace('{unassigned}', String(unassignedBoundaryCount))}
               onClick={() => setActiveReviewDialog('preflight')}
             />
-            {review.mode === 'quality' && (
-              <ResourceReviewLauncher
-                icon={<SlidersHorizontal size={14} />}
-                label={t('Quality controls')}
-                summary={t('{count} fields · {matches} matches')
-                  .replace('{count}', String(review.qualityFields.length))
-                  .replace('{matches}', String(qualityFilter.matchCount ?? 0))}
-                onClick={() => setActiveReviewDialog('quality')}
-              />
-            )}
             {review.surfaceParameters.length > 0 && (
               <ResourceReviewLauncher
                 icon={<Settings2 size={14} />}
@@ -346,13 +345,38 @@ export default function SurfaceMeshWorkspace({
                 onClick={() => setActiveReviewDialog('parameters')}
               />
             )}
-            <ResourceReviewLauncher
-              icon={<Wrench size={14} />}
-              label={t('Advanced review')}
-              summary={t('Compare · Clip · Export · AI patch')}
-              onClick={() => setActiveReviewDialog('advanced')}
-            />
           </ResourceReviewLaunchers>
+          <SurfaceAdvancedReview
+            versions={advanced.comparisonVersions}
+            compareId={advanced.compareId}
+            comparisonName={advanced.comparison?.resource.name}
+            loading={advanced.comparisonLoading}
+            error={advanced.comparisonError}
+            parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
+            baselineHistogram={review.histogram}
+            comparisonHistogram={advanced.comparison?.histogram ?? null}
+            qualityError={advanced.comparison?.qualityError}
+            clipEnabled={advanced.clipEnabled}
+            clipAxis={advanced.clipAxis}
+            clipPosition={advanced.clipPosition}
+            field={review.selectedFieldInfo}
+            probe={review.probe}
+            remediationBusy={advanced.remediationBusy}
+            remediationError={advanced.remediationError}
+            onCompareId={advanced.setCompareId}
+            onClipEnabled={advanced.setClipEnabled}
+            onClipAxis={advanced.setClipAxis}
+            onClipPosition={advanced.setClipPosition}
+            onCreateRemediation={() => {
+              if (!review.selectedFieldInfo || !review.probe) return
+              const recommendation = buildSurfaceRemediationRecommendation({
+                field: review.selectedFieldInfo,
+                probe: review.probe,
+                simulationParams: detail?.simulation_params,
+              })
+              void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
+            }}
+          />
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
             Configure Volume Mesh Draft
@@ -382,26 +406,6 @@ export default function SurfaceMeshWorkspace({
               </div>
             </ResourceReviewDialog>
           )}
-          {activeReviewDialog === 'quality' && (
-            <ResourceReviewDialog
-              title={t('Quality controls')}
-              subtitle={t('{count} fields').replace('{count}', String(review.qualityFields.length))}
-              icon={<SlidersHorizontal size={18} />}
-              onClose={() => setActiveReviewDialog(null)}
-            >
-              <SurfaceQualityFilterPanel
-                fields={review.qualityFields}
-                filter={qualityFilter.filter}
-                matchCount={qualityFilter.matchCount}
-                onAddRule={qualityFilter.addRule}
-                onRemoveRule={qualityFilter.removeRule}
-                onUpdateRule={qualityFilter.updateRule}
-                onEnabledChange={qualityFilter.setEnabled}
-                onOperatorChange={qualityFilter.setOperator}
-                onReset={qualityFilter.reset}
-              />
-            </ResourceReviewDialog>
-          )}
           {activeReviewDialog === 'parameters' && (
             <ResourceReviewDialog
               title={t('Parameters and evidence')}
@@ -409,47 +413,7 @@ export default function SurfaceMeshWorkspace({
               icon={<Settings2 size={18} />}
               onClose={() => setActiveReviewDialog(null)}
             >
-              <SurfaceParameterSummary parameters={review.surfaceParameters} />
-            </ResourceReviewDialog>
-          )}
-          {activeReviewDialog === 'advanced' && (
-            <ResourceReviewDialog
-              title={t('Advanced review')}
-              subtitle={t('Compare · Clip · Export · AI patch')}
-              icon={<Wrench size={18} />}
-              onClose={() => setActiveReviewDialog(null)}
-            >
-              <SurfaceAdvancedReview
-                versions={advanced.comparisonVersions}
-                compareId={advanced.compareId}
-                comparisonName={advanced.comparison?.resource.name}
-                loading={advanced.comparisonLoading}
-                error={advanced.comparisonError}
-                parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
-                baselineHistogram={review.histogram}
-                comparisonHistogram={advanced.comparison?.histogram ?? null}
-                qualityError={advanced.comparison?.qualityError}
-                clipEnabled={advanced.clipEnabled}
-                clipAxis={advanced.clipAxis}
-                clipPosition={advanced.clipPosition}
-                field={review.selectedFieldInfo}
-                probe={review.probe}
-                remediationBusy={advanced.remediationBusy}
-                remediationError={advanced.remediationError}
-                onCompareId={advanced.setCompareId}
-                onClipEnabled={advanced.setClipEnabled}
-                onClipAxis={advanced.setClipAxis}
-                onClipPosition={advanced.setClipPosition}
-                onCreateRemediation={() => {
-                  if (!review.selectedFieldInfo || !review.probe) return
-                  const recommendation = buildSurfaceRemediationRecommendation({
-                    field: review.selectedFieldInfo,
-                    probe: review.probe,
-                    simulationParams: detail?.simulation_params,
-                  })
-                  void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
-                }}
-              />
+              <SurfaceParameterSummary parameters={review.surfaceParameters} defaultOpen />
             </ResourceReviewDialog>
           )}
         </>

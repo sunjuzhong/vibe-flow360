@@ -169,6 +169,7 @@
 }
 
 .project-canvas > .resource-review-workspace > .resource-review-viewer {
+  position: relative;
   order: 0;
   grid-area: viewer;
   width: auto;
@@ -286,6 +287,15 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-inspector > .manifest-member-group,
+.surface-review-workspace .resource-review-inventory .surface-boundary-inspector > .manifest-member-group > .manifest-member-group__content:not([hidden]) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-tools {
@@ -672,18 +682,25 @@
 @media (max-width: 820px) {
   .project-canvas > .resource-review-workspace {
     grid-template-columns: minmax(0, 1fr) 260px;
-    grid-template-areas: 'viewer inspector';
+    grid-template-rows: minmax(320px, 60%) minmax(0, 40%);
+    grid-template-areas:
+      'viewer viewer'
+      'inventory inspector';
   }
 
-  .resource-review-inventory { display: none; }
+  .project-canvas > .resource-review-workspace > .resource-review-inventory {
+    display: flex;
+    border-top: 1px solid #dfe1d8;
+  }
 }
 
 @media (max-width: 680px) {
   .project-canvas > .resource-review-workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(300px, 58%) minmax(0, 42%);
+    grid-template-rows: minmax(300px, 52%) minmax(140px, 24%) minmax(0, 24%);
     grid-template-areas:
       'viewer'
+      'inventory'
       'inspector';
   }
 
@@ -695,6 +712,8 @@
     border-top: 1px solid #dfe1d8;
     border-left: 0;
   }
+
+  .resource-review-inventory { border-right: 0; }
 
   .surface-summary-grid { grid-template-columns: 1fr 1fr; }
 }

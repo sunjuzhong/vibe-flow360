@@ -1,8 +1,14 @@
 import type { SurfaceParameterRow } from '../../lib/surfaceMeshReview'
 
-export function SurfaceParameterSummary({ parameters }: { parameters: SurfaceParameterRow[] }) {
+export function SurfaceParameterSummary({
+  parameters,
+  defaultOpen = false,
+}: {
+  parameters: SurfaceParameterRow[]
+  defaultOpen?: boolean
+}) {
   return (
-    <details className="surface-parameter-summary">
+    <details className="surface-parameter-summary" open={defaultOpen}>
       <summary>Surface meshing parameters <span>{parameters.length}</span></summary>
       <dl>
         {parameters.map((parameter) => (
