@@ -23,7 +23,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   api,
   type GeometryComparison,
@@ -78,6 +78,7 @@ import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
+import './GeometryWorkspace.css'
 
 const readinessCopy = {
   ready: { label: 'Ready', detail: 'Available geometry evidence passes preflight.' },
@@ -90,6 +91,59 @@ function CheckIcon({ level }: { level: GeometryCheckLevel }) {
   if (level === 'blocked') return <XCircle size={14} />
   if (level === 'warning') return <AlertTriangle size={14} />
   return <CircleHelp size={14} />
+}
+
+type GeometryCapabilityPanel = 'appearance' | 'semantics' | 'diagnostics' | 'health'
+
+export function GeometryCapabilityDialog({
+  title,
+  subtitle,
+  icon,
+  children,
+  onClose,
+}: {
+  title: string
+  subtitle: string
+  icon: ReactNode
+  children: ReactNode
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    dialogRef.current?.focus()
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  return (
+    <div
+      className="geometry-capability-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="geometry-capability-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+      >
+        <header>
+          <span className="geometry-capability-dialog-icon">{icon}</span>
+          <div><strong>{title}</strong><small>{subtitle}</small></div>
+          <button type="button" onClick={onClose} aria-label={`Close ${title}`}><X size={17} /></button>
+        </header>
+        <div className="geometry-capability-dialog-body">{children}</div>
+      </section>
+    </div>
+  )
 }
 
 export function GeometryClipPopover({
@@ -224,6 +278,7 @@ export default function GeometryWorkspace({
   const [comparisonBusy, setComparisonBusy] = useState(false)
   const [advancedPlanBusy, setAdvancedPlanBusy] = useState(false)
   const [pendingFocusEntityIds, setPendingFocusEntityIds] = useState<string[]>([])
+  const [activeCapabilityPanel, setActiveCapabilityPanel] = useState<GeometryCapabilityPanel | null>(null)
   const diagnosticRunToken = useRef(0)
   const { manifest, state: viewerState } = useResourcePreview(
     detail ? 'Geometry' : null,
@@ -247,6 +302,10 @@ export default function GeometryWorkspace({
     : selectedGroup ? [selectedGroup.id] : []
   const selectedGroups = manifest?.groups.filter((group) => selectedGroupIds.includes(group.id)) ?? []
   const selectedGroupIdSet = new Set(selectedGroupIds)
+  const selectedEntityIds = selectedGroups.length > 0
+    ? selectedGroups.map((group) => group.id)
+    : selectedEdge ? [selectedEdge.id] : []
+  const selectedEntitiesVisible = selectedEntityIds.every((id) => entityVisibility[id] !== false)
   const resourceKey = resourceId ?? detail?.id ?? ''
   const clipPlane = useMemo<ViewerClipPlane | null>(() => {
     if (!clipEnabled) return null
@@ -276,6 +335,8 @@ export default function GeometryWorkspace({
   const warningCount = review.checks.filter((check) =>
     check.level === 'warning' || check.level === 'unknown',
   ).length
+  const attentionChecks = review.checks.filter((check) => check.level !== 'ready')
+  const passedChecks = review.checks.filter((check) => check.level === 'ready')
   const requestCamera = (type: ViewerCameraCommand['type']) => {
     setCameraCommand({ type, nonce: Date.now() })
   }
@@ -368,6 +429,7 @@ export default function GeometryWorkspace({
     setCompareId('')
     setComparison(null)
     setPendingFocusEntityIds([])
+    setActiveCapabilityPanel(null)
     setAppearanceAssignments(resourceKey ? loadGeometryAppearanceAssignments(resourceKey) : {})
   }, [resourceKey])
 
@@ -395,6 +457,21 @@ export default function GeometryWorkspace({
       ...current,
       [entityId]: current[entityId] === false,
     }))
+  }
+
+  const setSelectedEntitiesVisible = (visible: boolean) => {
+    if (selectedEntityIds.length === 0) return
+    setEntityVisibility((current) => ({
+      ...current,
+      ...Object.fromEntries(selectedEntityIds.map((id) => [id, visible])),
+    }))
+  }
+
+  const isolateSelectedEntities = () => {
+    if (selectedEntityIds.length === 0) return
+    const selected = new Set(selectedEntityIds)
+    const allEntities = [...(manifest?.groups ?? []), ...(manifest?.edges ?? [])]
+    setEntityVisibility(Object.fromEntries(allEntities.map(({ id }) => [id, selected.has(id)])))
   }
 
   const applyAppearanceToSelection = (appearanceId = selectedAppearanceId) => {
@@ -845,19 +922,29 @@ export default function GeometryWorkspace({
           </div>
           <p>{readiness.detail}</p>
           <div className="geometry-readiness-counts">
-            <span className="blocked">{blockingCount} blockers</span>
-            <span className="warning">{warningCount} warnings / unknown</span>
+            <button
+              type="button"
+              className="blocked"
+              disabled={blockingCount === 0}
+              onClick={() => setActiveCapabilityPanel('health')}
+            >{blockingCount} blockers</button>
+            <button
+              type="button"
+              className="warning"
+              disabled={warningCount === 0}
+              onClick={() => setActiveCapabilityPanel('health')}
+              aria-label={`Review ${warningCount} Geometry warnings or unknown checks`}
+            >{warningCount} warnings / unknown</button>
           </div>
         </div>
 
         <div className="geometry-summary-grid">
-          <div><span><Ruler size={12} /> Dimensions</span><strong>
+          <div className="geometry-summary-wide"><span><Ruler size={12} /> Dimensions</span><strong>
             {review.dimensions
               ? review.dimensions.map(formatGeometryNumber).join(' × ')
               : 'Not reported'}
             {review.dimensions && review.unit ? ` ${review.unit}` : ''}
           </strong></div>
-          <div><span><Shapes size={12} /> Surfaces</span><strong>{manifest?.groups.length ?? '—'}</strong></div>
           <div><span><Box size={12} /> Vertices</span><strong>{manifest?.vertices?.toLocaleString() ?? '—'}</strong></div>
           <div><span><Ruler size={12} /> Diagonal</span><strong>
             {review.diagonal === null
@@ -902,6 +989,36 @@ export default function GeometryWorkspace({
           ) : (
             <p>Select a face or edge in the viewer or model tree to inspect it.</p>
           )}
+          {selectedEntityIds.length > 0 && (
+            <div className="geometry-selection-actions" aria-label="Selection actions">
+              <button type="button" onClick={() => requestCamera('fit-selection')}>
+                <LocateFixed size={12} /> Focus
+              </button>
+              <button type="button" onClick={isolateSelectedEntities}>
+                <ScanLine size={12} /> Isolate
+              </button>
+              <button type="button" onClick={() => setSelectedEntitiesVisible(!selectedEntitiesVisible)}>
+                {selectedEntitiesVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                {selectedEntitiesVisible ? 'Hide' : 'Show'}
+              </button>
+              <button type="button" onClick={() => setEntityVisibility({})}>
+                <Eye size={12} /> Show all
+              </button>
+              {selectedGroups.length > 0 && (
+                <>
+                  <button type="button" onClick={() => setActiveCapabilityPanel('appearance')}>
+                    <Palette size={12} /> Material
+                  </button>
+                  <button type="button" onClick={() => setActiveCapabilityPanel('semantics')}>
+                    <Sparkles size={12} /> CFD role
+                  </button>
+                </>
+              )}
+              <button type="button" onClick={() => chooseGroups([])}>
+                <X size={12} /> Clear
+              </button>
+            </div>
+          )}
           {selectedGroups.length > 0 && (
             <label className="geometry-selection-material">
               Surface material
@@ -922,11 +1039,28 @@ export default function GeometryWorkspace({
           )}
         </section>
 
-        <details className="geometry-appearance-card geometry-disclosure-card" open>
-          <summary>
-            <span><Palette size={13} /> Display material</span>
-            <small>Visual appearance only</small>
-          </summary>
+        <div className="geometry-capability-launchers" aria-label="Geometry review tools">
+          <button type="button" onClick={() => setActiveCapabilityPanel('appearance')}>
+            <Palette size={14} /><span><strong>Display material</strong><small>Visual appearance</small></span>
+          </button>
+          <button type="button" onClick={() => setActiveCapabilityPanel('semantics')}>
+            <Sparkles size={14} /><span><strong>CFD semantics</strong><small>{assignmentList.length}/{manifest?.groups.length ?? 0} assigned</small></span>
+          </button>
+          <button type="button" onClick={() => setActiveCapabilityPanel('diagnostics')}>
+            <GitCompare size={14} /><span><strong>Diagnostics</strong><small>{diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'On demand'}</small></span>
+          </button>
+          <button type="button" onClick={() => setActiveCapabilityPanel('health')}>
+            <Shapes size={14} /><span><strong>Health evidence</strong><small>{blockingCount ? `${blockingCount} blockers` : `${warningCount} to review`}</small></span>
+          </button>
+        </div>
+
+        {activeCapabilityPanel === 'appearance' && (
+          <GeometryCapabilityDialog
+            title="Display material"
+            subtitle="Visual appearance only · shared across projects"
+            icon={<Palette size={17} />}
+            onClose={() => setActiveCapabilityPanel(null)}
+          >
           <div className="geometry-disclosure-content">
             <div className="geometry-panel-intent">
               <strong>How the model looks</strong>
@@ -972,13 +1106,16 @@ export default function GeometryWorkspace({
               Shared across projects · Material ID: {selectedAppearance?.id}. Names are editable labels; Surface links use the stable ID.
             </small>
           </div>
-        </details>
+          </GeometryCapabilityDialog>
+        )}
 
-        <details className="geometry-semantics-card geometry-disclosure-card">
-          <summary>
-            <span><Sparkles size={13} /> CFD semantic draft</span>
-            <small>Solver roles · {assignmentList.length}/{manifest?.groups.length ?? 0}</small>
-          </summary>
+        {activeCapabilityPanel === 'semantics' && (
+          <GeometryCapabilityDialog
+            title="CFD semantic draft"
+            subtitle={`Solver roles · ${assignmentList.length}/${manifest?.groups.length ?? 0} assigned`}
+            icon={<Sparkles size={17} />}
+            onClose={() => setActiveCapabilityPanel(null)}
+          >
           <div className="geometry-disclosure-content">
           <div className="geometry-panel-intent">
             <strong>What the surface means physically</strong>
@@ -1043,13 +1180,16 @@ export default function GeometryWorkspace({
           </button>
           <small className="geometry-semantic-safety">Creates a Draft review and preflight; no mesh or solver run is started.</small>
           </div>
-        </details>
+          </GeometryCapabilityDialog>
+        )}
 
-        <details className="geometry-advanced-card geometry-disclosure-card">
-          <summary>
-            <span><GitCompare size={13} /> Advanced diagnostics</span>
-            <small>{diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'On demand'}</small>
-          </summary>
+        {activeCapabilityPanel === 'diagnostics' && (
+          <GeometryCapabilityDialog
+            title="Advanced diagnostics"
+            subtitle={diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'Server-backed · on demand'}
+            icon={<GitCompare size={17} />}
+            onClose={() => setActiveCapabilityPanel(null)}
+          >
           <div className="geometry-disclosure-content">
           <p className="geometry-advanced-intro">Server-backed evidence only. Unsupported checks remain explicitly unknown.</p>
           <label className="geometry-semantic-field">
@@ -1218,16 +1358,27 @@ export default function GeometryWorkspace({
           )}
           {diagnosticError && <p className="geometry-semantic-message">{diagnosticError}</p>}
           </div>
-        </details>
+          </GeometryCapabilityDialog>
+        )}
 
-        <details className="geometry-health-card geometry-disclosure-card">
-          <summary>
-            <span><Shapes size={13} /> Geometry health evidence</span>
-            <small>{blockingCount ? `${blockingCount} blockers` : `${warningCount} to review`}</small>
-          </summary>
+        {activeCapabilityPanel === 'health' && (
+          <GeometryCapabilityDialog
+            title="Geometry health evidence"
+            subtitle={blockingCount ? `${blockingCount} blockers · ${warningCount} warnings or unknown` : `${warningCount} warnings or unknown to review`}
+            icon={<Shapes size={17} />}
+            onClose={() => setActiveCapabilityPanel(null)}
+          >
           <div className="geometry-disclosure-content">
+          <div className="geometry-panel-intent">
+            <strong>Why preflight reports {warningCount} warning{warningCount === 1 ? '' : 's'} / unknown</strong>
+            <span>Each item below states the available evidence. Unknown means the synchronized resource does not expose enough data for that check; it is not silently treated as passed.</span>
+          </div>
+          <div className="geometry-health-group-title">
+            <strong>Needs review</strong>
+            <span>{attentionChecks.length} checks</span>
+          </div>
           <div className="geometry-checks">
-            {review.checks.map((check) => (
+            {attentionChecks.map((check) => (
               <div className={check.level} key={check.key} title={check.detail}>
                 <CheckIcon level={check.level} />
                 <span><strong>{check.label}</strong><small>{check.detail}</small></span>
@@ -1241,8 +1392,22 @@ export default function GeometryWorkspace({
               </div>
             ))}
           </div>
+          {passedChecks.length > 0 && (
+            <details className="geometry-health-passed">
+              <summary>Passed evidence · {passedChecks.length}</summary>
+              <div className="geometry-checks">
+                {passedChecks.map((check) => (
+                  <div className={check.level} key={check.key} title={check.detail}>
+                    <CheckIcon level={check.level} />
+                    <span><strong>{check.label}</strong><small>{check.detail}</small></span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           </div>
-        </details>
+          </GeometryCapabilityDialog>
+        )}
 
         <button
           className="geometry-plan-action"

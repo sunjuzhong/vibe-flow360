@@ -1,0 +1,198 @@
+.geometry-readiness-counts button {
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 4px;
+  font: 9px 'DM Mono';
+  cursor: pointer;
+}
+
+.geometry-readiness-counts button:hover:not(:disabled),
+.geometry-readiness-counts button:focus-visible:not(:disabled) {
+  box-shadow: 0 0 0 2px rgb(116 135 58 / 18%);
+}
+
+.geometry-readiness-counts button:disabled { cursor: default; opacity: .65; }
+.geometry-summary-grid > .geometry-summary-wide { grid-column: 1 / -1; }
+
+.geometry-selection-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #eff0eb;
+}
+
+.geometry-selection-actions button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid #d8dcd2;
+  border-radius: 5px;
+  color: #596452;
+  background: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.geometry-selection-actions button:hover,
+.geometry-selection-actions button:focus-visible {
+  border-color: #afbf82;
+  color: #435516;
+  background: #f5f8eb;
+}
+
+.geometry-capability-launchers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.geometry-capability-launchers > button {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #e1e2dc;
+  border-radius: 7px;
+  color: #687061;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geometry-capability-launchers > button:hover,
+.geometry-capability-launchers > button:focus-visible {
+  border-color: #b4c488;
+  color: #4d601b;
+  background: #f7f9ef;
+}
+
+.geometry-capability-launchers span,
+.geometry-capability-launchers strong,
+.geometry-capability-launchers small { display: block; min-width: 0; }
+
+.geometry-capability-launchers strong {
+  overflow: hidden;
+  color: #4e5748;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geometry-capability-launchers small {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #93998f;
+  font: 7px 'DM Mono';
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geometry-capability-overlay {
+  position: fixed;
+  z-index: 180;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(30 35 27 / 34%);
+  backdrop-filter: blur(3px);
+}
+
+.geometry-capability-dialog {
+  display: flex;
+  width: min(680px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d6dacf;
+  border-radius: 12px;
+  outline: 0;
+  background: #fbfcf8;
+  box-shadow: 0 24px 70px rgb(29 35 25 / 25%);
+}
+
+.geometry-capability-dialog > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 15px;
+  border-bottom: 1px solid #e1e4db;
+  background: #f4f7ed;
+}
+
+.geometry-capability-dialog-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  color: #52651c;
+  background: #dfedb7;
+}
+
+.geometry-capability-dialog > header strong,
+.geometry-capability-dialog > header small { display: block; }
+.geometry-capability-dialog > header strong { color: #3d4737; font-size: 13px; }
+.geometry-capability-dialog > header small { margin-top: 2px; color: #848b7e; font-size: 9px; }
+
+.geometry-capability-dialog > header > button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d9ddd3;
+  border-radius: 7px;
+  color: #6b7465;
+  background: #fff;
+  cursor: pointer;
+}
+
+.geometry-capability-dialog > header > button:hover,
+.geometry-capability-dialog > header > button:focus-visible { color: #39452f; background: #eef2e7; }
+.geometry-capability-dialog-body { min-height: 0; overflow-y: auto; padding: 15px; }
+.geometry-capability-dialog-body > .geometry-disclosure-content { padding: 0; }
+.geometry-capability-dialog .geometry-panel-intent { font-size: 10px; }
+.geometry-capability-dialog .geometry-panel-intent strong { font-size: 11px; }
+.geometry-capability-dialog .geometry-checks > div { padding: 10px 4px; }
+.geometry-capability-dialog .geometry-checks strong,
+.geometry-capability-dialog .geometry-checks small { white-space: normal; }
+
+.geometry-health-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  color: #545d4e;
+}
+
+.geometry-health-group-title strong { font-size: 11px; }
+.geometry-health-group-title span { color: #8a6a21; font: 9px 'DM Mono'; }
+.geometry-health-passed { margin-top: 12px; border-top: 1px solid #e4e7de; }
+.geometry-health-passed > summary {
+  padding: 10px 0 2px;
+  color: #687b37;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 680px) {
+  .geometry-capability-overlay { padding: 10px; }
+  .geometry-capability-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .geometry-capability-launchers { grid-template-columns: 1fr; }
+}
