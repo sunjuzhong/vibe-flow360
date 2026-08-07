@@ -8,6 +8,7 @@ import {
   type AICreateResult,
   type FolderNode,
 } from '../api/client'
+import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360IdLink from './Flow360IdLink'
 import './AICreateSession.css'
@@ -38,11 +39,12 @@ export function aiCreateProgressStageState(progress: AICreateProgress, index: nu
 }
 
 export function AICreateProgressView({ progress, environment }: { progress: AICreateProgress; environment?: string }) {
+  const { t } = useI18n()
   return (
     <section className={`ai-create-progress-panel status-${progress.status}`} aria-live="polite">
       <div className="ai-create-progress-heading">
-        <strong>Live backend status</strong>
-        <span>{progress.status === 'running' ? 'In progress' : progress.status.replace('_', ' ')}</span>
+        <strong>{t('Live backend status')}</strong>
+        <span>{t(progress.status === 'running' ? 'In progress' : progress.status.replaceAll('_', ' '))}</span>
       </div>
       <ol className="ai-create-progress">
         {progress.stages.map((stage, index) => {
@@ -53,12 +55,12 @@ export function AICreateProgressView({ progress, environment }: { progress: AICr
               {state === 'failed' && <AlertCircle size={14} />}
               {state === 'paused' && <PauseCircle size={14} />}
               {(state === 'active' || state === 'pending') && <span />}
-              {stage}
+              {t(stage)}
             </li>
           )
         })}
       </ol>
-      {progress.detail && <p className="ai-create-progress-detail">{progress.detail}</p>}
+      {progress.detail && <p className="ai-create-progress-detail">{t(progress.detail)}</p>}
       {(progress.project_id || progress.resource_id) && (
         <small className="ai-create-progress-resource">
           {progress.project_id && <>Project · <Flow360IdLink environment={environment} projectId={progress.project_id} /></>}
@@ -128,17 +130,18 @@ export function AICreateClarificationForm({
   onChange: (id: string, value: unknown) => void
   onSubmit: (event: FormEvent) => void
 }) {
+  const { t } = useI18n()
   return (
     <form className="ai-create-clarification" onSubmit={onSubmit}>
       <div className="ai-create-clarification-heading">
         <span><CircleHelp size={16} /></span>
-        <div><strong>Engineering details</strong><small>Clarification round {round}</small></div>
+        <div><strong>{t('Engineering details')}</strong><small>{t(`Clarification round ${round}`)}</small></div>
       </div>
       <div className="ai-create-fields">
         {fields.map((field) => (
           <label className={`ai-create-field field-${field.type}`} key={field.id}>
-            <span>{field.label}{field.required && <em>*</em>}</span>
-            {field.description && <small>{field.description}</small>}
+            <span>{t(field.label)}{field.required && <em>*</em>}</span>
+            {field.description && <small>{t(field.description)}</small>}
             {field.type === 'select' && (
               <select
                 value={String(values[field.id] ?? '')}
@@ -146,8 +149,8 @@ export function AICreateClarificationForm({
                 disabled={busy}
                 required={field.required}
               >
-                {field.default === undefined && <option value="" disabled>Select an option</option>}
-                {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {field.default === undefined && <option value="" disabled>{t('Select an option')}</option>}
+                {field.options?.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}
               </select>
             )}
             {field.type === 'number' && (
@@ -182,17 +185,17 @@ export function AICreateClarificationForm({
                   onChange={(event) => onChange(field.id, event.target.checked)}
                   disabled={busy}
                 />
-                <b>{Boolean(values[field.id]) ? 'Yes' : 'No'}</b>
+                <b>{t(Boolean(values[field.id]) ? 'Yes' : 'No')}</b>
               </span>
             )}
           </label>
         ))}
       </div>
       <div className="ai-create-clarification-footer">
-        <span>The Agent will continue from these answers.</span>
+        <span>{t('The Agent will continue from these answers.')}</span>
         <button type="submit" disabled={busy}>
           {busy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
-          {busy ? 'Continuing…' : 'Continue with answers'}
+          {t(busy ? 'Continuing…' : 'Continue with answers')}
           {!busy && <ArrowRight size={14} />}
         </button>
       </div>
@@ -211,6 +214,7 @@ export default function AICreateModal({
   onClose: () => void
   onCreated: (result: AICreateResult) => void
 }) {
+  const { t } = useI18n()
   const [intent, setIntent] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -342,10 +346,10 @@ export default function AICreateModal({
       <aside className={`ai-create-session-dock${ready ? ' ready' : ''}`} aria-live="polite">
         <span className="ai-create-session-dock-icon">{ready ? <CheckCircle2 size={16} /> : <Sparkles size={16} />}</span>
         <span>
-          <strong>{ready ? 'AI Create is ready' : 'AI Create session'}</strong>
-          <small>{ready ? 'Project and Draft are ready to review.' : progress?.detail || 'Working in the background…'}</small>
+          <strong>{t(ready ? 'AI Create is ready' : 'AI Create session')}</strong>
+          <small>{t(ready ? 'Project and Draft are ready to review.' : progress?.detail || 'Working in the background…')}</small>
         </span>
-        <button type="button" onClick={() => setMinimized(false)}>{ready ? 'Review' : 'Open'}</button>
+        <button type="button" onClick={() => setMinimized(false)}>{t(ready ? 'Review' : 'Open')}</button>
       </aside>
     )
   }
@@ -355,14 +359,14 @@ export default function AICreateModal({
   return (
     <div className="ai-create-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeWhenIdle() }}>
       <div ref={modalRef} className="ai-create-modal" role="dialog" aria-modal="true" aria-labelledby="ai-create-title" tabIndex={-1}>
-        <button className="icon-button ai-create-minimize" type="button" onClick={() => setMinimized(true)} aria-label="Minimize AI Create session"><Minus size={18} /></button>
-        <button className="icon-button ai-create-close" type="button" onClick={closeWhenIdle} disabled={busy} aria-label="Close AI Create dialog"><X size={18} /></button>
+        <button className="icon-button ai-create-minimize" type="button" onClick={() => setMinimized(true)} aria-label={t('Minimize AI Create session')}><Minus size={18} /></button>
+        <button className="icon-button ai-create-close" type="button" onClick={closeWhenIdle} disabled={busy} aria-label={t('Close AI Create dialog')}><X size={18} /></button>
         <div className="ai-create-copy">
           <span className="ai-create-icon"><WandSparkles size={19} /></span>
           <div>
-            <p className="eyebrow">AI CREATE</p>
-            <h2 id="ai-create-title">{hasStarted ? 'Let’s define the simulation' : 'Describe the simulation you want'}</h2>
-            <p>This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.</p>
+            <p className="eyebrow">{t('AI CREATE')}</p>
+            <h2 id="ai-create-title">{t(hasStarted ? 'Let’s define the simulation' : 'Describe the simulation you want')}</h2>
+            <p>{t('This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.')}</p>
           </div>
         </div>
 
@@ -376,27 +380,27 @@ export default function AICreateModal({
                   setIntent(event.target.value)
                   if (error) setError('')
                 }}
-                placeholder="Describe the geometry, dimensions, flow conditions, and engineering objective."
+                placeholder={t('Describe the geometry, dimensions, flow conditions, and engineering objective.')}
                 rows={3}
                 disabled={busy}
-                aria-label="Simulation requirement"
+                aria-label={t('Simulation requirement')}
                 aria-describedby="ai-create-intent-limit"
                 aria-invalid={intentLimit.overLimit}
               />
               <div id="ai-create-intent-limit" className="ai-create-intent-limit" aria-live="polite">
-                <span>{intentLimit.characters.toLocaleString()} / {AI_CREATE_INTENT_MAX_CHARACTERS.toLocaleString()} characters</span>
+                <span>{t(`${intentLimit.characters.toLocaleString()} / ${AI_CREATE_INTENT_MAX_CHARACTERS.toLocaleString()} characters`)}</span>
                 {intentLimit.overLimit
-                  ? <strong>{Math.abs(intentLimit.remaining).toLocaleString()} over the limit — shorten the description to continue.</strong>
+                  ? <strong>{t(`${Math.abs(intentLimit.remaining).toLocaleString()} over the limit — shorten the description to continue.`)}</strong>
                   : intentLimit.nearLimit
-                    ? <strong>{intentLimit.remaining.toLocaleString()} characters remaining.</strong>
-                    : <small>Include the geometry, flow conditions, and engineering objective.</small>}
+                    ? <strong>{t(`${intentLimit.remaining.toLocaleString()} characters remaining.`)}</strong>
+                    : <small>{t('Include the geometry, flow conditions, and engineering objective.')}</small>}
               </div>
             </div>
             <div className="ai-create-form-footer">
-              <span>{folder ? `Destination · ${folder.name}` : 'Select a destination folder first'}</span>
+              <span>{t(folder ? `Destination · ${folder.name}` : 'Select a destination folder first')}</span>
               <button type="submit" disabled={!folder || !intent.trim() || busy || intentLimit.overLimit}>
                 {busy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
-                {busy ? 'Thinking…' : 'Start with AI'}
+                {t(busy ? 'Thinking…' : 'Start with AI')}
                 {!busy && <ArrowRight size={14} />}
               </button>
             </div>
@@ -407,8 +411,8 @@ export default function AICreateModal({
           <div className="ai-create-conversation" aria-live="polite">
             {transcript.map((item, index) => (
               <div className={`ai-create-message ${item.role}`} key={`${item.role}-${index}`}>
-                <span>{item.role === 'agent' ? <Sparkles size={13} /> : 'You'}</span>
-                <p>{item.text}</p>
+                <span>{item.role === 'agent' ? <Sparkles size={13} /> : t('You')}</span>
+                <p>{t(item.text)}</p>
               </div>
             ))}
           </div>
@@ -425,26 +429,26 @@ export default function AICreateModal({
           />
         )}
 
-        {!busy && !intent && <p className="ai-create-example">Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.</p>}
-        {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />Connecting to the AI Create backend…</div>}
+        {!busy && !intent && <p className="ai-create-example">{t('Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.')}</p>}
+        {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />{t('Connecting to the AI Create backend…')}</div>}
         {progress && <AICreateProgressView progress={progress} environment={environment} />}
-        {error && <div className="ai-create-error" role="alert">{error}</div>}
+        {error && <div className="ai-create-error" role="alert">{t(error)}</div>}
         {error && sessionId && !busy && (
           <button className="ai-create-retry" type="button" onClick={() => { void runCreate() }}>
-            <RotateCcw size={14} /> Retry current step
+            <RotateCcw size={14} /> {t('Retry current step')}
           </button>
         )}
         {completedResult && (
           <section className="ai-create-session-complete" aria-live="polite">
             <CheckCircle2 size={20} />
             <div>
-              <strong>Project and Draft are ready</strong>
-              <p>The validated checkpoints remain in this session. Opening the Project is now an explicit action.</p>
+              <strong>{t('Project and Draft are ready')}</strong>
+              <p>{t('The validated checkpoints remain in this session. Opening the Project is now an explicit action.')}</p>
             </div>
-            <button type="button" onClick={() => onCreated(completedResult)}>Open Project <ExternalLink size={14} /></button>
+            <button type="button" onClick={() => onCreated(completedResult)}>{t('Open Project')} <ExternalLink size={14} /></button>
           </section>
         )}
-        <p className="ai-create-safety">The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.</p>
+        <p className="ai-create-safety">{t('The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.')}</p>
       </div>
     </div>
   )

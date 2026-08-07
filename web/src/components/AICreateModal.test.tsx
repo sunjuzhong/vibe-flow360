@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
+import { I18nProvider } from '../i18n'
 import AICreateModal, {
   AI_CREATE_INTENT_MAX_CHARACTERS,
   AICreateClarificationForm,
@@ -11,9 +13,13 @@ import AICreateModal, {
   errorMessage,
 } from './AICreateModal'
 
+function renderWithI18n(node: ReactNode) {
+  return renderToStaticMarkup(<I18nProvider>{node}</I18nProvider>)
+}
+
 describe('AICreateModal', () => {
   it('presents natural-language project creation and the approval boundary', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderWithI18n(
       <AICreateModal
         folder={{ id: 'folder-1', name: 'Experiments', subfolders: [] }}
         onClose={() => undefined}
@@ -59,13 +65,13 @@ describe('AICreateModal', () => {
   })
 
   it('requires a destination folder', () => {
-    const markup = renderToStaticMarkup(<AICreateModal folder={null} onClose={() => undefined} onCreated={() => undefined} />)
+    const markup = renderWithI18n(<AICreateModal folder={null} onClose={() => undefined} onCreated={() => undefined} />)
     expect(markup).toContain('Select a destination folder first')
     expect(markup).toContain('disabled=""')
   })
 
   it('renders agent clarification fields as an engineering form', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderWithI18n(
       <AICreateClarificationForm
         round={2}
         busy={false}
@@ -104,7 +110,7 @@ describe('AICreateModal', () => {
       'complete', 'complete', 'active', 'pending',
     ])
 
-    const markup = renderToStaticMarkup(<AICreateProgressView progress={progress} />)
+    const markup = renderWithI18n(<AICreateProgressView progress={progress} />)
     expect(markup).toContain('Live backend status')
     expect(markup).toContain('Flow360 is processing the uploaded Geometry.')
     expect(markup).toContain('Project · <a class="id-link"')
@@ -137,7 +143,7 @@ describe('AICreateModal', () => {
       started_at: '2026-08-05T00:00:00Z',
       updated_at: '2026-08-05T00:00:01Z',
     }
-    const markup = renderToStaticMarkup(<AICreateProgressView progress={progress} />)
+    const markup = renderWithI18n(<AICreateProgressView progress={progress} />)
     expect(markup).toContain('status-completed')
     expect(markup.match(/class="complete"/g)).toHaveLength(3)
     expect(markup).toContain('Project and existing Draft are ready for review.')

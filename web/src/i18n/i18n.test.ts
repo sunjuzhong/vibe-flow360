@@ -65,6 +65,38 @@ describe('language settings', () => {
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 
+  it('covers the complete AI Create session chrome in Chinese', () => {
+    const messages = [
+      'AI CREATE',
+      'Describe the simulation you want',
+      'Let’s define the simulation',
+      'This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.',
+      'Describe the geometry, dimensions, flow conditions, and engineering objective.',
+      '0 / 4,000 characters',
+      '500 characters remaining.',
+      '25 over the limit — shorten the description to continue.',
+      'Destination · Experiments',
+      'Select a destination folder first',
+      'Start with AI',
+      'Live backend status',
+      'In progress',
+      'Design CAD',
+      'Validate STEP',
+      'Engineering details',
+      'Clarification round 2',
+      'Continue with answers',
+      'AI Create is ready',
+      'Project and Draft are ready to review.',
+      'Working in the background…',
+      'Retry current step',
+      'Project and Draft are ready',
+      'Open Project',
+      'The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.',
+    ]
+
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
   it('covers the T04 tutorial and expression editor in Chinese', () => {
     const tutorialData = [
       ...t04Steps.flatMap(({ title, summary }) => [title, summary]),
