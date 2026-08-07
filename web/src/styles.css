@@ -2341,25 +2341,41 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   box-shadow: 0 2px 8px rgb(39 46 31 / 8%);
   font-size: 8px;
 }
-.viewer-top-toolbar {
+.viewer-view-toolbar {
   position: absolute;
   z-index: 13;
   top: 12px;
-  right: 178px;
+  left: 50%;
   display: flex;
-  min-height: 34px;
   align-items: center;
   gap: 4px;
-  padding: 4px;
-  border: 1px solid rgb(211 216 204 / 88%);
-  border-radius: 9px;
-  background: rgb(255 255 252 / 91%);
-  box-shadow: 0 5px 16px rgb(39 46 31 / 11%);
-  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
 }
-.viewer-top-toolbar > button,
-.viewer-top-toolbar .geometry-camera-toolbar > button,
-.viewer-top-toolbar .surface-advanced-toolbar > button {
+.viewer-view-toolbar button {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border: 1px solid rgb(203 208 195 / 88%);
+  border-radius: 5px;
+  color: #3f443a;
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 2px 7px rgb(39 46 31 / 7%);
+  font-size: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.viewer-view-toolbar button:hover { background: rgb(234 237 228 / 94%); }
+.viewer-view-toolbar button.active {
+  border-color: #789521;
+  color: #fff;
+  background: #789521;
+}
+.viewer-action-toolbar-slot > button,
+.viewer-action-toolbar-slot .geometry-camera-toolbar > button,
+.viewer-action-toolbar-slot .surface-advanced-toolbar > button {
   position: relative;
   display: inline-flex;
   min-height: 29px;
@@ -2374,9 +2390,9 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   font-size: 8px;
   cursor: pointer;
 }
-.viewer-top-toolbar button:hover { border-color: #adb5a4; background: #f0f2eb; }
-.viewer-top-toolbar button.active { border-color: #94ad43; color: #2d3b19; background: #eef5dc; }
-.viewer-top-toolbar .viewer-tools-launcher {
+.viewer-action-toolbar-slot button:hover { border-color: #adb5a4; background: #f0f2eb; }
+.viewer-action-toolbar-slot button.active { border-color: #94ad43; color: #2d3b19; background: #eef5dc; }
+.viewer-action-toolbar-slot .viewer-tools-launcher {
   position: relative;
   display: inline-flex;
   min-height: 29px;
@@ -2391,10 +2407,10 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   font-weight: 700;
   cursor: pointer;
 }
-.viewer-top-toolbar .viewer-tools-menu { top: calc(100% + 10px); bottom: auto; }
-.viewer-top-toolbar .surface-combined-toolbar,
-.viewer-top-toolbar .surface-advanced-toolbar,
-.viewer-top-toolbar .geometry-camera-toolbar { display: contents; }
+.viewer-action-toolbar-slot .surface-combined-toolbar,
+.viewer-action-toolbar-slot .surface-advanced-toolbar,
+.viewer-action-toolbar-slot .geometry-camera-toolbar { display: contents; }
+.viewer-action-toolbar-slot .viewer-icon-tooltip::after { top: auto; bottom: calc(100% + 7px); }
 .viewer-toolbar-slot:has(.viewer-toolbar-sections) {
   padding: 4px;
   border-color: rgb(211 216 204 / 88%);

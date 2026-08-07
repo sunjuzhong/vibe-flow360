@@ -1214,7 +1214,12 @@ export function Viewer3D({
       {visibleState.status === 'ready' && (
         <>
           <ViewerNavCube onCommand={applyCameraCommand} />
-          <div className="viewer-top-toolbar" role="toolbar" aria-label="Common viewer actions">
+          {toolbar && (
+            <div className="viewer-view-toolbar" role="toolbar" aria-label="Viewer display modes">
+              {toolbar}
+            </div>
+          )}
+          <div className="viewer-toolbar-slot viewer-action-toolbar-slot" role="toolbar" aria-label="Common viewer actions">
             <button
               className="viewer-top-toolbar-fit viewer-icon-tooltip"
               data-tooltip="Fit the complete model in the viewport"
@@ -1250,11 +1255,6 @@ export function Viewer3D({
               >
                 Wire
               </button>
-            </div>
-          )}
-          {toolbar && (
-            <div className="viewer-toolbar-slot">
-              {toolbar}
             </div>
           )}
         </>

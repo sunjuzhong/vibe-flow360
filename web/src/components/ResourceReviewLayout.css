@@ -60,51 +60,50 @@
   padding-bottom: 0;
 }
 
-:is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container[data-viewer-status='ready']:has(.viewer-toolbar-slot) {
-  padding-bottom: 58px;
+:is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-:is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
-  right: 10px;
-  left: auto;
-  transform: none;
+:is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-action-toolbar-slot) .viewer-asset-stats {
+  bottom: 54px;
+}
+
+:is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-view-toolbar) .viewer-field-panel {
+  top: 58px;
 }
 
 @media (max-width: 1100px) {
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container[data-viewer-status='ready']:has(.viewer-toolbar-slot) {
-    padding-bottom: 62px;
-  }
-
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-asset-stats {
     display: none;
   }
 
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
-    right: 8px;
+    right: auto;
     bottom: 8px;
+    left: 50%;
+    max-width: calc(100% - 16px);
+    transform: translateX(-50%);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-view-toolbar {
+    top: 196px;
+    right: 8px;
     left: 8px;
     transform: none;
     flex-wrap: wrap;
     justify-content: center;
   }
 
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-top-toolbar {
-    right: 182px;
-    max-width: calc(100% - 192px);
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-field-panel {
-    top: 144px;
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-view-toolbar) .viewer-field-panel {
+    top: 242px;
   }
 }
 
 @media (max-width: 680px) {
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container[data-viewer-status='ready']:has(.viewer-toolbar-slot) {
-    padding-bottom: 64px;
-  }
-
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-navigation {
     top: 8px;
     right: 8px;
@@ -116,29 +115,30 @@
     bottom: 6px;
   }
 
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-top-toolbar {
-    top: 8px;
-    right: 142px;
-    max-width: calc(100% - 150px);
-    padding: 3px;
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-view-toolbar {
+    top: 152px;
   }
 
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-top-toolbar button span {
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-action-toolbar-slot button span {
     display: none;
+  }
+
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-view-toolbar) .viewer-field-panel {
+    top: 198px;
   }
 
 }
 
 @media (min-width: 391px) and (max-width: 680px) {
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-field-panel {
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:not(:has(.viewer-view-toolbar)) .viewer-field-panel {
     top: 112px;
   }
 }
 
 @media (max-width: 390px) {
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-field-panel {
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-action-toolbar-slot) .viewer-field-panel {
     top: auto;
-    bottom: 50px;
+    bottom: 86px;
   }
 
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-floating-panel {
