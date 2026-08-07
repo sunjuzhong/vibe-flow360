@@ -23,6 +23,137 @@
   background: rgba(250, 250, 247, .97);
 }
 
+.resource-review-launchers {
+  overflow: hidden;
+  border: 1px solid #dde1d5;
+  border-radius: 9px;
+  background: rgba(255, 255, 253, .86);
+}
+
+.resource-review-launchers-heading {
+  padding: 8px 10px 6px;
+  color: #8a9183;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.resource-review-launchers > div { display: grid; }
+
+.resource-review-launcher {
+  display: grid;
+  grid-template-columns: 27px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 43px;
+  padding: 7px 9px;
+  color: #4e5848;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid #eceee7;
+  background: transparent;
+}
+
+.resource-review-launcher:hover,
+.resource-review-launcher:focus-visible { background: #f3f6ec; }
+.resource-review-launcher > span:nth-child(2) { min-width: 0; }
+.resource-review-launcher strong,
+.resource-review-launcher small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-review-launcher strong { font-size: 11px; }
+.resource-review-launcher small { margin-top: 2px; color: #858d80; font-size: 9px; }
+.resource-review-launcher > svg { color: #9aa292; }
+
+.resource-review-launcher-icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  color: #617240;
+  border-radius: 7px;
+  background: #eef3df;
+}
+
+.resource-review-dialog-overlay {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(27, 31, 25, .32);
+  backdrop-filter: blur(2px);
+}
+
+.resource-review-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid #d8ddcf;
+  border-radius: 14px;
+  background: #fbfbf8;
+  box-shadow: 0 24px 70px rgba(29, 35, 25, .2);
+}
+
+.resource-review-dialog > header {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 34px;
+  gap: 10px;
+  align-items: center;
+  min-height: 62px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e2e5db;
+  background: #f3f6ec;
+}
+
+.resource-review-dialog > header strong,
+.resource-review-dialog > header small { display: block; }
+.resource-review-dialog > header strong { color: #3d4737; font-size: 14px; }
+.resource-review-dialog > header small { margin-top: 3px; color: #7d8677; font-size: 10px; }
+
+.resource-review-dialog-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #566a2e;
+  border-radius: 9px;
+  background: #dfedb4;
+}
+
+.resource-review-dialog-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #677061;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.resource-review-dialog-close:hover,
+.resource-review-dialog-close:focus-visible { border-color: #d5dbc9; background: #fff; }
+
+.resource-review-dialog-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.resource-review-dialog-body > :first-child { margin-top: 0; }
+.resource-review-dialog-body > :last-child { margin-bottom: 0; }
+.resource-review-dialog-body .geometry-checks { margin: 0; }
+.resource-review-dialog-body .case-review-details { margin-top: 10px; }
+
+@media (max-width: 680px) {
+  .resource-review-dialog-overlay { padding: 8px; }
+  .resource-review-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+}
+
 .resource-review-inventory {
   display: flex;
   flex-direction: column;

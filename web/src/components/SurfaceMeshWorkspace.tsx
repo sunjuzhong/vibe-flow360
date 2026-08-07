@@ -6,8 +6,12 @@ import {
   Grid3X3,
   Ruler,
   ScanLine,
+  Settings2,
+  SlidersHorizontal,
   Triangle,
+  Wrench,
 } from 'lucide-react'
+import { useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D } from './viewer/LazyViewer3D'
@@ -25,6 +29,12 @@ import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import {
+  ResourceReviewDialog,
+  ResourceReviewLauncher,
+  ResourceReviewLaunchers,
+} from './ResourceReviewDialog'
+import { useI18n } from '../i18n'
 import {
   SurfaceAdvancedReview,
   SurfaceAdvancedToolbar,
@@ -95,6 +105,8 @@ export default function SurfaceMeshWorkspace({
   onCreateRemediationPlan: (recommendation: SurfaceRemediationRecommendation) => Promise<void>
   onPlanVolumeMesh: () => void
 }) {
+  const { t } = useI18n()
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | 'advanced' | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -266,17 +278,6 @@ export default function SurfaceMeshWorkspace({
             </div>
           )}
 
-          {reviewNotices.length > 0 && (
-            <div className="geometry-checks surface-review-notices">
-              {reviewNotices.map((notice) => (
-                <div className="warning" key={notice}>
-                  <CircleDashed size={14} />
-                  <span><strong>{notice}</strong></span>
-                </div>
-              ))}
-            </div>
-          )}
-
           <section className="geometry-selection-card surface-active-review">
             <div className="geometry-section-title">
               <ScanLine size={13} />
@@ -298,17 +299,6 @@ export default function SurfaceMeshWorkspace({
                   onRangeChange={review.setRange}
                   onLocateExtreme={review.locateExtreme}
                 />
-                <SurfaceQualityFilterPanel
-                  fields={review.qualityFields}
-                  filter={qualityFilter.filter}
-                  matchCount={qualityFilter.matchCount}
-                  onAddRule={qualityFilter.addRule}
-                  onRemoveRule={qualityFilter.removeRule}
-                  onUpdateRule={qualityFilter.updateRule}
-                  onEnabledChange={qualityFilter.setEnabled}
-                  onOperatorChange={qualityFilter.setOperator}
-                  onReset={qualityFilter.reset}
-                />
               </>
             ) : review.mode === 'boundaries' ? (
               review.selectedBoundary ? (
@@ -329,46 +319,138 @@ export default function SurfaceMeshWorkspace({
             )}
           </section>
 
-          {review.surfaceParameters.length > 0 && (
-            <SurfaceParameterSummary parameters={review.surfaceParameters} />
-          )}
-          <SurfaceAdvancedReview
-            versions={advanced.comparisonVersions}
-            compareId={advanced.compareId}
-            comparisonName={advanced.comparison?.resource.name}
-            loading={advanced.comparisonLoading}
-            error={advanced.comparisonError}
-            parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
-            baselineHistogram={review.histogram}
-            comparisonHistogram={advanced.comparison?.histogram ?? null}
-            qualityError={advanced.comparison?.qualityError}
-            clipEnabled={advanced.clipEnabled}
-            clipAxis={advanced.clipAxis}
-            clipPosition={advanced.clipPosition}
-            field={review.selectedFieldInfo}
-            probe={review.probe}
-            remediationBusy={advanced.remediationBusy}
-            remediationError={advanced.remediationError}
-            onCompareId={advanced.setCompareId}
-            onClipEnabled={advanced.setClipEnabled}
-            onClipAxis={advanced.setClipAxis}
-            onClipPosition={advanced.setClipPosition}
-            onCreateRemediation={() => {
-              if (!review.selectedFieldInfo || !review.probe) return
-              const recommendation = buildSurfaceRemediationRecommendation({
-                field: review.selectedFieldInfo,
-                probe: review.probe,
-                simulationParams: detail?.simulation_params,
-              })
-              void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
-            }}
-          />
+          <ResourceReviewLaunchers>
+            <ResourceReviewLauncher
+              icon={<Activity size={14} />}
+              label={t('Preflight evidence')}
+              summary={t('{count} conflicts · {unassigned} unassigned')
+                .replace('{count}', String(review.boundaryConflictCount))
+                .replace('{unassigned}', String(unassignedBoundaryCount))}
+              onClick={() => setActiveReviewDialog('preflight')}
+            />
+            {review.mode === 'quality' && (
+              <ResourceReviewLauncher
+                icon={<SlidersHorizontal size={14} />}
+                label={t('Quality controls')}
+                summary={t('{count} fields · {matches} matches')
+                  .replace('{count}', String(review.qualityFields.length))
+                  .replace('{matches}', String(qualityFilter.matchCount ?? 0))}
+                onClick={() => setActiveReviewDialog('quality')}
+              />
+            )}
+            {review.surfaceParameters.length > 0 && (
+              <ResourceReviewLauncher
+                icon={<Settings2 size={14} />}
+                label={t('Parameters and evidence')}
+                summary={t('{count} surface parameters').replace('{count}', String(review.surfaceParameters.length))}
+                onClick={() => setActiveReviewDialog('parameters')}
+              />
+            )}
+            <ResourceReviewLauncher
+              icon={<Wrench size={14} />}
+              label={t('Advanced review')}
+              summary={t('Compare · Clip · Export · AI patch')}
+              onClick={() => setActiveReviewDialog('advanced')}
+            />
+          </ResourceReviewLaunchers>
           <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
             <GitPullRequestDraft size={15} />
             Configure Volume Mesh Draft
           </button>
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
+          )}
+          {activeReviewDialog === 'preflight' && (
+            <ResourceReviewDialog
+              title={t('Preflight evidence')}
+              subtitle={reviewLabel}
+              icon={<Activity size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <div className="geometry-checks surface-review-notices">
+                {review.boundaryConflictCount > 0 && (
+                  <div className="blocked"><Activity size={14} /><span><strong>{review.boundaryConflictCount} conflicting boundary assignments</strong></span></div>
+                )}
+                {unassignedBoundaryCount > 0 && (
+                  <div className="warning"><CircleDashed size={14} /><span><strong>{unassignedBoundaryCount} unassigned boundaries</strong></span></div>
+                )}
+                {reviewNotices.length > 0 ? reviewNotices.map((notice) => (
+                  <div className="warning" key={notice}><CircleDashed size={14} /><span><strong>{notice}</strong></span></div>
+                )) : review.boundaryConflictCount === 0 && unassignedBoundaryCount === 0
+                  ? <div className="ready"><CheckCircle2 size={14} /><span><strong>{reviewDetail}</strong></span></div>
+                  : null}
+              </div>
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'quality' && (
+            <ResourceReviewDialog
+              title={t('Quality controls')}
+              subtitle={t('{count} fields').replace('{count}', String(review.qualityFields.length))}
+              icon={<SlidersHorizontal size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <SurfaceQualityFilterPanel
+                fields={review.qualityFields}
+                filter={qualityFilter.filter}
+                matchCount={qualityFilter.matchCount}
+                onAddRule={qualityFilter.addRule}
+                onRemoveRule={qualityFilter.removeRule}
+                onUpdateRule={qualityFilter.updateRule}
+                onEnabledChange={qualityFilter.setEnabled}
+                onOperatorChange={qualityFilter.setOperator}
+                onReset={qualityFilter.reset}
+              />
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'parameters' && (
+            <ResourceReviewDialog
+              title={t('Parameters and evidence')}
+              subtitle={t('{count} surface parameters').replace('{count}', String(review.surfaceParameters.length))}
+              icon={<Settings2 size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <SurfaceParameterSummary parameters={review.surfaceParameters} />
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'advanced' && (
+            <ResourceReviewDialog
+              title={t('Advanced review')}
+              subtitle={t('Compare · Clip · Export · AI patch')}
+              icon={<Wrench size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <SurfaceAdvancedReview
+                versions={advanced.comparisonVersions}
+                compareId={advanced.compareId}
+                comparisonName={advanced.comparison?.resource.name}
+                loading={advanced.comparisonLoading}
+                error={advanced.comparisonError}
+                parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
+                baselineHistogram={review.histogram}
+                comparisonHistogram={advanced.comparison?.histogram ?? null}
+                qualityError={advanced.comparison?.qualityError}
+                clipEnabled={advanced.clipEnabled}
+                clipAxis={advanced.clipAxis}
+                clipPosition={advanced.clipPosition}
+                field={review.selectedFieldInfo}
+                probe={review.probe}
+                remediationBusy={advanced.remediationBusy}
+                remediationError={advanced.remediationError}
+                onCompareId={advanced.setCompareId}
+                onClipEnabled={advanced.setClipEnabled}
+                onClipAxis={advanced.setClipAxis}
+                onClipPosition={advanced.setClipPosition}
+                onCreateRemediation={() => {
+                  if (!review.selectedFieldInfo || !review.probe) return
+                  const recommendation = buildSurfaceRemediationRecommendation({
+                    field: review.selectedFieldInfo,
+                    probe: review.probe,
+                    simulationParams: detail?.simulation_params,
+                  })
+                  void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
+                }}
+              />
+            </ResourceReviewDialog>
           )}
         </>
       )}

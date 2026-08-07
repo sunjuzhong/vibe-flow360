@@ -17,6 +17,8 @@ import {
   Layers,
   Eye,
   EyeOff,
+  Info,
+  Settings2,
 } from 'lucide-react'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
@@ -29,6 +31,12 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import {
+  ResourceReviewDialog,
+  ResourceReviewLauncher,
+  ResourceReviewLaunchers,
+} from './ResourceReviewDialog'
+import { useI18n } from '../i18n'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
 import { StructuredDataView } from './StructuredDataView'
 import {
@@ -233,6 +241,8 @@ export default function CaseWorkspace({
   onPlanCase: () => void
   onRefresh: () => void
 }) {
+  const { t } = useI18n()
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [caseFields, setCaseFields] = useState<string[]>([])
@@ -260,6 +270,7 @@ export default function CaseWorkspace({
   )
   const surfaceGroups = manifest?.groups ?? []
   const visibleSurfaceCount = visibleCaseSurfaceCount(surfaceGroups, entityVisibility)
+  const selectedSurface = surfaceGroups.find((group) => group.id === viewerSelection.groupId) ?? null
 
   useEffect(() => {
     setEntityVisibility(Object.fromEntries(surfaceGroups.map((group) => [group.id, group.visible])))
@@ -537,51 +548,43 @@ export default function CaseWorkspace({
             </div>
           )}
 
-          <section className="geometry-selection-card case-lifecycle-card">
-            <div className="geometry-section-title"><Activity size={13} /> Solver lifecycle</div>
+          <section className="geometry-selection-card case-selection-card">
+            <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
             <dl>
-              <div><dt>Started</dt><dd>{viewModel.startTime}</dd></div>
-              <div><dt>Finished</dt><dd>{viewModel.endTime}</dd></div>
-              <div><dt>Artifacts</dt><dd>{resultCount}</dd></div>
+              <div><dt>Surface</dt><dd>{selectedSurface?.name ?? 'None selected'}</dd></div>
               <div><dt>Selected field</dt><dd>{activeField ?? 'Base mesh'}</dd></div>
+              {selectedSurface && <div><dt>Triangles</dt><dd>{selectedSurface.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>}
             </dl>
           </section>
 
-          <details className="case-review-details" open>
-            <summary><Gauge size={13} /> Physical setup</summary>
-            <div className="case-review-detail-block">
-              <strong>Operating conditions</strong>
-              <StructuredDataView value={viewModel.operatingPoint} empty="Not reported by Flow360 snapshot." />
-              <strong>Reference quantities</strong>
-              <StructuredDataView value={viewModel.referenceQuantities} empty="Not reported by Flow360 snapshot." />
-            </div>
-          </details>
-
-          <details className="case-review-details">
-            <summary><Thermometer size={13} /> Solver settings</summary>
-            <div className="case-review-detail-block">
-              <StructuredDataView value={viewModel.solverSettings} empty="Not reported by Flow360 snapshot." />
-            </div>
-          </details>
-
-          {convResult && (
-            <details className="case-review-details">
-              <summary><BarChart3 size={13} /> Convergence evidence</summary>
-              <div className="case-review-detail-block">
-                {Object.entries(convResult.assessments).map(([key, assessment]: [string, ConvergenceAssessment]) => (
-                  <div className="case-assessment-compact" key={key}>
-                    <strong>{formatAssessmentKey(key)}</strong>
-                    {Object.entries(assessment.metrics).map(([name, metric]: [string, ConvergenceMetric]) => (
-                      <div className={metric.stable ? 'stable' : 'unstable'} key={name}>
-                        <span>{name}</span>
-                        <small>{formatNumber(metric.final)} · {metric.stable ? 'stable' : metric.trend}</small>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
+          <ResourceReviewLaunchers>
+            <ResourceReviewLauncher
+              icon={<Clock size={14} />}
+              label={t('Run details')}
+              summary={`${t(statusLabel(viewModel.status))} · ${t(viewModel.runTime)}`}
+              onClick={() => setActiveReviewDialog('run')}
+            />
+            <ResourceReviewLauncher
+              icon={<Gauge size={14} />}
+              label={t('Physical setup')}
+              summary={metricText(velocity)}
+              onClick={() => setActiveReviewDialog('physics')}
+            />
+            <ResourceReviewLauncher
+              icon={<Settings2 size={14} />}
+              label={t('Solver settings')}
+              summary={t(viewModel.turbulenceModel)}
+              onClick={() => setActiveReviewDialog('solver')}
+            />
+            {convResult && (
+              <ResourceReviewLauncher
+                icon={<BarChart3 size={14} />}
+                label={t('Convergence evidence')}
+                summary={t(formatConvergenceStatus(convResult.status))}
+                onClick={() => setActiveReviewDialog('convergence')}
+              />
+            )}
+          </ResourceReviewLaunchers>
 
           {previewSource === 'fallback' && (
             <div className="volume-source-warning" role="status">
@@ -606,6 +609,71 @@ export default function CaseWorkspace({
           <small className="readiness-summary">Variations are staged as auditable Draft revisions before Flow360 execution.</small>
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
+          )}
+          {activeReviewDialog === 'run' && (
+            <ResourceReviewDialog
+              title={t('Run details')}
+              subtitle={`${t(statusLabel(viewModel.status))} · ${t(viewModel.runTime)}`}
+              icon={<Clock size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <section className="geometry-selection-card case-lifecycle-card">
+                <div className="geometry-section-title"><Activity size={13} /> Solver lifecycle</div>
+                <dl>
+                  <div><dt>Started</dt><dd>{viewModel.startTime}</dd></div>
+                  <div><dt>Finished</dt><dd>{viewModel.endTime}</dd></div>
+                  <div><dt>Artifacts</dt><dd>{resultCount}</dd></div>
+                  <div><dt>Selected field</dt><dd>{activeField ?? 'Base mesh'}</dd></div>
+                </dl>
+              </section>
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'physics' && (
+            <ResourceReviewDialog
+              title={t('Physical setup')}
+              subtitle={t('Operating conditions')}
+              icon={<Gauge size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <div className="case-review-detail-block">
+                <strong>Operating conditions</strong>
+                <StructuredDataView value={viewModel.operatingPoint} empty="Not reported by Flow360 snapshot." />
+                <strong>Reference quantities</strong>
+                <StructuredDataView value={viewModel.referenceQuantities} empty="Not reported by Flow360 snapshot." />
+              </div>
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'solver' && (
+            <ResourceReviewDialog
+              title={t('Solver settings')}
+              subtitle={t(viewModel.turbulenceModel)}
+              icon={<Thermometer size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <StructuredDataView value={viewModel.solverSettings} empty="Not reported by Flow360 snapshot." />
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'convergence' && convResult && (
+            <ResourceReviewDialog
+              title={t('Convergence evidence')}
+              subtitle={t(formatConvergenceStatus(convResult.status))}
+              icon={<BarChart3 size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <div className="case-review-detail-block">
+                {Object.entries(convResult.assessments).map(([key, assessment]: [string, ConvergenceAssessment]) => (
+                  <div className="case-assessment-compact" key={key}>
+                    <strong>{formatAssessmentKey(key)}</strong>
+                    {Object.entries(assessment.metrics).map(([name, metric]: [string, ConvergenceMetric]) => (
+                      <div className={metric.stable ? 'stable' : 'unstable'} key={name}>
+                        <span>{name}</span>
+                        <small>{formatNumber(metric.final)} · {metric.stable ? 'stable' : metric.trend}</small>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </ResourceReviewDialog>
           )}
         </>
       )}

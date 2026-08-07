@@ -7,7 +7,9 @@ import {
   Layers,
   Ruler,
   ScanLine,
+  Settings2,
   Share2,
+  SlidersHorizontal,
   Triangle,
   Volume2,
 } from 'lucide-react'
@@ -23,6 +25,12 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import {
+  ResourceReviewDialog,
+  ResourceReviewLauncher,
+  ResourceReviewLaunchers,
+} from './ResourceReviewDialog'
+import { useI18n } from '../i18n'
 import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { assessVolumeMeshQuality, computeVolumeReadiness, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
@@ -100,6 +108,8 @@ export default function VolumeMeshWorkspace({
   onPlanCase: () => void
   onShowLogs?: () => void
 }) {
+  const { t } = useI18n()
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'VolumeMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -283,33 +293,6 @@ export default function VolumeMeshWorkspace({
                 onRangeChange={(range) => review.setRange(range)}
                 onLocateExtreme={review.locateExtreme}
               />
-              <VolumeQualityAssessmentPanel
-                assessment={qualityAssessment}
-                thresholds={qualityThresholds.thresholds}
-                selectedFieldName={review.selectedField}
-                onThresholdChange={qualityThresholds.updateThreshold}
-                onResetThreshold={qualityThresholds.resetThreshold}
-                onResetAll={qualityThresholds.resetAll}
-                onReviewFinding={(finding) => {
-                  const field = review.qualityFields.find((candidate) => candidate.name === finding.fieldName)
-                  const threshold = qualityThresholds.thresholds.find((candidate) => candidate.fieldName === finding.fieldName)
-                  if (!field || !threshold) return
-                  review.setSelectedField(field.name)
-                  qualityFilter.setFilter(volumeQualityRiskFilter(field, threshold))
-                }}
-              />
-              <SurfaceQualityFilterPanel
-                fields={review.qualityFields}
-                filter={qualityFilter.filter}
-                matchCount={qualityFilter.matchCount}
-                onAddRule={qualityFilter.addRule}
-                onRemoveRule={qualityFilter.removeRule}
-                onUpdateRule={qualityFilter.updateRule}
-                onEnabledChange={qualityFilter.setEnabled}
-                onOperatorChange={qualityFilter.setOperator}
-                onReset={qualityFilter.reset}
-                elementLabel="Cell"
-              />
             </section>
           ) : review.mode === 'boundary-layer' ? (
             <BoundaryLayerInspector
@@ -374,16 +357,34 @@ export default function VolumeMeshWorkspace({
             </div>
           )}
 
-          <div className="geometry-checks volume-mesh-checks">
-            {checks.map((check) => (
-              <div className={check.status === 'missing' ? 'unknown' : check.status} key={check.label}>
-                {check.status === 'ready' ? <CheckCircle2 size={14} /> : check.status === 'blocked' ? <AlertCircle size={14} /> : <CircleDashed size={14} />}
-                <div><span>{check.label}</span><small>{check.hint}</small></div>
-              </div>
-            ))}
-          </div>
-
-          {review.parameters.length > 0 && <VolumeParameterSummary parameters={review.parameters} />}
+          <ResourceReviewLaunchers>
+            <ResourceReviewLauncher
+              icon={<Activity size={14} />}
+              label={t('Preflight evidence')}
+              summary={t('{ready}/{total} readiness checks passed')
+                .replace('{ready}', String(readyCount))
+                .replace('{total}', String(checks.length))}
+              onClick={() => setActiveReviewDialog('preflight')}
+            />
+            {review.mode === 'quality' && (
+              <ResourceReviewLauncher
+                icon={<SlidersHorizontal size={14} />}
+                label={t('Quality controls')}
+                summary={t('{count} findings · {matches} matches')
+                  .replace('{count}', String(qualityAssessment.findings.length))
+                  .replace('{matches}', String(qualityFilter.matchCount ?? 0))}
+                onClick={() => setActiveReviewDialog('quality')}
+              />
+            )}
+            {review.parameters.length > 0 && (
+              <ResourceReviewLauncher
+                icon={<Settings2 size={14} />}
+                label={t('Parameters and evidence')}
+                summary={t('{count} volume mesh parameters').replace('{count}', String(review.parameters.length))}
+                onClick={() => setActiveReviewDialog('parameters')}
+              />
+            )}
+          </ResourceReviewLaunchers>
 
           <div className="geometry-plan-action-stack">
             <button className="geometry-plan-action" onClick={onPlanCase} disabled={failed} title={failed ? 'Cannot create a Case Draft from a failed volume mesh' : 'Configure a Case Draft using this volume mesh'}>
@@ -393,6 +394,69 @@ export default function VolumeMeshWorkspace({
             <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>
             {primaryError && previewSource === 'fallback' && <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>}
           </div>
+          {activeReviewDialog === 'preflight' && (
+            <ResourceReviewDialog
+              title={t('Preflight evidence')}
+              subtitle={reviewLabel}
+              icon={<Activity size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <div className="geometry-checks volume-mesh-checks">
+                {checks.map((check) => (
+                  <div className={check.status === 'missing' ? 'unknown' : check.status} key={check.label}>
+                    {check.status === 'ready' ? <CheckCircle2 size={14} /> : check.status === 'blocked' ? <AlertCircle size={14} /> : <CircleDashed size={14} />}
+                    <div><span>{check.label}</span><small>{check.hint}</small></div>
+                  </div>
+                ))}
+              </div>
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'quality' && (
+            <ResourceReviewDialog
+              title={t('Quality controls')}
+              subtitle={t('{count} cell quality fields').replace('{count}', String(review.qualityFields.length))}
+              icon={<SlidersHorizontal size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <VolumeQualityAssessmentPanel
+                assessment={qualityAssessment}
+                thresholds={qualityThresholds.thresholds}
+                selectedFieldName={review.selectedField}
+                onThresholdChange={qualityThresholds.updateThreshold}
+                onResetThreshold={qualityThresholds.resetThreshold}
+                onResetAll={qualityThresholds.resetAll}
+                onReviewFinding={(finding) => {
+                  const field = review.qualityFields.find((candidate) => candidate.name === finding.fieldName)
+                  const threshold = qualityThresholds.thresholds.find((candidate) => candidate.fieldName === finding.fieldName)
+                  if (!field || !threshold) return
+                  review.setSelectedField(field.name)
+                  qualityFilter.setFilter(volumeQualityRiskFilter(field, threshold))
+                }}
+              />
+              <SurfaceQualityFilterPanel
+                fields={review.qualityFields}
+                filter={qualityFilter.filter}
+                matchCount={qualityFilter.matchCount}
+                onAddRule={qualityFilter.addRule}
+                onRemoveRule={qualityFilter.removeRule}
+                onUpdateRule={qualityFilter.updateRule}
+                onEnabledChange={qualityFilter.setEnabled}
+                onOperatorChange={qualityFilter.setOperator}
+                onReset={qualityFilter.reset}
+                elementLabel="Cell"
+              />
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'parameters' && (
+            <ResourceReviewDialog
+              title={t('Parameters and evidence')}
+              subtitle={t('{count} volume mesh parameters').replace('{count}', String(review.parameters.length))}
+              icon={<Settings2 size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <VolumeParameterSummary parameters={review.parameters} />
+            </ResourceReviewDialog>
+          )}
         </>
       )}
     />
