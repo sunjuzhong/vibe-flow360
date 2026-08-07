@@ -1,195 +1,142 @@
-import { AlertCircle, CheckCircle2, Code2, ListTree, RefreshCw, Save, Sparkles } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
-import { api, type DynamicFormSchema, type PlanFormSchemaResponse, type ProjectInfo, type ResourceNode, type SimulationPlan } from '../api/client'
-import { errorMessage } from '../lib/errors'
+import { AlertCircle, ArrowRight, CheckCircle2, RefreshCw, Sparkles, X } from 'lucide-react'
+import { useMemo } from 'react'
+import type { AgentAction, AgentProposal, PlanAssistResponse, SimulationPlan } from '../api/client'
 import { unwrapSimulationParams } from '../lib/planStages'
-import { buildDraftParameters, parseParameterJSON } from './DraftParameterEditor'
-import { hydrateSchemaValue, SchemaFormFields } from './SchemaForm'
+
+export type PlanRepairCandidate = {
+  action: AgentAction
+  proposal: AgentProposal
+  preflight?: PlanAssistResponse['preflight']
+  attempts: number
+  autoRepaired: boolean
+}
 
 type Props = {
-  project: ProjectInfo
-  resource: ResourceNode
   plan: SimulationPlan
-  fallbackParameters?: Record<string, unknown>
-  busy: boolean
-  repairBusy: boolean
-  onSave: (patch: Record<string, unknown>) => Promise<void>
-  onRepair: () => Promise<void>
+  currentParameters?: Record<string, unknown>
+  candidate: PlanRepairCandidate | null
+  generating: boolean
+  applying: boolean
+  onGenerate: () => void
+  onApply: () => void
+  onDiscard: () => void
 }
 
 export default function PlanParameterReview({
-  project,
-  resource,
   plan,
-  fallbackParameters,
-  busy,
-  repairBusy,
-  onSave,
-  onRepair,
+  currentParameters,
+  candidate,
+  generating,
+  applying,
+  onGenerate,
+  onApply,
+  onDiscard,
 }: Props) {
-  const [schema, setSchema] = useState<DynamicFormSchema | null>(null)
-  const [baseline, setBaseline] = useState<Record<string, unknown>>({})
-  const [value, setValue] = useState<unknown>({})
-  const [jsonValue, setJSONValue] = useState('{}')
-  const [mode, setMode] = useState<'form' | 'json'>('form')
-  const [loading, setLoading] = useState(true)
-  const [dirty, setDirty] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
   const issues = plan.preflight?.issues ?? []
   const errors = issues.filter((issue) => issue.level === 'error')
-
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    setError('')
-    setSaved(false)
-    setDirty(false)
-    api.planFormSchema({
-      project_id: project.id,
-      project_name: project.name,
-      source_id: resource.id,
-      source_type: resource.type,
-      source_name: resource.name,
-      draft_id: plan.remote_ids?.draft_id,
-      target: plan.target,
-      patch: plan.patch,
-    }).then((response) => {
-      if (!active) return
-      const completeSchema = combineStageSchemas(response)
-      // planFormSchema returns the canonical source baseline with plan.patch
-      // already applied, so it is the exact payload that preflight validates.
-      const current = Object.keys(response.baseline ?? {}).length
-        ? unwrapSimulationParams(response.baseline)
-        : applyJSONMergePatch(unwrapSimulationParams(fallbackParameters), plan.patch)
-      setSchema(completeSchema)
-      setBaseline(current)
-      setValue(hydrateSchemaValue(completeSchema, current, true))
-      setJSONValue(JSON.stringify(current, null, 2))
-      setMode('form')
-    }).catch((cause) => {
-      if (!active) return
-      const source = unwrapSimulationParams(fallbackParameters)
-      const current = applyJSONMergePatch(source, plan.patch)
-      setSchema(null)
-      setBaseline(current)
-      setJSONValue(JSON.stringify(current, null, 2))
-      setMode('json')
-      setError(`The complete Flow360 form schema is unavailable. You can still review valid JSON. ${errorMessage(cause)}`)
-    }).finally(() => active && setLoading(false))
-    return () => { active = false }
-  }, [fallbackParameters, plan.id, plan.patch, plan.revision, plan.target, project.id, project.name, resource.id, resource.name, resource.type])
-
-  const errorSummary = useMemo(() => errors.length
-    ? `${errors.length} parameter error${errors.length === 1 ? '' : 's'} must be resolved before approval.`
-    : 'All current parameters pass the Flow360 preflight.', [errors.length])
-
-  const selectMode = (next: 'form' | 'json') => {
-    if (next === mode) return
-    try {
-      if (next === 'json') {
-        if (!schema) return
-        setJSONValue(JSON.stringify(buildDraftParameters(schema, value), null, 2))
-      } else {
-        if (!schema) throw new Error('The complete Flow360 form schema is unavailable.')
-        setValue(hydrateSchemaValue(schema, parseParameterJSON(jsonValue), true))
-      }
-      setError('')
-      setMode(next)
-    } catch (cause) {
-      setError(errorMessage(cause))
-    }
-  }
-
-  const save = async () => {
-    try {
-      setError('')
-      setSaved(false)
-      const next = mode === 'json'
-        ? parseParameterJSON(jsonValue)
-        : schema
-          ? buildDraftParameters(schema, value)
-          : baseline
-      await onSave(createJSONMergePatch(baseline, next))
-      setSaved(true)
-      setDirty(false)
-    } catch (cause) {
-      setError(errorMessage(cause))
-    }
-  }
-
-  if (loading) return <div className="plan-neutral"><RefreshCw size={14} className="spin" /> Loading complete SimulationParams…</div>
+  const warnings = issues.filter((issue) => issue.level === 'warning')
+  const current = useMemo(
+    () => applyJSONMergePatch(unwrapSimulationParams(currentParameters), plan.patch),
+    [currentParameters, plan.patch],
+  )
+  const repairDiff = useMemo(() => candidate
+    ? diffParameterValues(current, applyJSONMergePatch(current, candidate.proposal.patch))
+    : [], [candidate, current])
 
   return (
-    <section className="plan-parameter-review" aria-label="Complete SimulationParams review">
+    <section className="plan-repair-review" aria-label="Flow360 validation and AI repair">
       <header>
         <div>
-          <h3>Complete SimulationParams</h3>
-          <p>Review and edit every parameter that will be handed to Flow360. Errors are marked at their exact field.</p>
+          <h3>{errors.length ? 'Validation needs correction' : 'Validation passed'}</h3>
+          <p>{errors.length
+            ? `${errors.length} blocking parameter error${errors.length === 1 ? '' : 's'} found. AI Repair can prepare a minimal correction for review.`
+            : `Flow360 accepted this revision${warnings.length ? ` with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}.`}</p>
         </div>
-        <div className="plan-parameter-actions">
-          <div className="draft-editor-modes" role="tablist" aria-label="Parameter editor mode">
-            <button type="button" role="tab" aria-selected={mode === 'form'} className={mode === 'form' ? 'active' : ''} disabled={!schema} onClick={() => selectMode('form')}><ListTree size={13} /> Form</button>
-            <button type="button" role="tab" aria-selected={mode === 'json'} className={mode === 'json' ? 'active' : ''} onClick={() => selectMode('json')}><Code2 size={13} /> JSON</button>
-          </div>
-          <button type="button" className="plan-ai-repair" disabled={repairBusy || !errors.length} onClick={() => {
-            setError('')
-            void onRepair().catch((cause) => setError(errorMessage(cause)))
-          }}>
-            {repairBusy ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
-            {repairBusy ? 'Repairing & validating…' : 'AI Repair'}
+        {!candidate && errors.length > 0 && (
+          <button type="button" className="plan-ai-repair" disabled={generating} onClick={onGenerate}>
+            {generating ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
+            {generating ? 'Preparing repair…' : 'AI Repair'}
           </button>
-          <button type="button" className="draft-parameter-save" disabled={busy || !dirty} onClick={() => void save()}>
-            {busy ? <RefreshCw size={13} className="spin" /> : <Save size={13} />}{busy ? 'Validating…' : 'Save & validate'}
-          </button>
-        </div>
+        )}
       </header>
 
-      <div className={`plan-parameter-status ${errors.length ? 'error' : 'ready'}`}>
-        {errors.length ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
-        <span>{errorSummary}</span>
-      </div>
-      {error && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{error}</div>}
-      {saved && !error && <div className="draft-parameter-message success" role="status"><CheckCircle2 size={14} />Parameters saved and preflight refreshed.</div>}
-
-      {mode === 'form' && schema && (
-        <div className="draft-parameter-form plan-complete-parameter-form" role="tabpanel">
-          <SchemaFormFields
-            schema={schema}
-            value={value}
-            sparse
-            showAll
-            rootTabs
-            collapsibleObjects
-            issues={issues}
-            onChange={(next) => { setValue(next); setDirty(true); setSaved(false) }}
-          />
+      {!candidate && issues.length > 0 && (
+        <div className="plan-validation-findings">
+          {issues.map((issue, index) => (
+            <div className={issue.level} key={`${issue.path}-${issue.code}-${index}`}>
+              {issue.level === 'error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
+              <span>
+                <code>{issue.path || 'SimulationParams'}</code>
+                <small>{issue.message}</small>
+              </span>
+            </div>
+          ))}
         </div>
       )}
-      {mode === 'json' && (
-        <div role="tabpanel">
-          <label className="draft-json-label" htmlFor={`plan-parameters-${plan.id}`}>Complete SimulationParams JSON</label>
-          <textarea id={`plan-parameters-${plan.id}`} className="resource-json draft-json-editor" spellCheck={false} value={jsonValue} onChange={(event) => { setJSONValue(event.target.value); setDirty(true); setSaved(false) }} />
+
+      {candidate && (
+        <div className="plan-repair-candidate">
+          <div className="plan-repair-candidate-heading">
+            <span><Sparkles size={15} /><strong>Proposed repair</strong></span>
+            <button type="button" onClick={onDiscard} disabled={applying} aria-label="Discard AI repair"><X size={14} /></button>
+          </div>
+          <p>{candidate.action.message}</p>
+          <div className={`plan-repair-prediction ${candidate.preflight?.valid ? 'ready' : 'warning'}`}>
+            {candidate.preflight?.valid ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+            <span>{candidate.preflight?.valid
+              ? `Expected to pass Flow360 validation${candidate.attempts ? ` after ${candidate.attempts} repair pass${candidate.attempts === 1 ? '' : 'es'}` : ''}.`
+              : 'The Agent produced a correction, but Flow360 may still require another repair pass.'}</span>
+          </div>
+          <div className="plan-repair-diff" aria-label="Proposed parameter changes">
+            {repairDiff.length ? repairDiff.map((change) => (
+              <div key={change.path}>
+                <code>{change.path}</code>
+                <span className={`diff-kind ${change.kind}`}>{change.kind}</span>
+                <small className="before">{compactValue(change.before)}</small>
+                <ArrowRight size={12} />
+                <small className="after">{compactValue(change.after)}</small>
+              </div>
+            )) : <div className="plan-neutral">The Agent did not change any public SimulationParams values.</div>}
+          </div>
+          <footer>
+            <button type="button" onClick={onDiscard} disabled={applying}>Cancel</button>
+            <button type="button" className="primary" onClick={onApply} disabled={applying || !repairDiff.length}>
+              {applying ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
+              {applying ? 'Applying & validating…' : 'Apply repair & validate'}
+            </button>
+          </footer>
         </div>
       )}
     </section>
   )
 }
 
-export function combineStageSchemas(response: PlanFormSchemaResponse): DynamicFormSchema {
-  const schemas = response.stages.map((stage) => response.schemas[stage]).filter((item): item is DynamicFormSchema => Boolean(item))
-  return schemas.reduce<DynamicFormSchema>((combined, schema) => {
-    if (schema.type !== 'object') return combined
-    return {
-      ...combined,
-      title: 'SimulationParams',
-      properties: { ...(combined.properties ?? {}), ...(schema.properties ?? {}) },
-      required: [...new Set([
-        ...(Array.isArray(combined.required) ? combined.required : []),
-        ...(Array.isArray(schema.required) ? schema.required : []),
-      ])],
+export type ParameterChange = {
+  path: string
+  before: unknown
+  after: unknown
+  kind: 'added' | 'changed' | 'removed'
+}
+
+export function diffParameterValues(before: Record<string, unknown>, after: Record<string, unknown>, prefix = ''): ParameterChange[] {
+  const changes: ParameterChange[] = []
+  for (const key of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+    const path = prefix ? `${prefix}.${key}` : key
+    const hasBefore = Object.prototype.hasOwnProperty.call(before, key)
+    const hasAfter = Object.prototype.hasOwnProperty.call(after, key)
+    const previous = before[key]
+    const next = after[key]
+    if (!hasAfter) {
+      changes.push({ path, before: previous, after: undefined, kind: 'removed' })
+    } else if (!hasBefore) {
+      changes.push({ path, before: undefined, after: next, kind: 'added' })
+    } else if (isRecord(previous) && isRecord(next)) {
+      changes.push(...diffParameterValues(previous, next, path))
+    } else if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      changes.push({ path, before: previous, after: next, kind: 'changed' })
     }
-  }, { type: 'object', title: 'SimulationParams', properties: {} })
+  }
+  return changes
 }
 
 export function applyJSONMergePatch(source: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
@@ -206,21 +153,10 @@ export function applyJSONMergePatch(source: Record<string, unknown>, patch: Reco
   return result
 }
 
-export function createJSONMergePatch(source: Record<string, unknown>, target: Record<string, unknown>): Record<string, unknown> {
-  const patch: Record<string, unknown> = {}
-  for (const key of new Set([...Object.keys(source), ...Object.keys(target)])) {
-    if (!(key in target)) {
-      patch[key] = null
-    } else if (!(key in source)) {
-      patch[key] = target[key]
-    } else if (isRecord(source[key]) && isRecord(target[key])) {
-      const child = createJSONMergePatch(source[key], target[key])
-      if (Object.keys(child).length) patch[key] = child
-    } else if (JSON.stringify(source[key]) !== JSON.stringify(target[key])) {
-      patch[key] = target[key]
-    }
-  }
-  return patch
+function compactValue(value: unknown) {
+  if (value === undefined) return 'Not set'
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return text.length > 220 ? `${text.slice(0, 220)}…` : text
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

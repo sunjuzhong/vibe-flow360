@@ -1,28 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { applyJSONMergePatch, combineStageSchemas, createJSONMergePatch } from './PlanParameterReview'
+import { applyJSONMergePatch, diffParameterValues } from './PlanParameterReview'
 
 describe('PlanParameterReview helpers', () => {
-  it('combines stage roots into one complete SimulationParams schema', () => {
-    const schema = combineStageSchemas({
-      schema_version: 1,
-      source_type: 'Geometry',
-      target: 'case',
-      stages: ['SurfaceMesh', 'Case'],
-      baseline: {},
-      schemas: {
-        SurfaceMesh: { type: 'object', properties: { meshing: { type: 'object' } }, required: ['meshing'] },
-        Case: { type: 'object', properties: { models: { type: 'array' } }, required: ['models'] },
-      },
+  it('applies nested AI merge patches without replacing sibling values', () => {
+    const source = { meshing: { defaults: { size: 1, growth: 1.2 } }, models: ['Fluid'] }
+    expect(applyJSONMergePatch(source, { meshing: { defaults: { size: 2 } } })).toEqual({
+      meshing: { defaults: { size: 2, growth: 1.2 } },
+      models: ['Fluid'],
     })
-    expect(Object.keys(schema.properties ?? {})).toEqual(['meshing', 'models'])
-    expect(schema.required).toEqual(['meshing', 'models'])
   })
 
-  it('round-trips edits and removals as a JSON Merge Patch', () => {
-    const source = { meshing: { defaults: { size: 1, legacy: true } }, models: ['Fluid'] }
-    const target = { meshing: { defaults: { size: 2 } }, models: ['Fluid'] }
-    const patch = createJSONMergePatch(source, target)
-    expect(patch).toEqual({ meshing: { defaults: { size: 2, legacy: null } } })
-    expect(applyJSONMergePatch(source, patch)).toEqual(target)
+  it('builds a leaf-level before and after repair diff', () => {
+    const before = { meshing: { defaults: { size: 1, legacy: true } }, models: ['Fluid'] }
+    const after = { meshing: { defaults: { size: 2, first_layer: 0.01 } }, models: ['Fluid'] }
+    expect(diffParameterValues(before, after)).toEqual([
+      { path: 'meshing.defaults.first_layer', before: undefined, after: 0.01, kind: 'added' },
+      { path: 'meshing.defaults.legacy', before: true, after: undefined, kind: 'removed' },
+      { path: 'meshing.defaults.size', before: 1, after: 2, kind: 'changed' },
+    ])
   })
 })

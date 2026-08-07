@@ -39,7 +39,7 @@ import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
 import ExecutionMonitor from './ExecutionMonitor'
 import { SchemaFormFields, serializeValue } from './SchemaForm'
 import AgentClarificationDialog, { type ClarificationAnswers } from './AgentClarificationDialog'
-import PlanParameterReview from './PlanParameterReview'
+import PlanParameterReview, { type PlanRepairCandidate } from './PlanParameterReview'
 
 const targetOptions: Record<string, Array<{ value: SimulationPlan['target']; label: string }>> = {
   Geometry: [
@@ -149,6 +149,7 @@ export default function PlanPanel({
   const [runConfirmationOpen, setRunConfirmationOpen] = useState(false)
   const [preflightLoading, setPreflightLoading] = useState(false)
   const [aiRepairLoading, setAIRepairLoading] = useState(false)
+  const [repairCandidate, setRepairCandidate] = useState<PlanRepairCandidate | null>(null)
   const [error, setError] = useState('')
   const panelRef = useFocusTrap(open, onClose, 'input,textarea,select,button.primary,button.execute,button:not(.icon-button)')
 
@@ -184,6 +185,7 @@ export default function PlanPanel({
     setConfirmedInputs({})
     setAssistStalled(false)
     setAssistFailure('')
+    setRepairCandidate(null)
     setReviewed(false)
     setExecuteConfirmed(false)
     setRunConfirmationOpen(false)
@@ -422,6 +424,7 @@ export default function PlanPanel({
       const plan = await api.preflightPlan(selected.id)
       setSelected(plan)
       setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
+      setRepairCandidate(null)
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
     } finally {
@@ -429,28 +432,10 @@ export default function PlanPanel({
     }
   }
 
-  const updateReviewedParameters = async (values: Record<string, unknown>) => {
-    if (!selected || preflightLoading) return
-    setPreflightLoading(true)
-    setError('')
-    try {
-      const plan = await api.updatePlanParameters(selected.id, selected.revision, values)
-      setSelected(plan)
-      setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
-      setReviewed(false)
-      setExecuteConfirmed(false)
-    } catch (cause) {
-      const message = errorMessage(cause)
-      setError(message)
-      throw cause
-    } finally {
-      setPreflightLoading(false)
-    }
-  }
-
-  const repairReviewedParameters = async () => {
+  const generateReviewedRepair = async () => {
     if (!selected || aiRepairLoading) return
     setAIRepairLoading(true)
+    setRepairCandidate(null)
     setError('')
     try {
       const issueText = selected.preflight?.issues
@@ -474,19 +459,38 @@ export default function PlanPanel({
         autonomous: true,
       })
       if (!response.proposal) throw new Error(response.action.message || 'AI did not return a parameter repair.')
-      const plan = await api.updatePlanParameters(selected.id, selected.revision, response.proposal.patch)
+      setRepairCandidate({
+        action: response.action,
+        proposal: response.proposal,
+        preflight: response.preflight,
+        attempts: response.repair_attempts ?? 0,
+        autoRepaired: response.auto_repaired ?? false,
+      })
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setAIRepairLoading(false)
+    }
+  }
+
+  const applyReviewedRepair = async () => {
+    if (!selected || !repairCandidate || preflightLoading) return
+    setPreflightLoading(true)
+    setError('')
+    try {
+      const plan = await api.updatePlanParameters(selected.id, selected.revision, repairCandidate.proposal.patch)
       setSelected(plan)
       setPlans((current) => current.map((item) => item.id === plan.id ? plan : item))
+      setRepairCandidate(null)
       setReviewed(false)
       setExecuteConfirmed(false)
       if (!plan.preflight?.valid) {
-        throw new Error(`AI applied a repair, but ${plan.preflight?.issues.filter((issue) => issue.level === 'error').length ?? 0} validation error(s) remain.`)
+        setError(`Repair applied, but ${plan.preflight?.issues.filter((issue) => issue.level === 'error').length ?? 0} validation error(s) remain. Run AI Repair again for the new revision.`)
       }
     } catch (cause) {
       setError(errorMessage(cause))
-      throw cause
     } finally {
-      setAIRepairLoading(false)
+      setPreflightLoading(false)
     }
   }
 
@@ -582,6 +586,7 @@ export default function PlanPanel({
                   setShowForm(false)
                   setReviewed(false)
                   setExecuteConfirmed(false)
+                  setRepairCandidate(null)
                   setError('')
                 }}
               >
@@ -846,14 +851,14 @@ export default function PlanPanel({
                 </div>
 
                 <PlanParameterReview
-                  project={project}
-                  resource={resource}
                   plan={selected}
-                  fallbackParameters={detail?.simulation_params}
-                  busy={preflightLoading}
-                  repairBusy={aiRepairLoading}
-                  onSave={updateReviewedParameters}
-                  onRepair={repairReviewedParameters}
+                  currentParameters={detail?.simulation_params}
+                  candidate={repairCandidate}
+                  generating={aiRepairLoading}
+                  applying={preflightLoading}
+                  onGenerate={() => void generateReviewedRepair()}
+                  onApply={() => void applyReviewedRepair()}
+                  onDiscard={() => setRepairCandidate(null)}
                 />
 
                 <details className="plan-technical-details">
