@@ -597,7 +597,7 @@ Object.assign(messages, {
   'Create Project': '创建项目',
   'Load schemas': '加载参数结构',
   'Create setup': '创建配置',
-  'Create Draft': '创建 Draft',
+  'Create Draft': '创建草稿',
   'Configure Draft': '配置草稿',
   'Changes save automatically to Flow360.': '修改会自动保存到 Flow360。',
   'Run Draft': '运行草稿',
