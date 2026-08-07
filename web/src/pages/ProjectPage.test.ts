@@ -7,6 +7,7 @@ import {
   initialProjectPanel,
   panelDismissesFromAmbientInteraction,
   projectDraftResourcePath,
+  projectDraftRootPath,
   projectSyncProgress,
   resourceContextLabel,
 } from './ProjectPage'
@@ -108,6 +109,11 @@ describe('Draft source resource context', () => {
 
   it('keeps the Draft query while the initial Project route resolves its resource', () => {
     expect(projectDraftResourcePath('prj-1', 'geo-1', 'draft/1')).toBe('/projects/prj-1/resources/geo-1?draft=draft%2F1')
+  })
+
+  it('keeps every Draft context on the Project tree root', () => {
+    expect(projectDraftRootPath('prj-1', { id: 'geo-root' }, 'draft-1'))
+      .toBe('/projects/prj-1/resources/geo-root?draft=draft-1')
   })
 })
 

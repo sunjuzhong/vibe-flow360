@@ -152,6 +152,10 @@ export function projectDraftResourcePath(projectId: string, resourceId: string, 
   return draftId ? `${path}?draft=${encodeURIComponent(draftId)}` : path
 }
 
+export function projectDraftRootPath(projectId: string, root: Pick<ResourceNode, 'id'>, draftId: string): string {
+  return projectDraftResourcePath(projectId, root.id, draftId)
+}
+
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -404,17 +408,13 @@ export default function ProjectPage() {
     [activeDraftId, drafts],
   )
   const draftMode = Boolean(requestedDraftId && activeDraft)
-  const draftSource = useMemo(
-    () => draftSourceResource(items, activeDraft, draftDetail),
-    [activeDraft, draftDetail, items],
-  )
   const copilotScopeType = draftMode ? 'draft' : selected ? 'resource' : 'project'
   const copilotScopeId = draftMode ? activeDraft?.id : selected?.id
 
   useEffect(() => {
-    if (!draftMode || !draftSource || resourceId === draftSource.id) return
-    navigate(projectDraftResourcePath(projectId, draftSource.id, activeDraft?.id), { replace: true })
-  }, [activeDraft?.id, draftMode, draftSource, navigate, projectId, resourceId])
+    if (!draftMode || !root || resourceId === root.id) return
+    navigate(projectDraftRootPath(projectId, root, activeDraft?.id ?? ''), { replace: true })
+  }, [activeDraft?.id, draftMode, navigate, projectId, resourceId, root])
 
   const loadDraftDetail = useCallback(async () => {
     if (!activeDraftId) {
@@ -473,13 +473,10 @@ export default function ProjectPage() {
 
   const openDraftContext = (draftId: string) => {
     const target = drafts.find((draft) => draft.id === draftId)
-    if (!target) return
+    if (!target || !root) return
     setActiveDraftId(draftId)
     setActivePanel(null)
-    const source = items.find((item) => item.id === target.source_id)
-    const targetResourceId = source?.id ?? selected?.id
-    if (!targetResourceId) return
-    navigate(projectDraftResourcePath(projectId, targetResourceId, draftId))
+    navigate(projectDraftRootPath(projectId, root, draftId))
   }
 
   const renameDraft = async (draftId: string, name: string) => {
@@ -491,7 +488,7 @@ export default function ProjectPage() {
   }
 
   const createDraftFromResource = async (name: string) => {
-    if (!selected || !selectedItem) throw new Error('A source Resource is required to create a Draft.')
+    if (!selected || !selectedItem || !root) throw new Error('A source Resource is required to create a Draft.')
     const selectedDetail = detail?.id === selected.id
       ? detail
       : (await api.resourceDetail(selected.type, selected.id)).data
@@ -505,10 +502,11 @@ export default function ProjectPage() {
     })
     await loadDrafts()
     setActivePanel(null)
-    navigate(projectDraftResourcePath(projectId, creation.source.id, created.id))
+    navigate(projectDraftRootPath(projectId, root, created.id))
   }
 
   const copyDraft = async (draft: DraftRecord, name: string) => {
+    if (!root) throw new Error('The source Resource for this Draft is unavailable.')
     const sourceDetail = draft.id === draftDetail?.id
       ? draftDetail
       : (await api.resourceDetail('Draft', draft.id)).data
@@ -522,7 +520,7 @@ export default function ProjectPage() {
     })
     await loadDrafts()
     setActivePanel(null)
-    navigate(projectDraftResourcePath(projectId, source.id, created.id))
+    navigate(projectDraftRootPath(projectId, root, created.id))
   }
 
   const deleteDraft = async (draftId: string) => {
@@ -530,7 +528,7 @@ export default function ProjectPage() {
     await loadDrafts()
     if (draftId === activeDraftId) {
       setActiveDraftId('')
-      navigate(projectDraftResourcePath(projectId, selected?.id ?? root?.id ?? ''))
+      navigate(projectDraftResourcePath(projectId, root?.id ?? ''))
     }
   }
 
