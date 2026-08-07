@@ -69,10 +69,26 @@ describe('geometry appearance persistence', () => {
     expect(cfdGeometryAppearancePresets.every((preset) => parsed.some(({ id }) => id === preset.id))).toBe(true)
   })
 
-  it('restores protected presets omitted by a saved version 3 library', () => {
+  it('does not restore retired presets from a saved library', () => {
     const storage = memoryStorage()
-    saveGeometryAppearanceLibrary(defaultGeometryAppearances.filter((item) => item.id !== 'transparent'), storage)
-    expect(loadGeometryAppearanceLibrary(storage).some((item) => item.id === 'transparent')).toBe(true)
+    saveGeometryAppearanceLibrary([
+      ...defaultGeometryAppearances,
+      { id: 'transparent', name: 'Transparent enclosure', color: '#8fb8c8', opacity: 0.28 },
+      { id: 'rotating', name: 'Rotating zone', color: '#d59a2d', opacity: 0.78 },
+    ], storage)
+    const loadedIds = loadGeometryAppearanceLibrary(storage).map(({ id }) => id)
+    expect(loadedIds).not.toContain('transparent')
+    expect(loadedIds).not.toContain('rotating')
+  })
+
+  it('removes assignments to retired presets from local storage', () => {
+    const storage = memoryStorage()
+    saveGeometryAppearanceAssignments('geo-1', {
+      faceA: 'transparent',
+      faceB: 'rotating',
+      faceC: 'custom',
+    }, storage)
+    expect(loadGeometryAppearanceAssignments('geo-1', storage)).toEqual({ faceC: 'custom' })
   })
 
   it('identifies every system preset while leaving custom materials deletable', () => {
@@ -147,5 +163,13 @@ describe('geometry appearance persistence', () => {
       faceA: { color: '#6f8790', opacity: 0.3 },
       faceB: { color: '#6f8790', opacity: 0.3 },
     })
+  })
+
+  it('falls back to Default CAD when a saved appearance no longer exists', () => {
+    expect(buildGeometryEntityAppearances(
+      { faceA: 'transparent' },
+      defaultGeometryAppearances,
+      ['faceA'],
+    )).toEqual({ faceA: { color: '#6f8790', opacity: 0.9 } })
   })
 })

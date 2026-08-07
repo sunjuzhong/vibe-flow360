@@ -12,8 +12,6 @@ const assignmentKey = (resourceId: string) => `vibe-flow360.geometry-appearance-
 
 export const generalGeometryAppearancePresets: GeometryAppearance[] = [
   { id: 'default-cad', name: 'Default CAD', color: '#6f8790', opacity: 0.9 },
-  { id: 'transparent', name: 'Transparent enclosure', color: '#8fb8c8', opacity: 0.28 },
-  { id: 'rotating', name: 'Rotating zone', color: '#d59a2d', opacity: 0.78 },
 ]
 
 export const cfdGeometryAppearancePresets: GeometryAppearance[] = [
@@ -34,6 +32,7 @@ export const defaultGeometryAppearances: GeometryAppearance[] = [
 
 const cfdPresetIds = new Set(cfdGeometryAppearancePresets.map(({ id }) => id))
 const presetIds = new Set(defaultGeometryAppearances.map(({ id }) => id))
+const retiredPresetIds = new Set(['transparent', 'rotating'])
 
 export function isCfdGeometryAppearancePreset(id: string): boolean {
   return cfdPresetIds.has(id)
@@ -57,9 +56,7 @@ export function geometryAppearancePresetForBoundary(boundaryType: string): strin
   if (normalized.includes('freestream') || normalized.includes('farfield')) return 'cfd-farfield'
   if (normalized.includes('inflow') || normalized.includes('inlet')) return 'cfd-inflow'
   if (normalized.includes('outflow') || normalized.includes('outlet')) return 'cfd-outflow'
-  if (normalized.includes('rotating') || normalized.includes('rotation')) return 'rotating'
   if (normalized.includes('wall') || normalized === 'ground') return 'cfd-wall'
-  if (normalized === 'exclude') return 'transparent'
   return null
 }
 
@@ -108,7 +105,7 @@ export function parseGeometryAppearanceLibrary(raw: string | null): GeometryAppe
       return override ? { ...preset, ...override } : preset
     })
     const custom = legacy.filter((item) =>
-      !isGeometryAppearancePreset(item.id),
+      !isGeometryAppearancePreset(item.id) && !retiredPresetIds.has(item.id),
     )
     return [...seeded, ...custom]
   } catch {
@@ -133,7 +130,12 @@ export function loadGeometryAppearanceAssignments(
 ): Record<string, string> {
   try {
     const value = JSON.parse(storage.getItem(assignmentKey(resourceId)) ?? '{}')
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    return Object.fromEntries(Object.entries(value).flatMap(([groupId, appearanceId]) =>
+      typeof appearanceId === 'string' && !retiredPresetIds.has(appearanceId)
+        ? [[groupId, appearanceId] as const]
+        : [],
+    ))
   } catch {
     return {}
   }
@@ -158,8 +160,9 @@ export function buildGeometryEntityAppearances(
     ...Object.fromEntries(groupIds.map((groupId) => [groupId, defaultAppearanceId])),
     ...assignments,
   }
+  const fallback = byId.get(defaultAppearanceId)
   return Object.fromEntries(Object.entries(resolvedAssignments).flatMap(([groupId, appearanceId]) => {
-    const appearance = byId.get(appearanceId)
+    const appearance = byId.get(appearanceId) ?? fallback
     return appearance ? [[groupId, { color: appearance.color, opacity: appearance.opacity }]] : []
   }))
 }
