@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { detectSystemLanguage, languageStorageKey, readInitialLanguage } from './index'
 import { localeOptions } from './locales'
 import { hasTranslation, translate } from './translations'
+import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params } from '../tutorials/t04'
 
 describe('language settings', () => {
   it('uses Chinese for Chinese system locales and English otherwise', () => {
@@ -62,5 +63,37 @@ describe('language settings', () => {
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the T04 tutorial and expression editor in Chinese', () => {
+    const tutorialData = [
+      ...t04Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t04ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t04Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT04Setup(t04Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT04Setup(t04Params(true)).flatMap(({ label, detail }) => [label, detail]),
+    ]
+    const pageAndEditorCopy = [
+      'ADVANCED MESHING',
+      'Preserve critical edges and narrow gaps',
+      'Which small geometric feature will fail first in a global mesh?',
+      'Geometry AI replaces edge rules; it does not layer on top of them.',
+      'Parameter validity does not prove the gaps survived meshing.',
+      'Create both Drafts without starting cloud meshing.',
+      'Build the T04 airfoil mesh environment',
+      'Create Project + 2 VolumeMesh Drafts',
+      '  I reviewed the destination and authorize creation of this remote Flow360 Project and two configured ',
+      ' Drafts. Nothing is submitted until I review and run a Draft. ',
+      'Enter an expression before validation.',
+      'Use ** for powers; Flow360 does not allow ^ in typed expressions.',
+      'Checking with the installed Flow360 schema…',
+      'Compile-time expression',
+      'Expression suggestions',
+      'Velocity expression',
+      'Velocity requires an expression.',
+      '3/4 reviewed',
+    ]
+
+    expect([...tutorialData, ...pageAndEditorCopy].filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 })

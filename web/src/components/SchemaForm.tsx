@@ -987,18 +987,6 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       if (outputUnits) result.output_units = outputUnits
       return result
     }
-    case 'expression': {
-      const object = isRecord(value) ? value : {}
-      const expression = String(object.expression ?? '').trim()
-      if (!expression) throw new Error(`${schema.title || schema.path || 'Expression'} requires an expression.`)
-      const result: Record<string, unknown> = {
-        [schema.wire_discriminator?.field ?? 'type_name']: schema.wire_discriminator?.value ?? 'expression',
-        expression,
-      }
-      const outputUnits = String(object.output_units ?? '').trim()
-      if (outputUnits) result.output_units = outputUnits
-      return result
-    }
     case 'entity_assignment': {
       const object = isRecord(value) ? value : {}
       const model = String(object.model ?? '').trim()
