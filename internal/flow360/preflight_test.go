@@ -168,6 +168,11 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	if !slices.Contains(functions, any("math.sqrt()")) {
 		t.Fatalf("installed Flow360 math suggestions were not projected: %#v", functions)
 	}
+	momentCenter := findQuantitySchema(findSchemaByTitle(caseSchema, "Moment Center"))
+	valueSchema, _ := momentCenter["value_schema"].(map[string]any)
+	if momentCenter == nil || valueSchema["type"] != "array" || valueSchema["minItems"] != float64(3) {
+		t.Fatalf("expected a three-component Moment Center quantity, got %#v", momentCenter)
+	}
 }
 
 func TestInstalledSchemaValidatesTypedExpressionWireAndDimensions(t *testing.T) {

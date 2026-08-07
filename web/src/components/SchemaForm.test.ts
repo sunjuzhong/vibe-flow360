@@ -156,6 +156,31 @@ describe('schema-driven Flow360 form', () => {
     expect(() => serializeValue(schema, { value: '1', units: 'parsec' })).toThrow('unsupported stored unit')
   })
 
+  it('serializes vector quantities through their declared value schema', () => {
+    const schema: DynamicFormSchema = {
+      type: 'quantity',
+      title: 'Moment Center',
+      unit: 'm',
+      value_schema: { type: 'array', items: { type: 'number' } },
+    }
+    expect(serializeValue(schema, { value: [0, '1.5', -2], units: 'm' })).toEqual({
+      value: [0, 1.5, -2],
+      units: 'm',
+    })
+  })
+
+  it('selects the vector quantity branch when scalar and vector units match', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      variants: [
+        { type: 'quantity', unit: 'm', value_schema: { type: 'number' } },
+        { type: 'quantity', unit: 'm', value_schema: { type: 'array', items: { type: 'number' } } },
+      ],
+    }
+    const canonical = { value: [1, 2, 3], units: 'm' }
+    expect(hydrateSchemaValue(schema, canonical, true)).toEqual({ variant: 1, value: canonical })
+  })
+
   it('serializes a schema-provided entity assignment', () => {
     const schema: DynamicFormSchema = {
       type: 'entity_assignment',

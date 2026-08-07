@@ -460,6 +460,10 @@ def external_numeric(ref):
         result["exclusiveMinimum"] = 0
     elif "nonnegative" in name:
         result["minimum"] = 0
+    vector = re.search(r"vector(\d+)", name)
+    if vector:
+        size = int(vector.group(1))
+        return {"type": "array", "items": result, "minItems": size, "maxItems": size}
     return result
 
 def expression_unit_syntax(unit):

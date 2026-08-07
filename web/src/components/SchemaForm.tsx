@@ -155,7 +155,7 @@ function SchemaFormFieldsContent({
     const key = tabKeys.includes(activeTab) ? activeTab : tabKeys[0]
     const child = schema.properties?.[key]
     if (!child) return null
-    const present = Object.prototype.hasOwnProperty.call(object, key)
+    const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
     const requiredKeys = Array.isArray(schema.required) ? schema.required : []
     const required = child.required === true || requiredKeys.includes(key)
     const tabID = (tabKey: string) => `schema-root-tab-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
@@ -177,7 +177,7 @@ function SchemaFormFieldsContent({
         <div className="schema-root-tabs" role="tablist" aria-label={schema.title || 'Simulation parameter groups'}>
           {tabKeys.map((tabKey, index) => {
             const tabSchema = schema.properties?.[tabKey]
-            const configured = Object.prototype.hasOwnProperty.call(object, tabKey)
+            const configured = Object.prototype.hasOwnProperty.call(object, tabKey) && isConfiguredValue(object[tabKey])
             const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, tabKey))
             return (
               <button
@@ -276,7 +276,7 @@ function SchemaField({
         {schema.description && path && !collapsibleObjects && <p>{schema.description}</p>}
         {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
-          const present = Object.prototype.hasOwnProperty.call(object, key)
+          const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
           const required = child.required === true || requiredKeys.includes(key)
           if (sparse && !showAll && !present && !required) {
             return (
@@ -882,7 +882,7 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
     case 'array':
       return []
     case 'quantity':
-      return { value: '', units: schema.unit ?? '' }
+      return { value: initialValue(schema.value_schema ?? { type: 'number' }, sparse), units: schema.unit ?? '' }
     case 'expression':
       return {
         [schema.wire_discriminator?.field ?? 'type_name']: schema.wire_discriminator?.value ?? 'expression',
@@ -967,14 +967,13 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       return (Array.isArray(value) ? value : []).map((item) => serializeValue(schema.items ?? { type: 'json' }, item, sparse))
     case 'quantity': {
       const object = isRecord(value) ? value : {}
-      const numeric = Number(object.value)
-      if (!Number.isFinite(numeric)) throw new Error(`${schema.title || schema.path || 'Quantity'} requires a numeric value.`)
+      const serializedValue = serializeValue(schema.value_schema ?? { type: 'number' }, object.value, sparse)
       const units = canonicalQuantityUnit(schema, String(object.units ?? schema.unit ?? '').trim())
       if (!units) throw new Error(`${schema.title || schema.path || 'Quantity'} requires a unit.`)
       if (schema.unit_options?.length && !schema.unit_options.includes(units)) {
         throw new Error(`${schema.title || schema.path || 'Quantity'} has an unsupported stored unit.`)
       }
-      return { value: numeric, units }
+      return { value: serializedValue, units }
     }
     case 'expression': {
       const object = isRecord(value) ? value : {}
@@ -1031,6 +1030,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isConfiguredValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (isRecord(value)) return Object.keys(value).length > 0
+  return true
+}
+
 function isUnionDraft(value: unknown): value is UnionDraft {
   return isRecord(value) && typeof value.variant === 'number' && 'value' in value
 }
@@ -1045,7 +1052,10 @@ function isDiscriminatorDefault(key: string, schema: DynamicFormSchema): boolean
 function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean {
   switch (schema.type) {
     case 'quantity':
-      return isRecord(value) && 'value' in value && 'units' in value
+      return isRecord(value)
+        && 'value' in value
+        && 'units' in value
+        && schemaValueMatches(schema.value_schema ?? { type: 'number' }, value.value)
     case 'expression':
       return isRecord(value)
         && (value.type_name === 'expression' || typeof value.expression === 'string')

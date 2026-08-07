@@ -468,6 +468,32 @@ esac
 	}
 }
 
+func TestDraftDetailUnwrapsSimulationParamsEnvelope(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+case "$*" in
+  *"simulation-params get"*) printf '{"simulation_params":{"meshing":{"defaults":{"surface_edge_growth_rate":1.2}}}}' ;;
+  *"state"*) printf '{"status":"draft"}' ;;
+  *) printf '{"id":"draft-1","name":"Baseline"}' ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := (&Client{Binary: binaryPath, Timeout: time.Second}).ResourceDetail(context.Background(), "Draft", "draft-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var params map[string]any
+	if err := json.Unmarshal(detail.SimulationParams, &params); err != nil {
+		t.Fatal(err)
+	}
+	if _, wrapped := params["simulation_params"]; wrapped || params["meshing"] == nil {
+		t.Fatalf("expected canonical SimulationParams, got %s", detail.SimulationParams)
+	}
+}
+
 func TestSetDraftSimulationParamsUsesPrivateFileAndReadsCanonicalValue(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")

@@ -1,22 +1,26 @@
-import { AlertCircle, CheckCircle2, Code2, ListTree, RefreshCw, Save } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, RefreshCw, Save } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type DynamicFormSchema } from '../api/client'
+import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
+import JsonPreview from './JsonPreview'
 import { hydrateSchemaValue, SchemaFormFields, serializeValue, type ExpressionValidator } from './SchemaForm'
 
-type EditorMode = 'form' | 'json'
+type EditorMode = 'form' | 'json' | 'preview'
 
 type Props = {
   draftId: string
   parameters?: Record<string, unknown>
   onSaved?: () => void
+  readOnly?: boolean
 }
 
-export default function DraftParameterEditor({ draftId, parameters, onSaved }: Props) {
+export default function DraftParameterEditor({ draftId, parameters, onSaved, readOnly = false }: Props) {
   const baseline = useMemo(() => parameters ?? {}, [parameters])
   const [schema, setSchema] = useState<DynamicFormSchema | null>(null)
   const [mode, setMode] = useState<EditorMode>('form')
   const [formValue, setFormValue] = useState<unknown>(baseline)
   const [jsonValue, setJSONValue] = useState(() => JSON.stringify(baseline, null, 2))
+  const [previewValue, setPreviewValue] = useState<unknown>(baseline)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -25,6 +29,11 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
 
   useEffect(() => {
     let active = true
+    if (readOnly) {
+      setLoading(false)
+      setPreviewValue(baseline)
+      return () => { active = false }
+    }
     setLoading(true)
     setError('')
     setSaved(false)
@@ -33,8 +42,11 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
     api.draftParameterSchema(draftId)
       .then((response) => {
         if (!active) return
+        const canonical = response.baseline
         setSchema(response.schema)
-        setFormValue(hydrateSchemaValue(response.schema, baseline, true))
+        setFormValue(hydrateSchemaValue(response.schema, canonical, true))
+        setJSONValue(JSON.stringify(canonical, null, 2))
+        setPreviewValue(canonical)
         setMode('form')
       })
       .catch((cause) => {
@@ -45,19 +57,27 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
       })
       .finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [baseline, draftId])
+  }, [baseline, draftId, readOnly])
 
   const selectMode = (nextMode: EditorMode) => {
     if (nextMode === mode) return
     try {
       if (nextMode === 'json') {
-        if (!schema) return
-        const next = buildDraftParameters(schema, formValue)
-        setJSONValue(JSON.stringify(next, null, 2))
-      } else {
+        if (mode === 'form') {
+          if (!schema) return
+          const next = buildDraftParameters(schema, formValue)
+          setJSONValue(JSON.stringify(next, null, 2))
+        }
+      } else if (nextMode === 'form') {
         if (!schema) throw new Error('The Flow360 form schema is unavailable.')
         const next = parseParameterJSON(jsonValue)
         setFormValue(hydrateSchemaValue(schema, next, true))
+      } else {
+        const next = mode === 'form'
+          ? schema ? buildDraftParameters(schema, formValue) : baseline
+          : parseParameterJSON(jsonValue)
+        setPreviewValue(next)
+        setJSONValue(JSON.stringify(next, null, 2))
       }
       setError('')
       setMode(nextMode)
@@ -109,6 +129,10 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
     }
   }
 
+  if (readOnly) {
+    return <JsonPreview value={previewValue} empty="Flow360 did not return simulation parameters." className="draft-json-preview" />
+  }
+
   if (loading) {
     return <div className="detail-empty"><RefreshCw size={15} className="spin" /> Loading the installed Flow360 schema…</div>
   }
@@ -123,8 +147,11 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
           <button type="button" role="tab" aria-selected={mode === 'json'} className={mode === 'json' ? 'active' : ''} onClick={() => selectMode('json')}>
             <Code2 size={13} /> JSON
           </button>
+          <button type="button" role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => selectMode('preview')}>
+            <Eye size={13} /> Preview
+          </button>
         </div>
-        <button type="button" className="draft-parameter-save" disabled={saving || !dirty} onClick={() => void save()}>
+        <button type="button" className="draft-parameter-save" disabled={saving || !dirty || (mode === 'json' && Boolean(jsonSyntaxIssue(jsonValue)))} onClick={() => void save()}>
           {saving ? <RefreshCw size={13} className="spin" /> : <Save size={13} />}
           {saving ? 'Saving…' : 'Save Draft'}
         </button>
@@ -159,18 +186,21 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved }: P
       )}
       {mode === 'json' && (
         <div role="tabpanel">
-          <label className="draft-json-label" htmlFor={`draft-parameters-${draftId}`}>Complete SimulationParams JSON</label>
-          <textarea
-            id={`draft-parameters-${draftId}`}
-            className="resource-json draft-json-editor"
-            spellCheck={false}
+          <div className="draft-json-label">Complete SimulationParams JSON</div>
+          <JsonEditor
+            ariaLabel={`Draft ${draftId} SimulationParams JSON`}
             value={jsonValue}
-            onChange={(event) => {
-              setJSONValue(event.target.value)
+            onChange={(next) => {
+              setJSONValue(next)
               setDirty(true)
               setSaved(false)
             }}
           />
+        </div>
+      )}
+      {mode === 'preview' && (
+        <div role="tabpanel">
+          <JsonPreview value={previewValue} empty="No Draft parameters to preview." className="draft-json-preview" />
         </div>
       )}
       <p className="draft-parameter-help">

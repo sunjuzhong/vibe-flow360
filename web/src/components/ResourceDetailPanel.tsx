@@ -15,8 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ProjectItem, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import DraftParameterEditor from './DraftParameterEditor'
+import JsonPreview from './JsonPreview'
 import { ResultTablePreview } from './ResultTablePreview'
-import { StructuredDataView } from './StructuredDataView'
 import Flow360IdLink from './Flow360IdLink'
 
 export type ResourceDetailTab = 'overview' | 'summary' | 'parameters' | 'results' | 'logs' | 'convergence' | 'compare'
@@ -80,7 +80,7 @@ function formatBytes(value?: number) {
 }
 
 function JsonView({ value, empty }: { value: unknown; empty: string }) {
-  return <StructuredDataView value={value} empty={empty} className="resource-structured-data" />
+  return <JsonPreview value={value} empty={empty} className="resource-json-preview" />
 }
 
 export function resourceStatus(detail: ResourceDetail | null) {

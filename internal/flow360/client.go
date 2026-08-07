@@ -429,7 +429,21 @@ func (c *Client) SetDraftSimulationParams(ctx context.Context, draftID string, p
 	if _, err := c.run(ctx, "draft", "simulation-params", "set", draftID, tempPath); err != nil {
 		return nil, err
 	}
-	return c.jsonCommand(ctx, "draft", "simulation-params", "get", draftID)
+	raw, err := c.jsonCommand(ctx, "draft", "simulation-params", "get", draftID)
+	if err != nil {
+		return nil, err
+	}
+	return unwrapSimulationParamsPayload(raw), nil
+}
+
+func unwrapSimulationParamsPayload(raw json.RawMessage) json.RawMessage {
+	var envelope struct {
+		SimulationParams json.RawMessage `json:"simulation_params"`
+	}
+	if json.Unmarshal(raw, &envelope) == nil && len(envelope.SimulationParams) > 0 && json.Valid(envelope.SimulationParams) {
+		return envelope.SimulationParams
+	}
+	return raw
 }
 
 func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID string) (ResourceDetail, error) {
@@ -454,7 +468,7 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 		{
 			name: "simulation_params",
 			args: []string{command, "simulation-params", "get", resourceID},
-			set:  func(raw json.RawMessage) { detail.SimulationParams = raw },
+			set:  func(raw json.RawMessage) { detail.SimulationParams = unwrapSimulationParamsPayload(raw) },
 		},
 	}
 	if command != "draft" {
