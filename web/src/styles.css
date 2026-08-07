@@ -1348,6 +1348,7 @@ button { color: inherit; }
 .project-table-row:last-child { border-bottom: 0; }
 .project-table-row:hover { background: #f3f7e7; }
 .project-table-row:hover .row-arrow { transform: translateX(2px); color: #617c11; }
+.project-table-row:has(> .project-actions .project-actions-trigger[aria-expanded="true"]) { z-index: 10; }
 
 .project-primary {
   display: flex;
@@ -1396,7 +1397,7 @@ button { color: inherit; }
 .project-actions-trigger[aria-expanded="true"] { color: #4c630f; background: #e7edd6; }
 .project-actions-menu {
   position: absolute;
-  z-index: 8;
+  z-index: 20;
   top: 31px;
   right: 0;
   display: grid;
@@ -1405,6 +1406,8 @@ button { color: inherit; }
   border: 1px solid #d6d8ce;
   border-radius: 8px;
   background: #fff;
+  opacity: 1;
+  isolation: isolate;
   box-shadow: 0 12px 30px rgba(34,38,29,.18);
 }
 .project-actions-menu button {
