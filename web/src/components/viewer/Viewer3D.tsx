@@ -211,6 +211,7 @@ type Props = {
   showWarnings?: boolean
   toolbar?: React.ReactNode
   topToolbar?: React.ReactNode
+  floatingPanel?: React.ReactNode
   cameraCommand?: ViewerCameraCommand | null
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
@@ -249,6 +250,7 @@ export function Viewer3D({
   showWarnings = true,
   toolbar,
   topToolbar,
+  floatingPanel,
   cameraCommand,
   showNormals = false,
   entityAppearances = {},
@@ -1332,6 +1334,11 @@ export function Viewer3D({
               </span>
             </div>
           )}
+        </div>
+      )}
+      {floatingPanel && visibleState.status === 'ready' && (
+        <div className="viewer-field-panel viewer-floating-panel">
+          {floatingPanel}
         </div>
       )}
       {showEntityLegend && manifest && (

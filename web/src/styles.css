@@ -2393,7 +2393,8 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
 }
 .viewer-top-toolbar .viewer-tools-menu { top: calc(100% + 10px); bottom: auto; }
 .viewer-top-toolbar .surface-combined-toolbar,
-.viewer-top-toolbar .surface-advanced-toolbar { display: contents; }
+.viewer-top-toolbar .surface-advanced-toolbar,
+.viewer-top-toolbar .geometry-camera-toolbar { display: contents; }
 .viewer-toolbar-slot:has(.viewer-toolbar-sections) {
   padding: 4px;
   border-color: rgb(211 216 204 / 88%);
@@ -6594,6 +6595,48 @@ textarea.draft-json-editor:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px 
   grid-template-columns: 90px minmax(0, 1fr);
   gap: 7px;
   margin-top: 8px;
+}
+
+.viewer-floating-panel {
+  z-index: 14;
+  width: min(310px, calc(100% - 20px));
+  box-sizing: border-box;
+  background: rgb(255 255 252 / 94%);
+  box-shadow: 0 8px 24px rgb(31 37 27 / 14%);
+  backdrop-filter: blur(12px);
+}
+
+.geometry-clip-popover { min-width: 0; }
+.geometry-clip-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.geometry-clip-popover > header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #444c3f;
+  font-size: 9px;
+}
+.geometry-clip-popover > header button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #697065;
+  background: transparent;
+  cursor: pointer;
+}
+.geometry-clip-popover > header button:hover,
+.geometry-clip-popover > header button:focus-visible {
+  border-color: #d8dcd2;
+  color: #35402b;
+  background: #eff2e9;
 }
 
 .geometry-clip-controls label,

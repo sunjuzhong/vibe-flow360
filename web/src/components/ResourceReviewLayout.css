@@ -135,6 +135,17 @@
   }
 }
 
+@media (max-width: 390px) {
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-field-panel {
+    top: auto;
+    bottom: 50px;
+  }
+
+  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-floating-panel {
+    width: auto;
+  }
+}
+
 .surface-review-workspace .resource-review-inventory > .geometry-panel-heading {
   padding: 14px 13px 10px;
 }

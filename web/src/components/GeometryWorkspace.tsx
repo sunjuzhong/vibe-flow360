@@ -20,6 +20,7 @@ import {
   Sparkles,
   Trash2,
   Undo2,
+  X,
   XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -88,6 +89,51 @@ function CheckIcon({ level }: { level: GeometryCheckLevel }) {
   if (level === 'blocked') return <XCircle size={14} />
   if (level === 'warning') return <AlertTriangle size={14} />
   return <CircleHelp size={14} />
+}
+
+export function GeometryClipPopover({
+  axis,
+  position,
+  onAxisChange,
+  onPositionChange,
+  onClose,
+}: {
+  axis: 'x' | 'y' | 'z'
+  position: number
+  onAxisChange: (axis: 'x' | 'y' | 'z') => void
+  onPositionChange: (position: number) => void
+  onClose: () => void
+}) {
+  return (
+    <section className="geometry-clip-popover" role="dialog" aria-label="Inspection tools">
+      <header>
+        <strong><Scissors size={13} /> Inspection tools</strong>
+        <button type="button" onClick={onClose} aria-label="Close inspection tools" title="Close inspection tools">
+          <X size={13} />
+        </button>
+      </header>
+      <div className="geometry-clip-controls">
+        <label>Clip axis
+          <select value={axis} onChange={(event) => onAxisChange(event.target.value as 'x' | 'y' | 'z')}>
+            <option value="x">X plane</option>
+            <option value="y">Y plane</option>
+            <option value="z">Z plane</option>
+          </select>
+        </label>
+        <label>Position
+          <input
+            aria-label="Geometry clipping plane position"
+            type="range"
+            min="-1"
+            max="1"
+            step="0.01"
+            value={position}
+            onChange={(event) => onPositionChange(Number(event.target.value))}
+          />
+        </label>
+      </div>
+    </section>
+  )
 }
 
 function downloadDataUrl(dataUrl: string, fileName: string) {
@@ -733,6 +779,15 @@ export default function GeometryWorkspace({
           showEntityLegend={false}
           showFieldPanel={false}
           cameraCommand={cameraCommand}
+          floatingPanel={clipEnabled && (
+            <GeometryClipPopover
+              axis={clipAxis}
+              position={clipPosition}
+              onAxisChange={setClipAxis}
+              onPositionChange={setClipPosition}
+              onClose={() => setClipEnabled(false)}
+            />
+          )}
           topToolbar={(
               <div className="geometry-camera-toolbar" aria-label="Geometry actions">
                 <button
@@ -789,34 +844,6 @@ export default function GeometryWorkspace({
               : `${formatGeometryNumber(review.diagonal)}${review.unit ? ` ${review.unit}` : ''}`}
           </strong></div>
         </div>
-
-        {clipEnabled && (
-          <section className="geometry-inspection-card">
-            <div className="geometry-section-title"><Ruler size={13} /> Inspection tools</div>
-            {clipEnabled && (
-              <div className="geometry-clip-controls">
-                <label>Clip axis
-                  <select value={clipAxis} onChange={(event) => setClipAxis(event.target.value as 'x' | 'y' | 'z')}>
-                    <option value="x">X plane</option>
-                    <option value="y">Y plane</option>
-                    <option value="z">Z plane</option>
-                  </select>
-                </label>
-                <label>Position
-                  <input
-                    aria-label="Geometry clipping plane position"
-                    type="range"
-                    min="-1"
-                    max="1"
-                    step="0.01"
-                    value={clipPosition}
-                    onChange={(event) => setClipPosition(Number(event.target.value))}
-                  />
-                </label>
-              </div>
-            )}
-          </section>
-        )}
 
         <section className="geometry-selection-card">
           <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
