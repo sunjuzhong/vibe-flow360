@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { fitPerspectiveCameraToObject, resizePerspectiveViewport, updatePerspectiveCameraClipping } from './viewerCamera'
+import {
+  configureCFDNavigationControls,
+  fitPerspectiveCameraToObject,
+  interpolateCameraPivot,
+  resizePerspectiveViewport,
+  updatePerspectiveCameraClipping,
+} from './viewerCamera'
 
 function createFixture(aspect: number) {
   const camera = new THREE.PerspectiveCamera(45, aspect, 0.01, 1000)
@@ -20,6 +26,48 @@ function createFixture(aspect: number) {
 }
 
 describe('responsive viewer camera framing', () => {
+  it('configures ParaView-style CFD mouse and touch navigation', () => {
+    const controls = {
+      target: new THREE.Vector3(),
+      update: () => undefined,
+      enableDamping: false,
+      dampingFactor: 0,
+      screenSpacePanning: false,
+      zoomToCursor: false,
+      rotateSpeed: 1,
+      panSpeed: 1,
+      zoomSpeed: 1,
+      mouseButtons: { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE },
+      touches: { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE },
+    }
+
+    configureCFDNavigationControls(controls)
+
+    expect(controls.enableDamping).toBe(true)
+    expect(controls.zoomToCursor).toBe(true)
+    expect(controls.mouseButtons).toEqual({
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.PAN,
+      RIGHT: THREE.MOUSE.DOLLY,
+    })
+    expect(controls.touches).toEqual({ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN })
+    expect(controls.rotateSpeed).toBeLessThan(1)
+  })
+
+  it('recenters a pivot without changing camera direction or distance', () => {
+    const startPosition = new THREE.Vector3(4, 3, 8)
+    const startTarget = new THREE.Vector3(1, 1, 1)
+    const nextTarget = new THREE.Vector3(-2, 5, 3)
+    const halfway = interpolateCameraPivot(startPosition, startTarget, nextTarget, 0.5)
+    const finished = interpolateCameraPivot(startPosition, startTarget, nextTarget, 1)
+
+    expect(halfway.target.toArray()).toEqual([-0.5, 3, 2])
+    expect(finished.target.toArray()).toEqual(nextTarget.toArray())
+    expect(finished.position.clone().sub(finished.target).toArray()).toEqual(
+      startPosition.clone().sub(startTarget).toArray(),
+    )
+  })
+
   it('keeps the object centered and increases distance for a portrait viewport', () => {
     const desktop = createFixture(16 / 9)
     const desktopFit = fitPerspectiveCameraToObject(

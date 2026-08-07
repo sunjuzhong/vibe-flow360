@@ -6,7 +6,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
 import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
-import { configurePerspectiveCameraForBounds, fitPerspectiveCameraToObject, updatePerspectiveCameraClipping } from '../../lib/viewerCamera'
+import {
+  configureCFDNavigationControls,
+  configurePerspectiveCameraForBounds,
+  fitPerspectiveCameraToObject,
+  interpolateCameraPivot,
+  updatePerspectiveCameraClipping,
+} from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
 import { ViewerNavCubeController, type NavCubeOrientation } from '../../lib/viewerNavCube'
@@ -275,9 +281,12 @@ export function Viewer3D({
   const normalsOverlayRef = useRef<THREE.Group | null>(null)
   const navCubeRef = useRef<ViewerNavCubeController | null>(null)
   const navCubeAnimationRef = useRef<number | null>(null)
+  const pivotFeedbackTimeoutRef = useRef<number | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
   const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
+  const [cameraNavigating, setCameraNavigating] = useState(false)
+  const [pivotFeedback, setPivotFeedback] = useState<{ x: number; y: number; id: number } | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<{ faces: number; edges: number; triangles: number } | null>(null)
   const [precision, setPrecision] = useState<{ assetURL: string | null; selection: ViewerPrecisionSelection }>({
@@ -432,9 +441,9 @@ export function Viewer3D({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     container.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
-    controls.enableDamping = true
-    controls.dampingFactor = 0.08
-    controls.screenSpacePanning = true
+    configureCFDNavigationControls(controls)
+    controls.addEventListener('start', () => setCameraNavigating(true))
+    controls.addEventListener('end', () => setCameraNavigating(false))
 
     scene.add(createEngineeringLightRig())
 
@@ -587,6 +596,8 @@ export function Viewer3D({
       cancelAnimationFrame(rafId)
       if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
       navCubeAnimationRef.current = null
+      if (pivotFeedbackTimeoutRef.current !== null) window.clearTimeout(pivotFeedbackTimeoutRef.current)
+      pivotFeedbackTimeoutRef.current = null
       navCube.dispose()
       if (navCubeRef.current === navCube) navCubeRef.current = null
       annotationOverlay.dispose()
@@ -1012,6 +1023,88 @@ export function Viewer3D({
     altKey: event.altKey,
   })
 
+  const animatePivotTo = useCallback((nextTarget: THREE.Vector3) => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls) return
+    if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
+    const startPosition = camera.position.clone()
+    const startTarget = controls.target.clone()
+    const startedAt = performance.now()
+    const duration = 180
+    const animateCamera = (now: number) => {
+      const linear = Math.min(1, (now - startedAt) / duration)
+      const progress = linear * linear * (3 - 2 * linear)
+      const frame = interpolateCameraPivot(startPosition, startTarget, nextTarget, progress)
+      camera.position.copy(frame.position)
+      controls.target.copy(frame.target)
+      camera.lookAt(frame.target)
+      controls.update()
+      if (linear < 1) navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
+      else navCubeAnimationRef.current = null
+    }
+    navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
+  }, [])
+
+  const showPivotFeedback = (clientX: number, clientY: number) => {
+    const parentRect = containerRef.current?.parentElement?.getBoundingClientRect()
+    if (!parentRect) return
+    setPivotFeedback({ x: clientX - parentRect.left, y: clientY - parentRect.top, id: Date.now() })
+    if (pivotFeedbackTimeoutRef.current !== null) window.clearTimeout(pivotFeedbackTimeoutRef.current)
+    pivotFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setPivotFeedback(null)
+      pivotFeedbackTimeoutRef.current = null
+    }, 900)
+  }
+
+  const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (toolInput?.isActive?.() ?? false) {
+      onDoubleClick?.(event)
+      return
+    }
+    const container = containerRef.current
+    const camera = cameraRef.current
+    const asset = assetRef.current
+    if (!container || !camera || !asset) return
+    event.preventDefault()
+    const raycaster = buildPointerRay({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+    }, camera, container.getBoundingClientRect())
+    const intersection = pickScene(raycaster, [asset])
+    const nextTarget = intersection?.point.clone()
+      ?? new THREE.Box3().setFromObject(asset).getCenter(new THREE.Vector3())
+    animatePivotTo(nextTarget)
+    if (intersection) showPivotFeedback(event.clientX, event.clientY)
+  }
+
+  const handleViewerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (toolInput?.isActive?.() ?? false) return
+    const key = event.key.toLowerCase()
+    if (key === 'escape') {
+      if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
+      navCubeAnimationRef.current = null
+      inputControllerRef.current?.cancelPointer()
+      inputControllerRef.current = null
+      setPivotFeedback(null)
+      event.preventDefault()
+      return
+    }
+    if (key === 'f') {
+      applyCameraCommand('fit')
+      event.preventDefault()
+      return
+    }
+    if (key === 'x' || key === 'y' || key === 'z') {
+      applyCameraCommand(`${event.shiftKey ? '-' : ''}${key}` as ViewerCameraCommand['type'])
+      event.preventDefault()
+    }
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || !(toolInput?.isActive?.() ?? false)) return
@@ -1025,6 +1118,7 @@ export function Viewer3D({
   }, [toolInput])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.focus({ preventScroll: true })
     if (navCubeRef.current?.handlePointerDown(event.nativeEvent)) {
       if (controlsRef.current) controlsRef.current.enabled = false
       event.preventDefault()
@@ -1047,6 +1141,7 @@ export function Viewer3D({
       event.stopPropagation()
       return
     }
+    if (event.button !== 0) return
     const controller = createInputController()
     inputControllerRef.current = controller
     controller.onPointerDown(pointerEvent(event))
@@ -1077,6 +1172,7 @@ export function Viewer3D({
       event.preventDefault()
       return
     }
+    if (event.button !== 0) return
     inputControllerRef.current?.onPointerUp(pointerEvent(event))
     inputControllerRef.current = null
   }
@@ -1096,6 +1192,7 @@ export function Viewer3D({
       event.preventDefault()
       return
     }
+    if (event.buttons !== 0) return
     const controller = inputControllerRef.current ?? createInputController()
     inputControllerRef.current = controller
     controller.onPointerMove(pointerEvent(event))
@@ -1178,12 +1275,14 @@ export function Viewer3D({
     >
       <div
         ref={containerRef}
-        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''}`}
+        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''} ${cameraNavigating ? 'viewer-camera-navigating' : ''}`}
         onPointerDownCapture={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
-        onDoubleClick={onDoubleClick}
+        onDoubleClick={handleDoubleClick}
+        onKeyDown={handleViewerKeyDown}
+        onContextMenu={(event) => event.preventDefault()}
         onPointerCancel={() => {
           navCubeRef.current?.handlePointerCancel()
           draggedControlPointRef.current = null
@@ -1196,6 +1295,14 @@ export function Viewer3D({
         aria-label="3D geometry viewer"
         tabIndex={0}
       />
+      {pivotFeedback && (
+        <span
+          key={pivotFeedback.id}
+          className="viewer-pivot-feedback"
+          style={{ left: pivotFeedback.x, top: pivotFeedback.y }}
+          aria-hidden="true"
+        />
+      )}
       {visibleState.status === 'loading' && (
         <div className="viewer-overlay viewer-loading" role="status" aria-live="polite">
           <div className="viewer-spinner" />

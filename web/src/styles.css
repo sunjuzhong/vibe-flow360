@@ -2587,6 +2587,36 @@ button { color: inherit; }
   height: 100% !important;
 }
 .viewer-3d:active { cursor: grabbing; }
+.viewer-3d.viewer-camera-navigating,
+.viewer-3d.viewer-camera-navigating canvas { cursor: grabbing; }
+.viewer-pivot-feedback {
+  position: absolute;
+  z-index: 9;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #b3dd3f;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgb(32 46 24 / 70%), 0 0 12px rgb(179 221 63 / 55%);
+  animation: viewer-pivot-pulse 900ms ease-out forwards;
+}
+.viewer-pivot-feedback::before,
+.viewer-pivot-feedback::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: #b3dd3f;
+  transform: translate(-50%, -50%);
+}
+.viewer-pivot-feedback::before { width: 26px; height: 1px; }
+.viewer-pivot-feedback::after { width: 1px; height: 26px; }
+@keyframes viewer-pivot-pulse {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
 .viewer-overlay {
   position: absolute;
   z-index: 3;

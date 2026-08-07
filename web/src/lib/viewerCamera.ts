@@ -7,6 +7,25 @@ type CameraControls = {
   maxDistance?: number
 }
 
+type CFDNavigationControls = CameraControls & {
+  enableDamping: boolean
+  dampingFactor: number
+  screenSpacePanning: boolean
+  zoomToCursor: boolean
+  rotateSpeed: number
+  panSpeed: number
+  zoomSpeed: number
+  mouseButtons: {
+    LEFT?: THREE.MOUSE | null
+    MIDDLE?: THREE.MOUSE | null
+    RIGHT?: THREE.MOUSE | null
+  }
+  touches: {
+    ONE?: THREE.TOUCH | null
+    TWO?: THREE.TOUCH | null
+  }
+}
+
 export type CameraFit = {
   center: THREE.Vector3
   radius: number
@@ -14,6 +33,36 @@ export type CameraFit = {
 }
 
 const CLIP_MARGIN_RADII = 1.5
+
+/** ParaView-style navigation tuned for engineering and CFD models. */
+export function configureCFDNavigationControls(controls: CFDNavigationControls): void {
+  controls.enableDamping = true
+  controls.dampingFactor = 0.055
+  controls.screenSpacePanning = true
+  controls.zoomToCursor = true
+  controls.rotateSpeed = 0.72
+  controls.panSpeed = 0.9
+  controls.zoomSpeed = 0.85
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
+  controls.mouseButtons.RIGHT = THREE.MOUSE.DOLLY
+  controls.touches.ONE = THREE.TOUCH.ROTATE
+  controls.touches.TWO = THREE.TOUCH.DOLLY_PAN
+}
+
+export function interpolateCameraPivot(
+  startPosition: THREE.Vector3,
+  startTarget: THREE.Vector3,
+  nextTarget: THREE.Vector3,
+  progress: number,
+): { position: THREE.Vector3; target: THREE.Vector3 } {
+  const amount = THREE.MathUtils.clamp(progress, 0, 1)
+  const target = startTarget.clone().lerp(nextTarget, amount)
+  return {
+    position: startPosition.clone().add(target.clone().sub(startTarget)),
+    target,
+  }
+}
 
 export function updatePerspectiveCameraClipping(
   camera: THREE.PerspectiveCamera,
