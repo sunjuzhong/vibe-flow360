@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
-import { geometryContextId, initialProjectPanel, projectSyncProgress, resourceContextLabel } from './ProjectPage'
+import { geometryContextId, initialProjectPanel, panelDismissesFromAmbientInteraction, projectSyncProgress, resourceContextLabel } from './ProjectPage'
 
 describe('Project panel defaults', () => {
   it('opens Project resources on first entry', () => {
     expect(initialProjectPanel).toBeNull()
+  })
+
+  it('keeps Draft parameters open for outside clicks and Escape', () => {
+    expect(panelDismissesFromAmbientInteraction('parameters')).toBe(false)
+    expect(panelDismissesFromAmbientInteraction('resources')).toBe(true)
+    expect(panelDismissesFromAmbientInteraction('details')).toBe(true)
+    expect(panelDismissesFromAmbientInteraction(null)).toBe(true)
   })
 })
 

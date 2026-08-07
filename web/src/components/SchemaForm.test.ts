@@ -328,4 +328,35 @@ describe('schema-driven Flow360 form', () => {
     expect(populatedMarkup).toContain('aria-label="Remove Models item 1"')
     expect(populatedMarkup).not.toContain('>0<')
   })
+
+  it('does not repeat a root union title below its tab', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        operating_condition: {
+          type: 'union',
+          title: 'Operating Condition',
+          variants: [{
+            type: 'object',
+            title: 'GenericReferenceCondition',
+            properties: { mach: { type: 'number', title: 'Mach' } },
+          }],
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: {},
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('schema-root-union')
+    expect(markup.match(/>Operating Condition</g)).toHaveLength(1)
+    expect(markup).toContain('Value type')
+    expect(markup).toContain('GenericReferenceCondition')
+  })
 })

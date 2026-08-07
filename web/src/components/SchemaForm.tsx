@@ -476,9 +476,8 @@ function SchemaField({
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
     const selected = schema.variants?.[draft.variant] ?? { type: 'json' as const }
-    return (
-      <fieldset className="schema-object">
-        <legend>{title}</legend>
+    const unionEditor = (
+      <>
         <label className="schema-field">
           <span>Value type</span>
           <select
@@ -494,6 +493,15 @@ function SchemaField({
           </select>
         </label>
         <SchemaField schema={selected} value={draft.value} path={`${path}.value`} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} onChange={(next) => onChange({ ...draft, value: next })} />
+      </>
+    )
+    if (rootTabContent) {
+      return <div className="schema-root-union">{unionEditor}</div>
+    }
+    return (
+      <fieldset className="schema-object">
+        <legend>{title}</legend>
+        {unionEditor}
       </fieldset>
     )
   }

@@ -61,7 +61,13 @@ import {
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
+type ProjectPanel = 'resources' | 'details' | 'annotations' | 'parameters'
+
 export const initialProjectPanel = null
+
+export function panelDismissesFromAmbientInteraction(panel: ProjectPanel | null): boolean {
+  return panel !== 'parameters'
+}
 
 export function resourceContextLabel(projectName: string, resourceName: string, resourceType: string): string {
   return projectName.trim().toLocaleLowerCase() === resourceName.trim().toLocaleLowerCase()
@@ -139,7 +145,7 @@ export default function ProjectPage() {
   const openedRequestedPlan = useRef('')
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
-  const [activePanel, setActivePanel] = useState<'resources' | 'details' | 'annotations' | 'parameters' | null>(initialProjectPanel)
+  const [activePanel, setActivePanel] = useState<ProjectPanel | null>(initialProjectPanel)
   const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -160,9 +166,12 @@ export default function ProjectPage() {
     setPlanOpen(true)
   }, [requestedPlanId])
   const closePanel = useCallback(() => setActivePanel(null), [])
+  const closePanelFromAmbientInteraction = useCallback(() => {
+    if (panelDismissesFromAmbientInteraction(activePanel)) closePanel()
+  }, [activePanel, closePanel])
   const panelRef = useFocusTrap<HTMLElement>(
     activePanel !== null,
-    closePanel,
+    closePanelFromAmbientInteraction,
     'button[aria-label^="Close"]',
   )
 
@@ -177,7 +186,7 @@ export default function ProjectPage() {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
-      closePanel()
+      closePanelFromAmbientInteraction()
     }
     document.addEventListener('keydown', handleEscape)
     return () => {
@@ -185,7 +194,7 @@ export default function ProjectPage() {
       document.removeEventListener('keydown', handleEscape)
       previouslyFocused?.focus()
     }
-  }, [activePanel, closePanel, panelRef])
+  }, [activePanel, closePanelFromAmbientInteraction, panelRef])
 
   const loadProject = useCallback(async (cacheOnly = false, showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -613,7 +622,9 @@ export default function ProjectPage() {
 
       {!loading && !error && project && root && selected && (
         <div className="project-workbench">
-          {activePanel && <button className="project-panel-scrim" onClick={closePanel} aria-label="Close panel" />}
+          {activePanel && (panelDismissesFromAmbientInteraction(activePanel)
+            ? <button className="project-panel-scrim" onClick={closePanel} aria-label="Close panel" />
+            : <div className="project-panel-scrim" aria-hidden="true" />)}
           {activePanel === 'resources' && (
           <aside ref={panelRef} className="resource-sidebar project-drawer project-drawer-left" role="dialog" aria-modal="true" aria-label="Project resources" tabIndex={-1}>
             <div className="workbench-panel-title">
