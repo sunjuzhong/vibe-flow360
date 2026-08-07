@@ -1302,7 +1302,7 @@ export function Viewer3D({
                   value={fieldScale}
                   onChange={(e) => setFieldScale(e.target.value as UVFFieldScale)}
                 >
-                  <option value="auto">Auto ({resolvedFieldScale === 'log' ? 'Log10' : 'Linear'})</option>
+                  <option value="auto">{`Auto (${resolvedFieldScale === 'log' ? 'Log10' : 'Linear'})`}</option>
                   <option value="linear">Linear</option>
                   <option value="log" disabled={!activeField || !canUseLogFieldScale(activeField.min, activeField.max)}>
                     Log10

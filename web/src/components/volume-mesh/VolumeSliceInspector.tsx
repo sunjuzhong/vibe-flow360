@@ -47,7 +47,7 @@ export function VolumeSliceInspector({
             })}
           </div>
           <p className="volume-slice-variant-detail">
-            {variants.pairedCount} paired generated slice{variants.pairedCount === 1 ? '' : 's'} · Flat is the default where available.
+            {`${variants.pairedCount} paired generated ${variants.pairedCount === 1 ? 'slice' : 'slices'} · Flat is the default where available.`}
             {!variants.hasFlat ? ' Flat is unavailable, so Crinkled is retained.' : !variants.hasCrinkled ? ' Crinkled is unavailable.' : ''}
           </p>
         </>

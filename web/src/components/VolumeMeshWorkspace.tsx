@@ -256,7 +256,7 @@ export default function VolumeMeshWorkspace({
                 ? 'The volume mesh failed. Review logs and meshing inputs before creating a Case Draft.'
                 : 'Missing data remains visible as missing or proxy evidence; review it before relying on this mesh.'}</p>
             <div className="geometry-readiness-counts">
-              {blockedCount > 0 && <span className="blocked">{blockedCount} blocker{blockedCount === 1 ? '' : 's'}</span>}
+              {blockedCount > 0 && <span className="blocked">{`${blockedCount} ${blockedCount === 1 ? 'blocker' : 'blockers'}`}</span>}
               {warningCount > 0 && <span className="warning">{warningCount} warnings / missing</span>}
               <span className="warning">Status · {status}</span>
             </div>

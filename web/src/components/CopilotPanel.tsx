@@ -355,7 +355,7 @@ export default function CopilotPanel({
               )}
               {message.action?.kind === 'request-missing-input' && Boolean(message.action.questions?.length) && (
                 <button className="action-plan-convert" type="button" onClick={() => setClarificationAction(message.action ?? null)}>
-                  <ChevronRight size={14} /> Input required · Answer {message.action.questions?.length} engineering question{message.action.questions?.length === 1 ? '' : 's'}
+                  <ChevronRight size={14} /> {`Input required · Answer ${message.action.questions?.length} engineering ${message.action.questions?.length === 1 ? 'question' : 'questions'}`}
                 </button>
               )}
             </div>

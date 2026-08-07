@@ -211,7 +211,7 @@ export default function FolderTree({
         onDelete={runAction(onDelete)}
         searchQuery={query}
       />
-      {query && <div className="folder-search-hint">Showing folders matching "{query}"</div>}
+      {query && <div className="folder-search-hint">{`Showing folders matching “${query}”`}</div>}
     </div>
   )
 }

@@ -3,6 +3,9 @@ import { detectSystemLanguage, languageStorageKey, readInitialLanguage } from '.
 import { localeOptions } from './locales'
 import { hasTranslation, translate } from './translations'
 import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params } from '../tutorials/t04'
+import { t01Evidence, t01ParameterCards, t01Steps, t01ParamsForAlpha, validateT01Setup } from '../tutorials/t01'
+import { t02Paths, t02Steps } from '../tutorials/t02'
+import { t03Evidence, t03ParameterCards, t03Steps, t03Params, validateT03Setup } from '../tutorials/t03'
 
 describe('language settings', () => {
   it('uses Chinese for Chinese system locales and English otherwise', () => {
@@ -30,6 +33,10 @@ describe('language settings', () => {
     expect(translate('  Save ', 'zh-CN')).toBe('  保存 ')
     expect(translate('Step 2 of 6', 'zh-CN')).toBe('第 2 步，共 6 步')
     expect(translate('Open Demo wing', 'zh-CN')).toBe('打开 Demo wing')
+    expect(hasTranslation('Review 3 Geometry warnings or unknown checks', 'zh-CN')).toBe(true)
+    expect(hasTranslation('pressure distribution, 120 samples', 'zh-CN')).toBe(true)
+    expect(hasTranslation('Remove boundary item 2', 'zh-CN')).toBe(true)
+    expect(hasTranslation('Geometry AI multi-element airfoil strategy', 'zh-CN')).toBe(true)
     expect(translate('Settings', 'en')).toBe('Settings')
   })
 
@@ -127,5 +134,24 @@ describe('language settings', () => {
     ]
 
     expect([...tutorialData, ...pageAndEditorCopy].filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete guided-tutorial data model in Chinese', () => {
+    const messages = [
+      ...t01Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t01ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t01Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT01Setup(t01ParamsForAlpha(0)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT01Setup(t01ParamsForAlpha(5)).flatMap(({ label, detail }) => [label, detail]),
+      ...t02Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...Object.values(t02Paths).flatMap(({ root, required, skipped, best }) => [root, ...required, ...skipped, best]),
+      ...t03Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t03ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t03Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT03Setup(t03Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT03Setup(t03Params(true)).flatMap(({ label, detail }) => [label, detail]),
+    ]
+
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 })

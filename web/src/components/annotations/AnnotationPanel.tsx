@@ -125,7 +125,7 @@ function AnnotationRow<TResult extends JsonValue>({
 
       {editing ? (
         <form onSubmit={(event) => void submitRename(event)}>
-          <label htmlFor={`annotation-name-${annotation.id}`}>Name for {label}</label>
+          <label htmlFor={`annotation-name-${annotation.id}`}>{`Name for ${label}`}</label>
           <input
             id={`annotation-name-${annotation.id}`}
             value={name}

@@ -168,7 +168,7 @@ export default function AgentClarificationDialog({
         <form onSubmit={submit}>
           {recommendedCount > 0 && (
             <div className="agent-clarification-recommendation-summary">
-              <strong>{recommendedCount} Agent recommendation{recommendedCount === 1 ? '' : 's'} prefilled</strong>
+              <strong>{`${recommendedCount} Agent ${recommendedCount === 1 ? 'recommendation' : 'recommendations'} prefilled`}</strong>
               <span>Review the highlighted values, then confirm or change only what is necessary.</span>
             </div>
           )}

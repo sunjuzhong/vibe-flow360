@@ -84,7 +84,7 @@ export default function ProjectMutationDialog({
           {mode === 'delete' && (
             <label className="folder-delete-confirm">
               <input type="checkbox" checked={deleteConfirmed} onChange={(event) => setDeleteConfirmed(event.target.checked)} />
-              <span><AlertTriangle size={16} /><strong>I understand this permanently deletes “{project.name}”.</strong></span>
+              <span><AlertTriangle size={16} /><strong>{`I understand this permanently deletes “${project.name}”.`}</strong></span>
             </label>
           )}
 

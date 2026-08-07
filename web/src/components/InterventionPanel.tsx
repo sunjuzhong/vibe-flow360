@@ -276,7 +276,7 @@ export default function InterventionPanel({
 
                 {selected.proposals && selected.proposals.length > 0 && (
                   <section className="intervention-section">
-                    <h3><Sparkles size={15} /> Fix Proposals ({selected.proposals.length})</h3>
+                    <h3><Sparkles size={15} /> {`Fix Proposals (${selected.proposals.length})`}</h3>
                     <div className="proposal-list">
                       {selected.proposals.map((proposal) => (
                         <div key={proposal.id} className="proposal-card">

@@ -426,7 +426,7 @@ export default function WorkspacePage() {
             )
           )}
           {!projectsLoading && projects.length > 0 && !filteredProjects.length && (
-            <div className="panel-state"><Search size={20} /><strong>No projects match “{query}”</strong></div>
+            <div className="panel-state"><Search size={20} /><strong>{`No projects match “${query}”`}</strong></div>
           )}
         </section>
 
