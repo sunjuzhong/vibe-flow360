@@ -134,6 +134,19 @@ export function draftSourceResource(
   return sourceId ? items.find((item) => item.id === sourceId.trim()) ?? null : null
 }
 
+export function draftCreationBase(
+  items: ProjectItem[],
+  resource: ProjectItem,
+  detail: ResourceDetail | null,
+): { source: ProjectItem; simulationParams?: Record<string, unknown> } {
+  const status = String(detail?.state?.status ?? detail?.info?.status ?? '').trim().toLowerCase()
+  const parent = resource.parent_id ? items.find((item) => item.id === resource.parent_id) : undefined
+  if (detail?.id === resource.id && status === 'error' && parent && detail.simulation_params) {
+    return { source: parent, simulationParams: detail.simulation_params }
+  }
+  return { source: resource }
+}
+
 export function projectDraftResourcePath(projectId: string, resourceId: string, draftId = ''): string {
   const path = `/projects/${projectId}/resources/${resourceId}`
   return draftId ? `${path}?draft=${encodeURIComponent(draftId)}` : path
@@ -478,15 +491,21 @@ export default function ProjectPage() {
   }
 
   const createDraftFromResource = async (name: string) => {
-    if (!selected) throw new Error('A source Resource is required to create a Draft.')
+    if (!selected || !selectedItem) throw new Error('A source Resource is required to create a Draft.')
+    const selectedDetail = detail?.id === selected.id
+      ? detail
+      : (await api.resourceDetail(selected.type, selected.id)).data
+    const creation = draftCreationBase(items, selectedItem, selectedDetail)
     const created = await api.createConfiguredDraft(projectId, {
-      source_id: selected.id,
+      source_id: creation.source.id,
       name,
-      patch: {},
+      ...(creation.simulationParams
+        ? { simulation_params: creation.simulationParams }
+        : { patch: {} }),
     })
     await loadDrafts()
     setActivePanel(null)
-    navigate(projectDraftResourcePath(projectId, selected.id, created.id))
+    navigate(projectDraftResourcePath(projectId, creation.source.id, created.id))
   }
 
   const copyDraft = async (draft: DraftRecord, name: string) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
 import {
+  draftCreationBase,
   draftSourceResource,
   geometryContextId,
   initialProjectPanel,
@@ -107,5 +108,31 @@ describe('Draft source resource context', () => {
 
   it('keeps the Draft query while the initial Project route resolves its resource', () => {
     expect(projectDraftResourcePath('prj-1', 'geo-1', 'draft/1')).toBe('/projects/prj-1/resources/geo-1?draft=draft%2F1')
+  })
+})
+
+describe('Draft creation base', () => {
+  const items: ProjectItem[] = [
+    { id: 'vm-1', name: 'Volume mesh', type: 'VolumeMesh', parent_id: null },
+    { id: 'case-1', name: 'Errored case', type: 'Case', parent_id: 'vm-1' },
+  ]
+
+  it('recreates an errored resource from its parent while preserving its parameters', () => {
+    const simulationParams = { time_stepping: { steps: 1500 } }
+    expect(draftCreationBase(items, items[1], {
+      id: 'case-1',
+      type: 'Case',
+      state: { status: 'error' },
+      simulation_params: simulationParams,
+    })).toEqual({ source: items[0], simulationParams })
+  })
+
+  it('forks a healthy resource directly', () => {
+    expect(draftCreationBase(items, items[1], {
+      id: 'case-1',
+      type: 'Case',
+      state: { status: 'completed' },
+      simulation_params: { preserved: true },
+    })).toEqual({ source: items[1] })
   })
 })

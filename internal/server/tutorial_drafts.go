@@ -50,7 +50,7 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 	// flows, it must allow multiple Drafts based on the same source Resource.
 	created, err := s.flow360.CreateDraft(c.Request.Context(), request.SourceID, request.Name)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not create the configured Draft"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": configuredDraftCreationError(err)})
 		return
 	}
 	remoteIDs := plans.ExtractRemoteIDs(created)
@@ -95,4 +95,12 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"id": draftID, "name": request.Name, "project_id": projectID, "source_id": request.SourceID, "simulation_params": canonicalValue})
+}
+
+func configuredDraftCreationError(err error) string {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "cannot fork a error case") || strings.Contains(message, "cannot fork an error case") {
+		return "This Case is in Error state and cannot be forked directly. Create the Draft from its Volume Mesh base."
+	}
+	return "Flow360 could not create the configured Draft"
 }

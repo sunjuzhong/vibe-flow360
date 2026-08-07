@@ -177,6 +177,13 @@ esac
 	}
 }
 
+func TestConfiguredDraftCreationErrorExplainsErroredCase(t *testing.T) {
+	got := configuredDraftCreationError(errors.New("flow360: Bad request error: You cannot fork a error case"))
+	if !strings.Contains(got, "Volume Mesh base") {
+		t.Fatalf("expected actionable errored Case message, got %q", got)
+	}
+}
+
 func TestPatchDraftParametersMergesWithoutRunning(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	dir := t.TempDir()

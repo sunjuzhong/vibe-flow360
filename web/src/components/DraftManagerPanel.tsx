@@ -48,7 +48,7 @@ const DraftManagerPanel = forwardRef<HTMLElement, Props>(function DraftManagerPa
       setEditingId('')
       setDeletingId('')
     } catch (cause) {
-      setError(String(cause).replace(/^Error:\s*/, ''))
+      setError(t(String(cause).replace(/^Error:\s*/, '')))
     } finally {
       setBusy('')
     }

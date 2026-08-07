@@ -115,6 +115,8 @@ const messages: Record<string, string> = {
   Copy: '复制',
   Active: '当前',
   'Creates an editable Draft without running Flow360.': '创建可编辑草稿，但不会运行 Flow360。',
+  'Flow360 could not create the configured Draft': 'Flow360 无法创建草稿。',
+  'This Case is in Error state and cannot be forked directly. Create the Draft from its Volume Mesh base.': '该算例处于错误状态，无法直接复制。请改为从它的体网格基模创建草稿。',
   'Delete this Draft permanently?': '永久删除此草稿？',
   'This Project has no Drafts.': '此项目还没有草稿。',
   'ASK AI · DRAFT EDIT': 'ASK AI · 草稿编辑',
