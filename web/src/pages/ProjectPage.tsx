@@ -30,6 +30,7 @@ import CopilotPanel from '../components/CopilotPanel'
 import DraftParametersDialog from '../components/DraftParametersDialog'
 import GeometryWorkspace from '../components/GeometryWorkspace'
 import InterventionPanel from '../components/InterventionPanel'
+import LanguageSettings from '../components/LanguageSettings'
 import InspectorDisclosure from '../components/InspectorDisclosure'
 import PlanPanel from '../components/PlanPanel'
 import { ProjectShellAction } from '../components/ProjectShellAction'
@@ -553,6 +554,7 @@ export default function ProjectPage() {
             className="ai"
             onClick={() => setChatOpen(true)}
           />
+          <LanguageSettings compact />
           <div className={`project-connection ${flowStatus?.available ? 'online' : ''}`} title={
             flowStatus?.available
               ? `${flowStatus.environment || 'production'} · ${flowStatus.profile || 'default'}`

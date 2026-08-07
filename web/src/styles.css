@@ -873,6 +873,70 @@ button { color: inherit; }
 
 .tutorials-nav-link:hover { color: #3e520c; border-color: #c9d59e; background: #f3f7e8; }
 
+.language-settings-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #d9dbd2;
+  border-radius: 7px;
+  color: #555b50;
+  background: #f8f8f4;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.language-settings-trigger:hover,
+.language-settings-trigger[aria-expanded='true'] { color: #3e520c; border-color: #c9d59e; background: #f3f7e8; }
+.language-settings-trigger.compact { width: 31px; min-height: 31px; padding: 0; }
+
+.language-settings-scrim {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(25, 28, 22, .3);
+  backdrop-filter: blur(3px);
+}
+
+.language-settings-dialog {
+  width: min(420px, 100%);
+  overflow: hidden;
+  border: 1px solid #d5d8ce;
+  border-radius: 12px;
+  background: #fbfbf8;
+  box-shadow: 0 20px 60px rgba(30, 35, 22, .2);
+}
+
+.language-settings-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e3dc;
+}
+
+.language-settings-dialog > header > div,
+.language-settings-heading { display: flex; align-items: center; gap: 9px; }
+.language-settings-dialog > header button { display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border: 0; border-radius: 6px; color: #656a61; background: transparent; cursor: pointer; }
+.language-settings-dialog > header button:hover { background: #eceee6; }
+.language-settings-dialog > section { padding: 18px; }
+.language-settings-heading { align-items: flex-start; margin-bottom: 14px; }
+.language-settings-heading > div { display: grid; gap: 3px; }
+.language-settings-heading span { color: #7c8178; font-size: 10px; line-height: 1.45; }
+.language-settings-options { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.language-settings-options button { display: flex; align-items: center; justify-content: space-between; min-height: 62px; padding: 10px 12px; border: 1px solid #dadcd4; border-radius: 9px; color: #464c42; background: #fff; text-align: left; cursor: pointer; }
+.language-settings-options button:hover { border-color: #bdc99b; }
+.language-settings-options button.active { border-color: #8da845; color: #3f550c; background: #f4f8e9; box-shadow: inset 0 0 0 1px #8da845; }
+.language-settings-options button > span { display: grid; gap: 3px; }
+.language-settings-options small { color: #858a80; font-size: 9px; font-weight: 500; }
+
 .workspace-sidebar {
   position: fixed;
   z-index: 20;
