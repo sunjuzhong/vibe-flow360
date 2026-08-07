@@ -868,6 +868,8 @@ export const api = {
     flow360JSON<ProjectDraftsResponse>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts${cacheOnly ? '?cache=only' : ''}`),
   createConfiguredDraft: (projectId: string, input: { source_id: string; name: string; patch: Record<string, unknown> }) =>
     mutate<ConfiguredDraft>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts`, input),
+  renameDraft: (draftId: string, name: string) =>
+    replace<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/name`, { name }),
   draftParameterSchema: (draftId: string) =>
     json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
   validateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, paths: string[]) =>

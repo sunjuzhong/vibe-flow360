@@ -1,5 +1,7 @@
-import { Braces, ChevronRight, GitPullRequestDraft, Play, Plus, RefreshCw } from 'lucide-react'
+import { Braces, Check, ChevronRight, GitPullRequestDraft, Pencil, Play, Plus, RefreshCw, X } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
+import { useI18n } from '../i18n'
 import HelpTooltip from './HelpTooltip'
 import { resourceStatus } from './ResourceDetailPanel'
 
@@ -16,6 +18,7 @@ type Props = {
   onCreate: () => void
   onInspect: () => void
   onReview: () => void
+  onRename: (draftId: string, name: string) => Promise<void>
   onRefresh: () => void
 }
 
@@ -52,8 +55,44 @@ export default function ProjectDraftBar({
   onCreate,
   onInspect,
   onReview,
+  onRename,
   onRefresh,
 }: Props) {
+  const { t } = useI18n()
+  const activeDraft = drafts.find((draft) => draft.id === selectedId) ?? null
+  const [editingName, setEditingName] = useState(false)
+  const [name, setName] = useState('')
+  const [renameBusy, setRenameBusy] = useState(false)
+  const [renameError, setRenameError] = useState('')
+
+  useEffect(() => {
+    setEditingName(false)
+    setName(activeDraft?.name ?? '')
+    setRenameError('')
+  }, [activeDraft?.id, activeDraft?.name])
+
+  const startRename = () => {
+    setName(activeDraft?.name ?? '')
+    setRenameError('')
+    setEditingName(true)
+  }
+
+  const submitRename = async (event: FormEvent) => {
+    event.preventDefault()
+    const nextName = name.trim()
+    if (!activeDraft || !nextName || renameBusy) return
+    setRenameBusy(true)
+    setRenameError('')
+    try {
+      await onRename(activeDraft.id, nextName)
+      setEditingName(false)
+    } catch (cause) {
+      setRenameError(String(cause).replace('Error: ', '') || t('Could not rename this Draft.'))
+    } finally {
+      setRenameBusy(false)
+    }
+  }
+
   if (mode === 'resource') {
     const projectDraft = drafts.find((draft) => draft.id === selectedId) ?? drafts[0]
     const unavailable = !loading && Boolean(error)
@@ -107,7 +146,32 @@ export default function ProjectDraftBar({
         </HelpTooltip>
       </div>
 
-      <label className="project-draft-select">
+      <div className="project-draft-select">
+        {editingName ? (
+          <form className="project-draft-rename" onSubmit={submitRename}>
+            <input
+              aria-label={t('Draft name')}
+              value={name}
+              maxLength={128}
+              autoFocus
+              disabled={renameBusy}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <button type="submit" disabled={!name.trim() || renameBusy} aria-label={t('Save Draft name')} title={t('Save Draft name')}>
+              {renameBusy ? <RefreshCw size={13} className="spin" /> : <Check size={13} />}
+            </button>
+            <button
+              type="button"
+              disabled={renameBusy}
+              aria-label={t('Cancel renaming Draft')}
+              title={t('Cancel renaming Draft')}
+              onClick={() => setEditingName(false)}
+            >
+              <X size={13} />
+            </button>
+            {renameError && <span role="alert">{renameError}</span>}
+          </form>
+        ) : (
         <select
           aria-label="Switch active Draft"
           value={selectedId}
@@ -126,9 +190,20 @@ export default function ProjectDraftBar({
             )
           })}
         </select>
-      </label>
+        )}
+      </div>
 
       <div className="project-draft-actions">
+        <button
+          type="button"
+          onClick={startRename}
+          disabled={!activeDraft || detailLoading || editingName}
+          title={t('Rename Draft')}
+          aria-label={t('Rename Draft')}
+        >
+          <Pencil size={14} />
+          <span>{t('Rename')}</span>
+        </button>
         <button
           type="button"
           onClick={onReview}

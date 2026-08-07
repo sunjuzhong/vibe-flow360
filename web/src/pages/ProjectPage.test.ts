@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
-import { geometryContextId, initialProjectPanel, panelDismissesFromAmbientInteraction, projectSyncProgress, resourceContextLabel } from './ProjectPage'
+import {
+  draftSourceResource,
+  geometryContextId,
+  initialProjectPanel,
+  panelDismissesFromAmbientInteraction,
+  projectDraftResourcePath,
+  projectSyncProgress,
+  resourceContextLabel,
+} from './ProjectPage'
 
 describe('Project panel defaults', () => {
   it('opens Project resources on first entry', () => {
@@ -70,5 +78,34 @@ describe('geometryContextId', () => {
 
   it('falls back to the available Geometry when a parent is missing', () => {
     expect(geometryContextId(items, 'unknown')).toBe('geo-1')
+  })
+})
+
+describe('Draft source resource context', () => {
+  const items: ProjectItem[] = [
+    { id: 'geo-1', name: 'Created Geometry', type: 'Geometry', parent_id: null },
+    { id: 'vm-1', name: 'Volume Mesh', type: 'VolumeMesh', parent_id: 'geo-1' },
+  ]
+
+  it('uses the resource that the Draft was created from', () => {
+    expect(draftSourceResource(items, {
+      id: 'draft-1', name: 'Baseline', source_item_id: 'vm-1',
+    }, null)?.id).toBe('vm-1')
+  })
+
+  it('falls back to Draft detail metadata when the list omits its source', () => {
+    expect(draftSourceResource(items, { id: 'draft-1', name: 'Baseline' }, {
+      id: 'draft-1', type: 'Draft', info: { source_id: 'geo-1' },
+    })?.id).toBe('geo-1')
+  })
+
+  it('does not reuse stale detail metadata while switching Drafts', () => {
+    expect(draftSourceResource(items, { id: 'draft-2', name: 'Variant' }, {
+      id: 'draft-1', type: 'Draft', info: { source_id: 'geo-1' },
+    })).toBeNull()
+  })
+
+  it('keeps the Draft query while the initial Project route resolves its resource', () => {
+    expect(projectDraftResourcePath('prj-1', 'geo-1', 'draft/1')).toBe('/projects/prj-1/resources/geo-1?draft=draft%2F1')
   })
 })

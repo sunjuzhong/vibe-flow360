@@ -114,6 +114,29 @@ export function geometryContextId(items: ProjectItem[], selectedId: string | nul
   return items.find((item) => item.type === 'Geometry')?.id ?? null
 }
 
+export function draftSourceResource(
+  items: ProjectItem[],
+  draft: DraftRecord | null,
+  detail: ResourceDetail | null,
+): ProjectItem | null {
+  if (!draft) return null
+  const info = detail?.id === draft.id ? detail.info : undefined
+  const candidates = [
+    draft.source_id,
+    draft.source_item_id,
+    info?.source_id,
+    info?.source_item_id,
+    info?.root_resource_id,
+  ]
+  const sourceId = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  return sourceId ? items.find((item) => item.id === sourceId.trim()) ?? null : null
+}
+
+export function projectDraftResourcePath(projectId: string, resourceId: string, draftId = ''): string {
+  const path = `/projects/${projectId}/resources/${resourceId}`
+  return draftId ? `${path}?draft=${encodeURIComponent(draftId)}` : path
+}
+
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -222,7 +245,7 @@ export default function ProjectPage() {
       setProjectCachedAt(cachedAt)
       cachedLoaded = true
       if (!resourceIdRef.current) {
-        navigateRef.current(`/projects/${projectId}/resources/${cachedTree.data.root.id}`, { replace: true })
+        navigateRef.current(projectDraftResourcePath(projectId, cachedTree.data.root.id, requestedDraftId), { replace: true })
       }
       if (showLoading) setLoading(false)
       return true
@@ -249,7 +272,7 @@ export default function ProjectPage() {
         setCacheWarning(`Live refresh failed. Showing the Go snapshot saved ${new Date(cachedResponse.cachedAt || cachedAt).toLocaleString()}.`)
       }
       if (!resourceIdRef.current) {
-        navigateRef.current(`/projects/${projectId}/resources/${tree.data.root.id}`, { replace: true })
+        navigateRef.current(projectDraftResourcePath(projectId, tree.data.root.id, requestedDraftId), { replace: true })
       }
       return true
     } catch (cause) {
@@ -263,7 +286,7 @@ export default function ProjectPage() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [projectId])
+  }, [projectId, requestedDraftId])
 
   useEffect(() => {
     api.flow360Status().then(setFlowStatus).catch(() => setFlowStatus({ available: false }))
@@ -366,8 +389,17 @@ export default function ProjectPage() {
     [activeDraftId, drafts],
   )
   const draftMode = Boolean(requestedDraftId && activeDraft)
+  const draftSource = useMemo(
+    () => draftSourceResource(items, activeDraft, draftDetail),
+    [activeDraft, draftDetail, items],
+  )
   const copilotScopeType = draftMode ? 'draft' : selected ? 'resource' : 'project'
   const copilotScopeId = draftMode ? activeDraft?.id : selected?.id
+
+  useEffect(() => {
+    if (!draftMode || !draftSource || resourceId === draftSource.id) return
+    navigate(projectDraftResourcePath(projectId, draftSource.id, activeDraft?.id), { replace: true })
+  }, [activeDraft?.id, draftMode, draftSource, navigate, projectId, resourceId])
 
   const loadDraftDetail = useCallback(async () => {
     if (!activeDraftId) {
@@ -432,7 +464,15 @@ export default function ProjectPage() {
     const source = items.find((item) => item.id === target.source_id)
     const targetResourceId = source?.id ?? selected?.id
     if (!targetResourceId) return
-    navigate(`/projects/${projectId}/resources/${targetResourceId}?draft=${encodeURIComponent(draftId)}`)
+    navigate(projectDraftResourcePath(projectId, targetResourceId, draftId))
+  }
+
+  const renameDraft = async (draftId: string, name: string) => {
+    await api.renameDraft(draftId, name)
+    setDrafts((current) => current.map((draft) => draft.id === draftId ? { ...draft, name } : draft))
+    setDraftDetail((current) => current
+      ? { ...current, info: { ...current.info, name } }
+      : current)
   }
 
   const stages = useMemo(() => {
@@ -683,6 +723,7 @@ export default function ProjectPage() {
                     setPlanEntryMode('run')
                     setPlanOpen(true)
                   }}
+                  onRename={renameDraft}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
                 />
               )}

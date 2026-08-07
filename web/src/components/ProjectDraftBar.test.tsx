@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
+import { I18nProvider } from '../i18n'
 import { draftRecords } from './ProjectDraftBar'
 import ProjectDraftBar from './ProjectDraftBar'
+
+function render(node: ReactNode) {
+  return renderToStaticMarkup(<I18nProvider>{node}</I18nProvider>)
+}
 
 describe('ProjectDraftBar', () => {
   it('normalizes Flow360 Draft list envelopes', () => {
@@ -16,7 +22,7 @@ describe('ProjectDraftBar', () => {
   })
 
   it('renders a read-only Resource mode Draft entry without editable parameters', () => {
-    const markup = renderToStaticMarkup(
+    const markup = render(
       <ProjectDraftBar
         mode="resource"
         drafts={[
@@ -33,6 +39,7 @@ describe('ProjectDraftBar', () => {
         onCreate={() => undefined}
         onInspect={() => undefined}
         onReview={() => undefined}
+        onRename={async () => undefined}
         onRefresh={() => undefined}
       />,
     )
@@ -49,7 +56,7 @@ describe('ProjectDraftBar', () => {
   })
 
   it('renders an editable Draft mode with source context and parameter action', () => {
-    const markup = renderToStaticMarkup(
+    const markup = render(
       <ProjectDraftBar
         mode="draft"
         drafts={[
@@ -66,6 +73,7 @@ describe('ProjectDraftBar', () => {
         onCreate={() => undefined}
         onInspect={() => undefined}
         onReview={() => undefined}
+        onRename={async () => undefined}
         onRefresh={() => undefined}
       />,
     )
@@ -78,6 +86,7 @@ describe('ProjectDraftBar', () => {
     expect(markup).not.toContain('Based on')
     expect(markup).not.toContain('Return to Resource mode')
     expect(markup).toContain('aria-label="Switch active Draft"')
+    expect(markup).toContain('aria-label="Rename Draft"')
     expect(markup).toContain('value="draft-2" selected=""')
     expect(markup).toContain('Parameters')
     expect(markup).toContain('Review &amp; Run')

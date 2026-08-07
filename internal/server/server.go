@@ -277,6 +277,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/projects/:project_id/items", s.flow360ProjectItems)
 		api.GET("/flow360/projects/:project_id/drafts", s.flow360ProjectDrafts)
 		api.POST("/flow360/projects/:project_id/drafts", s.createConfiguredFlow360Draft)
+		api.PUT("/flow360/drafts/:draft_id/name", s.renameFlow360Draft)
 		api.GET("/flow360/drafts/:draft_id/parameters/schema", s.flow360DraftParameterSchema)
 		api.POST("/flow360/drafts/:draft_id/parameters/validate", s.validateFlow360DraftParameters)
 		api.PUT("/flow360/drafts/:draft_id/parameters", s.updateFlow360DraftParameters)
@@ -2510,6 +2511,49 @@ func (s *Server) flow360ProjectItems(c *gin.Context) {
 
 func (s *Server) flow360ProjectDrafts(c *gin.Context) {
 	s.flow360ProjectJSON(c, "draft-list", s.flow360.ProjectDrafts)
+}
+
+func normalizeFlow360DraftName(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("Draft name is required")
+	}
+	if utf8.RuneCountInString(value) > 128 {
+		return "", errors.New("Draft name must be 128 characters or fewer")
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return "", errors.New("Draft name cannot contain control characters")
+		}
+	}
+	return value, nil
+}
+
+func (s *Server) renameFlow360Draft(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" || len(draftID) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft ID"})
+		return
+	}
+	var request struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft rename request"})
+		return
+	}
+	name, err := normalizeFlow360DraftName(request.Name)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	raw, err := s.flow360.RenameDraft(c.Request.Context(), draftID, name)
+	if err != nil {
+		log.Printf("Flow360 could not rename Draft %s: %v", draftID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not rename this Draft; refresh and try again"})
+		return
+	}
+	s.writeLiveJSON(c, raw)
 }
 
 func (s *Server) flow360DraftParameterSchema(c *gin.Context) {

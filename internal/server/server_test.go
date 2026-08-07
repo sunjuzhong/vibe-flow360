@@ -285,6 +285,41 @@ func TestProjectMutationErrorMessagesAreActionable(t *testing.T) {
 	}
 }
 
+func TestRenameDraftValidatesAndUsesTypedClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+printf '%s ' "$@" > "` + argsPath + `"
+printf '{"id":"draft-1","name":"Cruise baseline"}'
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	requestContext.Request = httptest.NewRequest(http.MethodPut, "/api/flow360/drafts/draft-1/name", strings.NewReader(`{"name":" Cruise baseline "}`))
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+
+	app.renameFlow360Draft(requestContext)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"name":"Cruise baseline"`) {
+		t.Fatalf("unexpected Draft rename response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	args, _ := os.ReadFile(argsPath)
+	if got := string(args); got != "draft rename draft-1 --name Cruise baseline " {
+		t.Fatalf("unexpected Draft rename command: %q", got)
+	}
+	for _, invalid := range []string{"", "bad\nname", strings.Repeat("a", 129)} {
+		if _, err := normalizeFlow360DraftName(invalid); err == nil {
+			t.Errorf("invalid Draft name accepted: %q", invalid)
+		}
+	}
+}
+
 func TestDeleteStaleProjectReturnsSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	dir := t.TempDir()

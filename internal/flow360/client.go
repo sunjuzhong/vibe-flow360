@@ -321,6 +321,11 @@ func (c *Client) CreateDraft(ctx context.Context, sourceID, name string) (json.R
 	return c.jsonCommand(ctx, args...)
 }
 
+// RenameDraft updates the display name of an existing editable Draft.
+func (c *Client) RenameDraft(ctx context.Context, draftID, name string) (json.RawMessage, error) {
+	return c.jsonCommand(ctx, "draft", "rename", strings.TrimSpace(draftID), "--name", strings.TrimSpace(name))
+}
+
 // EnsureDraft makes Draft creation idempotent by checking the Project-scoped
 // list before creation and reconciling the name again after an uncertain create
 // response. Draft creation is remote but does not start billable execution.

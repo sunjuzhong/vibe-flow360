@@ -226,6 +226,30 @@ printf '{"records":[{"id":"draft-1","name":"Baseline"}]}'
 	}
 }
 
+func TestRenameDraftUsesTypedCLICommand(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s ' "$@" > %q
+printf '{"id":"draft-1","name":"Renamed Draft"}'
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: time.Second}
+	if _, err := client.RenameDraft(context.Background(), " draft-1 ", " Renamed Draft "); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(args); got != "draft rename draft-1 --name Renamed Draft " {
+		t.Fatalf("unexpected Draft rename arguments: %q", got)
+	}
+}
+
 func TestFolderMutationsUseTypedCLICommands(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
