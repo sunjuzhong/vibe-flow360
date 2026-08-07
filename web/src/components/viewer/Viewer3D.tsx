@@ -1070,10 +1070,6 @@ export function Viewer3D({
     const raycaster = buildPointerRay({
       clientX: event.clientX,
       clientY: event.clientY,
-      ctrlKey: event.ctrlKey,
-      metaKey: event.metaKey,
-      shiftKey: event.shiftKey,
-      altKey: event.altKey,
     }, camera, container.getBoundingClientRect())
     const intersection = pickScene(raycaster, [asset])
     const nextTarget = intersection?.point.clone()

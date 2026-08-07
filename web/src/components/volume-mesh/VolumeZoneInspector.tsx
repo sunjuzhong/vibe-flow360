@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Eye, EyeOff, Focus, Search, Volume2 } from 'lucide-react'
 import type { VolumeZoneRow, VolumeZoneType } from '../../lib/volumeMeshReview'
+import { useI18n } from '../../i18n'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
 
 export type VolumeZoneFilter = 'all' | VolumeZoneType
@@ -34,6 +35,7 @@ export function VolumeZoneInspector({
   onHideAll: () => void
   contextOnly?: boolean
 }) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<VolumeZoneFilter>('all')
   const filtered = useMemo(() => filterVolumeZones(inventory, query, filter), [filter, inventory, query])
@@ -89,17 +91,23 @@ export function VolumeZoneInspector({
                 className={`volume-zone-row ${selectedId === zone.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
                 key={zone.id}
               >
-                <button type="button" className="volume-zone-select" onClick={() => onSelect(zone.id)}>
+                <button
+                  type="button"
+                  className="volume-zone-select"
+                  aria-pressed={selectedId === zone.id}
+                  title={zone.name}
+                  onClick={() => onSelect(zone.id)}
+                >
                   <span className="viewer-color-swatch" style={{ background: zone.color }} />
                   <strong>{zone.name}</strong>
                   <small>{contextOnly ? 'context surface' : zone.zoneType} · {zone.triangles?.toLocaleString() ?? '—'} rendered elements</small>
                   {zone.typeProvenance !== 'provided' && <em>{zone.typeProvenance === 'name-inferred' ? 'type inferred from name' : 'type not reported'}</em>}
                 </button>
                 <div className="volume-zone-actions">
-                  <button type="button" aria-label={`${visible ? 'Hide' : 'Show'} ${zone.name}`} onClick={() => onToggleVisibility(zone.id)}>
+                  <button type="button" title={t(`${visible ? 'Hide' : 'Show'} ${zone.name}`)} aria-label={t(`${visible ? 'Hide' : 'Show'} ${zone.name}`)} onClick={() => onToggleVisibility(zone.id)}>
                     {visible ? <Eye size={12} /> : <EyeOff size={12} />}
                   </button>
-                  <button type="button" aria-label={`Isolate ${zone.name}`} onClick={() => onIsolate(zone.id)}>
+                  <button type="button" title={t(`Isolate ${zone.name}`)} aria-label={t(`Isolate ${zone.name}`)} onClick={() => onIsolate(zone.id)}>
                     <Focus size={12} />
                   </button>
                 </div>

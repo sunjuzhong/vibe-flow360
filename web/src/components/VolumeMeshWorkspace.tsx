@@ -3,6 +3,7 @@ import {
   AlertCircle,
   CheckCircle2,
   CircleDashed,
+  Eye,
   GitPullRequestDraft,
   Layers,
   Ruler,
@@ -16,7 +17,7 @@ import {
 import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerCameraCommand } from './viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
 import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
@@ -41,6 +42,7 @@ import { VolumeQualityInspector } from './volume-mesh/VolumeQualityInspector'
 import { VolumeSliceInspector } from './volume-mesh/VolumeSliceInspector'
 import { VolumeViewModeToolbar } from './volume-mesh/VolumeViewModeToolbar'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
+import { VolumeZoneSelectionCard } from './volume-mesh/VolumeZoneSelectionCard'
 import { BoundaryLayerInspector } from './volume-mesh/BoundaryLayerInspector'
 import { VolumeQualityAssessmentPanel } from './volume-mesh/VolumeQualityAssessmentPanel'
 import { VolumeRefinementInspector } from './volume-mesh/VolumeRefinementInspector'
@@ -110,6 +112,7 @@ export default function VolumeMeshWorkspace({
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | null>(null)
+  const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'VolumeMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -189,6 +192,7 @@ export default function VolumeMeshWorkspace({
     ? 'Ready for a Case Draft'
     : reviewLevel === 'blocked' ? 'Resolve volume mesh blockers' : 'Engineering review required'
   const selectedZone = review.selectedZone
+  const selectedZoneVisible = selectedZone ? review.visibility[selectedZone.id] !== false : false
   const entityNames = Object.fromEntries(review.zones.map((zone) => [zone.id, zone.name]))
 
   return (
@@ -238,6 +242,7 @@ export default function VolumeMeshWorkspace({
             fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
             onFieldFilterMatchCount={qualityFilter.setMatchCount}
             focusTarget={review.focusTarget}
+            cameraCommand={cameraCommand}
             clipPlane={review.mode === 'slices' ? review.clipPlane : null}
             showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}
             showEntityLegend={false}
@@ -279,6 +284,17 @@ export default function VolumeMeshWorkspace({
               ))}
             </div>
           )}
+
+          <VolumeZoneSelectionCard
+            zone={selectedZone}
+            visible={selectedZoneVisible}
+            contextOnly={previewSource === 'fallback'}
+            onFocus={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
+            onIsolate={() => selectedZone && review.isolateZone(selectedZone.id)}
+            onToggleVisibility={() => selectedZone && review.toggleZoneVisibility(selectedZone.id)}
+            onShowAll={review.showAllZones}
+            onClear={() => review.setSelection({ groupId: null })}
+          />
 
           {review.mode === 'quality' ? (
             <section className="geometry-selection-card volume-active-review">
@@ -333,19 +349,7 @@ export default function VolumeMeshWorkspace({
               onVariant={review.setSliceVariant}
             />
           ) : review.mode === 'zones' ? (
-            <section className="geometry-selection-card volume-selection-card">
-              <div className="geometry-section-title"><Layers size={13} /> Zone properties</div>
-              {selectedZone ? (
-                <dl>
-                  <div><dt>Name</dt><dd>{selectedZone.name}</dd></div>
-                  <div><dt>ID</dt><dd title={selectedZone.id}>{selectedZone.id}</dd></div>
-                  <div><dt>Zone type</dt><dd>{selectedZone.zoneType}</dd></div>
-                  <div><dt>Type evidence</dt><dd>{selectedZone.typeProvenance}</dd></div>
-                  <div><dt>Rendered elements</dt><dd>{selectedZone.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
-                  <div><dt>Vertices</dt><dd>{selectedZone.vertices?.toLocaleString() ?? 'Not reported'}</dd></div>
-                </dl>
-              ) : <p>Select a cell zone or region in the inventory or 3D viewer.</p>}
-            </section>
+            <div className="volume-mode-guidance"><Eye size={12} /> {t('Select a region to review its properties and available actions above.')}</div>
           ) : (
             <VolumeCapabilityPanel capabilities={review.capabilities} />
           )}
