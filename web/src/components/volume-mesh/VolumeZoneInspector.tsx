@@ -69,7 +69,7 @@ export function VolumeZoneInspector({
               <option value={type} key={type}>{type} · {counts[type]}</option>
             ))}
           </select>
-          <span>{filtered.length} matching region{filtered.length === 1 ? '' : 's'}</span>
+          <span>{`${filtered.length} matching ${filtered.length === 1 ? 'region' : 'regions'}`}</span>
         </div>
       )}
       <ManifestMemberGroup

@@ -265,7 +265,7 @@ export default function CopilotPanel({
           <div className="copilot-empty">
             <Sparkles size={23} />
             <h3>Ask in context</h3>
-            <p>I’ll use this {scopeType} as the primary context and can reference other Resources and Drafts in this Project.</p>
+            <p>{`I’ll use this ${scopeType} as the primary context and can reference other Resources and Drafts in this Project.`}</p>
             {suggestions.length > 0 && (
               <div className="copilot-suggestions">
                 {suggestions.map((suggestion) => (

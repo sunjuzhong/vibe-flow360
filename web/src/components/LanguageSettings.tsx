@@ -1,13 +1,9 @@
 import { Check, Languages, Settings, X } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useI18n, type Language } from '../i18n'
+import { useI18n } from '../i18n'
+import { localeOptions } from '../i18n/locales'
 import { useFocusTrap } from '../lib/useFocusTrap'
-
-const options: Array<{ value: Language; label: string; nativeLabel: string }> = [
-  { value: 'en', label: 'English', nativeLabel: 'English' },
-  { value: 'zh-CN', label: 'Chinese', nativeLabel: '中文' },
-]
 
 export default function LanguageSettings({ compact = false }: { compact?: boolean }) {
   const { language, setLanguage } = useI18n()
@@ -44,17 +40,17 @@ export default function LanguageSettings({ compact = false }: { compact?: boolea
                 <div><strong>Language</strong><span>Choose the language used throughout the interface.</span></div>
               </div>
               <div className="language-settings-options" role="radiogroup" aria-label="Language">
-                {options.map((option) => (
+                {localeOptions.map((option) => (
                   <button
-                    key={option.value}
+                    key={option.code}
                     type="button"
                     role="radio"
-                    aria-checked={language === option.value}
-                    className={language === option.value ? 'active' : ''}
-                    onClick={() => setLanguage(option.value)}
+                    aria-checked={language === option.code}
+                    className={language === option.code ? 'active' : ''}
+                    onClick={() => setLanguage(option.code)}
                   >
-                    <span><strong>{option.nativeLabel}</strong><small>{option.value === 'en' ? 'English' : 'Chinese'}</small></span>
-                    {language === option.value && <Check size={16} />}
+                    <span><strong>{option.nativeName}</strong><small>{option.displayName}</small></span>
+                    {language === option.code && <Check size={16} />}
                   </button>
                 ))}
               </div>

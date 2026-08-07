@@ -1,7 +1,8 @@
 import { createContext, Fragment, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { detectRegisteredLanguage, getLocale, isLanguage, type Language } from './locales'
 import { translate } from './translations'
 
-export type Language = 'en' | 'zh-CN'
+export type { Language } from './locales'
 
 export const languageStorageKey = 'vibesim.settings.language'
 
@@ -16,8 +17,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null)
 let activeLanguage: Language = 'en'
 
 export function detectSystemLanguage(languages?: readonly string[]): Language {
-  const preferred = languages?.find(Boolean)?.toLowerCase() ?? ''
-  return preferred === 'zh' || preferred.startsWith('zh-') ? 'zh-CN' : 'en'
+  return detectRegisteredLanguage(languages)
 }
 
 export function readInitialLanguage(
@@ -26,7 +26,7 @@ export function readInitialLanguage(
 ): Language {
   try {
     const stored = storage?.getItem(languageStorageKey)
-    if (stored === 'en' || stored === 'zh-CN') return stored
+    if (isLanguage(stored)) return stored
   } catch {
     // Storage can be unavailable in privacy modes; system detection still works.
   }
@@ -65,15 +65,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     activeLanguage = language
+    const locale = getLocale(language)
     document.documentElement.lang = language
-    document.title = language === 'zh-CN'
-      ? 'Vibe Flow360 — 与你的仿真对话'
-      : 'Vibe Flow360 — Chat with your simulation'
+    document.title = locale.documentTitle
     document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute(
       'content',
-      language === 'zh-CN'
-        ? 'Vibe Flow360 — 通过自然语言规划、运行和理解 Flow360 CFD 仿真。'
-        : 'Vibe Flow360 — plan, run, and understand Flow360 CFD simulations with natural language.',
+      locale.documentDescription,
     )
     try {
       window.localStorage.setItem(languageStorageKey, language)

@@ -2159,16 +2159,26 @@ button { color: inherit; }
 .draft-parameter-form .schema-section-title,
 .draft-parameter-form .schema-legend-content,
 .draft-parameter-form .schema-title-with-help { display: inline-flex; align-items: center; gap: 5px; }
+.draft-parameter-form .schema-field-label strong,
+.draft-parameter-form .schema-object > legend,
+.draft-parameter-form .schema-section > summary {
+  color: #535b4e;
+  font-size: 13px;
+  font-weight: 700;
+}
 .draft-parameter-form .schema-section-title > span { min-width: 0; }
 .draft-parameter-form .schema-section > summary > svg { flex: 0 0 auto; color: #81887c; transition: transform .18s ease; }
 .draft-parameter-form .schema-section[open] > summary > svg { transform: rotate(180deg); }
 .draft-parameter-form .schema-section-body { padding: 14px; border-top: 1px solid #e1e4dc; }
 .draft-parameter-form .schema-section .schema-section { margin: 9px 0 0; border-color: #e1e4dc; }
 .draft-parameter-form .schema-section .schema-section > summary { min-height: 42px; background: #f8f9f5; font-size: 12px; }
+.draft-parameter-form .schema-section-body .schema-field-label strong,
+.draft-parameter-form .schema-section-body .schema-object > legend,
+.draft-parameter-form .schema-array-card-body .schema-field-label strong,
+.draft-parameter-form .schema-array-card-body .schema-object > legend { font-size: 12px; }
 .draft-parameter-form .schema-edit-field { padding: 11px 0; }
 .draft-parameter-form .schema-field { margin-bottom: 15px; }
 .draft-parameter-form .schema-field-label { margin-bottom: 7px; }
-.draft-parameter-form .schema-field-label strong { font-size: 13px; }
 .draft-parameter-form .schema-field-label code { margin-top: 3px; font-size: 10px; }
 .draft-parameter-form .schema-field-label small { margin-top: 5px; font-size: 11px; line-height: 1.5; }
 .draft-parameter-form .schema-field input,
