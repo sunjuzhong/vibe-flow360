@@ -351,7 +351,11 @@ func (s *Server) routes() {
 	if err != nil {
 		panic(err)
 	}
-	s.router.NoRoute(func(c *gin.Context) {
+	s.router.NoRoute(webAppHandler(dist, indexHTML))
+}
+
+func webAppHandler(dist fs.FS, indexHTML []byte) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 		if strings.HasPrefix(path, "/api/") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -360,12 +364,24 @@ func (s *Server) routes() {
 		trimmed := strings.TrimPrefix(path, "/")
 		if trimmed != "" {
 			if _, err := fs.Stat(dist, trimmed); err == nil {
+				if strings.HasPrefix(trimmed, "assets/") {
+					c.Header("Cache-Control", "public, max-age=31536000, immutable")
+				}
 				c.FileFromFS(trimmed, http.FS(dist))
 				return
 			}
 		}
+		// Asset requests must never fall through to the SPA document. Returning
+		// index.html for an obsolete hashed chunk turns a useful 404 into a
+		// strict-MIME error and leaves React.lazy routes blank after a deploy.
+		if strings.HasPrefix(path, "/assets/") {
+			c.Header("Cache-Control", "no-store")
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
-	})
+	}
 }
 
 func (s *Server) stageImport(c *gin.Context) {

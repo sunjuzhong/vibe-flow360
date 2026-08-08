@@ -880,6 +880,8 @@ Object.assign(messages, {
   '1000 lines': '1000 行',
   'Loading…': '正在加载…',
   Reload: '重新加载',
+  'This page could not be loaded': '无法加载此页面',
+  'The application may have been updated. Reload to use the latest version.': '应用可能已经更新。请重新加载以使用最新版本。',
   Tree: '树状',
   Flat: '平铺',
   Grouped: '分组',

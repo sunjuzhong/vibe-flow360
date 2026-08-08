@@ -1,0 +1,24 @@
+.route-error {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: start;
+  gap: 10px;
+  padding: 32px;
+  color: #272b27;
+  background: #f2f3ed;
+}
+
+.route-error h1,
+.route-error p { margin: 0; }
+.route-error h1 { font-size: 22px; }
+.route-error p { max-width: 480px; color: #646a62; font-size: 13px; }
+.route-error button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #303630;
+  border-radius: 6px;
+  color: #fff;
+  background: #303630;
+  cursor: pointer;
+}

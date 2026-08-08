@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,55 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 )
+
+func TestWebAppHandlerDoesNotServeHTMLForMissingAssets(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dist := fstest.MapFS{
+		"index.html":        {Data: []byte("<main>app</main>")},
+		"assets/current.js": {Data: []byte("export default true")},
+	}
+	router := gin.New()
+	router.NoRoute(webAppHandler(dist, []byte("<main>app</main>")))
+
+	t.Run("missing hashed asset", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/assets/TutorialLibraryPage-old.js", nil))
+
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("got status %d, want 404", recorder.Code)
+		}
+		if strings.Contains(recorder.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("missing asset was served as HTML: %q", recorder.Header().Get("Content-Type"))
+		}
+		if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("got Cache-Control %q, want no-store", got)
+		}
+	})
+
+	t.Run("client route", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/tutorials", nil))
+
+		if recorder.Code != http.StatusOK || recorder.Body.String() != "<main>app</main>" {
+			t.Fatalf("unexpected SPA response %d: %q", recorder.Code, recorder.Body.String())
+		}
+		if got := recorder.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Fatalf("got Cache-Control %q, want no-cache", got)
+		}
+	})
+
+	t.Run("current hashed asset", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/assets/current.js", nil))
+
+		if recorder.Code != http.StatusOK || recorder.Body.String() != "export default true" {
+			t.Fatalf("unexpected asset response %d: %q", recorder.Code, recorder.Body.String())
+		}
+		if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+			t.Fatalf("got Cache-Control %q", got)
+		}
+	})
+}
 
 func TestTutorialCSMImportWaitsForProcessedGeometry(t *testing.T) {
 	if !slices.Contains(allowedImportExtensions["geometry"], ".csm") {
