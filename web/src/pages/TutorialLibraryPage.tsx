@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CheckCircle2, CircleDot, Clock3, GitBranch, Plane, ShieldCheck, Waypoints } from 'lucide-react'
+import { ArrowRight, BookOpen, CheckCircle2, CircleDot, Clock3, Plane, ShieldCheck, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Start locally. Connect to cloud execution only after review.</p></div></div>
-          <span>4 available</span>
+          <span>3 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -51,10 +51,6 @@ export default function TutorialLibraryPage() {
               </div>
               <span className="tutorial-start">Start tutorial <ArrowRight size={15} /></span>
             </div>
-          </Link>
-          <Link className="tutorial-card" to="/tutorials/T02">
-            <div className="tutorial-card-visual"><GitBranch size={48} strokeWidth={1.15}/><span className="tutorial-id">T02</span><span className="tutorial-level">WORKFLOW</span></div>
-            <div className="tutorial-card-content"><p className="eyebrow">PROJECT ENTRY PATHS</p><h2>Choose the right Project root</h2><p>Compare Geometry, SurfaceMesh, and VolumeMesh roots, then upload a trusted mesh and create two configured Case Drafts.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 12–15 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
           <Link className="tutorial-card" to="/tutorials/T03">
             <div className="tutorial-card-visual mesh-card-visual">

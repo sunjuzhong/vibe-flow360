@@ -527,7 +527,7 @@ button { color: inherit; }
 .tutorial-catalog-heading h2 { font-size: 15px; }
 .tutorial-catalog-heading p { margin-top: 3px; color: #858a80; font-size: 10px; }
 .tutorial-catalog-heading > span { padding: 4px 8px; border-radius: 999px; color: #60761e; background: #e6edce; font-size: 9px; font-weight: 700; }
-.tutorial-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+.tutorial-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
 .tutorial-card { display: grid; grid-template-rows: 190px minmax(0, 1fr); min-height: 450px; overflow: hidden; border: 1px solid #d9dbd2; border-radius: 14px; color: inherit; background: #fafaf7; text-decoration: none; box-shadow: 0 10px 32px rgba(39, 43, 33, .045); transition: transform .18s, box-shadow .18s, border-color .18s; }
 .tutorial-card:hover { transform: translateY(-3px); border-color: #bccc8a; box-shadow: 0 18px 44px rgba(39, 43, 33, .09); }
 .tutorial-card-visual { position: relative; display: grid; place-items: center; color: #34400f; background: radial-gradient(circle at 42% 40%, #ddf59d, #b8d95a 70%, #9ebd45); }
