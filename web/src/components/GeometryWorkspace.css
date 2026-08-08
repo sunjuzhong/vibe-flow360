@@ -109,6 +109,13 @@
   backdrop-filter: blur(3px);
 }
 
+/* Modal content is portalled to the document body. Hide canvas-only display
+   controls while it is open so they do not read as detached modal actions. */
+.geometry-capability-open .viewer-view-toolbar {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .geometry-capability-dialog {
   display: flex;
   width: min(680px, calc(100vw - 48px));

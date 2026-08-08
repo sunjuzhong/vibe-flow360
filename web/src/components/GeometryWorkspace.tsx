@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   api,
   type GeometryComparison,
@@ -125,7 +126,7 @@ export function GeometryCapabilityDialog({
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [onClose])
 
-  return (
+  const dialog = (
     <div
       className="geometry-capability-overlay"
       role="presentation"
@@ -150,6 +151,8 @@ export function GeometryCapabilityDialog({
       </section>
     </div>
   )
+
+  return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body)
 }
 
 export function GeometryClipPopover({
@@ -734,7 +737,7 @@ export default function GeometryWorkspace({
   }
 
   return (
-    <section className="geometry-workspace geometry-review-workspace">
+    <section className={`geometry-workspace geometry-review-workspace ${activeCapabilityPanel ? 'geometry-capability-open' : ''}`}>
       <aside className="geometry-entity-panel">
         <div className="geometry-panel-heading">
           <div><span>MODEL</span><strong>Geometry inventory</strong></div>
@@ -1408,7 +1411,7 @@ export default function GeometryWorkspace({
               <strong>Needs review</strong>
               <HelpTooltip
                 label={t('About topology diagnostics')}
-                placement="bottom"
+                placement="top"
                 align="start"
                 width="wide"
               >
