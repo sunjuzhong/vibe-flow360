@@ -779,13 +779,7 @@ export default function ProjectPage() {
                   onCreate={() => {
                     setActivePanel('drafts')
                   }}
-                  onInspect={() => setActivePanel('parameters')}
-                  onReview={() => {
-                    setChatOpen(false)
-                    setInitialPlanId('')
-                    setPlanEntryMode('run')
-                    setPlanOpen(true)
-                  }}
+                  onConfigure={() => setActivePanel('parameters')}
                   onRename={renameDraft}
                   onManage={() => setActivePanel('drafts')}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
@@ -1012,8 +1006,17 @@ export default function ProjectPage() {
               detail={draftDetail}
               loading={draftDetailLoading}
               error={draftDetailError}
+              project={project ?? undefined}
+              resource={selected}
               onClose={closePanel}
               onRetry={() => void loadDraftDetail()}
+              onReviewRun={() => {
+                setActivePanel(null)
+                setChatOpen(false)
+                setInitialPlanId('')
+                setPlanEntryMode('run')
+                setPlanOpen(true)
+              }}
             />
           )}
         </div>

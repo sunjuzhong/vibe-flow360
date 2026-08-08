@@ -997,12 +997,61 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 }
 
+func TestValidateDraftParametersReturnsCompletePreflightWhenPathsAreOmitted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	binaryScript := `#!/bin/sh
+case "$1 $2" in
+  "draft info") printf '{"source_type":"Geometry"}' ;;
+  "draft state") printf '{"state":"draft"}' ;;
+  "draft simulation-params") printf '{"unit_system":{"name":"SI"}}' ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(binaryScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pythonPath := filepath.Join(dir, "python")
+	pythonScript := `#!/bin/sh
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"missing","path":"models","message":"Models required","stages":["Case"]},{"level":"warning","code":"output","path":"outputs","message":"No outputs configured","stages":["Case"]}],"form_schema":{"type":"object","properties":{}}}'
+`
+	if err := os.WriteFile(pythonPath, []byte(pythonScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", pythonPath)
+	app := &Server{flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second}}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/flow360/drafts/draft-1/parameters/validate", strings.NewReader(`{
+		"simulation_params":{"unit_system":{"name":"SI"}},
+		"paths":[]
+	}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
+	app.validateFlow360DraftParameters(context)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Models required") || !strings.Contains(recorder.Body.String(), "No outputs configured") {
+		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestDraftSourceTypeNormalizesMetadataAndFallsBackToGeometry(t *testing.T) {
 	if got := draftSourceType(json.RawMessage(`{"source_type":"surface-mesh"}`)); got != "SurfaceMesh" {
 		t.Fatalf("got %q, want SurfaceMesh", got)
 	}
 	if got := draftSourceType(json.RawMessage(`{"name":"legacy"}`)); got != "Geometry" {
 		t.Fatalf("got %q, want Geometry fallback", got)
+	}
+}
+
+func TestDraftReviewIdempotencyTracksRemoteBaseline(t *testing.T) {
+	first := draftReviewIdempotencyKey("draft-1", "case", json.RawMessage(`{"alpha":0}`), json.RawMessage(`{}`))
+	repeated := draftReviewIdempotencyKey("draft-1", "case", json.RawMessage(`{"alpha":0}`), json.RawMessage(`{}`))
+	updated := draftReviewIdempotencyKey("draft-1", "case", json.RawMessage(`{"alpha":5}`), json.RawMessage(`{}`))
+	if first != repeated {
+		t.Fatalf("same remote Draft baseline produced different review keys: %q != %q", first, repeated)
+	}
+	if first == updated {
+		t.Fatalf("updated remote Draft baseline reused stale review key %q", first)
 	}
 }
 

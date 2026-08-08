@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DynamicFormSchema } from '../api/client'
-import { buildDraftParameters, configuredExpressionPaths, parseParameterJSON } from './DraftParameterEditor'
+import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -74,5 +74,12 @@ describe('Draft parameter editor', () => {
     expect(configuredExpressionPaths(expressionSchema, {
       time_stepping: { step_size: { value: 1, units: 's' } },
     })).toEqual([])
+  })
+
+  it('builds a JSON Merge Patch for AI changes without replacing unchanged values', () => {
+    expect(createJSONMergePatch(
+      { operating_condition: { alpha: 0, beta: 0 }, outputs: ['forces'] },
+      { operating_condition: { alpha: 5 }, outputs: ['forces'] },
+    )).toEqual({ operating_condition: { alpha: 5, beta: null } })
   })
 })

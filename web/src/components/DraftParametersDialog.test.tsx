@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import DraftParametersDialog from './DraftParametersDialog'
+import { I18nProvider } from '../i18n'
 
 describe('DraftParametersDialog', () => {
   it('renders a focused parameters-only dialog', () => {
     const markup = renderToStaticMarkup(
-      <DraftParametersDialog
+      <I18nProvider><DraftParametersDialog
         draftId="draft-1"
         draftName="High AoA"
         detail={{ id: 'draft-1', type: 'Draft', simulation_params: { operating_condition: {} } }}
@@ -13,10 +14,10 @@ describe('DraftParametersDialog', () => {
         error=""
         onClose={() => undefined}
         onRetry={() => undefined}
-      />,
+      /></I18nProvider>,
     )
 
-    expect(markup).toContain('aria-label="Draft parameters"')
+    expect(markup).toContain('aria-label="Configure Draft"')
     expect(markup).toContain('High AoA')
     expect(markup).toContain('Loading the installed Flow360 schema…')
     expect(markup).not.toContain('Resource details')
@@ -26,7 +27,7 @@ describe('DraftParametersDialog', () => {
 
   it('keeps parameter loading and failures inside the same dialog', () => {
     const loading = renderToStaticMarkup(
-      <DraftParametersDialog
+      <I18nProvider><DraftParametersDialog
         draftId="draft-1"
         draftName="High AoA"
         detail={null}
@@ -34,10 +35,10 @@ describe('DraftParametersDialog', () => {
         error=""
         onClose={() => undefined}
         onRetry={() => undefined}
-      />,
+      /></I18nProvider>,
     )
     const failed = renderToStaticMarkup(
-      <DraftParametersDialog
+      <I18nProvider><DraftParametersDialog
         draftId="draft-1"
         draftName="High AoA"
         detail={null}
@@ -45,7 +46,7 @@ describe('DraftParametersDialog', () => {
         error="Failed to fetch"
         onClose={() => undefined}
         onRetry={() => undefined}
-      />,
+      /></I18nProvider>,
     )
 
     expect(loading).toContain('Reading Draft parameters…')

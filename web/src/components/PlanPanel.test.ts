@@ -10,9 +10,9 @@ describe('PlanPanel entry experience', () => {
 
   it('keeps AI parameter review separate from explicit run review', () => {
     expect(planEntryPresentation('review')).toEqual({
-      title: 'Draft changes',
-      subtitle: 'Improve and approve parameters without running Flow360',
-      dialogLabel: 'Draft parameter changes',
+      title: 'Review proposal',
+      subtitle: 'Review proposed parameters without changing the Flow360 Draft',
+      dialogLabel: 'Proposed parameter review',
     })
     expect(planEntryPresentation('run').title).toBe('Review & Run')
   })

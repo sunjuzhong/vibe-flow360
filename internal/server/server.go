@@ -828,11 +828,15 @@ func (s *Server) createPlan(c *gin.Context) {
 		}
 		baseline = draftDetail.SimulationParams
 	}
+	idempotencyKey := ""
+	if draftID != "" {
+		idempotencyKey = draftReviewIdempotencyKey(draftID, request.Target, baseline, request.Patch)
+	}
 	plan, err := s.plans.Create(plans.CreateInput{
 		ProjectID: request.ProjectID, ProjectName: request.ProjectName,
 		SourceID: request.SourceID, SourceType: detail.Type, SourceName: info.Name,
 		Target: request.Target, Name: request.Name, Intent: request.Intent,
-		Patch: request.Patch, Baseline: baseline,
+		Patch: request.Patch, Baseline: baseline, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -856,6 +860,18 @@ func (s *Server) createPlan(c *gin.Context) {
 	}
 	plan = s.runPlanPreflight(c.Request.Context(), plan)
 	c.JSON(http.StatusCreated, plan)
+}
+
+func draftReviewIdempotencyKey(draftID, target string, baseline, patch json.RawMessage) string {
+	payload := make([]byte, 0, len(draftID)+len(target)+len(baseline)+len(patch)+2)
+	payload = append(payload, draftID...)
+	payload = append(payload, 0)
+	payload = append(payload, target...)
+	payload = append(payload, 0)
+	payload = append(payload, baseline...)
+	payload = append(payload, patch...)
+	digest := sha256.Sum256(payload)
+	return "draft-review:" + hex.EncodeToString(digest[:16])
 }
 
 func findDraftInPayload(raw json.RawMessage, draftID string) (map[string]any, bool) {
@@ -2652,8 +2668,8 @@ func (s *Server) validateFlow360DraftParameters(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft parameter validation request"})
 		return
 	}
-	if len(request.Paths) == 0 || len(request.Paths) > 64 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "one to 64 parameter paths are required"})
+	if len(request.Paths) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at most 64 parameter paths are allowed"})
 		return
 	}
 	paths := make([]string, 0, len(request.Paths))
@@ -2677,18 +2693,29 @@ func (s *Server) validateFlow360DraftParameters(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	issues := make([]flow360.PreflightIssue, 0)
-	for _, issue := range result.Issues {
-		for _, path := range paths {
-			if issue.Path == path || strings.HasPrefix(issue.Path, path+".") || strings.HasPrefix(path, issue.Path+".") {
-				issues = append(issues, issue)
+	issues := result.Issues
+	valid := result.Valid
+	if len(paths) > 0 {
+		issues = make([]flow360.PreflightIssue, 0)
+		for _, issue := range result.Issues {
+			for _, path := range paths {
+				if issue.Path == path || strings.HasPrefix(issue.Path, path+".") || strings.HasPrefix(path, issue.Path+".") {
+					issues = append(issues, issue)
+					break
+				}
+			}
+		}
+		valid = true
+		for _, issue := range issues {
+			if issue.Level == "error" {
+				valid = false
 				break
 			}
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"schema_version": result.SchemaVersion, "validator_version": result.ValidatorVersion,
-		"valid": len(issues) == 0, "issues": issues,
+		"valid": valid, "issues": issues,
 	})
 }
 

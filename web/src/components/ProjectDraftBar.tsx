@@ -1,4 +1,4 @@
-import { Braces, Check, ChevronRight, GitPullRequestDraft, Pencil, Play, Plus, RefreshCw, Settings2, X } from 'lucide-react'
+import { Check, ChevronRight, GitPullRequestDraft, Pencil, Plus, RefreshCw, Settings2, SlidersHorizontal, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
 import { useI18n } from '../i18n'
@@ -16,8 +16,7 @@ type Props = {
   onSelect: (draftId: string) => void
   onEnter: (draftId: string) => void
   onCreate: () => void
-  onInspect: () => void
-  onReview: () => void
+  onConfigure: () => void
   onRename: (draftId: string, name: string) => Promise<void>
   onManage: () => void
   onRefresh: () => void
@@ -54,8 +53,7 @@ export default function ProjectDraftBar({
   onSelect,
   onEnter,
   onCreate,
-  onInspect,
-  onReview,
+  onConfigure,
   onRename,
   onManage,
   onRefresh,
@@ -215,21 +213,13 @@ export default function ProjectDraftBar({
         </button>
         <button
           type="button"
-          onClick={onReview}
+          onClick={onConfigure}
           disabled={!selectedId || detailLoading}
-          title="Validate, review, and run this Draft"
+          title={t('Edit, validate, save, and optionally run this Draft')}
+          className="project-draft-configure"
         >
-          <Play size={14} />
-          <span>Review &amp; Run</span>
-        </button>
-        <button
-          type="button"
-          onClick={onInspect}
-          disabled={!selectedId || detailLoading}
-          title="Inspect active Draft parameters"
-        >
-          <Braces size={14} />
-          <span>{detailLoading ? 'Reading…' : 'Parameters'}</span>
+          <SlidersHorizontal size={14} />
+          <span>{detailLoading ? t('Reading…') : t('Configure Draft')}</span>
         </button>
       </div>
     </section>

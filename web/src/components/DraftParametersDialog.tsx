@@ -1,6 +1,7 @@
 import { AlertCircle, Braces, RefreshCw, X } from 'lucide-react'
 import { forwardRef } from 'react'
-import type { ResourceDetail } from '../api/client'
+import type { ProjectInfo, ResourceDetail, ResourceNode } from '../api/client'
+import { useI18n } from '../i18n'
 import DraftParameterEditor from './DraftParameterEditor'
 
 type Props = {
@@ -9,8 +10,11 @@ type Props = {
   detail: ResourceDetail | null
   loading: boolean
   error: string
+  project?: ProjectInfo
+  resource?: ResourceNode
   onClose: () => void
   onRetry: () => void
+  onReviewRun?: () => void
 }
 
 const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParametersDialog({
@@ -19,43 +23,47 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
   detail,
   loading,
   error,
+  project,
+  resource,
   onClose,
   onRetry,
+  onReviewRun,
 }, ref) {
+  const { t } = useI18n()
   return (
     <section
       ref={ref}
       className="project-parameters-dialog"
       role="dialog"
       aria-modal="true"
-      aria-label="Draft parameters"
+      aria-label={t('Configure Draft')}
       tabIndex={-1}
     >
       <header className="project-parameters-header">
         <Braces size={16} />
         <div>
-          <strong>Draft parameters</strong>
-          <span>{draftName || 'Untitled Draft'}</span>
+          <strong>{t('Configure Draft')}</strong>
+          <span>{draftName || t('Untitled Draft')}</span>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close Draft parameters"><X size={16} /></button>
+        <button type="button" onClick={onClose} aria-label={t('Close Draft configuration')}><X size={16} /></button>
       </header>
 
       <div className="project-parameters-body">
         {loading && (
-          <div className="detail-empty"><RefreshCw size={16} className="spin" /> Reading Draft parameters…</div>
+          <div className="detail-empty"><RefreshCw size={16} className="spin" /> {t('Reading Draft parameters…')}</div>
         )}
         {!loading && (error || !detail) && (
           <div className="detail-state error">
             <AlertCircle size={18} />
-            <strong>Could not read Draft parameters</strong>
-            <span>{error || 'No Draft parameters were returned.'}</span>
-            <button type="button" onClick={onRetry}>Retry</button>
+            <strong>{t('Could not read Draft parameters')}</strong>
+            <span>{error || t('No Draft parameters were returned.')}</span>
+            <button type="button" onClick={onRetry}>{t('Retry')}</button>
           </div>
         )}
         {!loading && !error && detail && (
           detail.simulation_params
-            ? <DraftParameterEditor draftId={draftId} parameters={detail.simulation_params} onSaved={onRetry} />
-            : <div className="detail-empty">Flow360 did not return simulation parameters.</div>
+            ? <DraftParameterEditor draftId={draftId} parameters={detail.simulation_params} project={project} resource={resource} onSaved={onRetry} onReviewRun={onReviewRun} />
+            : <div className="detail-empty">{t('Flow360 did not return simulation parameters.')}</div>
         )}
       </div>
     </section>

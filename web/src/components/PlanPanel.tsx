@@ -104,7 +104,7 @@ export type PlanEntryMode = 'review' | 'run'
 export function planEntryPresentation(mode: PlanEntryMode) {
   return mode === 'run'
     ? { title: 'Review & Run', subtitle: 'Validate complete parameters before Flow360', dialogLabel: 'Draft review and execution' }
-    : { title: 'Draft changes', subtitle: 'Improve and approve parameters without running Flow360', dialogLabel: 'Draft parameter changes' }
+    : { title: 'Review proposal', subtitle: 'Review proposed parameters without changing the Flow360 Draft', dialogLabel: 'Proposed parameter review' }
 }
 
 export function shouldLoadExistingReview(draftId?: string, initialPlanId?: string) {
@@ -213,10 +213,7 @@ export default function PlanPanel({
       try {
         const loaded = await loadPlans()
         if (!initialPlanId) {
-          if (draftId && loaded[0]) {
-            setSelected(loaded[0])
-            setShowForm(false)
-          } else if (draftId && !loaded.length) {
+          if (draftId) {
             try {
               const reviewPlan = await api.createPlan({
                 project_id: project.id,
@@ -231,7 +228,7 @@ export default function PlanPanel({
                 draft_id: draftId,
               })
               setSelected(reviewPlan)
-              setPlans([reviewPlan])
+              setPlans([reviewPlan, ...loaded.filter((plan) => plan.id !== reviewPlan.id)])
               setShowForm(false)
             } catch (cause) {
               setError(errorMessage(cause))
@@ -596,7 +593,7 @@ export default function PlanPanel({
             <strong>{entryPresentation.title}</strong>
             <span>{entryPresentation.subtitle}</span>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label={runMode ? 'Close Review and Run' : 'Close Draft changes'}><X size={18} /></button>
+          <button className="icon-button" onClick={onClose} aria-label={runMode ? 'Close Review and Run' : 'Close proposed parameter review'}><X size={18} /></button>
         </header>
 
         <div className={`plan-layout${draftId ? ' current-draft' : ''}`}>
@@ -967,7 +964,7 @@ export default function PlanPanel({
                     >
                       {loading && submittingAction === 'approve'
                         ? <RefreshCw size={14} className="spin" />
-                        : <Check size={14} />} Approve this Draft revision
+                        : <Check size={14} />} {runMode ? 'Approve this Draft revision' : 'Approve this proposal'}
                     </button>
                   </div>
                 )}
@@ -975,7 +972,7 @@ export default function PlanPanel({
                 {!runMode && selected.status === 'approved' && preflightReady && (
                   <div className="draft-review-complete">
                     <CheckCircle2 size={17} />
-                    <span><strong>Draft changes approved</strong><small>Nothing has run in Flow360. You can close this panel and return later.</small></span>
+                    <span><strong>Proposal approved</strong><small>The proposal has not changed the Flow360 Draft or started a run.</small></span>
                     {onEnterRun && <button type="button" onClick={onEnterRun}><Play size={13} /> Continue to Review &amp; Run</button>}
                   </div>
                 )}
