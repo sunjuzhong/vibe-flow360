@@ -26,11 +26,13 @@ function createFixture(aspect: number) {
 }
 
 describe('responsive viewer camera framing', () => {
-  it('configures ParaView-style CFD mouse and touch navigation', () => {
+  it('configures accessible CFD mouse and touch navigation', () => {
     const controls = {
       target: new THREE.Vector3(),
       update: () => undefined,
       enableDamping: false,
+      enablePan: false,
+      enableZoom: false,
       dampingFactor: 0,
       screenSpacePanning: false,
       zoomToCursor: false,
@@ -44,11 +46,13 @@ describe('responsive viewer camera framing', () => {
     configureCFDNavigationControls(controls)
 
     expect(controls.enableDamping).toBe(true)
+    expect(controls.enablePan).toBe(true)
+    expect(controls.enableZoom).toBe(true)
     expect(controls.zoomToCursor).toBe(true)
     expect(controls.mouseButtons).toEqual({
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.PAN,
-      RIGHT: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
     })
     expect(controls.touches).toEqual({ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN })
     expect(controls.rotateSpeed).toBeLessThan(1)

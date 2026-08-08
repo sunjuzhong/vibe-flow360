@@ -9,6 +9,8 @@ type CameraControls = {
 
 type CFDNavigationControls = CameraControls & {
   enableDamping: boolean
+  enablePan: boolean
+  enableZoom: boolean
   dampingFactor: number
   screenSpacePanning: boolean
   zoomToCursor: boolean
@@ -36,9 +38,11 @@ const CLIP_MARGIN_RADII = 1.5
 const clippingDirection = new THREE.Vector3()
 const clippingOffset = new THREE.Vector3()
 
-/** ParaView-style navigation tuned for engineering and CFD models. */
+/** CFD/CAD navigation with redundant pan gestures for mice and trackpads. */
 export function configureCFDNavigationControls(controls: CFDNavigationControls): void {
   controls.enableDamping = true
+  controls.enablePan = true
+  controls.enableZoom = true
   controls.dampingFactor = 0.055
   controls.screenSpacePanning = true
   controls.zoomToCursor = true
@@ -47,7 +51,7 @@ export function configureCFDNavigationControls(controls: CFDNavigationControls):
   controls.zoomSpeed = 0.85
   controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
   controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
-  controls.mouseButtons.RIGHT = THREE.MOUSE.DOLLY
+  controls.mouseButtons.RIGHT = THREE.MOUSE.PAN
   controls.touches.ONE = THREE.TOUCH.ROTATE
   controls.touches.TWO = THREE.TOUCH.DOLLY_PAN
 }
