@@ -10,15 +10,41 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type Settings struct {
-	SmallSurfaceRatio float64 `json:"small_surface_ratio"`
-	CurvatureAngleDeg float64 `json:"curvature_angle_deg"`
+	SmallSurfaceRatio      float64 `json:"small_surface_ratio"`
+	CurvatureAngleDeg      float64 `json:"curvature_angle_deg"`
+	TopologyToleranceRatio float64 `json:"topology_tolerance_ratio"`
+}
+
+type TopologyCheck struct {
+	Key       string   `json:"key"`
+	Status    string   `json:"status"`
+	Count     int      `json:"count,omitempty"`
+	Detail    string   `json:"detail"`
+	EntityIDs []string `json:"entity_ids,omitempty"`
+}
+
+type TopologyReport struct {
+	Status             string          `json:"status"`
+	AlgorithmVersion   string          `json:"algorithm_version"`
+	Source             string          `json:"source"`
+	Tolerance          float64         `json:"tolerance"`
+	ToleranceBasis     string          `json:"tolerance_basis"`
+	TriangleCount      int             `json:"triangle_count"`
+	DegenerateCount    int             `json:"degenerate_triangle_count"`
+	CandidatePairCount int             `json:"candidate_pair_count"`
+	StartedAt          time.Time       `json:"started_at"`
+	CompletedAt        time.Time       `json:"completed_at"`
+	DurationMillis     int64           `json:"duration_ms"`
+	Checks             []TopologyCheck `json:"checks"`
+	Limitations        []string        `json:"limitations,omitempty"`
 }
 
 type Capability struct {
@@ -64,6 +90,7 @@ type Report struct {
 	Evidence      []Evidence         `json:"evidence"`
 	Findings      []Finding          `json:"findings"`
 	Groupings     []GroupingProposal `json:"grouping_proposals"`
+	Topology      *TopologyReport    `json:"topology,omitempty"`
 }
 
 type ComparisonMetric struct {
@@ -148,6 +175,9 @@ func NormalizeSettings(settings Settings) Settings {
 	if settings.CurvatureAngleDeg <= 0 || settings.CurvatureAngleDeg > 180 {
 		settings.CurvatureAngleDeg = 30
 	}
+	if settings.TopologyToleranceRatio <= 0 || settings.TopologyToleranceRatio > 1e-3 {
+		settings.TopologyToleranceRatio = 1e-8
+	}
 	return settings
 }
 
@@ -192,6 +222,7 @@ func AnalyzeWithBuffers(geometryID string, manifest json.RawMessage, buffers map
 		}
 	}
 	curvatureSamples := analyzeCurvature(entries, solidEntries, buffers)
+	topology := analyzeTopology(entries, solidEntries, buffers, preview.BoundingBox, settings)
 	curvatureAngles := make([]float64, 0, len(curvatureSamples))
 	highCurvatureIDs := []string{}
 	for _, sample := range curvatureSamples {
@@ -266,6 +297,7 @@ func AnalyzeWithBuffers(geometryID string, manifest json.RawMessage, buffers map
 		Fingerprint:   fingerprint,
 		Settings:      settings,
 		Capabilities: []Capability{
+			{Key: "topology-analysis", Status: topology.Status, Detail: topologyCapabilityDetail(topology)},
 			{Key: "small-features", Status: smallFeatureStatus, Detail: smallFeatureDetail},
 			{Key: "gap-analysis", Status: proximityStatus, Detail: proximityDetail},
 			{Key: "curvature-analysis", Status: curvatureStatus, Detail: curvatureDetail},
@@ -283,7 +315,14 @@ func AnalyzeWithBuffers(geometryID string, manifest json.RawMessage, buffers map
 		},
 		Findings:  curvatureFindings,
 		Groupings: []GroupingProposal{},
+		Topology:  &topology,
 	}
+	report.Findings = append(report.Findings, topologyFindings(topology)...)
+	report.Evidence = append(report.Evidence,
+		Evidence{Key: "topology_triangle_count", Label: "Topology triangle count", Value: topology.TriangleCount, Provenance: "computed", Method: "Count of valid indexed triangles read from the synchronized default-LOD UVF buffer."},
+		Evidence{Key: "topology_tolerance", Label: "Topology welding tolerance", Value: topology.Tolerance, Unit: "model-unit", Provenance: "computed", Method: topology.ToleranceBasis + "."},
+		Evidence{Key: "topology_algorithm_version", Label: "Topology algorithm", Value: topology.AlgorithmVersion, Provenance: "computed", Method: "Versioned UVF topology diagnostic implementation."},
+	)
 	if len(areas) > 0 {
 		report.Evidence = append(report.Evidence,
 			Evidence{Key: "median_surface_area", Label: "Median surface area", Value: medianArea, Unit: "model-unit²", Provenance: "provided", Method: "Median of Flow360 UVF Face properties.area values."},
@@ -449,6 +488,7 @@ func Fingerprint(manifest json.RawMessage, buffers map[string][]byte, settings S
 
 func diagnosticFingerprint(manifest json.RawMessage, buffers map[string][]byte, settings Settings) string {
 	hash := sha256.New()
+	_, _ = hash.Write([]byte{SchemaVersion})
 	_, _ = hash.Write(manifest)
 	settingsPayload, _ := json.Marshal(settings)
 	_, _ = hash.Write(settingsPayload)

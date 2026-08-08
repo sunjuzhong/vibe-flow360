@@ -10,8 +10,9 @@ import (
 )
 
 type geometryDiagnosticsJobRequest struct {
-	SmallSurfaceRatio float64 `json:"small_surface_ratio"`
-	CurvatureAngleDeg float64 `json:"curvature_angle_deg"`
+	SmallSurfaceRatio      float64 `json:"small_surface_ratio"`
+	CurvatureAngleDeg      float64 `json:"curvature_angle_deg"`
+	TopologyToleranceRatio float64 `json:"topology_tolerance_ratio"`
 }
 
 func (s *Server) startGeometryDiagnosticsJob(c *gin.Context) {
@@ -37,12 +38,16 @@ func (s *Server) startGeometryDiagnosticsJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "curvature_angle_deg must be greater than 0 and at most 180"})
 		return
 	}
+	if request.TopologyToleranceRatio < 0 || request.TopologyToleranceRatio > 1e-3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "topology_tolerance_ratio must be positive and at most 0.001"})
+		return
+	}
 	manifest, err := s.mirror.GeometryVisualizationManifest(resourceID)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "synchronize this Geometry before running diagnostics"})
 		return
 	}
-	settings := geometrydiag.Settings{SmallSurfaceRatio: request.SmallSurfaceRatio, CurvatureAngleDeg: request.CurvatureAngleDeg}
+	settings := geometrydiag.Settings{SmallSurfaceRatio: request.SmallSurfaceRatio, CurvatureAngleDeg: request.CurvatureAngleDeg, TopologyToleranceRatio: request.TopologyToleranceRatio}
 	cacheKey := resourceID + ":" + geometrydiag.Fingerprint(manifest, nil, settings)
 	job, err := s.geometryJobs.Create(resourceID, cacheKey, settings)
 	if err != nil {
@@ -51,6 +56,25 @@ func (s *Server) startGeometryDiagnosticsJob(c *gin.Context) {
 	}
 	go s.runGeometryDiagnosticsJob(job.ID, resourceID, cacheKey, manifest, settings)
 	c.JSON(http.StatusAccepted, job)
+}
+
+func (s *Server) latestGeometryDiagnosticsJob(c *gin.Context) {
+	resourceID := c.Param("resource_id")
+	if err := flow360.ValidateResourcePath("Geometry", resourceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if s.geometryJobs == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "asynchronous Geometry diagnostics are not configured"})
+		return
+	}
+	job, ok := s.geometryJobs.LatestCompleted(resourceID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No completed Geometry diagnostic is available"})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, job)
 }
 
 func (s *Server) getGeometryDiagnosticsJob(c *gin.Context) {

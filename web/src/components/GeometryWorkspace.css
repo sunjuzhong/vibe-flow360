@@ -201,6 +201,47 @@
   cursor: pointer;
 }
 
+.geometry-topology-help,
+.geometry-topology-provenance {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 11px 12px;
+  border: 1px solid #dfe5d7;
+  border-radius: 8px;
+  color: #566050;
+  background: #f7f9f3;
+}
+
+.geometry-topology-help strong,
+.geometry-topology-provenance > strong { color: #3f4939; font-size: 11px; }
+.geometry-topology-help span { font-size: 10px; line-height: 1.55; }
+.geometry-topology-help small,
+.geometry-topology-provenance > small { color: #7b8376; font-size: 9px; line-height: 1.45; }
+.geometry-topology-unavailable { align-items: flex-start !important; }
+.geometry-topology-unavailable > button,
+.geometry-topology-provenance > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid #b8ca85;
+  border-radius: 6px;
+  color: #53672a;
+  background: #f8fbea;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.geometry-topology-unavailable > button:disabled,
+.geometry-topology-provenance > button:disabled { opacity: .5; cursor: default; }
+.geometry-topology-provenance dl { display: grid; gap: 4px; margin: 0; }
+.geometry-topology-provenance dl > div { display: grid; grid-template-columns: 72px 1fr; gap: 8px; }
+.geometry-topology-provenance dt { color: #7b8376; font: 8px 'DM Mono'; text-transform: uppercase; }
+.geometry-topology-provenance dd { margin: 0; color: #50594b; font-size: 9px; overflow-wrap: anywhere; }
+
 @media (max-width: 680px) {
   .geometry-capability-overlay { padding: 10px; }
   .geometry-capability-dialog {

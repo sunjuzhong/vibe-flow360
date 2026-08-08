@@ -80,6 +80,27 @@ describe('buildGeometryReview', () => {
       entityIds: ['face-1', 'face-2'],
     })
   })
+
+  it('uses persisted UVF topology diagnostics as the preflight source of truth', () => {
+    const review = buildGeometryReview({
+      id: 'geo-1', type: 'Geometry', info: { length_unit: 'm' },
+    }, manifest, 'processed', {
+      topology: {
+        checks: [
+          { key: 'free-edges', status: 'blocked', count: 4, detail: '4 detected.', entity_ids: ['face-1'] },
+          { key: 'non-manifold', status: 'ready', count: 0, detail: 'None detected.' },
+          { key: 'self-intersections', status: 'ready', count: 0, detail: 'None detected.' },
+          { key: 'components', status: 'ready', count: 1, detail: 'One component.' },
+        ],
+      },
+    } as never)
+
+    expect(review.readiness).toBe('blocked')
+    expect(review.checks.find((check) => check.key === 'free-edges')).toMatchObject({
+      level: 'blocked', count: 4, entityIds: ['face-1'],
+    })
+    expect(review.checks.find((check) => check.key === 'non-manifold')?.level).toBe('ready')
+  })
 })
 
 describe('formatGeometryNumber', () => {

@@ -38,6 +38,10 @@ func TestJobStorePersistsCompletedJobsAndCache(t *testing.T) {
 	if !ok || cached.Fingerprint != report.Fingerprint {
 		t.Fatalf("unexpected persisted cache: %#v, %v", cached, ok)
 	}
+	latest, ok := reopened.LatestCompleted("geo-1")
+	if !ok || latest.ID != job.ID || latest.Report == nil {
+		t.Fatalf("latest completed job not restored: %#v", latest)
+	}
 }
 
 func TestJobStoreMarksInterruptedJobsFailedAndSupportsCancel(t *testing.T) {

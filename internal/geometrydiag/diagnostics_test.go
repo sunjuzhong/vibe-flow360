@@ -16,6 +16,15 @@ func number(value float64) string {
 	return string(payload)
 }
 
+func capabilityStatus(report Report, key string) string {
+	for _, capability := range report.Capabilities {
+		if capability.Key == key {
+			return capability.Status
+		}
+	}
+	return ""
+}
+
 func TestAnalyzeKeepsProxyAndUnavailableCapabilitiesExplicit(t *testing.T) {
 	raw := manifest(`
 		{"id":"body00001_face_0","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}},
@@ -24,10 +33,10 @@ func TestAnalyzeKeepsProxyAndUnavailableCapabilitiesExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Capabilities[0].Status != "proxy" || report.Capabilities[1].Status != "unavailable" {
+	if capabilityStatus(report, "small-features") != "proxy" || capabilityStatus(report, "gap-analysis") != "unavailable" {
 		t.Fatalf("unsupported capability was overstated: %#v", report.Capabilities)
 	}
-	if len(report.Findings) != 4 || len(report.Findings[0].EntityIDs) != 1 {
+	if len(report.Findings) < 4 || len(report.Findings[0].EntityIDs) != 1 {
 		t.Fatalf("unexpected findings: %#v", report.Findings)
 	}
 	if len(report.Groupings) != 1 || len(report.Groupings[0].EntityIDs) != 2 {
@@ -64,7 +73,7 @@ func TestAnalyzeUsesProvidedFaceAreaAndSolidBoundsWhenAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Capabilities[0].Status != "available" || report.Capabilities[1].Status != "proxy" {
+	if capabilityStatus(report, "small-features") != "available" || capabilityStatus(report, "gap-analysis") != "proxy" {
 		t.Fatalf("unexpected capabilities: %#v", report.Capabilities)
 	}
 	if report.Findings[0].Title != "Small-area surfaces need review" || report.Findings[1].Title != "Curvature analysis unavailable" {
@@ -121,7 +130,7 @@ func TestAnalyzeCurvatureReadsIndexedTessellationNormals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Capabilities[2].Status != "proxy" {
+	if capabilityStatus(report, "curvature-analysis") != "proxy" {
 		t.Fatalf("curvature capability unavailable: %#v", report.Capabilities)
 	}
 	foundCurvature := false
@@ -142,4 +151,73 @@ func TestAnalyzeCurvatureReadsIndexedTessellationNormals(t *testing.T) {
 	if !foundMaximum {
 		t.Fatalf("missing 90-degree normal variation: %#v", report.Evidence)
 	}
+}
+
+func TestAnalyzeTopologyFindsClosedConnectedTetrahedron(t *testing.T) {
+	indices := []uint32{0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3}
+	positions := [][3]float32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}
+	payload := indexedTrianglePayload(indices, positions)
+	raw := json.RawMessage(`[
+		{"id":"body","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"buffers","path":"geometry.bin","sections":[
+			{"name":"indices","dType":"uint32","dimension":1,"offset":0,"length":48},
+			{"name":"position","dType":"float32","dimension":3,"offset":48,"length":48}
+		]}}},
+		{"id":"face-a","type":"Face","attributions":{"packedParentId":"body"},"properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":6}]}}},
+		{"id":"face-b","type":"Face","attributions":{"packedParentId":"body"},"properties":{"bufferLocations":{"indices":[{"startIndex":6,"endIndex":12}]}}}
+	]`)
+	report, err := AnalyzeWithBuffers("geo-topology", raw, map[string][]byte{"geometry.bin": payload}, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Topology == nil || report.Topology.Status != "available" || report.Topology.TriangleCount != 4 {
+		t.Fatalf("topology unavailable: %#v", report.Topology)
+	}
+	for _, check := range report.Topology.Checks {
+		if check.Status != "ready" {
+			t.Fatalf("closed tetrahedron should pass %s: %#v", check.Key, check)
+		}
+	}
+}
+
+func TestAnalyzeTopologyFindsOpenDisconnectedTriangles(t *testing.T) {
+	indices := []uint32{0, 1, 2, 3, 4, 5}
+	positions := [][3]float32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {3, 0, 0}, {4, 0, 0}, {3, 1, 0}}
+	payload := indexedTrianglePayload(indices, positions)
+	raw := json.RawMessage(`[
+		{"id":"body","type":"SolidGeometry","properties":{"boundsMin":[0,0,0],"boundsMax":[4,1,0]},"resources":{"buffers":{"type":"buffers","path":"geometry.bin","sections":[
+			{"name":"indices","dType":"uint32","dimension":1,"offset":0,"length":24},
+			{"name":"position","dType":"float32","dimension":3,"offset":24,"length":72}
+		]}}},
+		{"id":"face-a","type":"Face","attributions":{"packedParentId":"body"},"properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}},
+		{"id":"face-b","type":"Face","attributions":{"packedParentId":"body"},"properties":{"bufferLocations":{"indices":[{"startIndex":3,"endIndex":6}]}}}
+	]`)
+	report, err := AnalyzeWithBuffers("geo-open", raw, map[string][]byte{"geometry.bin": payload}, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]TopologyCheck{}
+	for _, check := range report.Topology.Checks {
+		checks[check.Key] = check
+	}
+	if checks["free-edges"].Count != 6 || checks["free-edges"].Status != "blocked" {
+		t.Fatalf("unexpected free-edge result: %#v", checks["free-edges"])
+	}
+	if checks["components"].Count != 2 || checks["components"].Status != "warning" {
+		t.Fatalf("unexpected component result: %#v", checks["components"])
+	}
+}
+
+func indexedTrianglePayload(indices []uint32, positions [][3]float32) []byte {
+	payload := make([]byte, len(indices)*4+len(positions)*12)
+	for index, value := range indices {
+		binary.LittleEndian.PutUint32(payload[index*4:index*4+4], value)
+	}
+	positionOffset := len(indices) * 4
+	for index, point := range positions {
+		for axis, value := range point {
+			offset := positionOffset + index*12 + axis*4
+			binary.LittleEndian.PutUint32(payload[offset:offset+4], math.Float32bits(value))
+		}
+	}
+	return payload
 }

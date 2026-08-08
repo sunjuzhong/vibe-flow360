@@ -413,15 +413,40 @@ export type GeometryGroupingProposal = {
   provenance: 'inferred'
 }
 
+export type GeometryTopologyCheck = {
+  key: 'free-edges' | 'non-manifold' | 'self-intersections' | 'components' | string
+  status: 'ready' | 'warning' | 'blocked' | 'unknown'
+  count?: number
+  detail: string
+  entity_ids?: string[]
+}
+
+export type GeometryTopologyReport = {
+  status: 'available' | 'partial' | 'unavailable'
+  algorithm_version: string
+  source: string
+  tolerance: number
+  tolerance_basis: string
+  triangle_count: number
+  degenerate_triangle_count: number
+  candidate_pair_count: number
+  started_at: string
+  completed_at: string
+  duration_ms: number
+  checks: GeometryTopologyCheck[]
+  limitations: string[]
+}
+
 export type GeometryDiagnosticReport = {
   schema_version: number
   geometry_id: string
   fingerprint: string
-  settings: { small_surface_ratio: number; curvature_angle_deg: number }
+  settings: { small_surface_ratio: number; curvature_angle_deg: number; topology_tolerance_ratio?: number }
   capabilities: GeometryDiagnosticCapability[]
   evidence: GeometryDiagnosticEvidence[]
   findings: GeometryDiagnosticFinding[]
   grouping_proposals: GeometryGroupingProposal[]
+  topology?: GeometryTopologyReport
 }
 
 export type GeometryDiagnosticJob = {
@@ -431,7 +456,7 @@ export type GeometryDiagnosticJob = {
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   progress: number
   stage: string
-  settings: { small_surface_ratio: number; curvature_angle_deg: number }
+  settings: { small_surface_ratio: number; curvature_angle_deg: number; topology_tolerance_ratio?: number }
   report?: GeometryDiagnosticReport
   error?: string
   created_at: string
@@ -929,6 +954,15 @@ export const api = {
     json<GeometryDiagnosticJob>(
       `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics/jobs/${encodeURIComponent(jobId)}`,
     ),
+  latestGeometryDiagnosticsJob: async (resourceId: string) => {
+    const response = await fetch(
+      `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics/jobs/latest`,
+    )
+    if (response.status === 404) return null
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || response.statusText)
+    return body as GeometryDiagnosticJob
+  },
   cancelGeometryDiagnostics: (resourceId: string, jobId: string) =>
     remove<GeometryDiagnosticJob>(
       `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics/jobs/${encodeURIComponent(jobId)}`,

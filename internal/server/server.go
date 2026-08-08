@@ -296,6 +296,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview-mesh", s.flow360ResourceMeshPreview)
 		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics", s.flow360GeometryDiagnostics)
 		api.POST("/flow360/resources/Geometry/:resource_id/diagnostics/jobs", s.startGeometryDiagnosticsJob)
+		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/latest", s.latestGeometryDiagnosticsJob)
 		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/:job_id", s.getGeometryDiagnosticsJob)
 		api.DELETE("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/:job_id", s.cancelGeometryDiagnosticsJob)
 		api.GET("/flow360/resources/Geometry/:resource_id/compare/:compare_id", s.flow360GeometryComparison)

@@ -1777,6 +1777,7 @@ func TestGeometryDiagnosticsUsesSynchronizedManifestEvidence(t *testing.T) {
 	var response struct {
 		Fingerprint  string `json:"fingerprint"`
 		Capabilities []struct {
+			Key    string `json:"key"`
 			Status string `json:"status"`
 		} `json:"capabilities"`
 		Findings []struct {
@@ -1786,7 +1787,13 @@ func TestGeometryDiagnosticsUsesSynchronizedManifestEvidence(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Fingerprint == "" || response.Capabilities[0].Status != "proxy" || len(response.Findings[0].EntityIDs) != 1 {
+	smallFeatureStatus := ""
+	for _, capability := range response.Capabilities {
+		if capability.Key == "small-features" {
+			smallFeatureStatus = capability.Status
+		}
+	}
+	if response.Fingerprint == "" || smallFeatureStatus != "proxy" || len(response.Findings[0].EntityIDs) != 1 {
 		t.Fatalf("unexpected diagnostic response: %#v", response)
 	}
 	if got := recorder.Header().Get("X-Geometry-Diagnostics-Cache"); got != "MISS" {
@@ -1864,6 +1871,14 @@ func TestGeometryDiagnosticsJobCompletesAndCanBeRead(t *testing.T) {
 	app.getGeometryDiagnosticsJob(getContext)
 	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), `"status":"completed"`) {
 		t.Fatalf("got %d: %s", getRecorder.Code, getRecorder.Body.String())
+	}
+	latestRecorder := httptest.NewRecorder()
+	latestContext, _ := gin.CreateTestContext(latestRecorder)
+	latestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/diagnostics/jobs/latest", nil)
+	latestContext.Params = gin.Params{{Key: "resource_id", Value: "geo-1"}}
+	app.latestGeometryDiagnosticsJob(latestContext)
+	if latestRecorder.Code != http.StatusOK || !strings.Contains(latestRecorder.Body.String(), started.ID) {
+		t.Fatalf("latest job got %d: %s", latestRecorder.Code, latestRecorder.Body.String())
 	}
 
 	reopened, err := geometrydiag.NewJobStore(jobRoot)

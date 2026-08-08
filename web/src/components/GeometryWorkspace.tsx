@@ -96,6 +96,7 @@ function CheckIcon({ level }: { level: GeometryCheckLevel }) {
 }
 
 type GeometryCapabilityPanel = 'appearance' | 'semantics' | 'diagnostics' | 'health'
+const topologyCheckKeys = new Set(['free-edges', 'non-manifold', 'self-intersections', 'components'])
 
 export function GeometryCapabilityDialog({
   title,
@@ -289,8 +290,8 @@ export default function GeometryWorkspace({
   )
   const status = resourceStatus(detail)
   const review = useMemo(
-    () => buildGeometryReview(detail, manifest, status),
-    [detail, manifest, status],
+    () => buildGeometryReview(detail, manifest, status, diagnosticReport),
+    [detail, diagnosticReport, manifest, status],
   )
   const tools = useWorkspaceViewerTools({
     projectId,
@@ -340,6 +341,12 @@ export default function GeometryWorkspace({
   ).length
   const attentionChecks = review.checks.filter((check) => check.level !== 'ready')
   const passedChecks = review.checks.filter((check) => check.level === 'ready')
+  const unavailableTopologyChecks = attentionChecks.filter((check) =>
+    check.level === 'unknown' && topologyCheckKeys.has(check.key),
+  )
+  const visibleAttentionChecks = attentionChecks.filter((check) =>
+    !(check.level === 'unknown' && topologyCheckKeys.has(check.key)),
+  )
   const requestCamera = (type: ViewerCameraCommand['type']) => {
     setCameraCommand({ type, nonce: Date.now() })
   }
@@ -640,6 +647,19 @@ export default function GeometryWorkspace({
     setDiagnosticBusy(false)
     setDiagnosticJob(null)
     setDiagnosticReport(null)
+    if (!resourceId) return
+    let cancelled = false
+    void api.latestGeometryDiagnosticsJob(resourceId)
+      .then((job) => {
+        if (!cancelled && job?.report) {
+          setDiagnosticJob(job)
+          setDiagnosticReport(job.report)
+        }
+      })
+      .catch((cause) => {
+        if (!cancelled) setDiagnosticError(cause instanceof Error ? cause.message : String(cause))
+      })
+    return () => { cancelled = true }
   }, [resourceId])
 
   const runDiagnostics = async () => {
@@ -1056,7 +1076,7 @@ export default function GeometryWorkspace({
             <GitCompare size={14} /><span><strong>Diagnostics</strong><small>{diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'On demand'}</small></span>
           </button>
           <button type="button" onClick={() => setActiveCapabilityPanel('health')}>
-            <Shapes size={14} /><span><strong>Health evidence</strong><small>{blockingCount ? `${blockingCount} blockers` : `${warningCount} to review`}</small></span>
+            <Shapes size={14} /><span><strong>Preflight evidence</strong><small>{diagnosticReport?.topology ? (blockingCount ? `${blockingCount} blockers` : `${warningCount} to review`) : 'Topology not evaluated'}</small></span>
           </button>
         </div>
 
@@ -1369,7 +1389,7 @@ export default function GeometryWorkspace({
 
         {activeCapabilityPanel === 'health' && (
           <GeometryCapabilityDialog
-            title="Geometry health evidence"
+            title="Geometry preflight evidence"
             subtitle={blockingCount ? `${blockingCount} blockers · ${warningCount} warnings or unknown` : `${warningCount} warnings or unknown to review`}
             icon={<Shapes size={17} />}
             onClose={() => setActiveCapabilityPanel(null)}
@@ -1377,14 +1397,31 @@ export default function GeometryWorkspace({
           <div className="geometry-disclosure-content">
           <div className="geometry-panel-intent">
             <strong>{`Why preflight reports ${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'} / unknown`}</strong>
-            <span>Each item below states the available evidence. Unknown means the synchronized resource does not expose enough data for that check; it is not silently treated as passed.</span>
+            <span>Each item states its evidence. Unknown means no diagnostic result exists; it is never silently treated as passed.</span>
+          </div>
+          <div className="geometry-topology-help">
+            <strong>How topology diagnostics work</strong>
+            <span>Free and non-manifold edges use tolerance-quantized edge incidence (one adjacent triangle, or more than two). Self-intersections use a BVH broad phase followed by triangle SAT tests, excluding triangles that share a vertex. Connected components use edge adjacency and union-find.</span>
+            <small>The analysis uses the synchronized default-LOD UVF triangle mesh, not exact CAD B-rep topology. Results depend on tessellation quality and the recorded model scale.</small>
           </div>
           <div className="geometry-health-group-title">
             <strong>Needs review</strong>
-            <span>{attentionChecks.length} checks</span>
+            <span>{visibleAttentionChecks.length + (unavailableTopologyChecks.length > 0 ? 1 : 0)} checks</span>
           </div>
           <div className="geometry-checks">
-            {attentionChecks.map((check) => (
+            {unavailableTopologyChecks.length > 0 && (
+              <div className="unknown geometry-topology-unavailable">
+                <CheckIcon level="unknown" />
+                <span>
+                  <strong>Topology health not evaluated</strong>
+                  <small>{unavailableTopologyChecks.length} checks unavailable · Run diagnostics to inspect the synchronized UVF tessellation.</small>
+                </span>
+                <button type="button" disabled={diagnosticBusy || !resourceId} onClick={() => void runDiagnostics()}>
+                  <ScanLine size={11} /> {diagnosticBusy ? 'Running…' : 'Run topology diagnostics'}
+                </button>
+              </div>
+            )}
+            {visibleAttentionChecks.map((check) => (
               <div className={check.level} key={check.key} title={check.detail}>
                 <CheckIcon level={check.level} />
                 <span><strong>{check.label}</strong><small>{check.detail}</small></span>
@@ -1398,6 +1435,29 @@ export default function GeometryWorkspace({
               </div>
             ))}
           </div>
+          {diagnosticBusy && diagnosticJob && (
+            <div className="geometry-diagnostic-progress" role="status" aria-live="polite">
+              <div><span>{diagnosticJob.stage.replaceAll('-', ' ')}</span><strong>{diagnosticJob.progress}%</strong></div>
+              <progress max={100} value={diagnosticJob.progress} />
+              <button type="button" onClick={() => void cancelDiagnostics()}>Cancel analysis</button>
+            </div>
+          )}
+          {diagnosticReport?.topology && (
+            <div className="geometry-topology-provenance">
+              <strong>Diagnostic provenance</strong>
+              <dl>
+                <div><dt>Algorithm</dt><dd>{diagnosticReport.topology.algorithm_version}</dd></div>
+                <div><dt>Source</dt><dd>{diagnosticReport.topology.source}</dd></div>
+                <div><dt>Tolerance</dt><dd>{diagnosticReport.topology.tolerance.toExponential(3)} · {diagnosticReport.topology.tolerance_basis}</dd></div>
+                <div><dt>Mesh</dt><dd>{diagnosticReport.topology.triangle_count.toLocaleString()} triangles · {diagnosticReport.topology.duration_ms.toLocaleString()} ms</dd></div>
+                <div><dt>Completed</dt><dd>{new Date(diagnosticReport.topology.completed_at).toLocaleString()}</dd></div>
+              </dl>
+              {diagnosticReport.topology.limitations.map((limitation) => <small key={limitation}>{limitation}</small>)}
+              <button type="button" disabled={diagnosticBusy || !resourceId} onClick={() => void runDiagnostics()}>
+                <ScanLine size={11} /> Run topology diagnostics again
+              </button>
+            </div>
+          )}
           {passedChecks.length > 0 && (
             <details className="geometry-health-passed">
               <summary>Passed evidence · {passedChecks.length}</summary>

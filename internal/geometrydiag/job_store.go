@@ -112,6 +112,22 @@ func (s *JobStore) Get(id string) (Job, bool) {
 	return job, ok
 }
 
+func (s *JobStore) LatestCompleted(geometryID string) (Job, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var latest Job
+	found := false
+	for _, job := range s.jobs {
+		if job.GeometryID != geometryID || job.Status != JobCompleted || job.Report == nil {
+			continue
+		}
+		if !found || job.UpdatedAt.After(latest.UpdatedAt) {
+			latest, found = job, true
+		}
+	}
+	return latest, found
+}
+
 func (s *JobStore) Update(id string, progress int, stage string) (Job, error) {
 	return s.change(id, func(job *Job) error {
 		if terminal(job.Status) {
