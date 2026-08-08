@@ -251,11 +251,6 @@ mappings:
     status: planned
     selector:
       owners: [AmbientLight, AnimatedView, Camera, DirectionalLight, Environment, FieldMaterial, Keyframe, Lighting, OrthographicProjection, PBRMaterial, PerspectiveProjection, RenderOutput, RenderOutputGroup, SceneTransform, SkyboxBackground, SkyboxTexture, SolidBackground, StaticView]
-  - tutorial: T02
-    section: workflow
-    status: planned
-    selector:
-      feature_pattern: '^workflow:(surface-mesh-to-case|volume-mesh-to-case)$'
   - tutorial: T01
     section: workflow
     status: planned
@@ -267,7 +262,7 @@ mappings:
   - tutorial: T42
     section: workflow
     status: planned
-    selector: {feature_pattern: '^workflow:(batch-submit|folder-organization|wait-and-status)$'}
+    selector: {feature_pattern: '^workflow:(batch-submit|folder-organization|surface-mesh-to-case|volume-mesh-to-case|wait-and-status)$'}
   - tutorial: T43
     section: workflow
     status: planned

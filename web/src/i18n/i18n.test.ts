@@ -32,6 +32,7 @@ describe('language settings', () => {
     expect(translate('Settings', 'zh-CN')).toBe('设置')
     expect(translate('  Save ', 'zh-CN')).toBe('  保存 ')
     expect(translate('Step 2 of 6', 'zh-CN')).toBe('第 2 步，共 6 步')
+    expect(translate('3 available', 'zh-CN')).toBe('3 个可用教程')
     expect(translate('Open Demo wing', 'zh-CN')).toBe('打开 Demo wing')
     expect(hasTranslation('Review 3 Geometry warnings or unknown checks', 'zh-CN')).toBe(true)
     expect(hasTranslation('pressure distribution, 120 samples', 'zh-CN')).toBe(true)

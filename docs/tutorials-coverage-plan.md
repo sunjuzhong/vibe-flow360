@@ -60,7 +60,6 @@ Tutorials 是 Vibe Flow360 中相对独立的学习与示范模块。它不是�
 | ID | 完整工程意图 | 主要功能点 | 官方素材 | 状态 |
 |---|---|---|---|---|
 | T01 | 从一份飞机 CAD 得到第一组可信的升阻力结果 | units、entity grouping、`ReferenceGeometry`、`AerospaceCondition`、自动远场、Wall/Freestream、surface force fields、Geometry→Case 全链路 | `getting_started/quick_start.py` | adapt |
-| T02 | 比较从 Geometry、SurfaceMesh、VolumeMesh 三种入口启动项目的差异 | Project root 类型、缺失阶段、resource tree、simulation validation context | `getting_started/template_script_load_mesh_run_case_or_sweep.py`、`workflow_management/project_management/use_cloud_project.py` | compose |
 | T03 | 为三维圆柱建立曲率敏感且包含边界层的外流网格 | `MeshingDefaults`、曲率、增长率、首层厚度、`SurfaceRefinement`、`BoundaryLayer`、表面网格检查 | `basic_simulations/steady/steady_3D_cylinder.py` | adapt |
 | T04 | 捕捉翼型前缘、尾缘和缝翼间隙 | `GeometryRefinement`、`SurfaceEdgeRefinement`、Angle/Height/AspectRatio refinement、ProjectAnisoSpacing、PassiveSpacing | `advanced_simulations/aerodynamics/airfoils/2D_30p30n.py` | compose |
 | T05 | 在尾流、激波或关注区域布置体网格加密 | `UniformRefinement`、`StructuredBoxRefinement`、`AxisymmetricRefinement`、octree spacing、volume defaults、mesh slice output | CRM/GAW2 与 rotorcraft examples | compose |
@@ -180,7 +179,7 @@ features:
 | P2 核心物理 | T14–T18、T20–T26、T29 | 湍流、边界、CHT、旋转、BET、非定常主能力覆盖 |
 | P3 高级结果 | T31–T39、T41、T43 | UDD/UDF、全部输出族、sweep、fork 与可信度教学 |
 | P4 缺口专篇 | T12、T13、T22、T23、T27、T30、T39 | 为官方现有 examples 未充分覆盖的 schema 功能创建新场景 |
-| P5 管理与迁移 | T02、T42、T44–T46 | 补齐非 SimulationParams 的 Flow360 用户工作流 |
+| P5 管理与迁移 | T42、T44–T46 | 补齐非 SimulationParams 的 Flow360 用户工作流；素材必须随教程提供，不要求用户自备网格 |
 | P6 全覆盖门禁 | CI coverage checker、版本升级 diff、缺口为零 | 每次 Flow360 schema/API 升级都能发现新功能并阻止静默漏项 |
 
 ## 7. 当前结论

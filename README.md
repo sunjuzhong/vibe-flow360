@@ -157,11 +157,6 @@ Geometry Project and baseline/refined VolumeMesh Drafts with curvature,
 surface spacing, first-layer thickness, growth rates, farfield, and beta mesher
 selection already configured. Cloud meshing remains a separate approval.
 
-T02 compares Geometry, SurfaceMesh, and VolumeMesh Project roots. Its final
-step accepts a reviewed SurfaceMesh or VolumeMesh upload, creates the matching
-Project, and prepares α=0°/5° configured Case Drafts while keeping boundary mapping
-and all cloud execution behind explicit review.
-
 T04 teaches multi-element airfoil edge refinement. It compares explicit angle,
 height, aspect-ratio, and projected edge spacing with a mutually exclusive
 Geometry AI passage-preservation strategy, then creates two configured

@@ -42,9 +42,6 @@ The coverage gate reports four disjoint states:
 - [T01 — First trustworthy lift and drag result](T01-first-lift-drag/README.md):
   a complete Geometry-to-Case aircraft example with a reproducible baseline,
   a 5° angle-of-attack variant, and explicit mesh/convergence/force evidence.
-- [T02 — Choose the right Project entry path](T02-project-entry-paths/README.md):
-  a browser-native comparison of Geometry, SurfaceMesh, and VolumeMesh roots,
-  with user-selected mesh upload and two configured Flow360 Case Drafts.
 - [T03 — Curvature-sensitive cylinder mesh](T03-cylinder-boundary-layer/README.md):
   global meshing defaults, local SurfaceRefinement, BoundaryLayer controls, and
   browser-created baseline/refined VolumeMesh Drafts.
@@ -52,11 +49,10 @@ The coverage gate reports four disjoint states:
   explicit edge-spacing methods, passive projection, and a Geometry AI
   alternative for thin geometry and narrow passages.
 
-T01 through T04 can be experienced locally without cloud execution charges:
+T01, T03, and T04 can be experienced locally without cloud execution charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
-python3 tutorials/T02-project-entry-paths/build_simulation.py --check
 python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
 python3 tutorials/T04-airfoil-edge-refinement/build_simulation.py --check
 make tutorials-validate
