@@ -123,7 +123,9 @@
   max-height: min(760px, calc(100dvh - 48px));
   min-height: 0;
   flex-direction: column;
-  overflow: hidden;
+  /* Help tooltips are anchored in the header and may extend beyond the dialog.
+     Keep the scroll boundary on the body so the tooltip is not clipped. */
+  overflow: visible;
   border: 1px solid #d6dacf;
   border-radius: 12px;
   outline: 0;
@@ -141,6 +143,7 @@
   flex: 0 0 auto;
   padding: 13px 15px;
   border-bottom: 1px solid #e1e4db;
+  border-radius: 12px 12px 0 0;
   background: #f4f7ed;
 }
 
@@ -156,8 +159,8 @@
 
 .geometry-capability-dialog > header strong,
 .geometry-capability-dialog > header small { display: block; }
-.geometry-capability-dialog > header strong { color: #3d4737; font-size: 13px; }
-.geometry-capability-dialog > header small { margin-top: 2px; color: #848b7e; font-size: 9px; }
+.geometry-capability-dialog > header strong { color: #3d4737; font-size: var(--text-lg); font-weight: var(--weight-bold); line-height: var(--leading-compact); }
+.geometry-capability-dialog > header small { margin-top: 3px; color: #848b7e; font-size: var(--text-sm); line-height: var(--leading-compact); }
 .geometry-capability-dialog-title { display: flex; align-items: center; gap: 3px; }
 .geometry-capability-dialog-title > .help-tooltip { margin: -3px 0; }
 
@@ -182,6 +185,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 15px;
+  border-radius: 0 0 12px 12px;
+  background: #fbfcf8;
 }
 .geometry-capability-dialog-body > .geometry-disclosure-content { padding: 0; }
 .geometry-capability-dialog .geometry-panel-intent { font-size: 10px; }
@@ -189,6 +194,133 @@
 .geometry-capability-dialog .geometry-checks > div { padding: 10px 4px; }
 .geometry-capability-dialog .geometry-checks strong,
 .geometry-capability-dialog .geometry-checks small { white-space: normal; }
+
+.geometry-advanced-diagnostics {
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.geometry-advanced-diagnostics .geometry-advanced-intro {
+  margin: 2px 0 14px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.geometry-advanced-diagnostics .geometry-semantic-field {
+  gap: 7px;
+  margin-top: 12px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-compact);
+}
+
+.geometry-advanced-diagnostics .geometry-semantic-field select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-run,
+.geometry-advanced-diagnostics .geometry-version-compare > button,
+.geometry-advanced-diagnostics .geometry-semantic-plan {
+  min-height: 44px;
+  margin-top: 12px;
+  border-radius: 8px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.geometry-advanced-diagnostics .geometry-capabilities {
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.geometry-advanced-diagnostics .geometry-capabilities > div {
+  gap: 4px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-compact);
+}
+
+.geometry-advanced-diagnostics .geometry-capabilities > div strong {
+  font: var(--weight-semibold) var(--text-xs)/var(--leading-compact) var(--font-mono);
+  letter-spacing: .03em;
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-fingerprint {
+  margin-top: 9px;
+  font: var(--weight-regular) var(--text-xs)/var(--leading-body) var(--font-mono);
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-findings {
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-findings article {
+  gap: 7px 12px;
+  padding: 13px 14px;
+  border-left-width: 3px;
+  border-radius: 8px;
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-findings strong {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-compact);
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-findings small,
+.geometry-advanced-diagnostics .geometry-diagnostic-findings article > p {
+  margin-top: 5px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.geometry-advanced-diagnostics .geometry-diagnostic-findings article > button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.geometry-advanced-diagnostics .geometry-grouping-proposals > strong {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.geometry-advanced-diagnostics .geometry-grouping-proposals button {
+  padding: 9px 10px;
+  border-radius: 7px;
+  font-size: var(--text-sm);
+}
+
+.geometry-advanced-diagnostics .geometry-grouping-proposals small,
+.geometry-advanced-diagnostics .geometry-template-checks span {
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.geometry-advanced-diagnostics .geometry-template-checks {
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.geometry-advanced-diagnostics .geometry-template-checks span {
+  padding: 7px 9px 7px 24px;
+  border-radius: 7px;
+}
+
+.geometry-advanced-diagnostics .geometry-template-checks span::before {
+  margin-left: -15px;
+  margin-right: 7px;
+}
 
 .geometry-health-group-title {
   display: flex;

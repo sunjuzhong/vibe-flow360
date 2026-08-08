@@ -1275,7 +1275,7 @@ export default function GeometryWorkspace({
             titleHelp={<AdvancedDiagnosticsHelp />}
             onClose={() => setActiveCapabilityPanel(null)}
           >
-          <div className="geometry-disclosure-content">
+          <div className="geometry-disclosure-content geometry-advanced-diagnostics">
           <p className="geometry-advanced-intro">Server-backed evidence only. Unsupported checks remain explicitly unknown.</p>
           <label className="geometry-semantic-field">
             Small-surface threshold ratio
