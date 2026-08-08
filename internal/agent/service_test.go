@@ -3,12 +3,56 @@ package agent
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestCompleteRetriesTransientProviderFailureOnce(t *testing.T) {
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{}"}}]}`))
+	}))
+	defer provider.Close()
+	service := &Service{Provider: "builtin", APIKey: "test", BaseURL: provider.URL, Model: "test", Client: provider.Client()}
+
+	response, err := service.Complete(context.Background(), "system", "user", "")
+	if err != nil || response != "{}" {
+		t.Fatalf("transient provider failure did not recover: response=%q err=%v", response, err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected exactly one retry, got %d calls", calls.Load())
+	}
+}
+
+func TestCompleteReturnsTypedNonRetryableProviderFailure(t *testing.T) {
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer provider.Close()
+	service := &Service{Provider: "builtin", APIKey: "test", BaseURL: provider.URL, Model: "test", Client: provider.Client()}
+
+	_, err := service.Complete(context.Background(), "system", "user", "")
+	var providerErr *ProviderError
+	if !errors.As(err, &providerErr) || providerErr.StatusCode != http.StatusUnauthorized || providerErr.Retryable {
+		t.Fatalf("expected typed non-retryable 401, got %#v (%v)", providerErr, err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("non-retryable failure made %d calls", calls.Load())
+	}
+}
 
 func TestLocalPlanIncludesGeometryAndSafetyBoundary(t *testing.T) {
 	result := localPlan(ChatRequest{

@@ -662,6 +662,32 @@ func TestHumanizeAICreateDesignErrorDoesNotExposeContractDetails(t *testing.T) {
 	}
 }
 
+func TestAICreateRoutesProviderFailureToDesignError(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "quota exceeded", http.StatusTooManyRequests)
+	}))
+	defer provider.Close()
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: provider.URL, Model: "test", Client: provider.Client()},
+		workDir: t.TempDir(),
+	}
+	body := bytes.NewBufferString(`{"intent":"cylinder flow at several Reynolds numbers","folder_id":"folder-1"}`)
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/ai-create", body)
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+
+	app.aiCreateProject(requestContext)
+
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("got status %d: %s", recorder.Code, recorder.Body.String())
+	}
+	message := recorder.Body.String()
+	if !strings.Contains(message, "rate-limited or out of quota") || strings.Contains(message, "exact CAD") || strings.Contains(message, "self-repair") {
+		t.Fatalf("provider failure was mislabeled as CAD generation: %s", message)
+	}
+}
+
 func TestHumanizeAICreateGenerationErrorDoesNotExposeRuntimePaths(t *testing.T) {
 	err := &aicreate.GenerationError{Kind: aicreate.GenerationTemporaryFailure, Err: errors.New("can't open /private/runtime/generate_cad.py")}
 	got := humanizeAICreateGenerationError(err)

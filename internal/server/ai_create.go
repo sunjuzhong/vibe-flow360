@@ -186,6 +186,12 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 			c.JSON(http.StatusOK, response)
 			return
 		}
+		var designErr *aiCreateDesignStageError
+		if errors.As(err, &designErr) {
+			log.Printf("AI Create design stage failed for session %s: %v", session.ID, designErr)
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeAICreateDesignError(designErr)})
+			return
+		}
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeAICreateGenerationError(err)})
 		return
 	}
@@ -558,6 +564,11 @@ type aiCreateCADRepairExhaustedError struct {
 	Diagnostic string
 }
 
+type aiCreateDesignStageError struct{ Err error }
+
+func (e *aiCreateDesignStageError) Error() string { return e.Err.Error() }
+func (e *aiCreateDesignStageError) Unwrap() error { return e.Err }
+
 func (e *aiCreateCADRepairExhaustedError) Error() string {
 	return fmt.Sprintf("CAD self-repair failed after %d attempts: %s", e.Attempts, e.Diagnostic)
 }
@@ -573,7 +584,7 @@ func (s *Server) prepareAICreateCAD(ctx context.Context, session aiCreateSession
 
 	blueprint, err := aicreate.DesignConversation(ctx, s.agent, session.Intent, session.Rounds)
 	if err != nil {
-		return aicreate.Blueprint{}, aicreate.GeometryValidation{}, "", "", err
+		return aicreate.Blueprint{}, aicreate.GeometryValidation{}, "", "", &aiCreateDesignStageError{Err: err}
 	}
 	s.updateAICreateProgress(progressID, 1, "The CAD design is ready; CadQuery/OpenCascade is generating and round-trip validating exact STEP geometry.")
 	sessionDirectory := filepath.Join(s.workDir, "ai-create-sessions", session.ID)
@@ -1015,7 +1026,24 @@ func humanizeAICreateProjectError(err error) string {
 
 func humanizeAICreateDesignError(err error) string {
 	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "unavailable") {
+	var providerErr *agent.ProviderError
+	if errors.As(err, &providerErr) {
+		switch providerErr.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return "The AI Create model provider rejected its credentials. Check VIBESIM_AI_API_KEY and the configured provider account."
+		case http.StatusTooManyRequests:
+			return "The AI Create model provider is rate-limited or out of quota. Check the provider quota, then retry shortly."
+		default:
+			if providerErr.Retryable {
+				return "The AI Create model provider is temporarily unavailable after an automatic retry. Try again shortly."
+			}
+			return "The AI Create model provider rejected the request. Check the configured base URL and model name."
+		}
+	}
+	if _, timedOut := agent.GenerationTimeout(err); timedOut || errors.Is(err, context.DeadlineExceeded) {
+		return "The AI Create model provider timed out. Try again shortly."
+	}
+	if strings.Contains(message, "unavailable") || strings.Contains(message, "requires a configured model provider") {
 		return "The AI Create Agent is unavailable. Check the Agent configuration and try again."
 	}
 	return "The Agent could not produce a valid CAD plan after an automatic repair attempt. Refine the geometry description and try again."

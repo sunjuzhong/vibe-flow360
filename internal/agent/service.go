@@ -52,6 +52,18 @@ type Service struct {
 	WorkDir      string
 }
 
+// ProviderError preserves the failure class of a model-provider request so
+// callers can distinguish configuration problems from transient capacity
+// failures without exposing the provider response body to end users.
+type ProviderError struct {
+	StatusCode int
+	Retryable  bool
+	Err        error
+}
+
+func (e *ProviderError) Error() string { return e.Err.Error() }
+func (e *ProviderError) Unwrap() error { return e.Err }
+
 func NewService() *Service {
 	provider := strings.ToLower(firstNonEmpty(os.Getenv("VIBESIM_AGENT_PROVIDER"), "builtin"))
 	key := firstNonEmpty(os.Getenv("VIBESIM_AI_API_KEY"), os.Getenv("OPENAI_API_KEY"))
@@ -211,23 +223,50 @@ func (s *Service) Complete(ctx context.Context, systemPrompt, userPrompt, reques
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+s.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-	response, err := s.Client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("AI provider request failed: %w", err)
-	}
-	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-	if err != nil {
-		return "", err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("AI provider returned %s", response.Status)
+	var data []byte
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+s.APIKey)
+		req.Header.Set("Content-Type", "application/json")
+		response, requestErr := s.Client.Do(req)
+		if requestErr != nil {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			providerErr := &ProviderError{Retryable: true, Err: fmt.Errorf("AI provider request failed: %w", requestErr)}
+			if attempt == 0 && waitForProviderRetry(ctx) {
+				continue
+			}
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			return "", providerErr
+		}
+		data, err = io.ReadAll(io.LimitReader(response.Body, 4<<20))
+		response.Body.Close()
+		if err != nil {
+			providerErr := &ProviderError{Retryable: true, Err: fmt.Errorf("read AI provider response: %w", err)}
+			if attempt == 0 && waitForProviderRetry(ctx) {
+				continue
+			}
+			return "", providerErr
+		}
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			break
+		}
+		retryable := retryableProviderStatus(response.StatusCode)
+		providerErr := &ProviderError{
+			StatusCode: response.StatusCode,
+			Retryable:  retryable,
+			Err:        fmt.Errorf("AI provider returned %s", response.Status),
+		}
+		if attempt == 0 && retryable && waitForProviderRetry(ctx) {
+			continue
+		}
+		return "", providerErr
 	}
 	var result struct {
 		Choices []struct {
@@ -241,6 +280,21 @@ func (s *Service) Complete(ctx context.Context, systemPrompt, userPrompt, reques
 		return "", errors.New("AI provider returned an empty response")
 	}
 	return result.Choices[0].Message.Content, nil
+}
+
+func retryableProviderStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusConflict || status == http.StatusTooEarly || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func waitForProviderRetry(ctx context.Context) bool {
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (s *Service) ChatWithValidation(ctx context.Context, request ChatRequest) (string, *Action, error) {

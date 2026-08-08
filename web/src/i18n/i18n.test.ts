@@ -99,6 +99,12 @@ describe('language settings', () => {
       'Project and Draft are ready',
       'Open Project',
       'The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.',
+      'The AI Create model provider rejected its credentials. Check VIBESIM_AI_API_KEY and the configured provider account.',
+      'The AI Create model provider is rate-limited or out of quota. Check the provider quota, then retry shortly.',
+      'The AI Create model provider is temporarily unavailable after an automatic retry. Try again shortly.',
+      'The AI Create model provider rejected the request. Check the configured base URL and model name.',
+      'The AI Create model provider timed out. Try again shortly.',
+      'The AI Create Agent is unavailable. Check the Agent configuration and try again.',
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
