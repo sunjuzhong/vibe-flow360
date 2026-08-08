@@ -51,18 +51,21 @@ describe('GeometryCapabilityDialog', () => {
     )
     const messages = [
       'About advanced diagnostics',
-      'How advanced diagnostics work',
-      'The server analyzes synchronized Flow360 UVF evidence on demand and keeps unsupported checks explicitly unknown.',
-      'Quantized edge incidence, union-find, and BVH/SAT tests find open or non-manifold edges, disconnected components, and triangle self-intersections.',
-      'Compares each provided CAD face area with a fraction of the median; triangle count is used only as a fallback proxy.',
-      'Samples tessellation normals per Face and flags the maximum pairwise angle above the selected threshold; this is a curvature proxy, not a radius.',
-      'Solid bounding-box separation is only a lower-bound proxy; exact gaps and clearances require a CAD-kernel or mesher diagnostic.',
-      'Available means evidence was computed, proxy means an approximation, and unavailable or unknown is never treated as passed.',
+      'How advanced diagnostics are calculated',
+      'All findings come from the synchronized default-LOD Flow360 UVF manifest and indexed triangle buffers; the Geometry is not modified.',
+      'Area threshold = median provided face area × selected ratio. If no face area exists, triangle threshold = max(2, floor(median triangle count × ratio)).',
+      'Vertices are quantized at bounding-box diagonal × 1e-8. Edge incidence finds free and non-manifold edges, union-find counts connected components, and BVH plus SAT tests non-adjacent triangle intersections.',
+      'Samples up to 128 indexed normals per Face and computes max acos(nᵢ · nⱼ). A Face is flagged when that angle reaches the selected threshold; this is a curvature proxy, not a radius.',
+      'Computes the per-axis gaps between every pair of solid AABBs, then takes their Euclidean distance and the minimum pair. Overlapping boxes return zero and remain inconclusive.',
+      'Exact face-to-face gaps require CAD B-rep and kernel distance queries. UVF does not contain that evidence, so exact CAD clearance stays unavailable.',
+      'Available = computed evidence. Proxy = an approximation. Unavailable or unknown = insufficient evidence and is never treated as passed.',
+      'Results depend on the synchronized UVF LOD, tessellation quality, and model coordinate scale. Confirm candidates in 3D or with a CAD kernel before changing Geometry or meshing settings.',
     ]
 
     expect(html).toContain('role="tooltip"')
     expect(html).toContain('aria-label="About advanced diagnostics"')
-    expect(html).toContain('How advanced diagnostics work')
+    expect(html).toContain('help-tooltip--guide')
+    expect(html).toContain('How advanced diagnostics are calculated')
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 })

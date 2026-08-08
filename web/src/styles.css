@@ -4992,6 +4992,20 @@ button { color: inherit; }
   padding: 12px;
 }
 
+.help-tooltip--guide .help-tooltip__content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(520px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  pointer-events: auto;
+  transform: translate(-50%, calc(-50% - 2px));
+}
+
 .help-tooltip__rich { display: grid; gap: 10px; }
 .help-tooltip__rich header { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid rgb(255 255 255 / 14%); }
 .help-tooltip__rich header strong { color: #fff; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
@@ -5022,6 +5036,20 @@ button { color: inherit; }
 .help-tooltip--center:hover .help-tooltip__content,
 .help-tooltip--center:focus-within .help-tooltip__content {
   transform: translateX(-50%) translateY(0);
+}
+
+.help-tooltip--guide:hover .help-tooltip__content,
+.help-tooltip--guide:focus-within .help-tooltip__content {
+  transform: translate(-50%, -50%);
+}
+
+/* Guide popovers are viewport-centered; placement/alignment only describe
+   ordinary anchored tooltips and must not override these coordinates. */
+.help-tooltip--guide .help-tooltip__content {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 50%;
 }
 
 .project-workbench {

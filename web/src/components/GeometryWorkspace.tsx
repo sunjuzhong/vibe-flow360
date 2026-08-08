@@ -168,38 +168,42 @@ export function AdvancedDiagnosticsHelp() {
       label={t('About advanced diagnostics')}
       placement="bottom"
       align="start"
-      width="wide"
+      width="guide"
     >
       <div className="help-tooltip__rich">
         <header>
-          <strong>{t('How advanced diagnostics work')}</strong>
-          <span>{t('The server analyzes synchronized Flow360 UVF evidence on demand and keeps unsupported checks explicitly unknown.')}</span>
+          <strong>{t('How advanced diagnostics are calculated')}</strong>
+          <span>{t('All findings come from the synchronized default-LOD Flow360 UVF manifest and indexed triangle buffers; the Geometry is not modified.')}</span>
         </header>
         <dl>
           <div>
-            <dt>{t('Topology')}</dt>
-            <dd>{t('Quantized edge incidence, union-find, and BVH/SAT tests find open or non-manifold edges, disconnected components, and triangle self-intersections.')}</dd>
+            <dt>{t('Small surfaces')}</dt>
+            <dd>{t('Area threshold = median provided face area × selected ratio. If no face area exists, triangle threshold = max(2, floor(median triangle count × ratio)).')}</dd>
           </div>
           <div>
-            <dt>{t('Small features')}</dt>
-            <dd>{t('Compares each provided CAD face area with a fraction of the median; triangle count is used only as a fallback proxy.')}</dd>
+            <dt>{t('Mesh topology')}</dt>
+            <dd>{t('Vertices are quantized at bounding-box diagonal × 1e-8. Edge incidence finds free and non-manifold edges, union-find counts connected components, and BVH plus SAT tests non-adjacent triangle intersections.')}</dd>
           </div>
           <div>
             <dt>{t('Normal variation')}</dt>
-            <dd>{t('Samples tessellation normals per Face and flags the maximum pairwise angle above the selected threshold; this is a curvature proxy, not a radius.')}</dd>
+            <dd>{t('Samples up to 128 indexed normals per Face and computes max acos(nᵢ · nⱼ). A Face is flagged when that angle reaches the selected threshold; this is a curvature proxy, not a radius.')}</dd>
           </div>
           <div>
             <dt>{t('Body proximity')}</dt>
-            <dd>{t('Solid bounding-box separation is only a lower-bound proxy; exact gaps and clearances require a CAD-kernel or mesher diagnostic.')}</dd>
+            <dd>{t('Computes the per-axis gaps between every pair of solid AABBs, then takes their Euclidean distance and the minimum pair. Overlapping boxes return zero and remain inconclusive.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Exact clearance')}</dt>
+            <dd>{t('Exact face-to-face gaps require CAD B-rep and kernel distance queries. UVF does not contain that evidence, so exact CAD clearance stays unavailable.')}</dd>
           </div>
         </dl>
         <section>
-          <strong>{t('Data source')}</strong>
-          <span>{t('Synchronized default-LOD UVF manifest and indexed triangle buffers')}</span>
+          <strong>{t('Capability states')}</strong>
+          <span>{t('Available = computed evidence. Proxy = an approximation. Unavailable or unknown = insufficient evidence and is never treated as passed.')}</span>
         </section>
         <section className="help-tooltip__caveat">
-          <strong>{t('Interpretation')}</strong>
-          <span>{t('Available means evidence was computed, proxy means an approximation, and unavailable or unknown is never treated as passed.')}</span>
+          <strong>{t('Limits')}</strong>
+          <span>{t('Results depend on the synchronized UVF LOD, tessellation quality, and model coordinate scale. Confirm candidates in 3D or with a CAD kernel before changing Geometry or meshing settings.')}</span>
         </section>
       </div>
     </HelpTooltip>

@@ -6,7 +6,7 @@ type Props = {
   label?: string
   placement?: 'top' | 'bottom'
   align?: 'start' | 'center' | 'end'
-  width?: 'default' | 'wide'
+  width?: 'default' | 'wide' | 'guide'
 }
 
 export default function HelpTooltip({
