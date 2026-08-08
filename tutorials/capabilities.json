@@ -1,8 +1,8 @@
 {
   "workflows": [
     {"id": "geometry-to-case", "title": "Run a project from Geometry through meshing to Case", "tutorial": "T01"},
-    {"id": "surface-mesh-to-case", "title": "Run a project starting from SurfaceMesh", "tutorial": "T02"},
-    {"id": "volume-mesh-to-case", "title": "Run a project starting from VolumeMesh", "tutorial": "T02"},
+    {"id": "surface-mesh-to-case", "title": "Run a project starting from SurfaceMesh", "tutorial": "T42"},
+    {"id": "volume-mesh-to-case", "title": "Run a project starting from VolumeMesh", "tutorial": "T42"},
     {"id": "case-fork", "title": "Fork an existing Case", "tutorial": "T43"},
     {"id": "case-restart", "title": "Restart an existing Case", "tutorial": "T43"},
     {"id": "mesh-interpolation", "title": "Initialize a Case by mesh interpolation", "tutorial": "T43"},
