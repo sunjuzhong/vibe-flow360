@@ -2,7 +2,6 @@ import {
   Activity,
   CheckCircle2,
   CircleDashed,
-  GitPullRequestDraft,
   Grid3X3,
   Ruler,
   ScanLine,
@@ -28,6 +27,7 @@ import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
@@ -102,7 +102,7 @@ export default function SurfaceMeshWorkspace({
   geometryResourceId?: string | null
   versions: ProjectItem[]
   onCreateRemediationPlan: (recommendation: SurfaceRemediationRecommendation) => Promise<void>
-  onPlanVolumeMesh: () => void
+  onPlanVolumeMesh: () => Promise<void>
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | null>(null)
@@ -382,10 +382,7 @@ export default function SurfaceMeshWorkspace({
               void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
             }}
           />
-          <button className="geometry-plan-action" onClick={onPlanVolumeMesh}>
-            <GitPullRequestDraft size={15} />
-            Configure Volume Mesh Draft
-          </button>
+          <ResourceCreateDraftAction onCreate={onPlanVolumeMesh} />
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}

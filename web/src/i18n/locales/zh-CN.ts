@@ -482,7 +482,7 @@ Object.assign(messages, {
   'Create Project': '创建项目',
   'Load schemas': '加载参数结构',
   'Create setup': '创建配置',
-  'Create Draft': '创建草稿',
+  'Create Draft': '创建 Draft',
   'Configure Draft': '配置草稿',
   'Flow360 is processing the uploaded Geometry.': 'Flow360 正在处理上传的几何资源。',
   'STEP round-trip validation failed.': 'STEP 往返验证失败。',
@@ -1576,6 +1576,8 @@ Object.assign(messages, {
   ms: '毫秒',
   Completed: '完成时间',
   'Run topology diagnostics again': '重新运行拓扑诊断',
+  'Creating Draft…': '正在创建草稿…',
+  "Copies this Resource's current SimulationParams into an editable Draft.": '将此资源当前的 SimulationParams 复制到一个可编辑草稿中。',
 })
 
 const patterns: Array<[RegExp, (...groups: string[]) => string]> = [

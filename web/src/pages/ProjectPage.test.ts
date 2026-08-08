@@ -9,6 +9,7 @@ import {
   projectDraftResourcePath,
   projectDraftRootPath,
   projectSyncProgress,
+  resolveActiveDraftId,
   resourceContextLabel,
 } from './ProjectPage'
 
@@ -114,6 +115,14 @@ describe('Draft source resource context', () => {
   it('keeps every Draft context on the Project tree root', () => {
     expect(projectDraftRootPath('prj-1', { id: 'geo-root' }, 'draft-1'))
       .toBe('/projects/prj-1/resources/geo-root?draft=draft-1')
+  })
+
+  it('uses the Draft requested by the URL instead of retaining another active Draft', () => {
+    const drafts = [
+      { id: 'draft-old', name: 'Old Draft' },
+      { id: 'draft-created', name: 'Created Draft' },
+    ]
+    expect(resolveActiveDraftId(drafts, 'draft-old', 'draft-created')).toBe('draft-created')
   })
 })
 

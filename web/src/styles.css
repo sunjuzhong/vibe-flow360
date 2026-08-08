@@ -4013,6 +4013,10 @@ button { color: inherit; }
 .geometry-checks > div { display: flex; align-items: center; gap: 7px; color: #8c7340; font-size: 10px; }
 .geometry-checks > div.ready { color: #5e781c; }
 .geometry-plan-action { display: flex; width: 100%; min-height: 38px; align-items: center; justify-content: center; gap: 7px; margin-top: 16px; border: 0; border-radius: 7px; color: #263010; background: #bad954; font-size: 11px; font-weight: 700; cursor: pointer; }
+.resource-create-draft-action { display: grid; gap: 6px; }
+.resource-create-draft-action > small { color: var(--text-muted); font-size: 10px; line-height: 1.45; text-align: center; }
+.resource-create-draft-action > p { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 9px; border: 1px solid #efc9bf; border-radius: 7px; color: #954b3b; background: #fff7f4; font-size: 10px; line-height: 1.4; }
+.resource-create-draft-action > p svg { flex: 0 0 auto; margin-top: 1px; }
 
 @media (max-width: 760px) {
   .geometry-workspace { grid-template-columns: 1fr; }

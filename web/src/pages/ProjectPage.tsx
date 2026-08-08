@@ -156,6 +156,16 @@ export function projectDraftRootPath(projectId: string, root: Pick<ResourceNode,
   return projectDraftResourcePath(projectId, root.id, draftId)
 }
 
+export function resolveActiveDraftId(
+  drafts: DraftRecord[],
+  currentDraftId: string,
+  requestedDraftId: string,
+): string {
+  if (requestedDraftId && drafts.some((draft) => draft.id === requestedDraftId)) return requestedDraftId
+  if (drafts.some((draft) => draft.id === currentDraftId)) return currentDraftId
+  return drafts[0]?.id ?? ''
+}
+
 export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -318,11 +328,7 @@ export default function ProjectPage() {
       const response = await api.projectDrafts(projectId)
       const next = draftRecords(response.data)
       setDrafts(next)
-      setActiveDraftId((current) => (
-        next.some((draft) => draft.id === current)
-          ? current
-          : next.some((draft) => draft.id === requestedDraftId) ? requestedDraftId : next[0]?.id ?? ''
-      ))
+      setActiveDraftId((current) => resolveActiveDraftId(next, current, requestedDraftId))
     } catch (cause) {
       setDraftsError(String(cause).replace('Error: ', ''))
     } finally {
@@ -500,6 +506,7 @@ export default function ProjectPage() {
         ? { simulation_params: creation.simulationParams }
         : { patch: {} }),
     })
+    setActiveDraftId(created.id)
     await loadDrafts()
     setActivePanel(null)
     navigate(projectDraftRootPath(projectId, root, created.id))
@@ -518,6 +525,7 @@ export default function ProjectPage() {
       name,
       simulation_params: sourceDetail.simulation_params,
     })
+    setActiveDraftId(created.id)
     await loadDrafts()
     setActivePanel(null)
     navigate(projectDraftRootPath(projectId, root, created.id))
@@ -830,11 +838,7 @@ export default function ProjectPage() {
                   setChatOpen(false)
                   setPlanOpen(true)
                 }}
-                onPlanSurfaceMesh={() => {
-                  setChatOpen(false)
-                  setInitialPlanId('')
-                  setPlanOpen(true)
-                }}
+                onPlanSurfaceMesh={() => createDraftFromResource(`${selected.name} Draft`)}
               />
             )}
             {selected.type === 'SurfaceMesh' && (
@@ -864,11 +868,7 @@ export default function ProjectPage() {
                   setChatOpen(false)
                   setPlanOpen(true)
                 }}
-                onPlanVolumeMesh={() => {
-                  setChatOpen(false)
-                  setInitialPlanId('')
-                  setPlanOpen(true)
-                }}
+                onPlanVolumeMesh={() => createDraftFromResource(`${selected.name} Draft`)}
               />
             )}
             {selected.type === 'VolumeMesh' && (
@@ -880,10 +880,7 @@ export default function ProjectPage() {
                 resourceRef={{ id: selected.id, type: selected.type }}
                 annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
-                onPlanCase={() => {
-                  setChatOpen(false)
-                  setPlanOpen(true)
-                }}
+                onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
                 onShowLogs={() => {
                   setDetailTab('logs')
                   setActivePanel('details')
@@ -899,10 +896,7 @@ export default function ProjectPage() {
                 resourceRef={{ id: selected.id, type: selected.type }}
                 annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
-                onPlanCase={() => {
-                  setChatOpen(false)
-                  setPlanOpen(true)
-                }}
+                onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
                 onRefresh={() => void loadDetail(false)}
               />
             )}

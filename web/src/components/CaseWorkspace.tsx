@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   CircleDashed,
   Clock,
-  GitPullRequestDraft,
   Play,
   Pause,
   RotateCw,
@@ -32,6 +31,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
@@ -239,7 +239,7 @@ export default function CaseWorkspace({
   resourceRef: ResourceRef
   annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
-  onPlanCase: () => void
+  onPlanCase: () => Promise<void>
   onRefresh: () => void
 }) {
   const { t } = useI18n()
@@ -602,14 +602,7 @@ export default function CaseWorkspace({
             <button className="toolbar-refresh" onClick={() => { onRefresh(); refetchConvergence() }} disabled={convergenceLoading} aria-label="Refresh case state">
               <RotateCw size={13} /> Refresh
             </button>
-            <button
-              className="geometry-plan-action"
-              onClick={onPlanCase}
-              disabled={viewModel.status === 'failed'}
-              title={viewModel.status === 'failed' ? 'Cannot create a Draft from a failed Case' : 'Configure a Case Draft variation'}
-            >
-              <GitPullRequestDraft size={14} /> Draft variation
-            </button>
+            <ResourceCreateDraftAction onCreate={onPlanCase} />
           </div>
           <small className="readiness-summary">Variations are staged as auditable Draft revisions before Flow360 execution.</small>
           {primaryError && previewSource === 'fallback' && (

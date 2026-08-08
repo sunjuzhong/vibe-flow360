@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   CircleDashed,
   Eye,
-  GitPullRequestDraft,
   Layers,
   Ruler,
   ScanLine,
@@ -27,6 +26,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
@@ -108,7 +108,7 @@ export default function VolumeMeshWorkspace({
   resourceRef: ResourceRef
   annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
-  onPlanCase: () => void
+  onPlanCase: () => Promise<void>
   onShowLogs?: () => void
 }) {
   const { t } = useI18n()
@@ -396,9 +396,7 @@ export default function VolumeMeshWorkspace({
           </ResourceReviewLaunchers>
 
           <div className="geometry-plan-action-stack">
-            <button className="geometry-plan-action" onClick={onPlanCase} disabled={failed} title={failed ? 'Cannot create a Case Draft from a failed volume mesh' : 'Configure a Case Draft using this volume mesh'}>
-              <GitPullRequestDraft size={15} /> Configure Case Draft
-            </button>
+            <ResourceCreateDraftAction onCreate={onPlanCase} />
             {failed && onShowLogs && <button className="secondary-action" onClick={onShowLogs}><Activity size={14} /> View Logs</button>}
             <small className="readiness-summary">{readyCount}/{checks.length} readiness checks passed</small>
             {primaryError && previewSource === 'fallback' && <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>}

@@ -122,7 +122,7 @@ describe('SurfaceMeshWorkspace capabilities', () => {
           annotationsModel={{} as never}
           versions={[]}
           onCreateRemediationPlan={async () => undefined}
-          onPlanVolumeMesh={() => undefined}
+          onPlanVolumeMesh={async () => undefined}
         />
       </I18nProvider>,
     )
@@ -137,7 +137,8 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html).toContain('Clipping plane')
     expect(html).toContain('Export PNG')
     expect(html).toContain('Tools')
-    expect(html).toContain('Configure Volume Mesh Draft')
+    expect(html).toContain('Create Draft')
+    expect(html).toContain('current SimulationParams')
     expect(html.indexOf('surface-quality-filter-panel')).toBeLessThan(
       html.indexOf('resource-review-launchers'),
     )

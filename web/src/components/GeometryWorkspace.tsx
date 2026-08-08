@@ -50,6 +50,7 @@ import {
   type GeometrySurfaceRole,
 } from '../lib/geometrySemantics'
 import { resourceStatus } from './ResourceDetailPanel'
+import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   buildGeometryEntityAppearances,
   canDeleteGeometryAppearance,
@@ -249,7 +250,7 @@ export default function GeometryWorkspace({
     comparison: GeometryComparison | null,
     templateId: GeometryReviewTemplateId,
   ) => Promise<void>
-  onPlanSurfaceMesh: () => void
+  onPlanSurfaceMesh: () => Promise<void>
 }) {
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
@@ -1475,15 +1476,7 @@ export default function GeometryWorkspace({
           </GeometryCapabilityDialog>
         )}
 
-        <button
-          className="geometry-plan-action"
-          onClick={onPlanSurfaceMesh}
-          disabled={review.readiness === 'blocked'}
-          title={review.readiness === 'blocked' ? 'Resolve Geometry blockers before configuring the Surface Mesh Draft' : ''}
-        >
-          <GitPullRequestDraft size={15} />
-          {review.readiness === 'blocked' ? 'Resolve blockers first' : 'Configure Surface Mesh Draft'}
-        </button>
+        <ResourceCreateDraftAction onCreate={onPlanSurfaceMesh} />
       </aside>
     </section>
   )
