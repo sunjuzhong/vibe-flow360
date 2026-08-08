@@ -2,7 +2,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import { hasTranslation } from '../i18n/translations'
-import { AdvancedDiagnosticsHelp, GeometryCapabilityDialog, GeometryClipPopover } from './GeometryWorkspace'
+import {
+  AdvancedDiagnosticsHelp,
+  GeometryCapabilityDialog,
+  GeometryClipPopover,
+  GeometryPreflightHelp,
+} from './GeometryWorkspace'
 
 describe('GeometryClipPopover', () => {
   it('renders clipping controls as a dismissible inspection dialog', () => {
@@ -66,6 +71,28 @@ describe('GeometryCapabilityDialog', () => {
     expect(html).toContain('aria-label="About advanced diagnostics"')
     expect(html).toContain('help-tooltip--guide')
     expect(html).toContain('How advanced diagnostics are calculated')
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('renders accessible preflight evidence guidance with Chinese coverage', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider><GeometryPreflightHelp /></I18nProvider>,
+    )
+    const messages = [
+      'About Geometry preflight evidence',
+      'How Geometry preflight evidence works',
+      'Preflight combines synchronized resource metadata with optional topology diagnostics. It reports evidence for review and never modifies the Geometry.',
+      'Checks processing state, physical units, bounding-box dimensions, surface inventory, generated naming, and metadata read errors.',
+      'When diagnostics have run, quantized edge incidence, union-find connectivity, and BVH/SAT intersection tests provide tessellation topology evidence.',
+      'Blocked must be resolved before meshing; warning requires engineering review; unknown means evidence is missing; ready means that specific check passed.',
+      'The synchronized Geometry metadata may not contain topology results. Run diagnostics to calculate supported checks; unsupported checks remain unknown, not passed.',
+      'The panel records the algorithm version, source, scale-relative tolerance, triangle count, runtime, and completion time for auditability.',
+      'Topology results describe the synchronized default-LOD tessellation, not exact CAD B-rep topology, and depend on tessellation quality and model scale.',
+    ]
+
+    expect(html).toContain('help-tooltip--guide')
+    expect(html).toContain('aria-label="About Geometry preflight evidence"')
+    expect(html).toContain('How Geometry preflight evidence works')
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 })

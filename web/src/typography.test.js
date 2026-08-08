@@ -28,6 +28,7 @@ describe('Web typography tokens', () => {
 
   it('keeps advanced diagnostics readable and its help content unclipped', () => {
     expect(geometryStyles).toContain('.geometry-advanced-diagnostics')
+    expect(geometryStyles).toContain('.geometry-preflight-evidence')
     expect(geometryStyles).toContain('font-size: var(--text-md)')
     expect(geometryStyles).toContain('overflow: visible')
     expect(styles).toContain('.help-tooltip--guide .help-tooltip__content')

@@ -198,6 +198,7 @@ export function buildGeometryReview(
         ? `${groups.length.toLocaleString()} renderable surfaces`
         : 'No renderable surface inventory is available',
       level: groups.length > 0 ? 'ready' : 'warning',
+      count: groups.length,
     },
     {
       key: 'semantics',
@@ -228,6 +229,7 @@ export function buildGeometryReview(
         ? 'No partial-read errors'
         : `${errors.length} Flow360 metadata section(s) failed to load`,
       level: errors.length === 0 ? 'ready' : 'blocked',
+      count: errors.length,
     },
   ]
 

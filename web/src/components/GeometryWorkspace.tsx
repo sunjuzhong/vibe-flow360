@@ -41,6 +41,7 @@ import {
 import {
   buildGeometryReview,
   formatGeometryNumber,
+  type GeometryCheck,
   type GeometryCheckLevel,
 } from '../lib/geometryReview'
 import {
@@ -106,6 +107,39 @@ const topologyCheckKeys = new Set(['free-edges', 'non-manifold', 'self-intersect
 
 function translatedCount(t: (value: string) => string, template: string, count: number) {
   return t(template).replace('{count}', count.toLocaleString())
+}
+
+function localizePreflightCheck(t: (value: string) => string, check: GeometryCheck) {
+  let detail = t(check.detail)
+  if (check.key === 'processing') {
+    detail = check.level === 'ready' ? t('Flow360 processing completed') : t('Geometry processing is not complete.')
+  } else if (check.key === 'unit') {
+    detail = check.level === 'ready'
+      ? t('Reported value · {value}').replace('{value}', check.detail.replace(/^Reported as /, ''))
+      : t('Length unit must be confirmed before meshing')
+  } else if (check.key === 'dimensions' && check.level !== 'ready') {
+    detail = t('Bounding box is not available')
+  } else if (check.key === 'surfaces') {
+    detail = check.level === 'ready'
+      ? translatedCount(t, '{count} renderable surfaces', check.count ?? 0)
+      : t('No renderable surface inventory is available')
+  } else if (topologyCheckKeys.has(check.key)) {
+    if (check.level === 'unknown') detail = t('This topology check could not be completed with the synchronized evidence.')
+    else if (check.key === 'components') {
+      detail = translatedCount(
+        t,
+        check.level === 'ready' ? '{count} connected components' : '{count} disconnected triangle components detected',
+        check.count ?? 0,
+      )
+    } else {
+      detail = check.level === 'ready' ? t('None detected') : translatedCount(t, '{count} detected', check.count ?? 0)
+    }
+  } else if (check.key === 'read-errors') {
+    detail = check.level === 'ready'
+      ? t('No partial-read errors')
+      : translatedCount(t, '{count} Flow360 metadata sections failed to load', check.count ?? 0)
+  }
+  return { label: t(check.label), detail }
 }
 
 export function GeometryCapabilityDialog({
@@ -216,6 +250,52 @@ export function AdvancedDiagnosticsHelp() {
   )
 }
 
+export function GeometryPreflightHelp() {
+  const { t } = useI18n()
+
+  return (
+    <HelpTooltip
+      label={t('About Geometry preflight evidence')}
+      placement="bottom"
+      align="start"
+      width="guide"
+    >
+      <div className="help-tooltip__rich">
+        <header>
+          <strong>{t('How Geometry preflight evidence works')}</strong>
+          <span>{t('Preflight combines synchronized resource metadata with optional topology diagnostics. It reports evidence for review and never modifies the Geometry.')}</span>
+        </header>
+        <dl>
+          <div>
+            <dt>{t('Baseline evidence')}</dt>
+            <dd>{t('Checks processing state, physical units, bounding-box dimensions, surface inventory, generated naming, and metadata read errors.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Topology evidence')}</dt>
+            <dd>{t('When diagnostics have run, quantized edge incidence, union-find connectivity, and BVH/SAT intersection tests provide tessellation topology evidence.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Decision levels')}</dt>
+            <dd>{t('Blocked must be resolved before meshing; warning requires engineering review; unknown means evidence is missing; ready means that specific check passed.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Why unknown appears')}</dt>
+            <dd>{t('The synchronized Geometry metadata may not contain topology results. Run diagnostics to calculate supported checks; unsupported checks remain unknown, not passed.')}</dd>
+          </div>
+        </dl>
+        <section>
+          <strong>{t('Diagnostic provenance')}</strong>
+          <span>{t('The panel records the algorithm version, source, scale-relative tolerance, triangle count, runtime, and completion time for auditability.')}</span>
+        </section>
+        <section className="help-tooltip__caveat">
+          <strong>{t('Limits')}</strong>
+          <span>{t('Topology results describe the synchronized default-LOD tessellation, not exact CAD B-rep topology, and depend on tessellation quality and model scale.')}</span>
+        </section>
+      </div>
+    </HelpTooltip>
+  )
+}
+
 export function GeometryClipPopover({
   axis,
   position,
@@ -318,7 +398,7 @@ export default function GeometryWorkspace({
   ) => Promise<void>
   onPlanSurfaceMesh: () => Promise<void>
 }) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [entitySearch, setEntitySearch] = useState('')
@@ -1469,117 +1549,95 @@ export default function GeometryWorkspace({
 
         {activeCapabilityPanel === 'health' && (
           <GeometryCapabilityDialog
-            title="Geometry preflight evidence"
-            subtitle={blockingCount ? `${blockingCount} blockers · ${warningCount} warnings or unknown` : `${warningCount} warnings or unknown to review`}
+            title={t('Geometry preflight evidence')}
+            subtitle={blockingCount
+              ? t('{blockers} blockers · {warnings} warnings or unknown')
+                .replace('{blockers}', blockingCount.toLocaleString())
+                .replace('{warnings}', warningCount.toLocaleString())
+              : translatedCount(t, '{count} warnings or unknown to review', warningCount)}
             icon={<Shapes size={17} />}
+            titleHelp={<GeometryPreflightHelp />}
             onClose={() => setActiveCapabilityPanel(null)}
           >
-          <div className="geometry-disclosure-content">
+          <div className="geometry-disclosure-content geometry-preflight-evidence">
           <div className="geometry-panel-intent">
-            <strong>{`Why preflight reports ${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'} / unknown`}</strong>
-            <span>Each item states its evidence. Unknown means no diagnostic result exists; it is never silently treated as passed.</span>
+            <strong>{translatedCount(t, 'Why preflight reports {count} warnings or unknown', warningCount)}</strong>
+            <span>{t('Each item states its evidence. Unknown means no diagnostic result exists; it is never silently treated as passed.')}</span>
           </div>
           <div className="geometry-health-group-title">
             <div className="geometry-health-group-title__label">
-              <strong>Needs review</strong>
-              <HelpTooltip
-                label={t('About topology diagnostics')}
-                placement="top"
-                align="start"
-                width="wide"
-              >
-                <div className="help-tooltip__rich">
-                  <header>
-                    <strong>{t('How topology diagnostics work')}</strong>
-                    <span>{t('Detects mesh topology issues before meshing.')}</span>
-                  </header>
-                  <dl>
-                    <div>
-                      <dt>{t('Edge topology')}</dt>
-                      <dd>{t('Counts tolerance-quantized edge incidence to find free and non-manifold edges.')}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('Self-intersections')}</dt>
-                      <dd>{t('Uses a BVH broad phase and triangle SAT tests, excluding triangles that share a vertex.')}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('Connected components')}</dt>
-                      <dd>{t('Builds edge adjacency and groups islands with union-find.')}</dd>
-                    </div>
-                  </dl>
-                  <section>
-                    <strong>{t('Data source')}</strong>
-                    <span>{t('Synchronized default-LOD UVF triangle mesh')}</span>
-                  </section>
-                  <section className="help-tooltip__caveat">
-                    <strong>{t('Limitations')}</strong>
-                    <span>{t('This is tessellated evidence, not exact CAD B-rep topology. Results depend on tessellation quality and recorded model scale.')}</span>
-                  </section>
-                </div>
-              </HelpTooltip>
+              <strong>{t('Needs review')}</strong>
             </div>
-            <span>{visibleAttentionChecks.length + (unavailableTopologyChecks.length > 0 ? 1 : 0)} checks</span>
+            <span>{translatedCount(t, '{count} checks', visibleAttentionChecks.length + (unavailableTopologyChecks.length > 0 ? 1 : 0))}</span>
           </div>
           <div className="geometry-checks">
             {unavailableTopologyChecks.length > 0 && (
               <div className="unknown geometry-topology-unavailable">
                 <CheckIcon level="unknown" />
                 <span>
-                  <strong>Topology health not evaluated</strong>
-                  <small>{unavailableTopologyChecks.length} checks unavailable · Run diagnostics to inspect the synchronized UVF tessellation.</small>
+                  <strong>{t('Topology health not evaluated')}</strong>
+                  <small>{translatedCount(t, '{count} checks unavailable · Run diagnostics to inspect the synchronized UVF tessellation.', unavailableTopologyChecks.length)}</small>
                 </span>
                 <button type="button" disabled={diagnosticBusy || !resourceId} onClick={() => void runDiagnostics()}>
-                  <ScanLine size={11} /> {diagnosticBusy ? 'Running…' : 'Run topology diagnostics'}
+                  <ScanLine size={11} /> {diagnosticBusy ? t('Running…') : t('Run topology diagnostics')}
                 </button>
               </div>
             )}
-            {visibleAttentionChecks.map((check) => (
-              <div className={check.level} key={check.key} title={check.detail}>
-                <CheckIcon level={check.level} />
-                <span><strong>{check.label}</strong><small>{check.detail}</small></span>
-                {check.entityIds && check.entityIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => focusDiagnostic(check.entityIds ?? [])}
-                    title="Focus the first affected surface"
-                  ><LocateFixed size={11} /> Locate</button>
-                )}
-              </div>
-            ))}
+            {visibleAttentionChecks.map((check) => {
+              const localized = localizePreflightCheck(t, check)
+              return (
+                <div className={check.level} key={check.key} title={localized.detail}>
+                  <CheckIcon level={check.level} />
+                  <span><strong>{localized.label}</strong><small>{localized.detail}</small></span>
+                  {check.entityIds && check.entityIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => focusDiagnostic(check.entityIds ?? [])}
+                      title={t('Focus the first affected surface')}
+                    ><LocateFixed size={11} /> {t('Locate')}</button>
+                  )}
+                </div>
+              )
+            })}
           </div>
           {diagnosticBusy && diagnosticJob && (
             <div className="geometry-diagnostic-progress" role="status" aria-live="polite">
-              <div><span>{diagnosticJob.stage.replaceAll('-', ' ')}</span><strong>{diagnosticJob.progress}%</strong></div>
+              <div><span>{t(diagnosticJob.stage.replaceAll('-', ' '))}</span><strong>{diagnosticJob.progress}%</strong></div>
               <progress max={100} value={diagnosticJob.progress} />
-              <button type="button" onClick={() => void cancelDiagnostics()}>Cancel analysis</button>
+              <button type="button" onClick={() => void cancelDiagnostics()}>{t('Cancel analysis')}</button>
             </div>
           )}
           {diagnosticReport?.topology && (
             <div className="geometry-topology-provenance">
-              <strong>Diagnostic provenance</strong>
+              <strong>{t('Diagnostic provenance')}</strong>
               <dl>
-                <div><dt>Algorithm</dt><dd>{diagnosticReport.topology.algorithm_version}</dd></div>
-                <div><dt>Source</dt><dd>{diagnosticReport.topology.source}</dd></div>
-                <div><dt>Tolerance</dt><dd>{diagnosticReport.topology.tolerance.toExponential(3)} · {diagnosticReport.topology.tolerance_basis}</dd></div>
-                <div><dt>Mesh</dt><dd>{diagnosticReport.topology.triangle_count.toLocaleString()} triangles · {diagnosticReport.topology.duration_ms.toLocaleString()} ms</dd></div>
-                <div><dt>Completed</dt><dd>{new Date(diagnosticReport.topology.completed_at).toLocaleString()}</dd></div>
+                <div><dt>{t('Algorithm')}</dt><dd>{diagnosticReport.topology.algorithm_version}</dd></div>
+                <div><dt>{t('Source')}</dt><dd>{t(diagnosticReport.topology.source)}</dd></div>
+                <div><dt>{t('Tolerance')}</dt><dd>{diagnosticReport.topology.tolerance.toExponential(3)} · {t('Bounding-box diagonal × topology tolerance ratio')}</dd></div>
+                <div><dt>{t('Mesh')}</dt><dd>{t('{triangles} triangles · {duration} ms')
+                  .replace('{triangles}', diagnosticReport.topology.triangle_count.toLocaleString(language))
+                  .replace('{duration}', diagnosticReport.topology.duration_ms.toLocaleString(language))}</dd></div>
+                <div><dt>{t('Completed')}</dt><dd>{new Date(diagnosticReport.topology.completed_at).toLocaleString(language)}</dd></div>
               </dl>
-              {diagnosticReport.topology.limitations.map((limitation) => <small key={limitation}>{limitation}</small>)}
+              {diagnosticReport.topology.limitations.map((limitation) => <small key={limitation}>{t(limitation)}</small>)}
               <button type="button" disabled={diagnosticBusy || !resourceId} onClick={() => void runDiagnostics()}>
-                <ScanLine size={11} /> Run topology diagnostics again
+                <ScanLine size={11} /> {t('Run topology diagnostics again')}
               </button>
             </div>
           )}
           {passedChecks.length > 0 && (
             <details className="geometry-health-passed">
-              <summary>Passed evidence · {passedChecks.length}</summary>
+              <summary>{translatedCount(t, 'Passed evidence · {count}', passedChecks.length)}</summary>
               <div className="geometry-checks">
-                {passedChecks.map((check) => (
-                  <div className={check.level} key={check.key} title={check.detail}>
-                    <CheckIcon level={check.level} />
-                    <span><strong>{check.label}</strong><small>{check.detail}</small></span>
-                  </div>
-                ))}
+                {passedChecks.map((check) => {
+                  const localized = localizePreflightCheck(t, check)
+                  return (
+                    <div className={check.level} key={check.key} title={localized.detail}>
+                      <CheckIcon level={check.level} />
+                      <span><strong>{localized.label}</strong><small>{localized.detail}</small></span>
+                    </div>
+                  )
+                })}
               </div>
             </details>
           )}
