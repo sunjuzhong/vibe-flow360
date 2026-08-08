@@ -1,0 +1,52 @@
+.surface-review-workspace .resource-review-inventory .surface-boundary-row {
+  min-height: 58px;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-boundary-select > span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.surface-review-workspace .surface-boundary-selection-card dd {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.surface-selection-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #eff0eb;
+}
+
+.surface-selection-actions button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid #d8dcd2;
+  border-radius: 5px;
+  color: #596452;
+  background: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.surface-selection-actions button:hover,
+.surface-selection-actions button:focus-visible {
+  border-color: #afbf82;
+  color: #435516;
+  background: #f5f8eb;
+}

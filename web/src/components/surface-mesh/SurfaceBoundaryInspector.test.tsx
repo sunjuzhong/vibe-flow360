@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
+import { I18nProvider } from '../../i18n'
 import {
   SurfaceBoundaryInspector,
   filterSurfaceBoundaries,
@@ -27,18 +28,21 @@ describe('SurfaceBoundaryInspector', () => {
 
   it('renders faces beyond the previous eight-row limit and exposes viewer actions', () => {
     const markup = renderToStaticMarkup(
-      <SurfaceBoundaryInspector
-        inventory={inventory}
-        selectedId="face-9"
-        selectedBoundary={inventory[8]}
-        conflictCount={1}
-        visibility={{ 'face-2': false }}
-        onSelect={vi.fn()}
-        onIsolate={vi.fn()}
-        onToggleVisibility={vi.fn()}
-        onShowAll={vi.fn()}
-        onHideAll={vi.fn()}
-      />,
+      <I18nProvider>
+        <SurfaceBoundaryInspector
+          inventory={inventory}
+          selectedId="face-9"
+          selectedBoundary={inventory[8]}
+          conflictCount={1}
+          visibility={{ 'face-2': false }}
+          onSelect={vi.fn()}
+          onIsolate={vi.fn()}
+          onToggleVisibility={vi.fn()}
+          onShowAll={vi.fn()}
+          onHideAll={vi.fn()}
+          onClearSelection={vi.fn()}
+        />
+      </I18nProvider>,
     )
 
     expect(markup).toContain('Search SurfaceMesh boundaries')
@@ -54,27 +58,34 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).toContain('title="11/12 visible"')
     expect(markup).toContain('>11/12</span>')
     expect(markup).toContain('geometry-entity-row surface-boundary-row assigned selected')
+    expect(markup).toContain('aria-pressed="true"')
+    expect(markup).toContain('title="wing-9"')
+    expect(markup).toContain('>Clear</button>')
     expect(markup).not.toContain('Selected: wing-9')
   })
 
   it('offers the single hide action when every face is visible', () => {
     const markup = renderToStaticMarkup(
-      <SurfaceBoundaryInspector
-        inventory={inventory.slice(0, 2)}
-        selectedId={null}
-        conflictCount={0}
-        visibility={{}}
-        onSelect={vi.fn()}
-        onIsolate={vi.fn()}
-        onToggleVisibility={vi.fn()}
-        onShowAll={vi.fn()}
-        onHideAll={vi.fn()}
-      />,
+      <I18nProvider>
+        <SurfaceBoundaryInspector
+          inventory={inventory.slice(0, 2)}
+          selectedId={null}
+          conflictCount={0}
+          visibility={{}}
+          onSelect={vi.fn()}
+          onIsolate={vi.fn()}
+          onToggleVisibility={vi.fn()}
+          onShowAll={vi.fn()}
+          onHideAll={vi.fn()}
+          onClearSelection={vi.fn()}
+        />
+      </I18nProvider>,
     )
 
     expect(markup).toContain('0 faces selected')
     expect(markup).toContain('aria-label="Hide all boundaries"')
     expect(markup).not.toContain('aria-label="Show all boundaries"')
     expect(markup).not.toMatch(/aria-label="Hide all boundaries"[^>]*disabled=""/)
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Clear<\/button>/)
   })
 })

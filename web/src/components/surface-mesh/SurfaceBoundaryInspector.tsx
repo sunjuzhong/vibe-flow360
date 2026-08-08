@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Eye, EyeOff, Focus, Layers3, Search } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
+import { useI18n } from '../../i18n'
 
 export type SurfaceBoundaryFilter = 'all' | SurfaceBoundaryRow['status']
 
@@ -36,6 +37,7 @@ export function SurfaceBoundaryInspector({
   onToggleVisibility,
   onShowAll,
   onHideAll,
+  onClearSelection,
 }: {
   inventory: SurfaceBoundaryRow[]
   selectedId: string | null
@@ -47,7 +49,9 @@ export function SurfaceBoundaryInspector({
   onToggleVisibility: (groupId: string) => void
   onShowAll: () => void
   onHideAll: () => void
+  onClearSelection: () => void
 }) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SurfaceBoundaryFilter>('all')
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount)
@@ -101,7 +105,10 @@ export function SurfaceBoundaryInspector({
       )}
       {inventory.length > 0 && (
         <div className="geometry-selection-tools surface-boundary-selection-tools">
-          <strong>{selectedBoundary ? '1 face selected' : '0 faces selected'}</strong>
+          <strong>{t(selectedBoundary ? '1 face selected' : '0 faces selected')}</strong>
+          <button type="button" disabled={!selectedBoundary} onClick={onClearSelection}>
+            {t('Clear')}
+          </button>
         </div>
       )}
       <ManifestMemberGroup
@@ -124,9 +131,11 @@ export function SurfaceBoundaryInspector({
               <button
                 type="button"
                 className="geometry-entity-select surface-boundary-select"
+                aria-pressed={selectedId === row.id}
+                title={row.name}
                 onClick={() => onSelect(row.id)}
               >
-                <span>{row.name}</span>
+                <span title={row.name}>{row.name}</span>
                 <small>
                   {row.assignments.length > 0
                     ? row.assignments.map((assignment) => `${assignment.modelName} · ${assignment.modelType}`).join(', ')
@@ -137,17 +146,17 @@ export function SurfaceBoundaryInspector({
               <div className="surface-boundary-row-actions">
                 <button
                   type="button"
-                  aria-label={`${visible ? 'Hide' : 'Show'} ${row.name}`}
+                  aria-label={t(`${visible ? 'Hide' : 'Show'} ${row.name}`)}
                   aria-pressed={!visible}
-                  title={`${visible ? 'Hide' : 'Show'} ${row.name}`}
+                  title={t(`${visible ? 'Hide' : 'Show'} ${row.name}`)}
                   onClick={() => onToggleVisibility(row.id)}
                 >
                   {visible ? <Eye size={12} /> : <EyeOff size={12} />}
                 </button>
                 <button
                   type="button"
-                  aria-label={`Isolate ${row.name}`}
-                  title={`Isolate ${row.name}`}
+                  aria-label={t(`Isolate ${row.name}`)}
+                  title={t(`Isolate ${row.name}`)}
                   onClick={() => onIsolate(row.id)}
                 >
                   <Focus size={12} />

@@ -2,16 +2,20 @@ import {
   Activity,
   CheckCircle2,
   CircleDashed,
+  Eye,
+  EyeOff,
   Grid3X3,
+  LocateFixed,
   Ruler,
   ScanLine,
   Settings2,
   Triangle,
+  X,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type ViewerAssetStats } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
@@ -22,6 +26,7 @@ import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspector'
+import './surface-mesh/SurfaceBoundarySelection.css'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
 import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
@@ -106,6 +111,7 @@ export default function SurfaceMeshWorkspace({
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | null>(null)
+  const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
@@ -176,6 +182,12 @@ export default function SurfaceMeshWorkspace({
     : reviewLevel === 'blocked'
       ? 'Failed processing or conflicting boundary assignments must be resolved before trusting this mesh.'
       : 'Review processing state, missing evidence, and unassigned boundaries before proceeding.'
+  const selectedBoundaryVisible = review.selectedBoundary
+    ? review.visibility[review.selectedBoundary.id] !== false
+    : false
+  const requestSelectionFocus = () => {
+    setCameraCommand((current) => ({ type: 'fit-selection', nonce: (current?.nonce ?? 0) + 1 }))
+  }
 
   return (
     <ResourceReviewLayout
@@ -199,6 +211,7 @@ export default function SurfaceMeshWorkspace({
             onToggleVisibility={review.toggleBoundaryVisibility}
             onShowAll={review.showAllBoundaries}
             onHideAll={review.hideAllBoundaries}
+            onClearSelection={() => review.setSelection({ groupId: null })}
           />
         </>
       )}
@@ -223,6 +236,7 @@ export default function SurfaceMeshWorkspace({
           onFieldFilterMatchCount={qualityFilter.setMatchCount}
           onAssetStatsChange={setViewerAssetStats}
           focusTarget={review.focusTarget}
+          cameraCommand={cameraCommand}
           clipPlane={advanced.clipPlane}
           projectId={projectId}
           resourceRef={resourceRef}
@@ -281,7 +295,7 @@ export default function SurfaceMeshWorkspace({
             </div>
           )}
 
-          <section className="geometry-selection-card surface-active-review">
+          <section className="geometry-selection-card surface-active-review surface-boundary-selection-card">
             <div className="geometry-section-title">
               <ScanLine size={13} />
                 {review.mode === 'quality'
@@ -316,14 +330,37 @@ export default function SurfaceMeshWorkspace({
               </>
             ) : review.mode === 'boundaries' ? (
               review.selectedBoundary ? (
-                <dl>
-                  <div><dt>Name</dt><dd>{review.selectedBoundary.name}</dd></div>
-                  <div><dt>ID</dt><dd title={review.selectedBoundary.id}>{review.selectedBoundary.id}</dd></div>
-                  <div><dt>Triangles</dt><dd>{review.selectedBoundary.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
-                  <div><dt>Assignment</dt><dd>
-                    {review.selectedBoundary.assignments.map((assignment) => assignment.modelName).join(', ') || 'Unassigned'}
-                  </dd></div>
-                </dl>
+                <>
+                  <dl>
+                    <div><dt>Name</dt><dd>{review.selectedBoundary.name}</dd></div>
+                    <div><dt>ID</dt><dd title={review.selectedBoundary.id}>{review.selectedBoundary.id}</dd></div>
+                    <div><dt>Triangles</dt><dd>{review.selectedBoundary.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
+                    <div><dt>Status</dt><dd>{review.selectedBoundary.status}</dd></div>
+                    <div><dt>Assignment</dt><dd>
+                      {review.selectedBoundary.assignments
+                        .map((assignment) => `${assignment.modelName} · ${assignment.modelType}`)
+                        .join(', ') || 'Unassigned'}
+                    </dd></div>
+                  </dl>
+                  <div className="surface-selection-actions" aria-label={t('Selection actions')}>
+                    <button type="button" onClick={requestSelectionFocus}>
+                      <LocateFixed size={12} /> {t('Focus')}
+                    </button>
+                    <button type="button" onClick={() => review.isolateBoundary(review.selectedBoundary!.id)}>
+                      <ScanLine size={12} /> {t('Isolate')}
+                    </button>
+                    <button type="button" onClick={() => review.toggleBoundaryVisibility(review.selectedBoundary!.id)}>
+                      {selectedBoundaryVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                      {t(selectedBoundaryVisible ? 'Hide' : 'Show')}
+                    </button>
+                    <button type="button" onClick={review.showAllBoundaries}>
+                      <Eye size={12} /> {t('Show all')}
+                    </button>
+                    <button type="button" onClick={() => review.setSelection({ groupId: null })}>
+                      <X size={12} /> {t('Clear')}
+                    </button>
+                  </div>
+                </>
               ) : <p>Select a boundary in the inventory or 3D viewer to inspect it.</p>
             ) : (
               <p>

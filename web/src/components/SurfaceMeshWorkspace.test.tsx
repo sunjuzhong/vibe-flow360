@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n'
 import SurfaceMeshWorkspace from './SurfaceMeshWorkspace'
 
+const surfaceReviewScenario = vi.hoisted(() => ({
+  mode: 'quality' as 'quality' | 'boundaries',
+  selected: false,
+}))
+
 vi.mock('../hooks/useResourcePreview', () => ({
   useResourcePreview: () => ({
     manifest: { asset_url: '/surface/manifest.json', format: 'flow360-uvf', groups: [] },
@@ -15,8 +20,8 @@ vi.mock('../hooks/useResourcePreview', () => ({
 
 vi.mock('../hooks/useSurfaceMeshReview', () => ({
   useSurfaceMeshReview: () => ({
-    mode: 'quality',
-    selection: { groupId: null },
+    mode: surfaceReviewScenario.mode,
+    selection: { groupId: surfaceReviewScenario.selected ? 'face-1' : null },
     visibility: { 'face-1': true },
     qualityFields: [{ name: 'area', kind: 'scalar', dimension: 1, min: 1e-8, max: 1e-4 }],
     qualityFieldNames: ['area'],
@@ -34,7 +39,13 @@ vi.mock('../hooks/useSurfaceMeshReview', () => ({
       triangles: 12,
       assignments: [],
     }],
-    selectedBoundary: undefined,
+    selectedBoundary: surfaceReviewScenario.selected ? {
+      id: 'face-1',
+      name: 'body00001_face00001_full_boundary_name',
+      status: 'unassigned',
+      triangles: 12,
+      assignments: [],
+    } : undefined,
     boundaryConflictCount: 0,
     surfaceParameters: [{ path: 'meshing.maxEdgeLength', label: 'Max edge length', value: '0.5 m' }],
     setMode: vi.fn(),
@@ -112,6 +123,8 @@ vi.mock('../lib/viewer-tools/ViewerToolsUI', () => ({
 
 describe('SurfaceMeshWorkspace capabilities', () => {
   it('keeps 3D-affecting controls inline and all primary actions reachable', () => {
+    surfaceReviewScenario.mode = 'quality'
+    surfaceReviewScenario.selected = false
     const html = renderToStaticMarkup(
       <I18nProvider>
         <SurfaceMeshWorkspace
@@ -142,5 +155,33 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html.indexOf('surface-quality-filter-panel')).toBeLessThan(
       html.indexOf('resource-review-launchers'),
     )
+  })
+
+  it('shows Geometry-style details and operations for a selected boundary', () => {
+    surfaceReviewScenario.mode = 'boundaries'
+    surfaceReviewScenario.selected = true
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <SurfaceMeshWorkspace
+          detail={null}
+          resourceId="surface-1"
+          projectId="project-1"
+          resourceRef={{ id: 'surface-1', type: 'SurfaceMesh' }}
+          annotationsModel={{} as never}
+          versions={[]}
+          onCreateRemediationPlan={async () => undefined}
+          onPlanVolumeMesh={async () => undefined}
+        />
+      </I18nProvider>,
+    )
+
+    expect(html).toContain('surface-boundary-selection-card')
+    expect(html).toContain('body00001_face00001_full_boundary_name')
+    expect(html).toContain('Selection actions')
+    expect(html).toContain('Focus')
+    expect(html).toContain('Isolate')
+    expect(html).toContain('Hide')
+    expect(html).toContain('Show all')
+    expect(html).toContain('Clear')
   })
 })

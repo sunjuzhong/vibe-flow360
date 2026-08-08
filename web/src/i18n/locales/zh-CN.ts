@@ -1662,6 +1662,7 @@ const patterns: Array<[RegExp, (...groups: string[]) => string]> = [
   [/^Rule (\d+) field$/, (index) => `规则 ${index} 字段`],
   [/^Rule (\d+) (minimum|maximum) (.+)$/, (index, bound, field) => `规则 ${index} ${bound === 'minimum' ? '最小值' : '最大值'} ${field}`],
   [/^(Show|Hide) all (.+)$/, (action, members) => `${action === 'Show' ? '显示' : '隐藏'}全部${translateZhCN(members)}`],
+  [/^(Show|Hide) (.+)$/, (action, name) => `${action === 'Show' ? '显示' : '隐藏'} ${name}`],
   [/^(.+) resources$/, (type) => `${translateZhCN(type)}资源`],
   [/^Save name for (.+)$/, (name) => `保存${name}的名称`],
   [/^Cancel renaming (.+)$/, (name) => `取消重命名${name}`],
