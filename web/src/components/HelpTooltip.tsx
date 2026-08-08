@@ -1,11 +1,12 @@
 import { CircleHelp } from 'lucide-react'
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 
 type Props = {
-  children: string
+  children: ReactNode
   label?: string
   placement?: 'top' | 'bottom'
   align?: 'start' | 'center' | 'end'
+  width?: 'default' | 'wide'
 }
 
 export default function HelpTooltip({
@@ -13,11 +14,12 @@ export default function HelpTooltip({
   label = 'Show help',
   placement = 'bottom',
   align = 'center',
+  width = 'default',
 }: Props) {
   const tooltipId = useId()
 
   return (
-    <span className={`help-tooltip help-tooltip--${placement} help-tooltip--${align}`}>
+    <span className={`help-tooltip help-tooltip--${placement} help-tooltip--${align} help-tooltip--${width}`}>
       <button
         type="button"
         className="help-tooltip__trigger"

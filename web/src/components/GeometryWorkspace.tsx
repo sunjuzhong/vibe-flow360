@@ -51,6 +51,7 @@ import {
 } from '../lib/geometrySemantics'
 import { resourceStatus } from './ResourceDetailPanel'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
+import HelpTooltip from './HelpTooltip'
 import {
   buildGeometryEntityAppearances,
   canDeleteGeometryAppearance,
@@ -78,6 +79,7 @@ import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
+import { useI18n } from '../i18n'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
@@ -252,6 +254,7 @@ export default function GeometryWorkspace({
   ) => Promise<void>
   onPlanSurfaceMesh: () => Promise<void>
 }) {
+  const { t } = useI18n()
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [entitySearch, setEntitySearch] = useState('')
@@ -1400,13 +1403,45 @@ export default function GeometryWorkspace({
             <strong>{`Why preflight reports ${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'} / unknown`}</strong>
             <span>Each item states its evidence. Unknown means no diagnostic result exists; it is never silently treated as passed.</span>
           </div>
-          <div className="geometry-topology-help">
-            <strong>How topology diagnostics work</strong>
-            <span>Free and non-manifold edges use tolerance-quantized edge incidence (one adjacent triangle, or more than two). Self-intersections use a BVH broad phase followed by triangle SAT tests, excluding triangles that share a vertex. Connected components use edge adjacency and union-find.</span>
-            <small>The analysis uses the synchronized default-LOD UVF triangle mesh, not exact CAD B-rep topology. Results depend on tessellation quality and the recorded model scale.</small>
-          </div>
           <div className="geometry-health-group-title">
-            <strong>Needs review</strong>
+            <div className="geometry-health-group-title__label">
+              <strong>Needs review</strong>
+              <HelpTooltip
+                label={t('About topology diagnostics')}
+                placement="bottom"
+                align="start"
+                width="wide"
+              >
+                <div className="help-tooltip__rich">
+                  <header>
+                    <strong>{t('How topology diagnostics work')}</strong>
+                    <span>{t('Detects mesh topology issues before meshing.')}</span>
+                  </header>
+                  <dl>
+                    <div>
+                      <dt>{t('Edge topology')}</dt>
+                      <dd>{t('Counts tolerance-quantized edge incidence to find free and non-manifold edges.')}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('Self-intersections')}</dt>
+                      <dd>{t('Uses a BVH broad phase and triangle SAT tests, excluding triangles that share a vertex.')}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('Connected components')}</dt>
+                      <dd>{t('Builds edge adjacency and groups islands with union-find.')}</dd>
+                    </div>
+                  </dl>
+                  <section>
+                    <strong>{t('Data source')}</strong>
+                    <span>{t('Synchronized default-LOD UVF triangle mesh')}</span>
+                  </section>
+                  <section className="help-tooltip__caveat">
+                    <strong>{t('Limitations')}</strong>
+                    <span>{t('This is tessellated evidence, not exact CAD B-rep topology. Results depend on tessellation quality and recorded model scale.')}</span>
+                  </section>
+                </div>
+              </HelpTooltip>
+            </div>
             <span>{visibleAttentionChecks.length + (unavailableTopologyChecks.length > 0 ? 1 : 0)} checks</span>
           </div>
           <div className="geometry-checks">

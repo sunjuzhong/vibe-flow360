@@ -190,8 +190,9 @@
   color: #545d4e;
 }
 
-.geometry-health-group-title strong { font-size: 11px; }
-.geometry-health-group-title span { color: #8a6a21; font: 9px 'DM Mono'; }
+.geometry-health-group-title__label > strong { font-size: 11px; }
+.geometry-health-group-title > span { color: #8a6a21; font: 9px 'DM Mono'; }
+.geometry-health-group-title__label { display: inline-flex; align-items: center; gap: 2px; }
 .geometry-health-passed { margin-top: 12px; border-top: 1px solid #e4e7de; }
 .geometry-health-passed > summary {
   padding: 10px 0 2px;
@@ -201,7 +202,6 @@
   cursor: pointer;
 }
 
-.geometry-topology-help,
 .geometry-topology-provenance {
   display: grid;
   gap: 6px;
@@ -213,10 +213,7 @@
   background: #f7f9f3;
 }
 
-.geometry-topology-help strong,
 .geometry-topology-provenance > strong { color: #3f4939; font-size: 11px; }
-.geometry-topology-help span { font-size: 10px; line-height: 1.55; }
-.geometry-topology-help small,
 .geometry-topology-provenance > small { color: #7b8376; font-size: 9px; line-height: 1.45; }
 .geometry-topology-unavailable { align-items: flex-start !important; }
 .geometry-topology-unavailable > button,
