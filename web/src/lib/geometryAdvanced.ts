@@ -1,9 +1,113 @@
 import type {
   AgentAction,
   GeometryComparison,
+  GeometryDiagnosticCapability,
+  GeometryDiagnosticFinding,
   GeometryDiagnosticReport,
   ProjectInfo,
 } from '../api/client'
+
+type Translate = (value: string) => string
+
+const capabilityLabels: Record<string, string> = {
+  'topology-analysis': 'Topology analysis',
+  'small-features': 'Small features',
+  'gap-analysis': 'Gap analysis',
+  'curvature-analysis': 'Curvature analysis',
+  'proximity-analysis': 'Proximity analysis',
+  'exact-cad-clearance': 'Exact CAD clearance',
+}
+
+const capabilityDetails: Record<string, string> = {
+  'topology-analysis:available': 'Computed from synchronized indexed triangles using edge incidence, connectivity, and bounded self-intersection tests.',
+  'topology-analysis:partial': 'Edge incidence and connectivity were computed, but self-intersection analysis is incomplete.',
+  'topology-analysis:unavailable': 'Compatible synchronized position and index buffers are unavailable.',
+  'small-features:available': 'Uses Flow360-provided CAD face areas and the selected relative threshold.',
+  'small-features:proxy': 'Uses the triangle-count distribution as a proxy, not physical feature size.',
+  'gap-analysis:proxy': 'Uses solid bounding-box separation as a lower-bound proxy, not an exact gap.',
+  'gap-analysis:unavailable': 'Multiple bounded solids are required for a gap proxy.',
+  'curvature-analysis:proxy': 'Uses maximum tessellation-normal variation per Face, not CAD curvature radius.',
+  'curvature-analysis:unavailable': 'Compatible tessellation-normal buffers are unavailable.',
+  'proximity-analysis:proxy': 'Uses solid bounding-box separation as a lower-bound proxy, not exact clearance.',
+  'proximity-analysis:unavailable': 'Multiple bounded solids are required for a proximity proxy.',
+  'exact-cad-clearance:unavailable': 'UVF has no CAD B-rep or exact distance-query evidence.',
+}
+
+const findingCopy: Record<string, { title: string; detail: string; recommendation: string }> = {
+  'high-normal-variation': {
+    title: 'High normal-variation surfaces',
+    detail: 'These tessellated surfaces exceed the selected face-normal variation threshold.',
+    recommendation: 'Inspect them in 3D and confirm whether curvature-sensitive surface refinement is required.',
+  },
+  'curvature-analysis-unavailable': {
+    title: 'Curvature analysis unavailable',
+    detail: 'No compatible tessellated-normal evidence is available.',
+    recommendation: 'Treat curvature refinement as an engineering input until supported evidence is available.',
+  },
+  'gap-analysis-unavailable': {
+    title: 'Gap analysis unavailable',
+    detail: 'The synchronized visualization evidence does not contain a multi-body distance result.',
+    recommendation: 'Use a CAD-kernel or mesher-supported gap diagnostic before applying a gap tolerance.',
+  },
+  'proximity-analysis-unavailable': {
+    title: 'Proximity analysis unavailable',
+    detail: 'Multiple bounded solids are required for the AABB proximity proxy.',
+    recommendation: 'Do not infer close-body clearances from the rendered view alone.',
+  },
+  'body-proximity-proxy': {
+    title: 'Solid proximity lower bound',
+    detail: 'The closest solid bounding boxes define only a lower-bound distance; overlapping boxes remain inconclusive.',
+    recommendation: 'Inspect the implicated bodies and confirm clearance with a CAD-kernel or mesher-supported distance calculation.',
+  },
+  'topology-free-edges': {
+    title: 'Open / free edges',
+    detail: 'One or more quantized edges belong to only one triangle.',
+    recommendation: 'Locate the affected surfaces and repair or re-export the CAD topology before volume meshing.',
+  },
+  'topology-non-manifold': {
+    title: 'Non-manifold edges',
+    detail: 'One or more quantized edges are shared by more than two triangles.',
+    recommendation: 'Locate the affected surfaces and repair or re-export the CAD topology before volume meshing.',
+  },
+  'topology-self-intersections': {
+    title: 'Self-intersections',
+    detail: 'Non-adjacent tessellated triangles intersect, or the bounded intersection check could not finish.',
+    recommendation: 'Locate the affected surfaces and repair or re-export the CAD topology before volume meshing.',
+  },
+  'topology-components': {
+    title: 'Disconnected components',
+    detail: 'The tessellation contains multiple edge-connected components.',
+    recommendation: 'Review whether multiple disconnected bodies are intended for this CFD workflow.',
+  },
+}
+
+export function localizeDiagnosticCapability(capability: GeometryDiagnosticCapability, t: Translate) {
+  return {
+    label: t(capabilityLabels[capability.key] ?? capability.key.replaceAll('-', ' ')),
+    status: t(capability.status),
+    detail: t(capabilityDetails[`${capability.key}:${capability.status}`] ?? capability.detail),
+  }
+}
+
+export function localizeDiagnosticFinding(finding: GeometryDiagnosticFinding, t: Translate) {
+  const smallArea = finding.id === 'small-surface-proxy' && finding.evidence_keys?.includes('median_surface_area')
+  const smallTriangles = finding.id === 'small-surface-proxy' && !smallArea
+  const copy = smallArea ? {
+    title: 'Small-area surfaces need review',
+    detail: 'These surfaces fall below the selected fraction of the median provided face area.',
+    recommendation: 'Focus the candidates in 3D and confirm physical dimensions before suppressing or refining them.',
+  } : smallTriangles ? {
+    title: 'Low-triangle surfaces need review',
+    detail: 'These surfaces are statistical tessellation outliers, not confirmed small physical features.',
+    recommendation: 'Focus the candidates in 3D and confirm physical dimensions before suppressing or refining them.',
+  } : findingCopy[finding.id]
+
+  return {
+    title: t(copy?.title ?? finding.title),
+    detail: t(copy?.detail ?? finding.detail),
+    recommendation: finding.recommendation ? t(copy?.recommendation ?? finding.recommendation) : '',
+  }
+}
 
 export type GeometryReviewTemplateId = 'aircraft' | 'automotive' | 'rotating-machinery' | 'thermal'
 

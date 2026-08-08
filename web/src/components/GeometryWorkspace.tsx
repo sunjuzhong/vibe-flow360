@@ -34,6 +34,8 @@ import {
 } from '../api/client'
 import {
   geometryReviewTemplates,
+  localizeDiagnosticCapability,
+  localizeDiagnosticFinding,
   type GeometryReviewTemplateId,
 } from '../lib/geometryAdvanced'
 import {
@@ -101,6 +103,10 @@ function CheckIcon({ level }: { level: GeometryCheckLevel }) {
 
 type GeometryCapabilityPanel = 'appearance' | 'semantics' | 'diagnostics' | 'health'
 const topologyCheckKeys = new Set(['free-edges', 'non-manifold', 'self-intersections', 'components'])
+
+function translatedCount(t: (value: string) => string, template: string, count: number) {
+  return t(template).replace('{count}', count.toLocaleString())
+}
 
 export function GeometryCapabilityDialog({
   title,
@@ -1273,16 +1279,18 @@ export default function GeometryWorkspace({
 
         {activeCapabilityPanel === 'diagnostics' && (
           <GeometryCapabilityDialog
-            title="Advanced diagnostics"
-            subtitle={diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'Server-backed · on demand'}
+            title={t('Advanced diagnostics')}
+            subtitle={diagnosticReport
+              ? translatedCount(t, '{count} findings', diagnosticReport.findings.length)
+              : t('Server-backed · on demand')}
             icon={<GitCompare size={17} />}
             titleHelp={<AdvancedDiagnosticsHelp />}
             onClose={() => setActiveCapabilityPanel(null)}
           >
           <div className="geometry-disclosure-content geometry-advanced-diagnostics">
-          <p className="geometry-advanced-intro">Server-backed evidence only. Unsupported checks remain explicitly unknown.</p>
+          <p className="geometry-advanced-intro">{t('Server-backed evidence only. Unsupported checks remain explicitly unknown.')}</p>
           <label className="geometry-semantic-field">
-            Small-surface threshold ratio
+            {t('Small-surface threshold ratio')}
             <select
               aria-label="Small-surface threshold ratio"
               value={diagnosticRatio}
@@ -1291,13 +1299,13 @@ export default function GeometryWorkspace({
                 setDiagnosticReport(null)
               }}
             >
-              <option value={0.05}>5% of median surface evidence</option>
-              <option value={0.1}>10% of median surface evidence</option>
-              <option value={0.2}>20% of median surface evidence</option>
+              <option value={0.05}>{t('5% of median surface evidence')}</option>
+              <option value={0.1}>{t('10% of median surface evidence')}</option>
+              <option value={0.2}>{t('20% of median surface evidence')}</option>
             </select>
           </label>
           <label className="geometry-semantic-field">
-            Face-normal variation threshold
+            {t('Face-normal variation threshold')}
             <select
               aria-label="Face-normal variation threshold"
               value={curvatureAngle}
@@ -1306,10 +1314,10 @@ export default function GeometryWorkspace({
                 setDiagnosticReport(null)
               }}
             >
-              <option value={15}>15° sensitive</option>
-              <option value={30}>30° balanced</option>
-              <option value={45}>45° coarse</option>
-              <option value={60}>60° very coarse</option>
+              <option value={15}>{t('15° sensitive')}</option>
+              <option value={30}>{t('30° balanced')}</option>
+              <option value={45}>{t('45° coarse')}</option>
+              <option value={60}>{t('60° very coarse')}</option>
             </select>
           </label>
           <button
@@ -1318,90 +1326,97 @@ export default function GeometryWorkspace({
             disabled={diagnosticBusy || !resourceId}
             onClick={() => void runDiagnostics()}
           >
-            <ScanLine size={12} /> {diagnosticBusy ? 'Analyzing synchronized evidence…' : 'Run advanced diagnostics'}
+            <ScanLine size={12} /> {diagnosticBusy ? t('Analyzing synchronized evidence…') : t('Run advanced diagnostics')}
           </button>
           {diagnosticBusy && diagnosticJob && (
             <div className="geometry-diagnostic-progress" role="status" aria-live="polite">
               <div>
-                <span>{diagnosticJob.stage.replaceAll('-', ' ')}</span>
+                <span>{t(diagnosticJob.stage.replaceAll('-', ' '))}</span>
                 <strong>{diagnosticJob.progress}%</strong>
               </div>
               <progress max={100} value={diagnosticJob.progress} />
-              <button type="button" onClick={() => void cancelDiagnostics()}>Cancel analysis</button>
+              <button type="button" onClick={() => void cancelDiagnostics()}>{t('Cancel analysis')}</button>
             </div>
           )}
           {!diagnosticBusy && diagnosticJob?.status === 'cancelled' && (
-            <small className="geometry-diagnostic-cancelled">Diagnostic analysis cancelled.</small>
+            <small className="geometry-diagnostic-cancelled">{t('Diagnostic analysis cancelled.')}</small>
           )}
 
           {diagnosticReport && (
             <>
               <div className="geometry-capabilities">
-                {diagnosticReport.capabilities.map((capability) => (
-                  <div className={capability.status} key={capability.key} title={capability.detail}>
-                    <span>{capability.key.replaceAll('-', ' ')}</span>
-                    <strong>{capability.status}</strong>
-                  </div>
-                ))}
+                {diagnosticReport.capabilities.map((capability) => {
+                  const localized = localizeDiagnosticCapability(capability, t)
+                  return (
+                    <div className={capability.status} key={capability.key} title={localized.detail}>
+                      <span>{localized.label}</span>
+                      <strong>{localized.status}</strong>
+                    </div>
+                  )
+                })}
               </div>
               <small className="geometry-diagnostic-fingerprint" title={diagnosticReport.fingerprint}>
-                Evidence cache key · {diagnosticReport.fingerprint.slice(0, 12)}
+                {t('Evidence cache key ·')} {diagnosticReport.fingerprint.slice(0, 12)}
               </small>
               <div className="geometry-diagnostic-findings">
-                {diagnosticReport.findings.map((finding) => (
-                  <article className={finding.severity} key={finding.id}>
-                    <div>
-                      <strong>{finding.title}</strong>
-                      <small>{finding.detail}</small>
-                    </div>
-                    {(finding.entity_ids?.length ?? 0) > 0 && (
-                      <button type="button" onClick={() => focusDiagnostic(finding.entity_ids ?? [])}>
-                        <LocateFixed size={11} /> Locate {finding.entity_ids?.length}
-                      </button>
-                    )}
-                    {finding.recommendation && <p>{finding.recommendation}</p>}
-                  </article>
-                ))}
+                {diagnosticReport.findings.map((finding) => {
+                  const localized = localizeDiagnosticFinding(finding, t)
+                  const entityCount = finding.entity_ids?.length ?? 0
+                  return (
+                    <article className={finding.severity} key={finding.id}>
+                      <div>
+                        <strong>{localized.title}</strong>
+                        <small>{localized.detail}</small>
+                      </div>
+                      {entityCount > 0 && (
+                        <button type="button" onClick={() => focusDiagnostic(finding.entity_ids ?? [])}>
+                          <LocateFixed size={11} /> {translatedCount(t, 'Locate {count}', entityCount)}
+                        </button>
+                      )}
+                      {localized.recommendation && <p>{localized.recommendation}</p>}
+                    </article>
+                  )
+                })}
               </div>
               {diagnosticReport.grouping_proposals.length > 0 && (
                 <div className="geometry-grouping-proposals">
-                  <strong>Semi-automatic groups</strong>
+                  <strong>{t('Semi-automatic groups')}</strong>
                   {diagnosticReport.grouping_proposals.map((proposal) => (
                     <button
                       type="button"
                       key={proposal.id}
-                      title={proposal.basis}
+                      title={t(proposal.basis)}
                       onClick={() => focusDiagnostic(proposal.entity_ids)}
                     >
                       <span>{proposal.label}</span>
-                      <small>{proposal.entity_ids.length} surfaces · review inferred group</small>
+                      <small>{translatedCount(t, '{count} surfaces · review inferred group', proposal.entity_ids.length)}</small>
                     </button>
                   ))}
                 </div>
               )}
 
               <label className="geometry-semantic-field">
-                Domain review template
+                {t('Domain review template')}
                 <select
                   aria-label="Domain review template"
                   value={reviewTemplate}
                   onChange={(event) => setReviewTemplate(event.target.value as GeometryReviewTemplateId)}
                 >
                   {geometryReviewTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>{template.label}</option>
+                    <option key={template.id} value={template.id}>{t(template.label)}</option>
                   ))}
                 </select>
               </label>
               <div className="geometry-template-checks">
                 {geometryReviewTemplates.find((template) => template.id === reviewTemplate)?.checks.map((check) => (
-                  <span key={check}>{check}</span>
+                  <span key={check}>{t(check)}</span>
                 ))}
               </div>
 
               {geometryVersions.length > 1 && (
                 <div className="geometry-version-compare">
                   <label className="geometry-semantic-field">
-                    Compare with Geometry
+                    {t('Compare with Geometry')}
                     <select
                       aria-label="Compare with Geometry"
                       value={compareId}
@@ -1410,27 +1425,29 @@ export default function GeometryWorkspace({
                         setComparison(null)
                       }}
                     >
-                      <option value="">Select synchronized version…</option>
+                      <option value="">{t('Select synchronized version…')}</option>
                       {geometryVersions.filter((version) => version.id !== resourceId).map((version) => (
                         <option key={version.id} value={version.id}>{version.name}</option>
                       ))}
                     </select>
                   </label>
                   <button type="button" disabled={!compareId || comparisonBusy} onClick={() => void runComparison()}>
-                    <GitCompare size={11} /> {comparisonBusy ? 'Comparing…' : 'Compare versions'}
+                    <GitCompare size={11} /> {comparisonBusy ? t('Comparing…') : t('Compare versions')}
                   </button>
                   {comparison && (
                     <div className="geometry-comparison-metrics">
                       {comparison.metrics.map((metric) => (
                         <div key={metric.key}>
-                          <span>{metric.label}</span>
+                          <span>{t(metric.label)}</span>
                           <strong>{metric.baseline.toLocaleString()} → {metric.candidate.toLocaleString()}</strong>
                           <small className={metric.delta === 0 ? '' : metric.delta > 0 ? 'added' : 'removed'}>
                             {metric.delta > 0 ? '+' : ''}{metric.delta.toLocaleString()}
                           </small>
                         </div>
                       ))}
-                      <p>{comparison.added_surfaces.length} added · {comparison.removed_surfaces.length} removed named surfaces</p>
+                      <p>{t('{added} added · {removed} removed named surfaces')
+                        .replace('{added}', comparison.added_surfaces.length.toLocaleString())
+                        .replace('{removed}', comparison.removed_surfaces.length.toLocaleString())}</p>
                     </div>
                   )}
                 </div>
@@ -1441,7 +1458,7 @@ export default function GeometryWorkspace({
                 disabled={advancedPlanBusy}
                 onClick={() => void createAdvancedPlan()}
               >
-                <GitPullRequestDraft size={13} /> {advancedPlanBusy ? 'Creating advanced Draft review…' : 'Create advanced Draft review'}
+                <GitPullRequestDraft size={13} /> {advancedPlanBusy ? t('Creating advanced Draft review…') : t('Create advanced Draft review')}
               </button>
             </>
           )}
