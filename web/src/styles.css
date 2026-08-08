@@ -2801,11 +2801,17 @@ button { color: inherit; }
 .viewer-view-toolbar {
   position: absolute;
   z-index: 13;
-  top: 12px;
+  top: 6px;
   left: 50%;
   display: flex;
+  width: max-content;
+  height: max-content;
   align-items: center;
   gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   transform: translateX(-50%);
 }
 .viewer-view-toolbar button {
