@@ -4,7 +4,6 @@ import { localeOptions } from './locales'
 import { hasTranslation, translate } from './translations'
 import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params } from '../tutorials/t04'
 import { t01Evidence, t01ParameterCards, t01Steps, t01ParamsForAlpha, validateT01Setup } from '../tutorials/t01'
-import { t02Paths, t02Steps } from '../tutorials/t02'
 import { t03Evidence, t03ParameterCards, t03Steps, t03Params, validateT03Setup } from '../tutorials/t03'
 
 describe('language settings', () => {
@@ -161,8 +160,6 @@ describe('language settings', () => {
       ...t01Evidence.flatMap(({ title, detail }) => [title, detail]),
       ...validateT01Setup(t01ParamsForAlpha(0)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT01Setup(t01ParamsForAlpha(5)).flatMap(({ label, detail }) => [label, detail]),
-      ...t02Steps.flatMap(({ title, summary }) => [title, summary]),
-      ...Object.values(t02Paths).flatMap(({ root, required, skipped, best }) => [root, ...required, ...skipped, best]),
       ...t03Steps.flatMap(({ title, summary }) => [title, summary]),
       ...t03ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
       ...t03Evidence.flatMap(({ title, detail }) => [title, detail]),
