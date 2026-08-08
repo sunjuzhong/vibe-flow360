@@ -273,7 +273,7 @@ export function Viewer3D({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
-  const cameraBoundsRadiusRef = useRef<number | null>(null)
+  const assetBoundsSphereRef = useRef<THREE.Sphere | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
@@ -394,7 +394,9 @@ export function Viewer3D({
     object: THREE.Object3D,
   ) => {
     const fit = fitPerspectiveCameraToObject(camera, controls, object)
-    cameraBoundsRadiusRef.current = fit?.radius ?? null
+    assetBoundsSphereRef.current = fit
+      ? new THREE.Sphere(fit.center.clone(), fit.radius)
+      : null
     return fit
   }, [])
 
@@ -487,6 +489,7 @@ export function Viewer3D({
       assetRef.current = null
     }
     setAssetStats(null)
+    assetBoundsSphereRef.current = null
     setAvailableFields([])
     setInternalSelectedField(null)
 
@@ -559,6 +562,10 @@ export function Viewer3D({
     root.position.copy(center.multiplyScalar(-scale))
     scene.add(root)
     assetRef.current = root
+    const assetBoundsSphere = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere())
+    assetBoundsSphereRef.current = Number.isFinite(assetBoundsSphere.radius) && assetBoundsSphere.radius > 0
+      ? assetBoundsSphere
+      : null
 
     const camera = cameraRef.current
     const controls = controlsRef.current
@@ -566,8 +573,8 @@ export function Viewer3D({
       if (preserveCamera) {
         const sphere = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere())
         if (Number.isFinite(sphere.radius) && sphere.radius > 0) {
-          cameraBoundsRadiusRef.current = sphere.radius
-          configurePerspectiveCameraForBounds(camera, controls, sphere.radius)
+          assetBoundsSphereRef.current = sphere
+          configurePerspectiveCameraForBounds(camera, controls, sphere.radius, undefined, sphere)
         }
       } else {
         fitCameraToObject(camera, controls, root)
@@ -591,8 +598,9 @@ export function Viewer3D({
       const camera = cameraRef.current
       const controls = controlsRef.current
       controls?.update()
-      if (camera && controls && cameraBoundsRadiusRef.current) {
-        updatePerspectiveCameraClipping(camera, controls.target, cameraBoundsRadiusRef.current)
+      const assetBoundsSphere = assetBoundsSphereRef.current
+      if (camera && assetBoundsSphere) {
+        updatePerspectiveCameraClipping(camera, assetBoundsSphere.center, assetBoundsSphere.radius)
       }
       if (camera && uvfAssetRef.current) {
         updateWireframeOverlayForCamera(uvfAssetRef.current, camera, renderer.domElement.clientHeight)
@@ -679,8 +687,8 @@ export function Viewer3D({
     if (type === 'z' || type === '-z') camera.up.set(0, 1, 0)
     camera.position.copy(center).add(direction.multiplyScalar(distance))
     controls.target.copy(center)
-    cameraBoundsRadiusRef.current = radius
-    configurePerspectiveCameraForBounds(camera, controls, radius, distance)
+    const assetBoundsSphere = assetBoundsSphereRef.current
+    configurePerspectiveCameraForBounds(camera, controls, radius, distance, assetBoundsSphere ?? undefined)
     camera.lookAt(center)
     controls.update()
   }, [assetState.status, fitCameraToObject, selection])

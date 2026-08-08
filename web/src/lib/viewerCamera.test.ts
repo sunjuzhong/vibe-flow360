@@ -134,4 +134,39 @@ describe('responsive viewer camera framing', () => {
     expect(camera.near).toBeLessThan(camera.position.distanceTo(target) - radius)
     expect(camera.far).toBeGreaterThan(camera.position.distanceTo(target) + radius)
   })
+
+  it('protects the asset bounds when orbiting around an off-center surface pivot', () => {
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+    const bounds = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 2)
+    const pivot = new THREE.Vector3(1.8, 0, 0)
+
+    for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+      camera.position.set(
+        pivot.x + Math.sin(angle) * 6,
+        pivot.y,
+        Math.cos(angle) * 6,
+      )
+      camera.lookAt(pivot)
+      updatePerspectiveCameraClipping(camera, bounds.center, bounds.radius)
+
+      const forward = camera.getWorldDirection(new THREE.Vector3())
+      const centerDepth = bounds.center.clone().sub(camera.position).dot(forward)
+      expect(camera.near).toBeLessThanOrEqual(Math.max(bounds.radius * 1e-4, centerDepth - bounds.radius))
+      expect(camera.far).toBeGreaterThanOrEqual(centerDepth + bounds.radius)
+    }
+  })
+
+  it('keeps a usable frustum while the camera is inside the asset bounds', () => {
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+    const center = new THREE.Vector3()
+    const radius = 10
+    camera.position.set(0, 0, 0.2)
+    camera.lookAt(0, 0, 0)
+
+    updatePerspectiveCameraClipping(camera, center, radius)
+
+    expect(camera.near).toBeGreaterThan(0)
+    expect(camera.near).toBeLessThan(radius * 0.001)
+    expect(camera.far).toBeGreaterThan(radius)
+  })
 })

@@ -33,6 +33,8 @@ export type CameraFit = {
 }
 
 const CLIP_MARGIN_RADII = 1.5
+const clippingDirection = new THREE.Vector3()
+const clippingOffset = new THREE.Vector3()
 
 /** ParaView-style navigation tuned for engineering and CFD models. */
 export function configureCFDNavigationControls(controls: CFDNavigationControls): void {
@@ -66,16 +68,20 @@ export function interpolateCameraPivot(
 
 export function updatePerspectiveCameraClipping(
   camera: THREE.PerspectiveCamera,
-  target: THREE.Vector3,
+  boundsCenter: THREE.Vector3,
   radius: number,
 ): boolean {
   if (!Number.isFinite(radius) || radius <= 0) return false
-  const distance = camera.position.distanceTo(target)
-  if (!Number.isFinite(distance)) return false
+  const cameraDirection = camera.getWorldDirection(clippingDirection)
+  const centerDepth = clippingOffset.subVectors(boundsCenter, camera.position).dot(cameraDirection)
+  if (!Number.isFinite(centerDepth)) return false
 
   const minimumNear = Math.max(radius * 1e-4, 1e-6)
-  const nextNear = Math.max(minimumNear, distance - radius * CLIP_MARGIN_RADII)
-  const nextFar = Math.max(nextNear + radius * 2, distance + radius * CLIP_MARGIN_RADII)
+  const nextNear = Math.max(minimumNear, centerDepth - radius * CLIP_MARGIN_RADII)
+  const nextFar = Math.max(
+    nextNear + radius * 2,
+    centerDepth + radius * CLIP_MARGIN_RADII,
+  )
   const tolerance = radius * 1e-6
   if (Math.abs(camera.near - nextNear) <= tolerance && Math.abs(camera.far - nextFar) <= tolerance) {
     return false
@@ -92,11 +98,16 @@ export function configurePerspectiveCameraForBounds(
   controls: CameraControls,
   radius: number,
   preferredDistance = camera.position.distanceTo(controls.target),
+  clippingBounds?: Pick<THREE.Sphere, 'center' | 'radius'>,
 ): void {
   if (!Number.isFinite(radius) || radius <= 0) return
   controls.minDistance = Math.max(radius * 0.01, 1e-6)
   controls.maxDistance = Math.max(radius * 100, preferredDistance * 10)
-  updatePerspectiveCameraClipping(camera, controls.target, radius)
+  updatePerspectiveCameraClipping(
+    camera,
+    clippingBounds?.center ?? controls.target,
+    clippingBounds?.radius ?? radius,
+  )
 }
 
 export function resizePerspectiveViewport(
