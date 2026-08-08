@@ -158,6 +158,8 @@
 .geometry-capability-dialog > header small { display: block; }
 .geometry-capability-dialog > header strong { color: #3d4737; font-size: 13px; }
 .geometry-capability-dialog > header small { margin-top: 2px; color: #848b7e; font-size: 9px; }
+.geometry-capability-dialog-title { display: flex; align-items: center; gap: 3px; }
+.geometry-capability-dialog-title > .help-tooltip { margin: -3px 0; }
 
 .geometry-capability-dialog > header > button {
   display: grid;

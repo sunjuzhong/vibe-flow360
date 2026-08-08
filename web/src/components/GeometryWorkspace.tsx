@@ -106,12 +106,14 @@ export function GeometryCapabilityDialog({
   title,
   subtitle,
   icon,
+  titleHelp,
   children,
   onClose,
 }: {
   title: string
   subtitle: string
   icon: ReactNode
+  titleHelp?: ReactNode
   children: ReactNode
   onClose: () => void
 }) {
@@ -144,7 +146,10 @@ export function GeometryCapabilityDialog({
       >
         <header>
           <span className="geometry-capability-dialog-icon">{icon}</span>
-          <div><strong>{title}</strong><small>{subtitle}</small></div>
+          <div>
+            <div className="geometry-capability-dialog-title"><strong>{title}</strong>{titleHelp}</div>
+            <small>{subtitle}</small>
+          </div>
           <button type="button" onClick={onClose} aria-label={`Close ${title}`}><X size={17} /></button>
         </header>
         <div className="geometry-capability-dialog-body">{children}</div>
@@ -153,6 +158,52 @@ export function GeometryCapabilityDialog({
   )
 
   return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body)
+}
+
+export function AdvancedDiagnosticsHelp() {
+  const { t } = useI18n()
+
+  return (
+    <HelpTooltip
+      label={t('About advanced diagnostics')}
+      placement="bottom"
+      align="start"
+      width="wide"
+    >
+      <div className="help-tooltip__rich">
+        <header>
+          <strong>{t('How advanced diagnostics work')}</strong>
+          <span>{t('The server analyzes synchronized Flow360 UVF evidence on demand and keeps unsupported checks explicitly unknown.')}</span>
+        </header>
+        <dl>
+          <div>
+            <dt>{t('Topology')}</dt>
+            <dd>{t('Quantized edge incidence, union-find, and BVH/SAT tests find open or non-manifold edges, disconnected components, and triangle self-intersections.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Small features')}</dt>
+            <dd>{t('Compares each provided CAD face area with a fraction of the median; triangle count is used only as a fallback proxy.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Normal variation')}</dt>
+            <dd>{t('Samples tessellation normals per Face and flags the maximum pairwise angle above the selected threshold; this is a curvature proxy, not a radius.')}</dd>
+          </div>
+          <div>
+            <dt>{t('Body proximity')}</dt>
+            <dd>{t('Solid bounding-box separation is only a lower-bound proxy; exact gaps and clearances require a CAD-kernel or mesher diagnostic.')}</dd>
+          </div>
+        </dl>
+        <section>
+          <strong>{t('Data source')}</strong>
+          <span>{t('Synchronized default-LOD UVF manifest and indexed triangle buffers')}</span>
+        </section>
+        <section className="help-tooltip__caveat">
+          <strong>{t('Interpretation')}</strong>
+          <span>{t('Available means evidence was computed, proxy means an approximation, and unavailable or unknown is never treated as passed.')}</span>
+        </section>
+      </div>
+    </HelpTooltip>
+  )
 }
 
 export function GeometryClipPopover({
@@ -1221,6 +1272,7 @@ export default function GeometryWorkspace({
             title="Advanced diagnostics"
             subtitle={diagnosticReport ? `${diagnosticReport.findings.length} findings` : 'Server-backed · on demand'}
             icon={<GitCompare size={17} />}
+            titleHelp={<AdvancedDiagnosticsHelp />}
             onClose={() => setActiveCapabilityPanel(null)}
           >
           <div className="geometry-disclosure-content">
