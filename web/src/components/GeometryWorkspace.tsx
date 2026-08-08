@@ -68,10 +68,12 @@ import {
 import { buildSurfaceBoundaryInventory } from '../lib/surfaceMeshReview'
 import {
   LazyViewer3D,
+  type ViewerAssetStats,
   type ViewerCameraCommand,
   type ViewerClipPlane,
   type ViewerSelection,
 } from './viewer/LazyViewer3D'
+import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
@@ -252,6 +254,7 @@ export default function GeometryWorkspace({
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [entitySearch, setEntitySearch] = useState('')
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
+  const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const [clipEnabled, setClipEnabled] = useState(false)
   const [clipAxis, setClipAxis] = useState<'x' | 'y' | 'z'>('x')
   const [clipPosition, setClipPosition] = useState(0)
@@ -877,6 +880,7 @@ export default function GeometryWorkspace({
           showEntityLegend={false}
           showFieldPanel={false}
           cameraCommand={cameraCommand}
+          onAssetStatsChange={setViewerAssetStats}
           floatingPanel={clipEnabled && (
             <GeometryClipPopover
               axis={clipAxis}
@@ -937,6 +941,8 @@ export default function GeometryWorkspace({
             >{warningCount} warnings / unknown</button>
           </div>
         </div>
+
+        <ViewerAssetInformation stats={viewerAssetStats} />
 
         <div className="geometry-summary-grid">
           <div className="geometry-summary-wide"><span><Ruler size={12} /> Dimensions</span><strong>

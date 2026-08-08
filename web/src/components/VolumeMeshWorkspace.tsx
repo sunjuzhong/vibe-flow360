@@ -17,7 +17,8 @@ import {
 import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type ViewerCameraCommand } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
+import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
 import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
@@ -113,6 +114,7 @@ export default function VolumeMeshWorkspace({
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
+  const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'VolumeMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -241,6 +243,7 @@ export default function VolumeMeshWorkspace({
             onFieldProbe={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.setProbe : undefined}
             fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
             onFieldFilterMatchCount={qualityFilter.setMatchCount}
+            onAssetStatsChange={setViewerAssetStats}
             focusTarget={review.focusTarget}
             cameraCommand={cameraCommand}
             clipPlane={review.mode === 'slices' ? review.clipPlane : null}
@@ -276,6 +279,8 @@ export default function VolumeMeshWorkspace({
               <span className="warning">Status · {status}</span>
             </div>
           </div>
+
+          <ViewerAssetInformation stats={viewerAssetStats} />
 
           {reportedMetrics.length > 0 && (
             <div className="geometry-summary-grid volume-summary-grid">

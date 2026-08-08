@@ -206,19 +206,11 @@
   transform: translateX(-50%);
 }
 
-:is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-action-toolbar-slot) .viewer-asset-stats {
-  bottom: 54px;
-}
-
 :is(.resource-review-viewer, .geometry-review-viewer) .viewer-3d-container:has(.viewer-view-toolbar) .viewer-field-panel {
   top: 58px;
 }
 
 @media (max-width: 1100px) {
-  :is(.resource-review-viewer, .geometry-review-viewer) .viewer-asset-stats {
-    display: none;
-  }
-
   :is(.resource-review-viewer, .geometry-review-viewer) .viewer-toolbar-slot {
     right: auto;
     bottom: 8px;

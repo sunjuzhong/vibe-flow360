@@ -25,7 +25,8 @@ import { resourceStatus } from './ResourceDetailPanel'
 import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
-import { LazyViewer3D, type ViewerSelection } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerAssetStats, type ViewerSelection } from './viewer/LazyViewer3D'
+import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
@@ -247,6 +248,7 @@ export default function CaseWorkspace({
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [caseFields, setCaseFields] = useState<string[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
+  const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const [resultPreview, setResultPreview] = useState<{
     path: string
     content?: string
@@ -475,6 +477,7 @@ export default function CaseWorkspace({
             selectedField={activeField}
             showEntityLegend={false}
             onFieldsDiscovered={handleFieldsDiscovered}
+            onAssetStatsChange={setViewerAssetStats}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
             toolInput={tools.toolInput}
@@ -523,6 +526,8 @@ export default function CaseWorkspace({
               {convResult && <span className={convResult.status === 'converged' ? 'ready' : 'warning'}>Convergence · {convResult.status}</span>}
             </div>
           </div>
+
+          <ViewerAssetInformation stats={viewerAssetStats} />
 
           {convResult && (
             <div className={`convergence-banner compact convergence-${convResult.status}`}>

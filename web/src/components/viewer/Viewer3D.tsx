@@ -84,6 +84,12 @@ export type ViewerSelection = {
   groupIds?: string[]
 }
 
+export type ViewerAssetStats = {
+  faces: number
+  edges: number
+  triangles: number
+}
+
 export type ViewerEntityAppearance = { color: string; opacity: number }
 
 export type ViewerClipPlane = {
@@ -203,6 +209,7 @@ type Props = {
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
   fieldFilter?: UVFFieldFilter | null
   onFieldFilterMatchCount?: (count: number) => void
+  onAssetStatsChange?: (stats: ViewerAssetStats | null) => void
   focusTarget?: [number, number, number] | null
   clipPlane?: ViewerClipPlane | null
   projectId?: string
@@ -242,6 +249,7 @@ export function Viewer3D({
   onFieldProbe,
   fieldFilter,
   onFieldFilterMatchCount,
+  onAssetStatsChange,
   focusTarget,
   clipPlane,
   projectId,
@@ -288,7 +296,7 @@ export function Viewer3D({
   const [cameraNavigating, setCameraNavigating] = useState(false)
   const [pivotFeedback, setPivotFeedback] = useState<{ x: number; y: number; id: number } | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
-  const [assetStats, setAssetStats] = useState<{ faces: number; edges: number; triangles: number } | null>(null)
+  const [assetStats, setAssetStats] = useState<ViewerAssetStats | null>(null)
   const [precision, setPrecision] = useState<{ assetURL: string | null; selection: ViewerPrecisionSelection }>({
     assetURL: null,
     selection: 'default',
@@ -369,6 +377,11 @@ export function Viewer3D({
     onFieldFilterMatchCountRef.current = onFieldFilterMatchCount
     onCaptureRef.current = onCapture
   }, [onCapture, onFieldExtremaChange, onFieldFilterMatchCount, onFieldHistogramChange, onFieldsDiscovered])
+
+  useEffect(() => {
+    onAssetStatsChange?.(assetStats)
+    return () => onAssetStatsChange?.(null)
+  }, [assetStats, onAssetStatsChange])
 
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
@@ -1317,9 +1330,33 @@ export function Viewer3D({
       {visibleState.status === 'ready' && (
         <>
           <ViewerNavCube onCommand={applyCameraCommand} />
-          {toolbar && (
+          {(toolbar || assetStats) && (
             <div className="viewer-view-toolbar" role="toolbar" aria-label="Viewer display modes">
               {toolbar}
+              {assetStats && (
+                <>
+                  <ViewerPrecisionControl
+                    levels={precisionInfo.levels}
+                    currentLevel={precisionInfo.currentLevel}
+                    selection={precisionSelection}
+                    unavailableLevels={unavailablePrecisionLevels}
+                    onChange={(selection) => {
+                      setPrecisionNotice({ assetURL: manifest?.asset_url ?? null, message: '' })
+                      setPrecision({ assetURL: manifest?.asset_url ?? null, selection })
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
+                    onClick={handleWireframeToggle}
+                    aria-label="Toggle wireframe overlay"
+                    aria-pressed={effectiveWireframe}
+                    title="Toggle wireframe overlay"
+                  >
+                    Wire
+                  </button>
+                </>
+              )}
             </div>
           )}
           <div className="viewer-toolbar-slot viewer-action-toolbar-slot" role="toolbar" aria-label="Common viewer actions">
@@ -1334,32 +1371,6 @@ export function Viewer3D({
             </button>
             {topToolbar}
           </div>
-          {assetStats && (
-            <div className="viewer-asset-stats">
-              <span>{assetStats.faces} faces</span>
-              <span>{assetStats.edges} edges</span>
-              <span>{assetStats.triangles.toLocaleString()} tris</span>
-              <ViewerPrecisionControl
-                levels={precisionInfo.levels}
-                currentLevel={precisionInfo.currentLevel}
-                selection={precisionSelection}
-                unavailableLevels={unavailablePrecisionLevels}
-                onChange={(selection) => {
-                  setPrecisionNotice({ assetURL: manifest?.asset_url ?? null, message: '' })
-                  setPrecision({ assetURL: manifest?.asset_url ?? null, selection })
-                }}
-              />
-              <button
-                className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
-                onClick={handleWireframeToggle}
-                aria-label="Toggle wireframe overlay"
-                aria-pressed={effectiveWireframe}
-                title="Toggle wireframe"
-              >
-                Wire
-              </button>
-            </div>
-          )}
         </>
       )}
       {snapStatus && visibleState.status === 'ready' && (
@@ -1412,15 +1423,6 @@ export function Viewer3D({
                   </option>
                 </select>
               </label>
-              <button
-                className={`viewer-field-wire-toggle ${effectiveWireframe ? 'active' : ''}`}
-                type="button"
-                onClick={handleWireframeToggle}
-                aria-pressed={effectiveWireframe}
-                title="Overlay mesh edges on the field colors"
-              >
-                Wire overlay
-              </button>
             </div>
           )}
           {selectedField && (

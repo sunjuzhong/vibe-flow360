@@ -12,7 +12,8 @@ import {
 import { useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerAssetStats } from './viewer/LazyViewer3D'
+import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
 import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
@@ -105,6 +106,7 @@ export default function SurfaceMeshWorkspace({
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | null>(null)
+  const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -219,6 +221,7 @@ export default function SurfaceMeshWorkspace({
           onFieldProbe={review.mode === 'quality' ? review.setProbe : undefined}
           fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
           onFieldFilterMatchCount={qualityFilter.setMatchCount}
+          onAssetStatsChange={setViewerAssetStats}
           focusTarget={review.focusTarget}
           clipPlane={advanced.clipPlane}
           projectId={projectId}
@@ -264,6 +267,8 @@ export default function SurfaceMeshWorkspace({
               <span className="warning">Status · {status}</span>
             </div>
           </div>
+
+          <ViewerAssetInformation stats={viewerAssetStats} />
 
           {reportedMetrics.length > 0 && (
             <div className="geometry-summary-grid surface-summary-grid">

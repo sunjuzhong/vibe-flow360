@@ -2679,25 +2679,6 @@ button { color: inherit; }
 .viewer-icon-tooltip:hover::after,
 .viewer-icon-tooltip:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 .viewer-navcube-hit.viewer-icon-tooltip::after { top: auto; bottom: calc(100% + 3px); }
-.viewer-asset-stats {
-  position: absolute;
-  z-index: 2;
-  left: 10px;
-  bottom: 10px;
-  display: flex;
-  gap: 5px;
-}
-.viewer-controls-rail .viewer-asset-stats { flex-wrap: wrap; }
-.viewer-asset-stats span {
-  padding: 4px 7px;
-  border: 1px solid rgb(255 255 255 / 70%);
-  border-radius: 999px;
-  color: #545b4c;
-  background: rgb(255 255 255 / 78%);
-  box-shadow: 0 2px 8px rgb(39 46 31 / 8%);
-  font-family: 'DM Mono';
-  font-size: 7px;
-}
 .viewer-precision-control {
   display: flex;
   align-items: center;
@@ -2769,20 +2750,6 @@ button { color: inherit; }
   border-radius: 4px;
   background: #fff;
   color: #3f443a;
-}
-.viewer-field-wire-toggle {
-  padding: 3px 7px;
-  border: 1px solid #d5d7ce;
-  border-radius: 4px;
-  background: #fff;
-  color: #545b4c;
-  font: 600 8px 'DM Mono';
-  cursor: pointer;
-}
-.viewer-field-wire-toggle.active {
-  border-color: #788f1f;
-  color: #596d12;
-  background: #eff8ce;
 }
 .viewer-colormap-bar {
   display: flex;
@@ -2862,6 +2829,14 @@ button { color: inherit; }
   border-color: #789521;
   color: #fff;
   background: #789521;
+}
+.viewer-view-toolbar .viewer-precision-control {
+  min-height: 29px;
+  box-sizing: border-box;
+  border-color: rgb(203 208 195 / 88%);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 82%);
+  backdrop-filter: blur(8px);
 }
 .viewer-action-toolbar-slot > button,
 .viewer-action-toolbar-slot .geometry-camera-toolbar > button,
@@ -6816,13 +6791,6 @@ button { color: inherit; }
   .viewer-legend {
     display: none;
   }
-  .viewer-asset-stats {
-    bottom: auto;
-    top: 45px;
-    left: 5px;
-    right: 5px;
-    flex-wrap: wrap;
-  }
   .cfd-viewer-source {
     top: 5px;
     right: 5px;
@@ -7278,6 +7246,45 @@ button { color: inherit; }
 .geometry-summary-grid strong {
   overflow: hidden;
   margin-top: 5px;
+  color: #454c40;
+  font: 8px 'DM Mono';
+  text-overflow: ellipsis;
+}
+
+.viewer-asset-information {
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid #e1e2dc;
+  border-radius: 7px;
+  background: #fff;
+}
+.viewer-asset-information-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #596153;
+  font-size: 8px;
+  font-weight: 700;
+}
+.viewer-asset-information dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.viewer-asset-information dl > div {
+  min-width: 0;
+  padding: 7px;
+  border-radius: 5px;
+  background: #f5f6f1;
+}
+.viewer-asset-information dt {
+  color: #858b80;
+  font-size: 7px;
+}
+.viewer-asset-information dd {
+  overflow: hidden;
+  margin: 4px 0 0;
   color: #454c40;
   font: 8px 'DM Mono';
   text-overflow: ellipsis;

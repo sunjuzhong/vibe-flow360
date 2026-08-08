@@ -11,6 +11,7 @@ export type {
   MeshGroupData,
   ViewerClipPlane,
   ViewerCameraCommand,
+  ViewerAssetStats,
   ViewerManifest,
   ViewerOverlayContent,
   ViewerSelection,
@@ -32,6 +33,7 @@ export type ViewerToolbarProps = {
   onFieldProbe?: (probe: UVFFieldProbe | null) => void
   fieldFilter?: UVFFieldFilter | null
   onFieldFilterMatchCount?: (count: number) => void
+  onAssetStatsChange?: (stats: import('./Viewer3D').ViewerAssetStats | null) => void
   focusTarget?: [number, number, number] | null
   clipPlane?: import('./Viewer3D').ViewerClipPlane | null
   captureRequest?: number
