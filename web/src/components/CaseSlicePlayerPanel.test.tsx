@@ -14,7 +14,7 @@ describe('CaseSlicePlayerPanel', () => {
     expect(markup).not.toContain('type="file"')
   })
 
-  it('uses a compact asset only while preview is preferred', () => {
+  it('uses the same full-resolution asset during playback and pause', () => {
     const frame = {
       manifest_path: 'frame.manifest.json',
       preview_manifest_path: 'frame.preview.manifest.json',
@@ -24,7 +24,10 @@ describe('CaseSlicePlayerPanel', () => {
       preview_triangles: 40_000,
       bounds: [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]],
     }
-    expect(selectPlaybackAsset(frame, true)).toMatchObject({ preview: true, manifestPath: 'frame.preview.manifest.json', vertices: 30_000, triangles: 40_000 })
-    expect(selectPlaybackAsset(frame, false)).toMatchObject({ preview: false, manifestPath: 'frame.manifest.json', vertices: 100_000, triangles: 200_000 })
+    expect(selectPlaybackAsset(frame)).toEqual({
+      manifestPath: 'frame.manifest.json',
+      vertices: 100_000,
+      triangles: 200_000,
+    })
   })
 })

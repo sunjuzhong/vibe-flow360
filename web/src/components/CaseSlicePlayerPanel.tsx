@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Database, LoaderCircle, Pause, Play, SkipBack, SkipForward, Square } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, type SlicePlayerJob } from '../api/client'
 import { useI18n } from '../i18n'
 import { LazyViewer3D, type ViewerManifest } from './viewer/LazyViewer3D'
@@ -27,13 +27,11 @@ function stageLabel(stage: string) {
 
 type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report']>['playback']>['frames'][number]
 
-export function selectPlaybackAsset(frame: SlicePlaybackFrame, preferPreview: boolean) {
-  const preview = preferPreview && Boolean(frame.preview_manifest_path && frame.preview_manifest_path !== frame.manifest_path)
+export function selectPlaybackAsset(frame: SlicePlaybackFrame) {
   return {
-    preview,
-    manifestPath: preview ? frame.preview_manifest_path! : frame.manifest_path,
-    vertices: preview ? frame.preview_vertices ?? frame.vertices : frame.vertices,
-    triangles: preview ? frame.preview_triangles ?? frame.triangles : frame.triangles,
+    manifestPath: frame.manifest_path,
+    vertices: frame.vertices,
+    triangles: frame.triangles,
   }
 }
 
@@ -42,9 +40,7 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
   const playback = job.report?.playback
   const [frameIndex, setFrameIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [scrubbing, setScrubbing] = useState(false)
   const [fps, setFps] = useState(2)
-  const scrubTimer = useRef<number | null>(null)
   const [selectedField, setSelectedField] = useState<string | null>(playback?.fields[0] ?? null)
   const frame = playback?.frames[frameIndex]
 
@@ -54,24 +50,9 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
     return () => window.clearInterval(timer)
   }, [fps, playing, playback?.frame_count])
 
-  useEffect(() => () => {
-    if (scrubTimer.current !== null) window.clearTimeout(scrubTimer.current)
-  }, [])
-
-  const finishScrubbing = (delay = 180) => {
-    if (scrubTimer.current !== null) window.clearTimeout(scrubTimer.current)
-    scrubTimer.current = window.setTimeout(() => {
-      setScrubbing(false)
-      scrubTimer.current = null
-    }, delay)
-  }
-
-  const previewAvailable = Boolean(frame?.preview_manifest_path && frame.preview_manifest_path !== frame.manifest_path)
-  const usePreview = previewAvailable && (playing || scrubbing)
-
   const manifest = useMemo<ViewerManifest | null>(() => {
     if (!frame || !playback) return null
-    const { manifestPath, vertices, triangles } = selectPlaybackAsset(frame, usePreview)
+    const { manifestPath, vertices, triangles } = selectPlaybackAsset(frame)
     const assetPath = manifestPath.split('/').map(encodeURIComponent).join('/')
     return {
       asset_url: `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(job.id)}/assets/${assetPath}`,
@@ -81,7 +62,7 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
       vertices,
       elements: triangles,
     }
-  }, [caseId, frame, job.id, playback, usePreview])
+  }, [caseId, frame, job.id, playback])
 
   if (!playback?.ready || !frame || !manifest) return null
   const move = (next: number) => setFrameIndex(Math.max(0, Math.min(playback.frame_count - 1, next)))
@@ -99,13 +80,10 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
         </button>
         <button aria-label={t('Next frame')} onClick={() => { setPlaying(false); move(frameIndex + 1) }}><SkipForward size={15} /></button>
         <input aria-label={t('Frame')} type="range" min={0} max={Math.max(0, playback.frame_count - 1)} value={frameIndex}
-          onPointerDown={() => { setPlaying(false); setScrubbing(true) }}
-          onPointerUp={() => finishScrubbing()}
-          onPointerCancel={() => finishScrubbing(0)}
-          onBlur={() => finishScrubbing()}
-          onChange={(event) => { setPlaying(false); setScrubbing(true); move(Number(event.target.value)); finishScrubbing() }} />
+          onPointerDown={() => setPlaying(false)}
+          onChange={(event) => { setPlaying(false); move(Number(event.target.value)) }} />
         <span>{frameIndex + 1} / {playback.frame_count}<small>{t('step')} {frame.step ?? '—'}</small></span>
-        <small className={`slice-playback-quality ${usePreview ? 'preview' : 'full'}`}>{t(usePreview ? 'Preview' : 'Full resolution')}</small>
+        <small className="slice-playback-quality full">{t('Full resolution')}</small>
         <select aria-label={t('Playback speed')} value={fps} onChange={(event) => setFps(Number(event.target.value))}>
           {[1, 2, 5, 10].map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
         </select>
