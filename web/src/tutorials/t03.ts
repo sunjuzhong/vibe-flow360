@@ -42,7 +42,7 @@ export const t03Evidence = [
 export const t03Pedagogy: TutorialPedagogy = {
   learningObjectives: [
     'Explain how curvature angle and maximum edge length jointly discretize a cylinder.',
-    'Separate first-layer teaching values from a production y-plus derivation.',
+    'Separate the first-layer baseline assumption from a production y-plus derivation.',
     'Judge surface fidelity, layer continuity, transitions, and quality from generated evidence.',
   ],
   cfdConcepts: [
@@ -55,7 +55,7 @@ export const t03Pedagogy: TutorialPedagogy = {
   ],
   derivations: [
     { id: 'sectors', parameter: 'Curvature angle as a facet estimate', basis: 'A full circle contains 360°, so the normal-angle limit estimates circumferential sectors.', calculation: '360°/10° ≈ 36 · 360°/6° ≈ 60', transfer: 'Use this only as an estimate; inspect the mesh because maximum edge length may become active.' },
-    { id: 'layer-ratio', parameter: 'First-layer thickness normalized by diameter', basis: 'Normalizing exposes the teaching scale while keeping it separate from a production y-plus calculation.', calculation: 'baseline t₁/D = 0.01 · refined t₁/D = 0.005', transfer: 'For production, derive t₁ from target y-plus, wall shear, density, and viscosity.' },
+    { id: 'layer-ratio', parameter: 'First-layer thickness normalized by diameter', basis: 'The normalized ratio states the baseline assumption independently of a production y-plus calculation.', calculation: 'baseline t₁/D = 0.01 · refined t₁/D = 0.005', transfer: 'For production, derive t₁ from target y-plus, wall shear, density, and viscosity.' },
   ],
   experiments: [{ id: 'refine', prediction: 'What should visibly change when curvature, local edge length, and first-layer thickness are tightened?', options: ['More surface facets and a thinner first layer', 'A smaller farfield and different physics'], controlledVariable: 'Three spatial controls change; geometry, farfield, mesher, and growth rates stay fixed.', observation: 'Compare silhouette fidelity, layer thickness, continuity, transition, and expected cell cost in the same cross-section.' }],
   failureModes: [

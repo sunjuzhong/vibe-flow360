@@ -111,15 +111,15 @@ function T01TutorialPage() {
         return <>
           <div className="lesson-kicker"><Sparkles size={15}/> Engineering intent</div>
           <h1>Can this aircraft produce a stable, reviewable lift and drag result?</h1>
-          <p className="lesson-lead">You will compare 0° and 5° angle of attack while keeping every other assumption fixed. The goal is to learn the reasoning chain—not to chase a colorful contour.</p>
+          <p className="lesson-lead">Compare 0° and 5° angle of attack with identical geometry, mesh, models, reference values, and outputs. Any change in CL or CD can then be attributed to angle of attack.</p>
           <div className="lesson-decision-card">
             <span>DECISION</span>
-            <strong>Is the setup credible enough to support a design comparison?</strong>
-            <p>A successful Case is necessary, but mesh quality, convergence, and stable forces determine whether it is useful.</p>
+            <strong>Does the setup support a controlled angle-of-attack comparison?</strong>
+            <p>Accept the comparison only when mesh checks pass, residuals converge, and force histories become stable.</p>
           </div>
           <div className="lesson-objectives">
-            <div><CheckCircle2/><span><strong>Translate intent</strong>See how an engineering question becomes explicit parameters.</span></div>
-            <div><Layers3/><span><strong>Control one variable</strong>Use a reviewable 5° merge patch instead of a second opaque setup.</span></div>
+            <div><CheckCircle2/><span><strong>Set aerodynamic quantities</strong>Use CL and CD with documented reference area and length.</span></div>
+            <div><Layers3/><span><strong>Control one variable</strong>Apply the 5° merge patch while every other field stays fixed.</span></div>
             <div><ShieldCheck/><span><strong>Demand evidence</strong>Define acceptance criteria before seeing results.</span></div>
           </div>
           <TutorialConceptBridge cfd={t01Pedagogy.cfdConcepts} flow360={t01Pedagogy.flow360Concepts}/>
@@ -141,7 +141,7 @@ function T01TutorialPage() {
         return <>
           <div className="lesson-kicker"><Gauge size={15}/> Reviewable setup</div>
           <h1>Make assumptions visible before running.</h1>
-          <p className="lesson-lead">Each value is labeled by provenance: provided by the question, derived deterministically, or inferred as a tutorial-fidelity proposal.</p>
+          <p className="lesson-lead">Each value is labeled by provenance: provided by the problem, calculated from the supplied data, or introduced as an explicit baseline assumption.</p>
           <div className="parameter-learning-grid">
             {t01ParameterCards.map((item) => <article key={item.label}>
               <div><span className={`provenance ${item.provenance}`}>{item.provenance}</span><strong>{item.label}</strong></div>
@@ -160,7 +160,7 @@ function T01TutorialPage() {
         return <>
           <div className="lesson-kicker"><RotateCcw size={15}/> Controlled variant</div>
           <h1>Change one thing, then explain the difference.</h1>
-          <p className="lesson-lead">Switch angle of attack below. The page applies the same RFC 7396 patch validated by the repository—mesh, models, reference values, and requested outputs remain identical.</p>
+          <p className="lesson-lead">Switch angle of attack below. The page applies an RFC 7396 merge patch; mesh, models, reference values, and requested outputs remain identical.</p>
           <TutorialPrediction experiment={t01Pedagogy.experiments[0]}/>
           <div className="alpha-experiment">
             <div className="alpha-control" role="group" aria-label="Angle of attack">
@@ -183,8 +183,8 @@ function T01TutorialPage() {
       case 'evidence':
         return <>
           <div className="lesson-kicker"><ShieldCheck size={15}/> Evidence contract</div>
-          <h1>Decide what “trustworthy” means before the run.</h1>
-          <p className="lesson-lead">Review each condition. These checks prevent a completed solver job from being mistaken for an engineering answer.</p>
+          <h1>Define the run acceptance conditions.</h1>
+          <p className="lesson-lead">Require acceptable mesh quality, converged residuals, stable force histories, and interpretable surface fields.</p>
           <div className="evidence-checklist">
             {t01Evidence.map((item) => {
               const selected = evidenceReviewed.includes(item.title)
@@ -202,10 +202,10 @@ function T01TutorialPage() {
         return <>
           <div className="lesson-kicker"><Cloud size={15}/> Execution boundary</div>
           <h1>The setup is ready for a reviewed cloud run.</h1>
-          <p className="lesson-lead">The browser lesson is complete. Creating meshes and Cases consumes Flow360 resources, so the actual submission remains an explicit action inside the project workspace.</p>
+          <p className="lesson-lead">The baseline and 5° parameters have passed local validation. Creating meshes and Cases consumes Flow360 resources, so submission remains an explicit action inside the project workspace.</p>
           <div className="run-readiness-card">
             <div className="run-ready-icon"><CheckCircle2 size={30}/></div>
-            <div><span>LOCAL TUTORIAL STATUS</span><strong>Baseline and 5° variant validated</strong><p>35 schema and workflow capabilities are backed by the pinned Flow360 25.10.3 tutorial artifact.</p></div>
+            <div><span>CONFIGURATION STATUS</span><strong>Baseline and 5° variant validated</strong><p>Both setups use the same geometry, mesh, models, reference values, and outputs; alpha is the only parameter difference.</p></div>
           </div>
           <TutorialTransferCheck items={t01Pedagogy.transferQuestions}/>
           <TutorialEnvironmentBuilder status={status}/>
@@ -218,7 +218,7 @@ function T01TutorialPage() {
       <TopBar status={status} title="Guided tutorial · T01" />
       <aside className="tutorial-outline">
         <Link className="tutorial-back" to="/tutorials"><ArrowLeft size={14}/> All tutorials</Link>
-        <div className="tutorial-outline-title"><span>T01</span><h2>First trustworthy lift and drag result</h2><small>Foundation · 15–20 min</small></div>
+        <div className="tutorial-outline-title"><span>T01</span><h2>Aircraft lift and drag at two angles of attack</h2><small>Foundation · 15–20 min</small></div>
         <div className="tutorial-progress"><div><span>Progress</span><strong>{tutorialProgress(completed)}%</strong></div><progress value={tutorialProgress(completed)} max="100" /></div>
         <nav aria-label="Tutorial steps">
           {t01Steps.map((item, index) => <button key={item.id} className={`${index === stepIndex ? 'active' : ''} ${completed.includes(item.id) ? 'complete' : ''}`} onClick={() => setStepIndex(index)}>
