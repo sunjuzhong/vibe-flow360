@@ -25,6 +25,29 @@ export type AgentState = {
   execution: boolean
 }
 
+export type ResultColumnSummary = {
+  field: string
+  kind: 'numeric' | 'text'
+  count: number
+  missing: number
+  unique: number
+  minimum?: number
+  maximum?: number
+  mean?: number
+  first?: string
+  last?: string
+  sample_values?: string[]
+}
+
+export type ResultInterpretationRequest = {
+  path: string
+  language: string
+  total_rows: number
+  delimiter: string
+  columns: ResultColumnSummary[]
+  sample_rows: Array<Record<string, string>>
+}
+
 export type ChatMessage = {
   role: 'user' | 'assistant'
   content: string
@@ -1176,6 +1199,8 @@ export const api = {
     return body
   },
   agentState: () => json<AgentState>('/api/agent/state'),
+  interpretResult: (input: ResultInterpretationRequest) =>
+    mutate<{ interpretation: string }>('/api/agent/interpret-result', input),
   agentChatSession: (projectId: string, scopeType: 'project' | 'resource' | 'draft', scopeId?: string, resourceId?: string) => {
     const params = new URLSearchParams({ project_id: projectId })
     params.set('scope_type', scopeType)

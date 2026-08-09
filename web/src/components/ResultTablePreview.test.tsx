@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ResultTablePreview, isTabularResult, parseResultTable } from './ResultTablePreview'
+import { I18nProvider } from '../i18n'
+import { ResultTablePreview, isTabularResult, parseResultTable, summarizeResultTable } from './ResultTablePreview'
 
 describe('parseResultTable', () => {
   it('parses quoted CSV cells and fills uneven rows', () => {
@@ -32,12 +33,24 @@ describe('parseResultTable', () => {
     expect(isTabularResult('monitor.bin', 'dat')).toBe(true)
     expect(isTabularResult('volume.vtu')).toBe(false)
   })
+
+  it('summarizes every parsed row and bounds representative samples for AI interpretation', () => {
+    const table = parseResultTable(`step,value,label\n${Array.from({ length: 5101 }, (_, index) => `${index + 1},${index * 2},${index % 2 ? 'odd' : 'even'}`).join('\n')}`, 'result.csv')
+    const summary = summarizeResultTable(table, 'result.csv', 'zh-CN')
+
+    expect(summary.total_rows).toBe(5101)
+    expect(table.rows).toHaveLength(5000)
+    expect(summary.columns.find((column) => column.field === 'value')?.mean).toBe(5100)
+    expect(summary.columns.find((column) => column.field === 'label')?.unique).toBe(2)
+    expect(summary.sample_rows).toHaveLength(24)
+    expect(summary.sample_rows.at(-1)?.step).toBe('5101')
+  })
 })
 
 describe('ResultTablePreview', () => {
   it('renders an accessible adaptive result explorer', () => {
     const markup = renderToStaticMarkup(
-      <ResultTablePreview path="results/forces.csv" content={'step,cl\n1,0.5'} onClose={() => undefined} />,
+      <I18nProvider><ResultTablePreview path="results/forces.csv" content={'step,cl\n1,0.5\n2,0.7'} onClose={() => undefined} /></I18nProvider>,
     )
 
     expect(markup).toContain('role="dialog"')
@@ -46,5 +59,7 @@ describe('ResultTablePreview', () => {
     expect(markup).toContain('Chart')
     expect(markup).toContain('Table')
     expect(markup).toContain('Close result preview')
+    expect(markup).toContain('AI interpretation')
+    expect(markup).toContain('result-chart-hit-point')
   })
 })

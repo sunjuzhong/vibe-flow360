@@ -1,5 +1,6 @@
 import { BarChart3, Check, LineChart, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useI18n } from '../i18n'
 import type { ParsedResultTable } from './ResultTablePreview'
 
 export type ChartKind = 'line' | 'bar' | 'scatter'
@@ -137,6 +138,15 @@ function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
   kind: ChartKind
   scale: ScaleKind
 }) {
+  const { t } = useI18n()
+  const [hovered, setHovered] = useState<{
+    dataset: string
+    column: string
+    xLabel: string
+    value: number
+    left: number
+    top: number
+  } | null>(null)
   const width = 900
   const height = 430
   const margin = { left: 70, right: 24, top: 28, bottom: 54 }
@@ -163,7 +173,7 @@ function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
   })).filter((entry) => entry.points.length)
 
   if (!series.length) {
-    return <div className="result-chart-empty"><LineChart size={22} />Choose at least one numeric series to chart.</div>
+    return <div className="result-chart-empty"><LineChart size={22} />{t('Choose at least one numeric series to chart.')}</div>
   }
 
   const xValues = series.flatMap((entry) => entry.points.map((point) => point.x))
@@ -185,10 +195,20 @@ function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
     const transformed = yMax - ratio * (yMax - yMin)
     return { y: margin.top + ratio * plotHeight, value: scale === 'log' ? 10 ** transformed : transformed }
   })
+  const showPoint = (entry: { dataset: string; column: string }, point: { x: number; y: number; xLabel: string }) => {
+    setHovered({
+      dataset: entry.dataset,
+      column: entry.column,
+      xLabel: point.xLabel,
+      value: point.y,
+      left: xScale(point.x) / width * 100,
+      top: yScale(point.y) / height * 100,
+    })
+  }
 
   return (
     <div className="result-chart-canvas">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${kind} chart of ${yColumns.join(', ')}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t(`${kind} chart of ${yColumns.join(', ')}`)} onPointerLeave={() => setHovered(null)}>
         <defs>
           <linearGradient id="result-chart-bg" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#fbfcf8" />
@@ -210,23 +230,33 @@ function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
             const barWidth = Math.max(2, Math.min(34, plotWidth / Math.max(1, entry.points.length) * 0.65))
             return <g key={`${entry.dataset}-${entry.column}`}>{entry.points.map((point) => {
               const y = yScale(point.y)
-              return <rect key={point.rowIndex} x={xScale(point.x) - barWidth / 2} y={y} width={barWidth} height={Math.max(1, height - margin.bottom - y)} rx="2" fill={color} opacity=".84"><title>{`${fileLabel(entry.dataset)} · ${point.xLabel}\n${entry.column}: ${point.y}`}</title></rect>
+              return <rect key={point.rowIndex} x={xScale(point.x) - barWidth / 2} y={y} width={barWidth} height={Math.max(1, height - margin.bottom - y)} rx="2" fill={color} opacity=".84" tabIndex={0} aria-label={`${xColumn ?? t('Row')}: ${point.xLabel}; ${entry.column}: ${point.y}`} onPointerEnter={() => showPoint(entry, point)} onFocus={() => showPoint(entry, point)} onBlur={() => setHovered(null)} />
             })}</g>
           }
           return (
             <g key={`${entry.dataset}-${entry.column}`}>
               {kind === 'line' && <polyline points={points} fill="none" stroke={color} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />}
+              {entry.points.map((point, pointIndex) => (
+                <circle className="result-chart-hit-point" key={`hit-${point.rowIndex}`} cx={xScale(point.x)} cy={yScale(point.y)} r="7" fill="transparent" tabIndex={pointIndex % Math.max(1, Math.floor(entry.points.length / 40)) === 0 ? 0 : -1} aria-label={`${xColumn ?? t('Row')}: ${point.xLabel}; ${entry.column}: ${point.y}`} onPointerEnter={() => showPoint(entry, point)} onFocus={() => showPoint(entry, point)} onBlur={() => setHovered(null)} />
+              ))}
               {entry.points.filter((_, pointIndex) => kind === 'scatter' || pointIndex % Math.max(1, Math.floor(entry.points.length / 40)) === 0).map((point) => (
-                <circle key={point.rowIndex} cx={xScale(point.x)} cy={yScale(point.y)} r={kind === 'scatter' ? 3 : 2.2} fill={color}>
-                  <title>{`${fileLabel(entry.dataset)} · ${entry.column}\n${xColumn ?? 'Row'}: ${point.xLabel}\nValue: ${point.y}`}</title>
-                </circle>
+                <circle key={point.rowIndex} cx={xScale(point.x)} cy={yScale(point.y)} r={kind === 'scatter' ? 3 : 2.2} fill={color} pointerEvents="none" />
               ))}
             </g>
           )
         })}
-        <text x={margin.left + plotWidth / 2} y={height - 15} textAnchor="middle" className="result-chart-label">{xColumn ?? 'Row index'}</text>
-        <text transform={`translate(17 ${margin.top + plotHeight / 2}) rotate(-90)`} textAnchor="middle" className="result-chart-label">{scale === 'log' ? 'Value · log₁₀ scale' : 'Value'}</text>
+        <text x={margin.left + plotWidth / 2} y={height - 15} textAnchor="middle" className="result-chart-label">{xColumn ?? t('Row index')}</text>
+        <text transform={`translate(17 ${margin.top + plotHeight / 2}) rotate(-90)`} textAnchor="middle" className="result-chart-label">{t(scale === 'log' ? 'Value · log₁₀ scale' : 'Value')}</text>
       </svg>
+      {hovered && (
+        <div className="result-chart-tooltip" role="tooltip" style={{ left: `${hovered.left}%`, top: `${hovered.top}%` }}>
+          <strong>{fileLabel(hovered.dataset)}</strong>
+          <dl>
+            <div><dt>{xColumn ?? t('Row')}</dt><dd>{hovered.xLabel}</dd></div>
+            <div><dt>{hovered.column}</dt><dd>{hovered.value}</dd></div>
+          </dl>
+        </div>
+      )}
       <div className="result-chart-legend">
         {series.map((entry, index) => <span key={`${entry.dataset}-${entry.column}`}><i style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />{datasets.length > 1 && <b>{fileLabel(entry.dataset)}</b>}{entry.column}</span>)}
       </div>
@@ -239,6 +269,7 @@ export function ResultChartPanel({ datasets, recommendation, onRemoveDataset }: 
   recommendation: ChartRecommendation
   onRemoveDataset?: (path: string) => void
 }) {
+  const { t } = useI18n()
   const [xColumn, setXColumn] = useState<string | null>(recommendation.xColumn)
   const [yColumns, setYColumns] = useState<string[]>(recommendation.yColumns)
   const [kind, setKind] = useState<ChartKind>(recommendation.kind)
@@ -266,25 +297,25 @@ export function ResultChartPanel({ datasets, recommendation, onRemoveDataset }: 
     <div className="result-chart-panel">
       <aside className="result-chart-controls">
         <section>
-          <span className="result-chart-kicker">DATASETS</span>
+          <span className="result-chart-kicker">{t('DATASETS')}</span>
           <div className="result-chart-datasets">
             {datasets.map((dataset, index) => (
               <div key={dataset.path}>
                 <i style={{ background: SERIES_COLORS[(index * Math.max(1, yColumns.length)) % SERIES_COLORS.length] }} />
-                <span><strong>{fileLabel(dataset.path)}</strong><small>{dataset.table.totalRows.toLocaleString()} rows</small></span>
-                {index > 0 && onRemoveDataset && <button onClick={() => onRemoveDataset(dataset.path)} aria-label={`Remove ${fileLabel(dataset.path)}`}><X size={11} /></button>}
+                <span><strong>{fileLabel(dataset.path)}</strong><small>{t(`${dataset.table.totalRows.toLocaleString()} rows`)}</small></span>
+                {index > 0 && onRemoveDataset && <button onClick={() => onRemoveDataset(dataset.path)} aria-label={t(`Remove ${fileLabel(dataset.path)}`)}><X size={11} /></button>}
               </div>
             ))}
           </div>
         </section>
         <section>
-          <label>Horizontal axis<select value={xColumn ?? ''} onChange={(event) => setXColumn(event.target.value || null)}>
-            <option value="">Row index</option>
+          <label>{t('Horizontal axis')}<select value={xColumn ?? ''} onChange={(event) => setXColumn(event.target.value || null)}>
+            <option value="">{t('Row index')}</option>
             {commonColumns.map((profile) => <option value={profile.name} key={profile.name}>{profile.name}</option>)}
           </select></label>
         </section>
         <section>
-          <span className="result-chart-kicker">SERIES · MAX 4</span>
+          <span className="result-chart-kicker">{t('SERIES · MAX 4')}</span>
           <div className="result-chart-series">
             {numericProfiles.filter((profile) => profile.name !== xColumn && datasets.every((dataset) => dataset.table.headers.includes(profile.name))).map((profile) => (
               <button className={yColumns.includes(profile.name) ? 'selected' : ''} onClick={() => toggleSeries(profile.name)} key={profile.name}>
@@ -294,12 +325,12 @@ export function ResultChartPanel({ datasets, recommendation, onRemoveDataset }: 
           </div>
         </section>
         <section className="result-chart-control-grid">
-          <label>Chart<select value={kind} onChange={(event) => setKind(event.target.value as ChartKind)}><option value="line">Line</option><option value="scatter">Scatter</option><option value="bar">Bar</option></select></label>
-          <label>Scale<select value={scale} onChange={(event) => setScale(event.target.value as ScaleKind)}><option value="linear">Linear</option><option value="log">Log₁₀</option></select></label>
+          <label>{t('Chart')}<select value={kind} onChange={(event) => setKind(event.target.value as ChartKind)}><option value="line">{t('Line')}</option><option value="scatter">{t('Scatter')}</option><option value="bar">{t('Bar')}</option></select></label>
+          <label>{t('Scale')}<select value={scale} onChange={(event) => setScale(event.target.value as ScaleKind)}><option value="linear">{t('Linear')}</option><option value="log">Log₁₀</option></select></label>
         </section>
       </aside>
       <main className="result-chart-stage">
-        <div className="result-chart-insight"><BarChart3 size={14} /><span><strong>Adaptive view</strong>{recommendation.reason}</span></div>
+        <div className="result-chart-insight"><BarChart3 size={14} /><span><strong>{t('Adaptive view')}</strong>{t(recommendation.reason)}</span></div>
         <ChartCanvas datasets={datasets} xColumn={xColumn} yColumns={yColumns} kind={kind} scale={scale} />
       </main>
     </div>
@@ -313,15 +344,16 @@ export function DatasetPicker({ candidates, selected, loadingPath, error, onAdd 
   error?: string
   onAdd: (path: string) => void
 }) {
+  const { t } = useI18n()
   const available = candidates.filter((candidate) => !selected.includes(candidate.path))
   const [choice, setChoice] = useState('')
   return (
     <div className="result-dataset-picker">
-      <label>Compare compatible CSV<select value={choice} onChange={(event) => setChoice(event.target.value)} disabled={!available.length || Boolean(loadingPath)}>
-        <option value="">{available.length ? 'Select another result…' : 'All compatible candidates selected'}</option>
+      <label>{t('Compare compatible CSV')}<select value={choice} onChange={(event) => setChoice(event.target.value)} disabled={!available.length || Boolean(loadingPath)}>
+        <option value="">{t(available.length ? 'Select another result…' : 'All compatible candidates selected')}</option>
         {available.map((candidate) => <option value={candidate.path} key={candidate.path}>{candidate.label ?? fileLabel(candidate.path)}</option>)}
       </select></label>
-      <button disabled={!choice || Boolean(loadingPath)} onClick={() => { onAdd(choice); setChoice('') }}><Plus size={12} />{loadingPath ? 'Checking…' : 'Add dataset'}</button>
+      <button disabled={!choice || Boolean(loadingPath)} onClick={() => { onAdd(choice); setChoice('') }}><Plus size={12} />{t(loadingPath ? 'Checking…' : 'Add dataset')}</button>
       {error && <span role="alert">{error}</span>}
     </div>
   )

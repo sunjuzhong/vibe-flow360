@@ -1,5 +1,8 @@
-import { AlertCircle, BarChart3, FileSpreadsheet, RefreshCw, Table2, X } from 'lucide-react'
+import { AlertCircle, BarChart3, FileSpreadsheet, Loader2, RefreshCw, Sparkles, Table2, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import { api, type ResultInterpretationRequest } from '../api/client'
+import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { DatasetPicker, datasetCompatibility, recommendResultChart, ResultChartPanel, type ChartDataset } from './ResultChartPanel'
 
@@ -10,9 +13,51 @@ const MAX_PREVIEW_COLUMNS = 40
 export type ParsedResultTable = {
   headers: string[]
   rows: string[][]
+  analysisRows: string[][]
   totalRows: number
   truncated: boolean
   delimiter: 'comma' | 'tab' | 'whitespace'
+}
+
+export function summarizeResultTable(table: ParsedResultTable, path: string, language: string): ResultInterpretationRequest {
+  const clip = (value: string, maximum = 500) => value.length > maximum ? `${value.slice(0, maximum)}…` : value
+  const columns = table.headers.map((field, columnIndex) => {
+    const values = table.analysisRows.map((row) => row[columnIndex] ?? '')
+    const present = values.filter((value) => value.trim() !== '')
+    const numbers = present.map(Number).filter(Number.isFinite)
+    const numeric = present.length > 0 && numbers.length / present.length >= 0.9
+    const base = {
+      field: clip(field, 160),
+      kind: numeric ? 'numeric' as const : 'text' as const,
+      count: present.length,
+      missing: values.length - present.length,
+      unique: new Set(present).size,
+      first: present[0] === undefined ? undefined : clip(present[0]),
+      last: present[present.length - 1] === undefined ? undefined : clip(present[present.length - 1]),
+    }
+    if (!numeric) return { ...base, sample_values: Array.from(new Set(present)).slice(0, 8).map((value) => clip(value)) }
+    return {
+      ...base,
+      minimum: Math.min(...numbers),
+      maximum: Math.max(...numbers),
+      mean: numbers.reduce((sum, value) => sum + value, 0) / numbers.length,
+    }
+  })
+  const sampleIndexes = new Set<number>()
+  const sampleCount = Math.min(24, table.analysisRows.length)
+  for (let index = 0; index < sampleCount; index += 1) {
+    sampleIndexes.add(sampleCount === 1 ? 0 : Math.round(index * (table.analysisRows.length - 1) / (sampleCount - 1)))
+  }
+  return {
+    path,
+    language,
+    total_rows: table.totalRows,
+    delimiter: table.delimiter,
+    columns,
+    sample_rows: Array.from(sampleIndexes).map((rowIndex) => Object.fromEntries(
+      table.headers.map((header, columnIndex) => [clip(header, 160), clip(table.analysisRows[rowIndex]?.[columnIndex] ?? '')]),
+    )),
+  }
 }
 
 function parseQuotedRows(content: string, delimiter: ',' | '\t'): string[][] {
@@ -92,13 +137,15 @@ export function parseResultTable(content: string, path = ''): ParsedResultTable 
     firstRow[index]?.trim() || `Column ${index + 1}`
   ))
   const dataRows = parsedRows.slice(1)
-  const rows = dataRows.slice(0, MAX_CHART_ROWS).map((row) => (
+  const analysisRows = dataRows.map((row) => (
     Array.from({ length: columnCount }, (_, index) => row[index] ?? '')
   ))
+  const rows = analysisRows.slice(0, MAX_CHART_ROWS)
 
   return {
     headers,
     rows,
+    analysisRows,
     totalRows: dataRows.length,
     truncated: dataRows.length > MAX_CHART_ROWS || parsedRows.some((row) => row.length > MAX_PREVIEW_COLUMNS),
     delimiter: detected === ',' ? 'comma' : detected === '\t' ? 'tab' : 'whitespace',
@@ -126,6 +173,7 @@ export function ResultTablePreview({
   loadCandidate?: (path: string) => Promise<string>
   onClose: () => void
 }) {
+  const { t, language } = useI18n()
   const titleId = useId()
   const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, 'button.icon-button')
   const table = useMemo(() => content === undefined ? null : parseResultTable(content, path), [content, path])
@@ -135,6 +183,9 @@ export function ResultTablePreview({
   const [tablePath, setTablePath] = useState(path)
   const [candidateLoading, setCandidateLoading] = useState('')
   const [candidateError, setCandidateError] = useState('')
+  const [interpretation, setInterpretation] = useState('')
+  const [interpretationError, setInterpretationError] = useState('')
+  const [interpreting, setInterpreting] = useState(false)
   const datasets = useMemo<ChartDataset[]>(() => table ? [{ path, table }, ...extraDatasets] : extraDatasets, [extraDatasets, path, table])
   const selectedTable = datasets.find((dataset) => dataset.path === tablePath) ?? datasets[0]
 
@@ -142,6 +193,8 @@ export function ResultTablePreview({
     setExtraDatasets([])
     setTablePath(path)
     setCandidateError('')
+    setInterpretation('')
+    setInterpretationError('')
   }, [path])
 
   useEffect(() => {
@@ -168,6 +221,20 @@ export function ResultTablePreview({
     }
   }
 
+  const interpret = async () => {
+    if (!table || interpreting) return
+    setInterpreting(true)
+    setInterpretationError('')
+    try {
+      const result = await api.interpretResult(summarizeResultTable(table, path, language))
+      setInterpretation(result.interpretation)
+    } catch (failure) {
+      setInterpretationError(String(failure).replace('Error: ', ''))
+    } finally {
+      setInterpreting(false)
+    }
+  }
+
   return (
     <div ref={dialogRef} className="result-preview-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <section className="result-preview-dialog">
@@ -179,12 +246,12 @@ export function ResultTablePreview({
               <small>{path}</small>
             </span>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close result preview"><X size={15} /></button>
+          <button className="icon-button" onClick={onClose} aria-label={t('Close result preview')}><X size={15} /></button>
         </header>
 
         {loading && (
           <div className="result-preview-state" role="status">
-            <RefreshCw size={18} className="spin" /> Loading result data…
+            <RefreshCw size={18} className="spin" /> {t('Loading result data…')}
           </div>
         )}
         {error && (
@@ -195,16 +262,26 @@ export function ResultTablePreview({
         {!loading && !error && table && (
           <>
             <div className="result-preview-meta">
-              <span>{table.totalRows.toLocaleString()} data rows</span>
-              <span>{table.headers.length} columns</span>
-              <span>{table.delimiter} separated</span>
-              {table.truncated && <em>Chart data truncated</em>}
-              {table.totalRows > MAX_TABLE_ROWS && <em>Table shows first {MAX_TABLE_ROWS}</em>}
-              <div className="result-preview-view-toggle" role="group" aria-label="Result view">
-                <button className={view === 'chart' ? 'selected' : ''} onClick={() => setView('chart')} disabled={!recommendation?.yColumns.length}><BarChart3 size={12} />Chart</button>
-                <button className={view === 'table' ? 'selected' : ''} onClick={() => setView('table')}><Table2 size={12} />Table</button>
+              <span>{t(`${table.totalRows.toLocaleString()} data rows`)}</span>
+              <span>{t(`${table.headers.length} columns`)}</span>
+              <span>{t(`${table.delimiter} separated`)}</span>
+              {table.truncated && <em>{t('Chart data truncated')}</em>}
+              {table.totalRows > MAX_TABLE_ROWS && <em>{t(`Table shows first ${MAX_TABLE_ROWS}`)}</em>}
+              <button className="result-ai-trigger" type="button" onClick={() => void interpret()} disabled={interpreting || table.rows.length === 0}>
+                {interpreting ? <Loader2 className="spin" size={12} /> : <Sparkles size={12} />}
+                {t(interpreting ? 'Interpreting…' : interpretation ? 'Interpret again' : 'AI interpretation')}
+              </button>
+              <div className="result-preview-view-toggle" role="group" aria-label={t('Result view')}>
+                <button className={view === 'chart' ? 'selected' : ''} onClick={() => setView('chart')} disabled={!recommendation?.yColumns.length}><BarChart3 size={12} />{t('Chart')}</button>
+                <button className={view === 'table' ? 'selected' : ''} onClick={() => setView('table')}><Table2 size={12} />{t('Table')}</button>
               </div>
             </div>
+            {(interpretation || interpretationError) && (
+              <section className={`result-ai-interpretation${interpretationError ? ' error' : ''}`} aria-live="polite">
+                <header><Sparkles size={14} /><strong>{t('AI interpretation')}</strong><button type="button" onClick={() => { setInterpretation(''); setInterpretationError('') }} aria-label={t('Close AI interpretation')}><X size={12} /></button></header>
+                {interpretationError ? <p role="alert">{t(interpretationError)}</p> : <ReactMarkdown>{interpretation}</ReactMarkdown>}
+              </section>
+            )}
             {view === 'chart' && recommendation && (
               <>
                 {loadCandidate && candidates.length > 0 && (
@@ -223,7 +300,7 @@ export function ResultTablePreview({
             {view === 'table' && selectedTable && (
               <div className="result-preview-content">
                 {datasets.length > 1 && (
-                  <label className="result-table-dataset-select">Dataset<select value={selectedTable.path} onChange={(event) => setTablePath(event.target.value)}>{datasets.map((dataset) => <option value={dataset.path} key={dataset.path}>{dataset.path.split('/').pop()}</option>)}</select></label>
+                  <label className="result-table-dataset-select">{t('Dataset')}<select value={selectedTable.path} onChange={(event) => setTablePath(event.target.value)}>{datasets.map((dataset) => <option value={dataset.path} key={dataset.path}>{dataset.path.split('/').pop()}</option>)}</select></label>
                 )}
                 <table className="result-preview-table">
                   <thead>
@@ -239,7 +316,7 @@ export function ResultTablePreview({
                     ))}
                   </tbody>
                 </table>
-                {selectedTable.table.rows.length === 0 && <div className="result-preview-empty">This result contains headers but no data rows.</div>}
+                {selectedTable.table.rows.length === 0 && <div className="result-preview-empty">{t('This result contains headers but no data rows.')}</div>}
               </div>
             )}
           </>

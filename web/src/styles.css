@@ -2339,6 +2339,17 @@ button { color: inherit; }
 .result-preview-view-toggle button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 5px; color: #7c8378; background: transparent; font: 8px 'DM Sans',sans-serif; cursor: pointer; }
 .result-preview-view-toggle button.selected { color: #4f641d; background: #fff; box-shadow: 0 1px 4px rgba(52,63,36,.12); }
 .result-preview-view-toggle button:disabled { cursor: not-allowed; opacity: .42; }
+.result-ai-trigger { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 5px 8px; border: 1px solid #cfdbaa; border-radius: 6px; color: #52691d; background: #f7faee; font: 8px 'DM Sans',sans-serif; cursor: pointer; }
+.result-ai-trigger:hover:not(:disabled) { border-color: #aebe77; background: #eef5dd; }
+.result-ai-trigger:disabled { cursor: wait; opacity: .62; }
+.result-ai-trigger + .result-preview-view-toggle { margin-left: 0; }
+.result-ai-interpretation { max-height: 220px; overflow: auto; padding: 10px 14px; border-bottom: 1px solid #dce2d3; color: #4f584b; background: #f7faef; font-size: 9px; line-height: 1.55; }
+.result-ai-interpretation header { display: flex; position: sticky; z-index: 1; top: -10px; align-items: center; gap: 6px; padding: 7px 0 5px; color: #566b23; background: #f7faef; }
+.result-ai-interpretation header button { display: grid; width: 22px; height: 22px; margin-left: auto; place-items: center; border: 0; border-radius: 5px; color: #77806f; background: transparent; cursor: pointer; }
+.result-ai-interpretation h2,.result-ai-interpretation h3 { margin: 8px 0 3px; color: #46551f; font-size: 10px; }
+.result-ai-interpretation p { margin: 4px 0; }
+.result-ai-interpretation ul,.result-ai-interpretation ol { margin: 4px 0; padding-left: 18px; }
+.result-ai-interpretation.error { color: #985243; background: #fbf2ef; }
 .result-dataset-picker { display: grid; grid-template-columns: minmax(220px,1fr) auto; align-items: end; gap: 8px; padding: 8px 13px; border-bottom: 1px solid #dde1d7; background: #f5f7f1; }
 .result-dataset-picker label,.result-chart-controls label { display: grid; gap: 4px; color: #7d8478; font-size: 8px; }
 .result-dataset-picker select,.result-chart-controls select,.result-table-dataset-select select { min-width: 0; height: 29px; padding: 0 25px 0 8px; border: 1px solid #d3d8cb; border-radius: 6px; color: #4e574b; background: #fff; font: 8px 'DM Mono',monospace; }
@@ -2371,8 +2382,16 @@ button { color: inherit; }
 .result-chart-insight svg { flex: none; color: #819f2f; }
 .result-chart-insight span,.result-chart-insight strong { display: block; }
 .result-chart-insight strong { margin-bottom: 1px; color: #50611f; }
-.result-chart-canvas { min-width: 620px; padding: 4px 14px 12px; }
+.result-chart-canvas { position: relative; min-width: 620px; padding: 4px 14px 12px; }
 .result-chart-canvas svg { display: block; width: 100%; height: auto; overflow: visible; }
+.result-chart-hit-point { cursor: crosshair; outline: none; }
+.result-chart-hit-point:focus { fill: rgba(130,166,31,.2); stroke: #607d17; stroke-width: 1.5px; }
+.result-chart-tooltip { position: absolute; z-index: 2; min-width: 150px; max-width: 240px; padding: 8px 9px; pointer-events: none; transform: translate(-50%,calc(-100% - 9px)); border: 1px solid #cdd5c2; border-radius: 7px; color: #485043; background: rgba(255,255,252,.97); box-shadow: 0 6px 18px rgba(39,48,31,.16); font: 8px 'DM Mono',monospace; }
+.result-chart-tooltip strong { display: block; margin-bottom: 5px; overflow: hidden; color: #596b29; text-overflow: ellipsis; white-space: nowrap; }
+.result-chart-tooltip dl,.result-chart-tooltip dl div { margin: 0; }
+.result-chart-tooltip dl div { display: grid; grid-template-columns: minmax(55px,1fr) minmax(70px,auto); gap: 10px; padding: 2px 0; }
+.result-chart-tooltip dt { overflow: hidden; color: #7b8375; text-overflow: ellipsis; white-space: nowrap; }
+.result-chart-tooltip dd { margin: 0; color: #334750; text-align: right; font-variant-numeric: tabular-nums; }
 .result-chart-axis-text { fill: #879083; font: 10px 'DM Mono',monospace; }
 .result-chart-label { fill: #687364; font: 11px 'DM Sans',sans-serif; font-weight: 650; }
 .result-chart-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; padding: 0 10px; color: #687064; font: 8px 'DM Mono',monospace; }
