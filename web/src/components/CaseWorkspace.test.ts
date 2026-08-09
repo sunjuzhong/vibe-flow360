@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseSurfaceVisibilityMap, findSliceArchive, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseSurfaceVisibilityMap, findSliceArchive, isSliceArchiveResult, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -99,5 +99,13 @@ describe('findSliceArchive', () => {
     ])).toMatchObject({ path: 'results/slices.tar.gz', size_bytes: 123 })
     expect(findSliceArchive([{ name: 'slices.tar.gz' }])).toMatchObject({ name: 'slices.tar.gz' })
     expect(findSliceArchive([{ path: 'results/surfaces.tar.gz' }])).toBeNull()
+  })
+
+  it('only makes the canonical Slice archive playable', () => {
+    expect(isSliceArchiveResult({ path: 'results/slices.tar.gz' })).toBe(true)
+    expect(isSliceArchiveResult({ path: `results\\slices.tar.gz` })).toBe(true)
+    expect(isSliceArchiveResult({ name: 'slices.tar.gz' })).toBe(true)
+    expect(isSliceArchiveResult({ path: 'results/surfaces.tar.gz' })).toBe(false)
+    expect(isSliceArchiveResult({ path: 'downloads/slices.tar.gz' })).toBe(false)
   })
 })

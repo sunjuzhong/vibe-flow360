@@ -86,12 +86,16 @@ export type CaseStatusView =
   | 'failed'
   | 'unknown'
 
+type CaseResultRecord = NonNullable<NonNullable<ResourceDetail['results']>['records']>[number]
+
+export function isSliceArchiveResult(record: CaseResultRecord) {
+  const resultPath = String(record.path ?? '').replaceAll('\\', '/').toLowerCase()
+  const resultName = String(record.name ?? '').toLowerCase()
+  return resultPath === 'results/slices.tar.gz' || (!resultPath && resultName === 'slices.tar.gz')
+}
+
 export function findSliceArchive(records: NonNullable<ResourceDetail['results']>['records']) {
-  return records?.find((record) => {
-    const resultPath = String(record.path ?? '').replaceAll('\\', '/').toLowerCase()
-    const resultName = String(record.name ?? '').toLowerCase()
-    return resultPath === 'results/slices.tar.gz' || (!resultPath && resultName === 'slices.tar.gz')
-  }) ?? null
+  return records?.find(isSliceArchiveResult) ?? null
 }
 
 export function mapCaseStatus(detail: ResourceDetail | null): CaseStatusView {
@@ -449,14 +453,25 @@ export default function CaseWorkspace({
               const path = result.path
               const label = result.name ?? path ?? `Result ${index + 1}`
               const previewable = isTabularResult(path, result.file_type) && Boolean(path)
+              const slicePlayable = isSliceArchiveResult(result)
               const content = (
                 <>
-                  <FileOutput size={11} />
+                  {slicePlayable ? <Film size={11} /> : <FileOutput size={11} />}
                   <span title={path ?? result.name}>{label}</span>
-                  <small>{previewable ? 'Open' : result.file_type ?? 'file'}</small>
+                  <small>{slicePlayable || previewable ? t('Open') : result.file_type ?? 'file'}</small>
                 </>
               )
-              return previewable ? (
+              return slicePlayable ? (
+                <button
+                  type="button"
+                  className="case-result-row previewable"
+                  onClick={() => setActiveReviewDialog('slices')}
+                  aria-label={t('Time-series Slice player')}
+                  key={path ?? label}
+                >
+                  {content}
+                </button>
+              ) : previewable ? (
                 <button
                   type="button"
                   className="case-result-row previewable"
