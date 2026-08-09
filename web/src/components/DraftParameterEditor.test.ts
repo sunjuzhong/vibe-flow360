@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DynamicFormSchema } from '../api/client'
-import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAutoSyncReady, parseParameterJSON } from './DraftParameterEditor'
+import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAutoSyncReady, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -98,5 +98,21 @@ describe('Draft parameter editor', () => {
     expect(draftAutoSyncReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, saving: true })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, failedSyncFingerprint: ready.fingerprint })).toBe(false)
+  })
+
+  it('enables Review & Run only for the latest synced and valid revision', () => {
+    const ready = {
+      dirty: false,
+      saving: false,
+      syncError: '',
+      validationValid: true,
+      fingerprint: 'latest',
+      validatedFingerprint: 'latest',
+    }
+    expect(draftReviewRunReady(ready)).toBe(true)
+    expect(draftReviewRunReady({ ...ready, dirty: true })).toBe(false)
+    expect(draftReviewRunReady({ ...ready, syncError: 'offline' })).toBe(false)
+    expect(draftReviewRunReady({ ...ready, validationValid: false })).toBe(false)
+    expect(draftReviewRunReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
   })
 })

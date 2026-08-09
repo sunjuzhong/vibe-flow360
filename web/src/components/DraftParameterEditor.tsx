@@ -274,6 +274,24 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     return () => window.clearTimeout(timer)
   }, [candidateResult.fingerprint, candidateResult.value, dirty, failedSyncFingerprint, persistCandidate, saving, validatedFingerprint, validating, validation])
 
+  const reviewRunReady = draftReviewRunReady({
+    dirty,
+    saving,
+    syncError,
+    validationValid: validation?.valid === true,
+    fingerprint: candidateResult.fingerprint,
+    validatedFingerprint,
+  })
+  const reviewRunStatus = syncError
+    ? t('Retry Draft sync before Review & Run.')
+    : dirty || saving
+      ? t('Review & Run is available after the latest changes finish syncing.')
+      : !validation || validatedFingerprint !== candidateResult.fingerprint
+        ? t('Waiting for Flow360 validation before Review & Run.')
+        : !validation.valid
+          ? t('Resolve the Flow360 validation errors before Review & Run.')
+          : t('Latest Draft parameters are synced and ready for review.')
+
   if (readOnly) {
     return <JsonPreview value={previewValue} empty={t('Flow360 did not return simulation parameters.')} className="draft-json-preview" />
   }
@@ -398,7 +416,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       </section>
 
       <footer className="draft-config-actions">
-        <span>{t('Changes sync automatically after validation. You can sync immediately if needed.')}</span>
+        <span>{reviewRunStatus}</span>
         <button
           type="button"
           className="draft-parameter-save"
@@ -408,8 +426,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           {saving ? <RefreshCw size={13} className="spin" /> : <Save size={13} />}
           {saving ? t('Syncing…') : syncError ? t('Retry sync') : t('Sync now')}
         </button>
-        {onReviewRun && !dirty && validation?.valid && validatedFingerprint === candidateResult.fingerprint && (
-          <button type="button" className="draft-review-run" onClick={onReviewRun}><Play size={13} />{t('Review & Run')}</button>
+        {onReviewRun && (
+          <button type="button" className="draft-review-run" disabled={!reviewRunReady} title={reviewRunStatus} onClick={onReviewRun}><Play size={13} />{t('Review & Run')}</button>
         )}
       </footer>
     </div>
@@ -443,6 +461,29 @@ export function draftAutoSyncReady({
     && hasValidation
     && validatedFingerprint === fingerprint
     && failedSyncFingerprint !== fingerprint
+}
+
+export function draftReviewRunReady({
+  dirty,
+  saving,
+  syncError,
+  validationValid,
+  fingerprint,
+  validatedFingerprint,
+}: {
+  dirty: boolean
+  saving: boolean
+  syncError: string
+  validationValid: boolean
+  fingerprint: string
+  validatedFingerprint: string
+}) {
+  return !dirty
+    && !saving
+    && !syncError
+    && validationValid
+    && Boolean(fingerprint)
+    && validatedFingerprint === fingerprint
 }
 
 export function configuredExpressionPaths(schema: DynamicFormSchema, value: unknown, path = ''): string[] {
