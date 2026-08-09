@@ -1,9 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { createEngineeringLightRig, precisionFallbackNotice, Viewer3D, ViewerNavCube } from './Viewer3D'
+import { createEngineeringLightRig, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube } from './Viewer3D'
 
 describe('Viewer3D layout state', () => {
+  it('keeps the previous frame visible during a seamless asset transition', () => {
+    expect(shouldKeepPreviousAssetVisible(true, true, 'loading')).toBe(true)
+    expect(shouldKeepPreviousAssetVisible(false, true, 'loading')).toBe(false)
+    expect(shouldKeepPreviousAssetVisible(true, false, 'loading')).toBe(false)
+    expect(shouldKeepPreviousAssetVisible(true, true, 'ready')).toBe(false)
+  })
+
   it('marks the container as loading without rendering the controls gutter content', () => {
     const html = renderToStaticMarkup(
       <Viewer3D

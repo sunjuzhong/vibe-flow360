@@ -782,6 +782,7 @@
 .slice-player-next { margin: 0; padding: 9px 10px; border-radius: 7px; color: #70796b; background: #f1f2ed; font-size: 11px; line-height: 1.5; }
 .slice-playback { overflow: hidden; border: 1px solid #d9ddd0; border-radius: 10px; background: #fff; }
 .slice-playback-viewer { height: clamp(320px, 54vh, 620px); background: #eef0e9; }
+.slice-playback-viewer .viewer-3d-container,
 .slice-playback-viewer .viewer-3d { height: 100%; min-height: 0; }
 .slice-playback-controls { display: grid; grid-template-columns: 34px 38px 34px minmax(100px, 1fr) auto auto auto; align-items: center; gap: 7px; padding: 9px; border-top: 1px solid #e0e3da; }
 .slice-playback-controls button { display: grid; place-items: center; width: 34px; height: 32px; padding: 0; border: 1px solid #d8ddd0; border-radius: 7px; color: #5e6957; background: #fff; }

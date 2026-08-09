@@ -190,6 +190,14 @@ export type ViewerState =
   | { status: 'ready' }
   | { status: 'error'; message: string }
 
+export function shouldKeepPreviousAssetVisible(
+  preserveCameraOnAssetChange: boolean,
+  hasLoadedAsset: boolean,
+  status: ViewerState['status'],
+) {
+  return preserveCameraOnAssetChange && hasLoadedAsset && status === 'loading'
+}
+
 type Props = {
   manifest: ViewerManifest | null
   state: ViewerState
@@ -337,6 +345,8 @@ export function Viewer3D({
     ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
     : 'linear'
   const effectiveWireframe = wireframe ?? wireframeOn
+  const framePresentationRef = useRef({ selectedField, colormap, fieldRange, fieldScale, wireframe: effectiveWireframe })
+  framePresentationRef.current = { selectedField, colormap, fieldRange, fieldScale, wireframe: effectiveWireframe }
   const precisionSelection = precision.assetURL === manifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const unavailablePrecisionLevels = new Set(
@@ -482,21 +492,30 @@ export function Viewer3D({
     const scene = sceneRef.current
     if (!scene) return
 
-    assetDisposeRef.current?.()
-    assetDisposeRef.current = null
-    uvfAssetRef.current = null
-    meshesRef.current.clear()
-    if (assetRef.current) {
-      scene.remove(assetRef.current)
+    const previousRoot = assetRef.current
+    const previousDispose = assetDisposeRef.current
+    const retainPrevious = preserveCamera && previousRoot !== null
+    if (!retainPrevious) {
+      previousDispose?.()
+      assetDisposeRef.current = null
+      uvfAssetRef.current = null
+      meshesRef.current.clear()
+      if (previousRoot) scene.remove(previousRoot)
       assetRef.current = null
+      setAssetStats(null)
+      assetBoundsSphereRef.current = null
+      setAvailableFields([])
+      setInternalSelectedField(null)
     }
-    setAssetStats(null)
-    assetBoundsSphereRef.current = null
-    setAvailableFields([])
-    setInternalSelectedField(null)
 
     if (!manifest.asset_url) return
     let root: THREE.Object3D
+    let nextDispose: (() => void) | null = null
+    let nextUVFAsset: UVFAsset | null = null
+    let nextAssetStats: ViewerAssetStats | null = null
+    let nextPrecisionInfo = { levels: 1, currentLevel: 0 }
+    let nextFields: UVFFieldInfo[] = []
+    const nextMeshes = new Map<string, THREE.Mesh>()
     if (manifest.format === 'flow360-uvf') {
       const asset = await new UVFLoader().load(manifest.asset_url, {
         signal,
@@ -508,14 +527,11 @@ export function Viewer3D({
         return
       }
       root = asset.object
-      assetDisposeRef.current = asset.dispose
-      uvfAssetRef.current = asset
-      setAssetStats({ faces: asset.faces, edges: asset.edges, triangles: asset.triangles })
-      const switchableLevels = commonPrecisionLevels(asset.entityLODs)
-      setPrecisionInfo({ levels: switchableLevels, currentLevel: asset.currentLOD })
-      setAvailableFields(asset.fields)
-      onFieldsDiscoveredRef.current?.(asset.fields)
-      setInternalSelectedField(null)
+      nextDispose = asset.dispose
+      nextUVFAsset = asset
+      nextAssetStats = { faces: asset.faces, edges: asset.edges, triangles: asset.triangles }
+      nextPrecisionInfo = { levels: commonPrecisionLevels(asset.entityLODs), currentLevel: asset.currentLOD }
+      nextFields = asset.fields
     } else {
       const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
       if (signal.aborted) {
@@ -523,12 +539,7 @@ export function Viewer3D({
         return
       }
       root = gltf.scene
-      assetDisposeRef.current = () => disposeObject(root)
-      uvfAssetRef.current = null
-      setPrecisionInfo({ levels: 1, currentLevel: 0 })
-      setAvailableFields([])
-      onFieldsDiscoveredRef.current?.([])
-      setInternalSelectedField(null)
+      nextDispose = () => disposeObject(root)
     }
     const fallbackGroup = manifest.groups[0]
     root.traverse((object) => {
@@ -553,7 +564,7 @@ export function Viewer3D({
           side: THREE.DoubleSide,
         })
       }
-      meshesRef.current.set(`${groupId}-${object.uuid}`, object)
+      nextMeshes.set(`${groupId}-${object.uuid}`, object)
     })
     const bounds = new THREE.Box3().setFromObject(root)
     const size = bounds.getSize(new THREE.Vector3())
@@ -562,8 +573,31 @@ export function Viewer3D({
     const scale = 2 / maxDim
     root.scale.setScalar(scale)
     root.position.copy(center.multiplyScalar(-scale))
+    if (nextUVFAsset) {
+      const presentation = framePresentationRef.current
+      const nextField = nextFields.find((field) => field.name === presentation.selectedField)
+      applyFieldColoring(nextUVFAsset, presentation.selectedField, presentation.colormap, {
+        range: presentation.fieldRange,
+        scale: nextField
+          ? resolveFieldScale(presentation.fieldScale, nextField.min, nextField.max)
+          : 'linear',
+      })
+      setWireframeOverlay(nextUVFAsset, presentation.wireframe)
+    }
+    if (retainPrevious && previousRoot) {
+      scene.remove(previousRoot)
+      previousDispose?.()
+    }
     scene.add(root)
     assetRef.current = root
+    assetDisposeRef.current = nextDispose
+    uvfAssetRef.current = nextUVFAsset
+    meshesRef.current = nextMeshes
+    setAssetStats(nextAssetStats)
+    setPrecisionInfo(nextPrecisionInfo)
+    setAvailableFields(nextFields)
+    onFieldsDiscoveredRef.current?.(nextFields)
+    setInternalSelectedField(null)
     const assetBoundsSphere = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere())
     assetBoundsSphereRef.current = Number.isFinite(assetBoundsSphere.radius) && assetBoundsSphere.radius > 0
       ? assetBoundsSphere
@@ -1285,6 +1319,12 @@ export function Viewer3D({
   }
 
   const visibleState = state.status === 'ready' ? assetState : state
+  const retainingLoadedAsset = shouldKeepPreviousAssetVisible(
+    preserveCameraOnAssetChange,
+    assetRef.current !== null,
+    visibleState.status,
+  )
+  const viewerReady = visibleState.status === 'ready' || retainingLoadedAsset
 
   return (
     <div
@@ -1324,7 +1364,7 @@ export function Viewer3D({
           aria-hidden="true"
         />
       )}
-      {visibleState.status === 'loading' && (
+      {visibleState.status === 'loading' && !retainingLoadedAsset && (
         <div className="viewer-overlay viewer-loading" role="status" aria-live="polite">
           <div className="viewer-spinner" />
           <p>{viewerLoadingLabel(visibleState)}</p>
@@ -1336,10 +1376,10 @@ export function Viewer3D({
           <p>{visibleState.message}</p>
         </div>
       )}
-      {activePrecisionNotice && visibleState.status === 'ready' && (
+      {activePrecisionNotice && viewerReady && (
         <div className="viewer-precision-notice" role="status">{activePrecisionNotice}</div>
       )}
-      {visibleState.status === 'ready' && (
+      {viewerReady && (
         <>
           <ViewerNavCube onCommand={applyCameraCommand} />
           {(toolbar || assetStats) && (
@@ -1385,7 +1425,7 @@ export function Viewer3D({
           </div>
         </>
       )}
-      {snapStatus && visibleState.status === 'ready' && (
+      {snapStatus && viewerReady && (
         <div className={`viewer-snap-status viewer-snap-status-${snapStatus.mode}`} role="status" aria-live="polite">
           <strong>{snapStatus.label}</strong>
           {snapStatus.candidateCount > 1 && (
@@ -1393,7 +1433,7 @@ export function Viewer3D({
           )}
         </div>
       )}
-      {showFieldPanel && displayedFields.length > 0 && visibleState.status === 'ready' && (
+      {showFieldPanel && displayedFields.length > 0 && viewerReady && (
         <div className="viewer-field-panel">
           <label className="viewer-field-label">
             Field:
@@ -1453,7 +1493,7 @@ export function Viewer3D({
           )}
         </div>
       )}
-      {floatingPanel && visibleState.status === 'ready' && (
+      {floatingPanel && viewerReady && (
         <div className="viewer-field-panel viewer-floating-panel">
           {floatingPanel}
         </div>
