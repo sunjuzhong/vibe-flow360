@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -298,37 +299,65 @@ func TestStartProjectSyncReusesFreshCompletedMirror(t *testing.T) {
 
 func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	client := &fakeProjectSyncClient{
-		details: map[string]flow360.ResourceDetail{
-			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
-			"Case/case-1":    {ID: "case-1", Type: "Case", Errors: map[string]string{}},
-		},
-		failures: map[string]error{},
-	}
-	app := newProjectSyncTestServer(t, client)
-	app.syncProject(t.Context(), "prj-1", client)
+	for _, resource := range []struct{ type_, id string }{{"Geometry", "geo-1"}, {"Case", "case-1"}} {
+		t.Run(resource.type_, func(t *testing.T) {
+			client := &fakeProjectSyncClient{
+				details: map[string]flow360.ResourceDetail{
+					"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+					"Case/case-1":    {ID: "case-1", Type: "Case", Errors: map[string]string{}},
+				},
+				failures: map[string]error{},
+			}
+			app := newProjectSyncTestServer(t, client)
+			app.syncProject(t.Context(), "prj-1", client)
 
-	requestPreview := func() *httptest.ResponseRecorder {
-		recorder := httptest.NewRecorder()
-		requestContext, _ := gin.CreateTestContext(recorder)
-		requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
-		requestContext.Params = gin.Params{
-			{Key: "resource_type", Value: "Geometry"},
-			{Key: "resource_id", Value: "geo-1"},
-		}
-		app.flow360ResourceMeshPreview(requestContext)
-		return recorder
+			requestPreview := func() *httptest.ResponseRecorder {
+				recorder := httptest.NewRecorder()
+				requestContext, _ := gin.CreateTestContext(recorder)
+				requestContext.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/flow360/resources/%s/%s/preview-mesh", resource.type_, resource.id), nil)
+				requestContext.Params = gin.Params{
+					{Key: "resource_type", Value: resource.type_},
+					{Key: "resource_id", Value: resource.id},
+				}
+				app.flow360ResourceMeshPreview(requestContext)
+				return recorder
+			}
+			if first := requestPreview(); first.Code != http.StatusOK {
+				t.Fatalf("first preview got %d: %s", first.Code, first.Body)
+			}
+			if second := requestPreview(); second.Code != http.StatusOK {
+				t.Fatalf("cached preview got %d: %s", second.Code, second.Body)
+			}
+			client.mu.Lock()
+			defer client.mu.Unlock()
+			if client.visualizationCalls != 1 {
+				t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+			}
+		})
 	}
-	if first := requestPreview(); first.Code != http.StatusOK {
-		t.Fatalf("first preview got %d: %s", first.Code, first.Body)
+}
+
+func TestCaseMeshPreviewRepairsMirrorIdentityFromDetailCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := &fakeProjectSyncClient{failures: map[string]error{}}
+	app := newProjectSyncTestServer(t, client)
+	detail := json.RawMessage(`{"id":"case-cache","type":"Case","info":{"project_id":"prj-cache"}}`)
+	if _, err := app.cache.Put("resource-detail", "Case/case-cache", detail); err != nil {
+		t.Fatal(err)
 	}
-	if second := requestPreview(); second.Code != http.StatusOK {
-		t.Fatalf("cached preview got %d: %s", second.Code, second.Body)
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-cache/preview-mesh", nil)
+	requestContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Case"},
+		{Key: "resource_id", Value: "case-cache"},
 	}
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	if client.visualizationCalls != 1 {
-		t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+	app.flow360ResourceMeshPreview(requestContext)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Case preview got %d: %s", recorder.Code, recorder.Body)
+	}
+	if projectID, err := app.mirror.ResourceProjectID("Case", "case-cache"); err != nil || projectID != "prj-cache" {
+		t.Fatalf("mirror identity was not repaired: project=%q err=%v", projectID, err)
 	}
 }
 

@@ -4,7 +4,9 @@ import { sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
 import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
-const maxManifestBytes = 2 * 1024 * 1024
+// Case manifests carry result-field and boundary metadata in addition to the
+// render objects, so they can legitimately exceed the old 2 MiB cap.
+const maxManifestBytes = 8 * 1024 * 1024
 const maxBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_BUFFER_BYTES)
 const maxBufferFiles = 256
 const maxConcurrentBufferLoads = 4

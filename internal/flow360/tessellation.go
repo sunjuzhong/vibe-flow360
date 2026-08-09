@@ -16,7 +16,11 @@ import (
 )
 
 const (
-	maxTessellationManifestSize = 2 * 1024 * 1024
+	// Case manifests include result-field and boundary metadata and can exceed
+	// the original 2 MiB Geometry-oriented limit. Keep the cap bounded while
+	// matching the browser loader so large Cases remain renderable.
+	maxTessellationManifestSize = 8 * 1024 * 1024
+	maxTessellationEntries      = 100_000
 	maxTessellationFiles        = 64
 	maxSurfaceMeshFallbackSize  = 512 * 1024 * 1024
 	visualizationTimeout        = 30 * time.Minute
@@ -462,6 +466,10 @@ func (c *Client) ResourceVisualization(
 			fmt.Errorf("read manifest: %w", err),
 		)
 	}
+	manifest, err = normalizeVisualizationManifest(manifest)
+	if err != nil {
+		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
+	}
 	binPaths, err := TessellationDefaultBinPaths(manifest)
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
@@ -497,6 +505,72 @@ func (c *Client) ResourceVisualization(
 		Catalog:  catalog,
 		cleanup:  func() { _ = os.RemoveAll(staging) },
 	}, nil
+}
+
+// Some Case manifests contain placeholder SolidGeometry records without a
+// browser buffer alongside the renderable result surfaces. They are valid
+// Flow360 metadata but not valid UVF render objects. Remove only those empty
+// placeholders (and their directly attributed children) before the manifest
+// reaches the strict browser loader; unsafe or malformed paths still fail.
+func normalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, error) {
+	var entries []map[string]any
+	if !json.Valid(manifest) || json.Unmarshal(manifest, &entries) != nil {
+		return nil, errors.New("visualization manifest must be a JSON array")
+	}
+	if len(entries) == 0 || len(entries) > maxTessellationEntries {
+		return nil, errors.New("visualization manifest has an invalid entry count")
+	}
+	invalidSolids := map[string]struct{}{}
+	renderableSolids := 0
+	for _, entry := range entries {
+		if entry["type"] != "SolidGeometry" {
+			continue
+		}
+		id, _ := entry["id"].(string)
+		resources, _ := entry["resources"].(map[string]any)
+		buffers, _ := resources["buffers"].(map[string]any)
+		if buffers == nil {
+			invalidSolids[id] = struct{}{}
+			continue
+		}
+		selected, err := defaultTessellationBuffer(buffers)
+		if err != nil {
+			return nil, fmt.Errorf("object %q: %w", id, err)
+		}
+		path, hasPath := selected["path"].(string)
+		if !hasPath || strings.TrimSpace(path) == "" {
+			invalidSolids[id] = struct{}{}
+			continue
+		}
+		if _, err := ValidateVisualizationBufferPath(path); err != nil {
+			return nil, fmt.Errorf("object %q: %w", id, err)
+		}
+		renderableSolids++
+	}
+	if renderableSolids == 0 {
+		return nil, errors.New("visualization manifest has no renderable objects")
+	}
+	filtered := make([]map[string]any, 0, len(entries)-len(invalidSolids))
+	for _, entry := range entries {
+		id, _ := entry["id"].(string)
+		if _, invalid := invalidSolids[id]; invalid && entry["type"] == "SolidGeometry" {
+			continue
+		}
+		attributions, _ := entry["attributions"].(map[string]any)
+		parentID, _ := attributions["packedParentId"].(string)
+		if _, invalidParent := invalidSolids[parentID]; invalidParent {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("encode normalized visualization manifest: %w", err)
+	}
+	if len(encoded) > maxTessellationManifestSize {
+		return nil, fmt.Errorf("normalized visualization manifest exceeds %d byte limit", maxTessellationManifestSize)
+	}
+	return encoded, nil
 }
 
 func visualizationError(

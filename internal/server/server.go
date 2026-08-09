@@ -1804,6 +1804,7 @@ func (s *Server) flow360ResourcePreview(c *gin.Context) {
 func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	resourceType := c.Param("resource_type")
 	resourceID := c.Param("resource_id")
+	var visualizationErr error
 
 	if err := flow360.ValidateResourcePath(resourceType, resourceID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1829,14 +1830,15 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 			}
 		}
 		if s.projectSyncClient != nil {
-			projectID, projectErr := s.mirror.ResourceProjectID(resourceType, resourceID)
+			projectID, projectErr := s.ensureResourceMirrorIdentity(c.Request.Context(), resourceType, resourceID)
 			if projectErr == nil {
-				visualization, visualizationErr := s.projectSyncClient.ResourceVisualization(
+				visualization, downloadErr := s.projectSyncClient.ResourceVisualization(
 					c.Request.Context(),
 					resourceType,
 					resourceID,
 				)
-				if visualizationErr == nil {
+				visualizationErr = downloadErr
+				if downloadErr == nil {
 					defer visualization.Close()
 					var persistErr error
 					if len(visualization.Files) > 0 {
@@ -1854,8 +1856,12 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 							c.JSON(http.StatusOK, preview)
 							return
 						}
+					} else {
+						visualizationErr = persistErr
 					}
 				}
+			} else {
+				visualizationErr = projectErr
 			}
 		}
 		if cachedPreview != nil {
@@ -1863,6 +1869,15 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 			c.JSON(http.StatusOK, *cachedPreview)
 			return
 		}
+	}
+	if resourceType == "Case" && visualizationErr != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":    visualizationErr.Error(),
+			"format":   resourceType,
+			"groups":   []any{},
+			"warnings": []string{"Case visualization could not be prepared"},
+		})
+		return
 	}
 
 	if s.flow360 == nil {
@@ -1885,6 +1900,46 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func (s *Server) ensureResourceMirrorIdentity(ctx context.Context, resourceType, resourceID string) (string, error) {
+	if projectID, err := s.mirror.ResourceProjectID(resourceType, resourceID); err == nil {
+		return projectID, nil
+	}
+	var detail flow360.ResourceDetail
+	cacheKey := resourceType + "/" + resourceID
+	if s.cache != nil {
+		if entry, err := s.cache.Get("resource-detail", cacheKey); err == nil {
+			_ = json.Unmarshal(entry.Data, &detail)
+		}
+	}
+	if detail.ID != resourceID || !json.Valid(detail.Info) {
+		if s.projectSyncClient == nil {
+			return "", os.ErrNotExist
+		}
+		loaded, err := s.projectSyncClient.ResourceDetail(ctx, resourceType, resourceID)
+		if err != nil {
+			return "", err
+		}
+		if len(loaded.Errors) > 0 {
+			return "", errors.New("resource detail is incomplete")
+		}
+		detail = loaded
+	}
+	var info struct {
+		ProjectID string `json:"project_id"`
+	}
+	if json.Unmarshal(detail.Info, &info) != nil || strings.TrimSpace(info.ProjectID) == "" {
+		return "", errors.New("resource detail has no project_id")
+	}
+	payload, err := json.Marshal(detail)
+	if err != nil {
+		return "", err
+	}
+	if err := s.mirror.PutResource(strings.TrimSpace(info.ProjectID), resourceType, resourceID, payload); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(info.ProjectID), nil
 }
 
 func (s *Server) resourceVisualizationComplete(resourceType, resourceID string, manifest json.RawMessage) bool {
