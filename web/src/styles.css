@@ -5393,7 +5393,19 @@ button { color: inherit; }
 .draft-manager-confirm span { width: 100%; font-weight: 700; }
 .draft-manager-confirm .danger { color: #fff; border-color: #a64940; background: #a64940; }
 
-.agent-draft-update-dialog { width: min(720px, calc(100vw - 30px)); }
+.agent-draft-update-dialog {
+  display: flex;
+  width: min(720px, calc(100vw - 30px));
+  max-height: min(720px, calc(100dvh - 48px));
+  flex-direction: column;
+}
+.agent-draft-update-dialog > header,
+.agent-draft-update-dialog > footer { flex: 0 0 auto; }
+.agent-draft-update-dialog > .flow360-confirm-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .agent-draft-change-list { overflow: hidden; border: 1px solid #d9dfc7; border-radius: 9px; }
 .agent-draft-change-head,
 .agent-draft-change-list > div:not(.agent-draft-change-head) { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(90px, 1fr) minmax(90px, 1fr); }
