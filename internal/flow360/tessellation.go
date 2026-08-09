@@ -466,7 +466,7 @@ func (c *Client) ResourceVisualization(
 			fmt.Errorf("read manifest: %w", err),
 		)
 	}
-	manifest, err = normalizeVisualizationManifest(manifest)
+	manifest, err = NormalizeVisualizationManifest(manifest)
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
 	}
@@ -512,7 +512,7 @@ func (c *Client) ResourceVisualization(
 // Flow360 metadata but not valid UVF render objects. Remove only those empty
 // placeholders (and their directly attributed children) before the manifest
 // reaches the strict browser loader; unsafe or malformed paths still fail.
-func normalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, error) {
+func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, error) {
 	var entries []map[string]any
 	if !json.Valid(manifest) || json.Unmarshal(manifest, &entries) != nil {
 		return nil, errors.New("visualization manifest must be a JSON array")
@@ -563,6 +563,11 @@ func normalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 		}
 		filtered = append(filtered, entry)
 	}
+	changed := len(filtered) != len(entries)
+	filtered, referencesChanged := pruneVisualizationReferences(filtered)
+	if !changed && !referencesChanged {
+		return manifest, nil
+	}
 	encoded, err := json.Marshal(filtered)
 	if err != nil {
 		return nil, fmt.Errorf("encode normalized visualization manifest: %w", err)
@@ -571,6 +576,68 @@ func normalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 		return nil, fmt.Errorf("normalized visualization manifest exceeds %d byte limit", maxTessellationManifestSize)
 	}
 	return encoded, nil
+}
+
+// pruneVisualizationReferences keeps the manifest graph internally consistent
+// after placeholder geometry is removed. Empty GeometryGroups are removed
+// recursively, because retaining one would leave its parent with a container
+// that can never produce a renderable object.
+func pruneVisualizationReferences(entries []map[string]any) ([]map[string]any, bool) {
+	anyChanged := false
+	for {
+		ids := make(map[string]struct{}, len(entries))
+		for _, entry := range entries {
+			if id, ok := entry["id"].(string); ok && id != "" {
+				ids[id] = struct{}{}
+			}
+		}
+
+		changed := false
+		filtered := make([]map[string]any, 0, len(entries))
+		for _, entry := range entries {
+			attributions, _ := entry["attributions"].(map[string]any)
+			if attributions != nil {
+				if parentID, ok := attributions["packedParentId"].(string); ok && parentID != "" {
+					if _, exists := ids[parentID]; !exists {
+						changed = true
+						continue
+					}
+				}
+				for _, key := range []string{"members", "faces", "edges", "vertices"} {
+					references, exists := attributions[key].([]any)
+					if !exists {
+						continue
+					}
+					kept := make([]any, 0, len(references))
+					for _, reference := range references {
+						id, ok := reference.(string)
+						if !ok {
+							kept = append(kept, reference)
+							continue
+						}
+						if _, exists := ids[id]; exists {
+							kept = append(kept, reference)
+						} else {
+							changed = true
+						}
+					}
+					attributions[key] = kept
+				}
+				if entry["type"] == "GeometryGroup" {
+					if members, exists := attributions["members"].([]any); exists && len(members) == 0 {
+						changed = true
+						continue
+					}
+				}
+			}
+			filtered = append(filtered, entry)
+		}
+		entries = filtered
+		anyChanged = anyChanged || changed
+		if !changed {
+			return entries, anyChanged
+		}
+	}
 }
 
 func visualizationError(

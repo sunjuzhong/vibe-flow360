@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -349,6 +350,7 @@ func (s *Server) routes() {
 		api.GET("/agent/state", func(c *gin.Context) {
 			c.JSON(http.StatusOK, s.agent.State())
 		})
+		api.POST("/agent/interpret-result", s.interpretResult)
 		api.GET("/agent/chat/session", s.getChatSession)
 		api.POST("/agent/chat/stream", s.chatStream)
 		api.POST("/agent/plan-from-action", s.planFromAction)
@@ -1811,18 +1813,19 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		return
 	}
 	if s.mirror != nil {
-		assetURL := fmt.Sprintf(
-			"/api/flow360/resources/%s/%s/visualization/manifest.json",
-			resourceType,
-			resourceID,
-		)
 		var cachedPreview *flow360.MeshPreview
 		manifest, manifestErr := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
 		if manifestErr == nil {
+			originalManifest := manifest
+			manifest, manifestErr = flow360.NormalizeVisualizationManifest(manifest)
+			manifestChanged := manifestErr == nil && !bytes.Equal(originalManifest, manifest)
+			assetURL := visualizationManifestURL(resourceType, resourceID, manifest)
 			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)
 			if previewErr == nil {
-				cachedPreview = &preview
-				if s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
+				if !manifestChanged {
+					cachedPreview = &preview
+				}
+				if !manifestChanged && s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
 					c.Header("Cache-Control", "private, max-age=60")
 					c.JSON(http.StatusOK, preview)
 					return
@@ -1851,6 +1854,7 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 						)
 					}
 					if persistErr == nil {
+						assetURL := visualizationManifestURL(resourceType, resourceID, visualization.Manifest)
 						if preview, previewErr := flow360.GeometryUVFPreview(resourceID, visualization.Manifest, assetURL); previewErr == nil {
 							c.Header("Cache-Control", "private, max-age=60")
 							c.JSON(http.StatusOK, preview)
@@ -1900,6 +1904,16 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func visualizationManifestURL(resourceType, resourceID string, manifest json.RawMessage) string {
+	digest := sha256.Sum256(manifest)
+	return fmt.Sprintf(
+		"/api/flow360/resources/%s/%s/visualization/manifest.json?v=%x",
+		resourceType,
+		resourceID,
+		digest[:8],
+	)
 }
 
 func (s *Server) ensureResourceMirrorIdentity(ctx context.Context, resourceType, resourceID string) (string, error) {
@@ -2129,7 +2143,11 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 	if relative == "manifest.json" {
 		contentType = "application/json; charset=utf-8"
 	}
-	c.Header("Cache-Control", "private, max-age=3600")
+	if relative == "manifest.json" {
+		c.Header("Cache-Control", "private, no-cache")
+	} else {
+		c.Header("Cache-Control", "private, max-age=3600")
+	}
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Type", contentType)
 	http.ServeContent(c.Writer, c.Request, relative, info.ModTime(), file)

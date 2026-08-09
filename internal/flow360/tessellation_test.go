@@ -110,12 +110,16 @@ func TestParseVisualizationCatalogIncludesGroupsFieldsAndBounds(t *testing.T) {
 
 func TestNormalizeVisualizationManifestRemovesEmptyCasePlaceholders(t *testing.T) {
 	manifest := json.RawMessage(`[
-		{"id":"renderable","type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"case.bin","sections":[]}}},
+		{"id":"root","type":"GeometryGroup","attributions":{"members":["boundaries","slices"]}},
+		{"id":"boundaries","type":"GeometryGroup","attributions":{"members":["placeholder","renderable"]}},
+		{"id":"slices","type":"GeometryGroup","attributions":{"members":["wake"]}},
+		{"id":"wake","type":"GeometryGroup","attributions":{"members":["placeholder"]}},
+		{"id":"renderable","type":"SolidGeometry","attributions":{"faces":["kept-face","removed-face"]},"resources":{"buffers":{"type":"buffers","path":"case.bin","sections":[]}}},
 		{"id":"placeholder","type":"SolidGeometry"},
 		{"id":"kept-face","type":"Face","attributions":{"packedParentId":"renderable"}},
 		{"id":"removed-face","type":"Face","attributions":{"packedParentId":"placeholder"}}
 	]`)
-	normalized, err := normalizeVisualizationManifest(manifest)
+	normalized, err := NormalizeVisualizationManifest(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +128,18 @@ func TestNormalizeVisualizationManifestRemovesEmptyCasePlaceholders(t *testing.T
 	}
 	if !strings.Contains(string(normalized), "renderable") || !strings.Contains(string(normalized), "kept-face") {
 		t.Fatalf("renderable entries were removed from %s", normalized)
+	}
+	if strings.Contains(string(normalized), `"id":"slices"`) || strings.Contains(string(normalized), `"id":"wake"`) {
+		t.Fatalf("empty geometry groups remained in %s", normalized)
+	}
+	if !strings.Contains(string(normalized), `"members":["boundaries"]`) {
+		t.Fatalf("root group references were not pruned in %s", normalized)
+	}
+	if !strings.Contains(string(normalized), `"members":["renderable"]`) {
+		t.Fatalf("placeholder group reference remained in %s", normalized)
+	}
+	if !strings.Contains(string(normalized), `"faces":["kept-face"]`) {
+		t.Fatalf("solid child references were not pruned in %s", normalized)
 	}
 }
 

@@ -337,6 +337,53 @@ func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 	}
 }
 
+func TestResourceMeshPreviewRefreshesManifestWithDanglingGroupReferences(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Case/case-1": {ID: "case-1", Type: "Case", Errors: map[string]string{}},
+		},
+		failures: map[string]error{},
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+	staleManifest := json.RawMessage(`[
+		{"id":"root","type":"GeometryGroup","attributions":{"members":["body-1","placeholder"]}},
+		{"id":"body-1","type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"body.bin","sections":[{"name":"position","length":36}]}}},
+		{"id":"placeholder","type":"SolidGeometry"}
+	]`)
+	if _, err := app.mirror.PutResourceVisualization(
+		"prj-1", "Case", "case-1", staleManifest, map[string][]byte{"body.bin": {1, 2, 3}}, 0,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	requestPreview := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		requestContext, _ := gin.CreateTestContext(recorder)
+		requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-1/preview-mesh", nil)
+		requestContext.Params = gin.Params{
+			{Key: "resource_type", Value: "Case"},
+			{Key: "resource_id", Value: "case-1"},
+		}
+		app.flow360ResourceMeshPreview(requestContext)
+		return recorder
+	}
+	if first := requestPreview(); first.Code != http.StatusOK {
+		t.Fatalf("refreshed preview got %d: %s", first.Code, first.Body)
+	} else if !bytes.Contains(first.Body.Bytes(), []byte("manifest.json?v=")) {
+		t.Fatalf("preview manifest URL has no cache fingerprint: %s", first.Body)
+	}
+	if second := requestPreview(); second.Code != http.StatusOK {
+		t.Fatalf("cached refreshed preview got %d: %s", second.Code, second.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.visualizationCalls != 1 {
+		t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+	}
+}
+
 func TestCaseMeshPreviewRepairsMirrorIdentityFromDetailCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	client := &fakeProjectSyncClient{failures: map[string]error{}}
