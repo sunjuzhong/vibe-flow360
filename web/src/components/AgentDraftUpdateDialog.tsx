@@ -1,5 +1,6 @@
 import { CheckCircle2, RefreshCw, Sparkles, X } from 'lucide-react'
 import { useId } from 'react'
+import { createPortal } from 'react-dom'
 import type { AgentProposal } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -66,7 +67,7 @@ export default function AgentDraftUpdateDialog({
   if (!proposal) return null
   const changes = draftParameterChanges(parameters, proposal.patch)
 
-  return (
+  const dialog = (
     <div className="flow360-confirm-overlay" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !busy) onCancel()
     }}>
@@ -107,4 +108,6 @@ export default function AgentDraftUpdateDialog({
       </div>
     </div>
   )
+
+  return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body)
 }
