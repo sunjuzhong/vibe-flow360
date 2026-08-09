@@ -1,0 +1,78 @@
+schema_version: 2
+audience: Beginners learning how surface discretization and wall-normal layers affect a viscous external-flow mesh.
+prerequisites:
+  - Know that curved CAD surfaces become discrete surface facets.
+  - Recognize a no-slip wall and the idea of a boundary layer.
+learning_objectives:
+  - id: explain-curvature
+    objective: Explain how normal-angle and maximum-edge constraints jointly discretize a curved cylinder surface.
+    assessment: Predict which control becomes active on curved and nearly flat portions of a surface.
+  - id: explain-wall-layers
+    objective: Explain how first-layer thickness and growth rate control wall-normal resolution without claiming a universal y-plus.
+    assessment: State which operating-condition information is missing before selecting a production first-layer thickness.
+  - id: judge-cylinder-mesh
+    objective: Judge curvature fidelity, layer continuity, transition smoothness, and cell quality from generated mesh evidence.
+    assessment: Apply explicit pass and fail criteria to baseline and refined cylinder meshes.
+concepts:
+  cfd:
+    - id: curvature-discretization
+      title: Curvature becomes facets
+      explanation: A smooth cylinder is approximated by planar surface elements whose normal changes must be small enough to preserve shape and pressure gradients.
+      misconception: Smooth CAD does not guarantee a smooth computational surface when curvature controls are too loose.
+    - id: wall-normal-gradient
+      title: Wall-normal gradients
+      explanation: No-slip velocity changes rapidly away from the wall, so stacked anisotropic layers resolve a different direction than surface triangles.
+      misconception: A smaller first layer is not automatically correct without viscosity, velocity, Reynolds number, turbulence model, and target y-plus.
+  flow360:
+    - id: surface-refinement
+      title: SurfaceRefinement
+      explanation: SurfaceRefinement applies local maximum edge length and curvature angle to the named cylinder faces while global defaults govern the background.
+      misconception: Local curvature control does not replace the need for an independent maximum edge length.
+    - id: boundary-layer-object
+      title: BoundaryLayer
+      explanation: BoundaryLayer applies first-layer thickness and growth rate to wall faces; it is separate from surface tangential refinement.
+      misconception: BoundaryLayer parameters describe meshing intent and do not prove that generated layers are continuous.
+parameter_derivations:
+  - id: circumference-facets
+    parameter: Curvature-angle estimate
+    basis: A full circle contains 360 degrees, so the normal-angle limit provides a first estimate of circumferential facet count.
+    calculation: 360/10 ≈ 36 sectors; 360/6 ≈ 60 sectors
+    transfer: Use the estimate to reason about curvature fidelity, then inspect the actual mesh because edge length may become the active limit.
+  - id: first-layer-ratio
+    parameter: First-layer teaching ratio
+    basis: Normalize the teaching thickness by diameter while explicitly separating it from a production y-plus derivation.
+    calculation: baseline t1/D = 0.01; refined t1/D = 0.005
+    transfer: For production, derive t1 from target y-plus, wall shear estimate, density, and viscosity rather than scaling this ratio blindly.
+experiments:
+  - id: refine-three-controls
+    prediction: Which visible changes should occur when curvature angle, local edge length, and first-layer thickness are tightened together?
+    options: [More surface facets and a thinner first layer, A smaller farfield and different physics]
+    controlled_variable: Three spatial resolution controls change while geometry, farfield, mesher, and growth rates remain fixed.
+    observation: Compare the same cross-section for silhouette fidelity, layer thickness, continuity, transition, and expected cell-cost increase.
+failure_modes:
+  - id: faceted-cylinder
+    symptom: The cylinder cross-section contains visibly flat sectors.
+    cause: Curvature angle or maximum edge length is too loose for the radius and requested pressure resolution.
+    correction: Tighten the active surface constraint and verify the actual generated facet distribution.
+  - id: collapsed-layers
+    symptom: Wall-normal layers terminate, collide, or change thickness abruptly.
+    cause: First-layer thickness, growth, total available space, or local surface resolution is incompatible with the geometry.
+    correction: Inspect the failing location and adjust layer thickness, growth, count, or local surface mesh instead of globally refining everything.
+evidence_rubric:
+  - id: silhouette
+    observation: Circular silhouette
+    pass: The cross-section follows the circle without flat sectors that could distort pressure gradients.
+    fail: Polygonal sectors remain obvious at the review scale required by the experiment.
+  - id: layer-continuity
+    observation: Boundary-layer continuity
+    pass: Layers wrap the cylinder continuously with gradual wall-normal growth and no collisions.
+    fail: Layers collapse, intersect, disappear, or jump abruptly around the circumference.
+  - id: transition-quality
+    observation: Layer-to-core transition
+    pass: Anisotropic wall layers blend progressively into valid surrounding volume cells.
+    fail: Abrupt expansion, inverted cells, or isolated poor-quality regions remain.
+transfer_questions:
+  - prompt: What additional information is required to choose a production first-layer thickness?
+    expected: Use density, viscosity, velocity or Reynolds number, a wall-shear estimate, turbulence treatment, and target y-plus.
+  - prompt: When can maximum edge length control the mesh even if curvature angle is strict?
+    expected: On low-curvature or nearly flat regions where adjacent normals barely turn but long elements would still be unacceptable.

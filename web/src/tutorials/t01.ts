@@ -2,6 +2,7 @@ import baselineDocument from '../../../tutorials/T01-first-lift-drag/simulation.
 import alphaFivePatch from '../../../tutorials/T01-first-lift-drag/variants/alpha-5deg.patch.json'
 import geometryUrl from '../../../tutorials/T01-first-lift-drag/assets/geometry.csm?url'
 import type { ConfiguredDraft, ImportPlan } from '../api/client'
+import type { TutorialPedagogy } from './pedagogy'
 
 export type TutorialStep = {
   id: string
@@ -64,6 +65,43 @@ export const t01Evidence = [
   { title: 'Force stability', detail: 'CL and CD change by less than 1% over the final 200 pseudo-steps.' },
   { title: 'Surface fields', detail: 'Cp, Cf, yPlus, and CfVec are present and reviewable.' },
 ]
+
+export const t01Pedagogy: TutorialPedagogy = {
+  learningObjectives: [
+    'Explain how pressure and wall shear become lift, drag, and normalized coefficients.',
+    'Map the controlled aerodynamic comparison to Flow360 SimulationParams and outputs.',
+    'Reject a completed Case when mesh, convergence, forces, or fields provide insufficient evidence.',
+  ],
+  cfdConcepts: [
+    { id: 'forces', title: 'Pressure and shear create aerodynamic force', explanation: 'Pressure acts normal to the aircraft and wall shear tangentially; integrating their components produces dimensional lift and drag.', misconception: 'Residual convergence or a colorful pressure contour alone does not validate integrated force.' },
+    { id: 'coefficients', title: 'Coefficients normalize the comparison', explanation: 'CL and CD divide forces by dynamic pressure and reference area, while angle of attack changes flow direction relative to the aircraft.', misconception: 'Lift does not increase indefinitely with alpha because separation and stall can make the response nonlinear.' },
+  ],
+  flow360Concepts: [
+    { id: 'condition', title: 'AerospaceCondition defines the freestream', explanation: 'Velocity, alpha, beta, thermal state, and reference frame form the operating condition used by models and boundaries.', misconception: 'Rotating a visual icon does not change Flow360 unless operating_condition.alpha changes in SimulationParams.' },
+    { id: 'outputs', title: 'Outputs make evidence observable', explanation: 'ForceOutput and SurfaceOutput request integrated forces and Cp, Cf, yPlus, and CfVec for post-run review.', misconception: 'Requesting an output makes evidence available after a run; it does not prove convergence or correctness.' },
+  ],
+  derivations: [
+    { id: 'coeff', parameter: 'Aerodynamic coefficient normalization', basis: 'Forces become comparable after division by dynamic pressure and reference area.', calculation: 'q = ½ρV² · CL = L/(qSref) · CD = D/(qSref)', transfer: 'Recalculate q and verify Sref whenever velocity, density, scale, or convention changes.' },
+    { id: 'reference', parameter: 'Reference area and moment length', basis: 'The bundled aircraft uses 24 m² area and 2.4 m length for coefficient normalization.', calculation: 'Sref = 24 m² · Lref = 2.4 m', transfer: 'Use and document the same reference convention before comparing another design.' },
+    { id: 'layer', parameter: 'First-layer teaching value versus y-plus', basis: 'The 1 mm value exposes an assumption but is not derived from this flow condition.', calculation: 'production t₁ needs target y+, ρ, μ, V, and a wall-shear estimate', transfer: 'Derive t₁ for the operating point and verify actual yPlus after solving.' },
+  ],
+  experiments: [{ id: 'alpha', prediction: 'What is the most defensible expectation when only alpha changes from 0° to 5°?', options: ['Lift should increase and drag may also increase', 'Lift and drag must both remain unchanged'], controlledVariable: 'Only AerospaceCondition alpha changes; mesh, models, references, numerics, and outputs remain identical.', observation: 'Compare stable CL/CD histories, Cp patterns, separation indicators, and convergence—not one final force sample.' }],
+  failureModes: [
+    { id: 'reference', symptom: 'Coefficients look implausible while dimensional forces seem consistent.', cause: 'Reference area, length, units, or convention is wrong.', correction: 'Verify dimensional forces, geometry units, Sref, Lref, and convention before changing physics.' },
+    { id: 'convergence', symptom: 'Residuals decrease while CL or CD still drift.', cause: 'The iterative solution is not force-stable or the flow is genuinely unsteady.', correction: 'Inspect histories, extend or revise the solve, and reconsider steady versus unsteady modeling.' },
+    { id: 'mesh', symptom: 'Forces change materially after local mesh refinement.', cause: 'Force-producing curvature, layers, wakes, or pressure gradients were under-resolved.', correction: 'Run a controlled mesh-sensitivity comparison and require the conclusion to stabilize.' },
+  ],
+  evidenceRubric: [
+    { id: 'mesh', observation: 'Mesh suitability', pass: 'Geometry, layers, wakes, transitions, and quality have no unresolved critical defect.', fail: 'A defect affects a force-producing region or wake.' },
+    { id: 'convergence', observation: 'Residual and force convergence', pass: 'Residuals reduce substantially and CL/CD stay within tolerance over the review window.', fail: 'Forces drift, residuals remain problematic, or the signals contradict.' },
+    { id: 'fields', observation: 'Surface-field sanity', pass: 'Cp, Cf, yPlus, and CfVec are coherent and explain the force trend.', fail: 'Fields are missing, discontinuous, or inconsistent with forces.' },
+    { id: 'controlled', observation: 'Controlled alpha comparison', pass: 'Only alpha changes and both Cases use the same evidence window.', fail: 'Other setup or review differences confound the comparison.' },
+  ],
+  transferQuestions: [
+    { prompt: 'If velocity doubles while CL stays similar, how should dimensional lift scale?', expected: 'Dynamic pressure scales with V², so lift is approximately four times larger at unchanged density and area.' },
+    { prompt: 'Why does the 5° result not prove linear behavior up to 15°?', expected: 'Separation and stall are nonlinear and require additional controlled angles plus suitable steady or unsteady evidence.' },
+  ],
+}
 
 export function mergeTutorialPatch(target: unknown, patch: unknown): unknown {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return patch

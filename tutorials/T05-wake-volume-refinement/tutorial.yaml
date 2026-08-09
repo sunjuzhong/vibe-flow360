@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: T05
 slug: wake-volume-refinement
 title: Place volume refinement where the wake travels
@@ -15,6 +15,7 @@ artifacts:
   plan: plan.md
   report: expected/report.md
   generator: build_simulation.py
+  pedagogy: pedagogy.yaml
 evidence:
   contract: expected/evidence.yaml
 coverage:

@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { detectSystemLanguage, languageStorageKey, readInitialLanguage } from './index'
 import { localeOptions } from './locales'
 import { hasTranslation, translate } from './translations'
-import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params } from '../tutorials/t04'
-import { t01Evidence, t01ParameterCards, t01Steps, t01ParamsForAlpha, validateT01Setup } from '../tutorials/t01'
-import { t03Evidence, t03ParameterCards, t03Steps, t03Params, validateT03Setup } from '../tutorials/t03'
-import { t05Evidence, t05ParameterCards, t05Steps, t05Params, validateT05Setup } from '../tutorials/t05'
+import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params, t04Pedagogy } from '../tutorials/t04'
+import { t01Evidence, t01ParameterCards, t01Steps, t01ParamsForAlpha, t01Pedagogy, validateT01Setup } from '../tutorials/t01'
+import { t03Evidence, t03ParameterCards, t03Steps, t03Params, t03Pedagogy, validateT03Setup } from '../tutorials/t03'
+import { t05Evidence, t05ParameterCards, t05Steps, t05Params, t05Pedagogy, validateT05Setup } from '../tutorials/t05'
+import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
   it('uses Chinese for Chinese system locales and English otherwise', () => {
@@ -129,6 +130,7 @@ describe('language settings', () => {
       ...t04Evidence.flatMap(({ title, detail }) => [title, detail]),
       ...validateT04Setup(t04Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT04Setup(t04Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t04Pedagogy),
     ]
     const pageAndEditorCopy = [
       'ADVANCED MESHING',
@@ -161,16 +163,19 @@ describe('language settings', () => {
       ...t01Evidence.flatMap(({ title, detail }) => [title, detail]),
       ...validateT01Setup(t01ParamsForAlpha(0)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT01Setup(t01ParamsForAlpha(5)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t01Pedagogy),
       ...t03Steps.flatMap(({ title, summary }) => [title, summary]),
       ...t03ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
       ...t03Evidence.flatMap(({ title, detail }) => [title, detail]),
       ...validateT03Setup(t03Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT03Setup(t03Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t03Pedagogy),
       ...t05Steps.flatMap(({ title, summary }) => [title, summary]),
       ...t05ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
       ...t05Evidence.flatMap(({ title, detail }) => [title, detail]),
       ...validateT05Setup(t05Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT05Setup(t05Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t05Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])

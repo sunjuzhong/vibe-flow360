@@ -5,7 +5,8 @@ import type { Flow360Status } from '../api/client'
 import { api } from '../api/client'
 import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
-import { createT04Environment, t04Evidence, t04ParameterCards, t04Params, t04Progress, t04Steps, validateT04Setup } from '../tutorials/t04'
+import { TutorialConceptBridge, TutorialDerivations, TutorialEvidenceRubric, TutorialFailureModes, TutorialPrediction, TutorialTransferCheck } from '../components/TutorialTeachingBlocks'
+import { createT04Environment, t04Evidence, t04ParameterCards, t04Params, t04Pedagogy, t04Progress, t04Steps, validateT04Setup } from '../tutorials/t04'
 
 const storageKey = 'vibesim.tutorial.T04.completed'
 
@@ -67,6 +68,7 @@ export default function T04TutorialPage() {
         <p className="lesson-lead">The 30P30N airfoil combines strong leading-edge curvature, sharp trailing edges, and two narrow passages. You will assign each risk a deliberate spacing strategy before creating any mesh.</p>
         <div className="lesson-decision-card"><span>DECISION</span><strong>Explicit edge control or Geometry AI?</strong><p>Choose based on CAD edge provenance and passage preservation—not on which setup has fewer parameters.</p></div>
         <div className="lesson-objectives"><div><Waypoints/><span><strong>Map edge risk</strong>Separate curvature, thickness, stretching, and projection.</span></div><div><Layers3/><span><strong>Protect gaps</strong>Keep slat and flap passages open and usable.</span></div><div><ShieldCheck/><span><strong>Demand evidence</strong>Inspect topology and transitions before solving.</span></div></div>
+        <TutorialConceptBridge cfd={t04Pedagogy.cfdConcepts} flow360={t04Pedagogy.flow360Concepts}/>
       </>
       case 'geometry': return <>
         <div className="lesson-kicker"><Waypoints size={15}/> Multi-element geometry</div>
@@ -81,6 +83,7 @@ export default function T04TutorialPage() {
         <h1>Choose a spacing method that expresses the failure mode.</h1>
         <p className="lesson-lead">These methods are not interchangeable shortcuts. Each constrains a different geometric or anisotropic behavior.</p>
         <div className="parameter-learning-grid">{t04ParameterCards.slice(0, 4).map((item) => <article key={item.label}><div><span className={`provenance ${item.provenance}`}>{item.provenance}</span><strong>{item.label}</strong></div><b>{item.value}</b><p>{item.why}</p></article>)}</div>
+        <TutorialDerivations items={t04Pedagogy.derivations}/>
         <button className="lesson-validate-button" onClick={() => setChecksVisible(true)}><ShieldCheck size={16}/> Validate explicit edge assignments</button>
         {checksVisible && <div className="setup-checks">{checks.map((check) => <div className={check.passed ? 'passed' : 'failed'} key={check.id}>{check.passed ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<span><strong>{check.label}</strong><small>{check.detail}</small></span></div>)}</div>}
       </>
@@ -88,8 +91,10 @@ export default function T04TutorialPage() {
         <div className="lesson-kicker"><GitCompare size={15}/> Mutually exclusive strategy</div>
         <h1>Geometry AI replaces edge rules; it does not layer on top of them.</h1>
         <p className="lesson-lead">The variant removes every SurfaceEdgeRefinement, enables CAD importer v2 and Geometry AI, then states geometry accuracy and minimum passage size explicitly.</p>
+        <TutorialPrediction experiment={t04Pedagogy.experiments[0]}/>
         <div className="mesh-experiment"><div className="alpha-control" role="group" aria-label="Airfoil refinement strategy"><button className={!geometryAware ? 'active' : ''} onClick={() => setGeometryAware(false)}><span>Explicit edges</span><strong>4 spacing methods</strong></button><button className={geometryAware ? 'active' : ''} onClick={() => setGeometryAware(true)}><span>Geometry AI</span><strong>0.35 mm accuracy</strong></button></div><div className="airfoil-stage compact"><AirfoilGapVisual geometryAware={geometryAware}/></div><div className="semantic-diff"><p className="eyebrow">SEMANTIC DIFF</p><div><code>refinement strategy</code><span>edge rules</span><ArrowRight size={14}/><strong>{geometryAware ? 'passage protection' : 'edge rules'}</strong></div><small>{geometryAware ? 'Explicit edge controls are removed because Flow360 25.10 treats these strategies as incompatible.' : 'Choose Geometry AI to inspect the validated alternative.'}</small></div></div>
         <button className="lesson-secondary-button" onClick={() => downloadJSON(params, geometryAware)}><Download size={15}/> Download selected setup</button>
+        <TutorialFailureModes items={t04Pedagogy.failureModes}/>
       </>
       case 'evidence': return <>
         <div className="lesson-kicker"><ShieldCheck size={15}/> Mesh evidence contract</div>
@@ -97,12 +102,14 @@ export default function T04TutorialPage() {
         <p className="lesson-lead">Review the critical locations at consistent camera positions for both strategies.</p>
         <div className="evidence-checklist">{t04Evidence.map((item) => { const selected = reviewed.includes(item.title); return <button className={selected ? 'reviewed' : ''} key={item.title} onClick={() => setReviewed((current) => selected ? current.filter((value) => value !== item.title) : [...current, item.title])}><span className="evidence-check">{selected && <Check size={15}/>}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span></button> })}</div>
         <div className={`lesson-callout ${reviewed.length === t04Evidence.length ? 'success' : ''}`}>{reviewed.length === t04Evidence.length ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<p><strong>{reviewed.length}/4 reviewed</strong>{reviewed.length === t04Evidence.length ? 'The comparison contract is ready.' : 'Review every mesh requirement before creating the experiment.'}</p></div>
+        <TutorialEvidenceRubric items={t04Pedagogy.evidenceRubric}/>
       </>
       default: return <>
         <div className="lesson-kicker"><Cloud size={15}/> Execution boundary</div>
         <h1>Create both Drafts without starting cloud meshing.</h1>
         <p className="lesson-lead">The app uploads the official 30P30N geometry, creates its Project, and synchronizes both validated parameter strategies.</p>
         <div className="run-readiness-card"><div className="run-ready-icon"><CheckCircle2 size={30}/></div><div><span>LOCAL TUTORIAL STATUS</span><strong>Two mutually exclusive strategies validated</strong><p>Traditional edge-spacing and Geometry AI capabilities are backed by reproducible Flow360 25.10.3 artifacts.</p></div></div>
+        <TutorialTransferCheck items={t04Pedagogy.transferQuestions}/>
         <TutorialEnvironmentBuilder status={status} tutorialId="T04" defaultProjectName="Tutorial T04 · 30P30N edge refinement" heading="Build the T04 airfoil mesh environment" description="The app uploads the bundled 30P30N geometry and creates explicit-edge and Geometry AI VolumeMesh Drafts." configurationSummary="Angle, height, aspect ratio, projection, passive spacing, geometry accuracy, minimum passage" draftKind="VolumeMesh" baselineValue="Explicit edge controls" variantValue="Geometry AI passages" successDescription="Both VolumeMesh Draft parameter sets are synced. No surface or volume mesh computation has been submitted." createEnvironment={createT04Environment}/>
       </>
     }

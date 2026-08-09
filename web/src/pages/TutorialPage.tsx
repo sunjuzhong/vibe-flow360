@@ -21,12 +21,14 @@ import type { Flow360Status } from '../api/client'
 import { api } from '../api/client'
 import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
+import { TutorialConceptBridge, TutorialDerivations, TutorialEvidenceRubric, TutorialFailureModes, TutorialPrediction, TutorialTransferCheck } from '../components/TutorialTeachingBlocks'
 import T03TutorialPage from './T03TutorialPage'
 import T04TutorialPage from './T04TutorialPage'
 import T05TutorialPage from './T05TutorialPage'
 import {
   t01Evidence,
   t01ParameterCards,
+  t01Pedagogy,
   t01ParamsForAlpha,
   t01Steps,
   tutorialProgress,
@@ -120,6 +122,7 @@ function T01TutorialPage() {
             <div><Layers3/><span><strong>Control one variable</strong>Use a reviewable 5° merge patch instead of a second opaque setup.</span></div>
             <div><ShieldCheck/><span><strong>Demand evidence</strong>Define acceptance criteria before seeing results.</span></div>
           </div>
+          <TutorialConceptBridge cfd={t01Pedagogy.cfdConcepts} flow360={t01Pedagogy.flow360Concepts}/>
         </>
       case 'geometry':
         return <>
@@ -145,6 +148,7 @@ function T01TutorialPage() {
               <b>{item.value}</b><p>{item.why}</p>
             </article>)}
           </div>
+          <TutorialDerivations items={t01Pedagogy.derivations}/>
           <button className="lesson-validate-button" onClick={() => setChecksVisible(true)}><ShieldCheck size={16}/> Validate this setup in the browser</button>
           {checksVisible && <div className="setup-checks">
             {checks.map((check) => <div className={check.passed ? 'passed' : 'failed'} key={check.id}>
@@ -157,6 +161,7 @@ function T01TutorialPage() {
           <div className="lesson-kicker"><RotateCcw size={15}/> Controlled variant</div>
           <h1>Change one thing, then explain the difference.</h1>
           <p className="lesson-lead">Switch angle of attack below. The page applies the same RFC 7396 patch validated by the repository—mesh, models, reference values, and requested outputs remain identical.</p>
+          <TutorialPrediction experiment={t01Pedagogy.experiments[0]}/>
           <div className="alpha-experiment">
             <div className="alpha-control" role="group" aria-label="Angle of attack">
               <button className={alpha === 0 ? 'active' : ''} onClick={() => setAlpha(0)}><span>Baseline</span><strong>α = 0°</strong></button>
@@ -173,6 +178,7 @@ function T01TutorialPage() {
             </div>
           </div>
           <button className="lesson-secondary-button" onClick={() => downloadJSON(params, alpha)}><Download size={15}/> Download the selected setup</button>
+          <TutorialFailureModes items={t01Pedagogy.failureModes}/>
         </>
       case 'evidence':
         return <>
@@ -190,6 +196,7 @@ function T01TutorialPage() {
           <div className={`lesson-callout ${evidenceReviewed.length === t01Evidence.length ? 'success' : ''}`}>
             {evidenceReviewed.length === t01Evidence.length ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<p><strong>{evidenceReviewed.length}/4 reviewed</strong>{evidenceReviewed.length === t01Evidence.length ? 'You now have a complete acceptance contract for both Cases.' : 'Review all four evidence requirements before continuing.'}</p>
           </div>
+          <TutorialEvidenceRubric items={t01Pedagogy.evidenceRubric}/>
         </>
       default:
         return <>
@@ -200,6 +207,7 @@ function T01TutorialPage() {
             <div className="run-ready-icon"><CheckCircle2 size={30}/></div>
             <div><span>LOCAL TUTORIAL STATUS</span><strong>Baseline and 5° variant validated</strong><p>35 schema and workflow capabilities are backed by the pinned Flow360 25.10.3 tutorial artifact.</p></div>
           </div>
+          <TutorialTransferCheck items={t01Pedagogy.transferQuestions}/>
           <TutorialEnvironmentBuilder status={status}/>
         </>
     }

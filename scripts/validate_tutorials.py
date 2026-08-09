@@ -80,6 +80,7 @@ def validate_one(
     manifest_path: pathlib.Path,
     manifest_validator: Draft202012Validator,
     evidence_validator: Draft202012Validator,
+    pedagogy_validator: Draft202012Validator,
     pinned: dict[str, Any],
     feature_ids: set[str],
 ) -> tuple[str, dict[str, Any]]:
@@ -148,6 +149,17 @@ def validate_one(
         result["artifacts"][evidence_path.relative_to(root).as_posix()] = artifact_record(
             root, evidence_path, ["tutorial.contract", "yaml.parse", "evidence.contract"]
         )
+
+        if manifest["schema_version"] == 2:
+            pedagogy_path = artifact_paths["pedagogy"]
+            pedagogy = load_yaml(pedagogy_path)
+            pedagogy_errors = sorted(pedagogy_validator.iter_errors(pedagogy), key=lambda error: list(error.path))
+            if pedagogy_errors:
+                details = [f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in pedagogy_errors]
+                raise ValueError("pedagogy schema: " + "; ".join(details))
+            result["artifacts"][pedagogy_path.relative_to(root).as_posix()] = artifact_record(
+                root, pedagogy_path, ["tutorial.contract", "yaml.parse", "pedagogy.v2"]
+            )
 
         simulation_path = artifact_paths["simulation"]
         baseline = json.loads(simulation_path.read_text(encoding="utf-8"))
@@ -228,6 +240,8 @@ def run(root: pathlib.Path) -> tuple[dict[str, Any], bool]:
     validator = Draft202012Validator(schema)
     evidence_schema = json.loads((root / "tutorials" / "schema" / "evidence.schema.json").read_text())
     evidence_validator = Draft202012Validator(evidence_schema)
+    pedagogy_schema = json.loads((root / "tutorials" / "schema" / "pedagogy.schema.json").read_text())
+    pedagogy_validator = Draft202012Validator(pedagogy_schema)
     feature_ids = {feature["id"] for feature in registry["features"]}
     report: dict[str, Any] = {
         "report_version": REPORT_VERSION,
@@ -238,7 +252,7 @@ def run(root: pathlib.Path) -> tuple[dict[str, Any], bool]:
     }
     passed = True
     for manifest_path in sorted((root / "tutorials").glob("T[0-9][0-9]-*/tutorial.yaml")):
-        tutorial_id, result = validate_one(root, manifest_path, validator, evidence_validator, pinned, feature_ids)
+        tutorial_id, result = validate_one(root, manifest_path, validator, evidence_validator, pedagogy_validator, pinned, feature_ids)
         if tutorial_id in report["tutorials"]:
             raise ValueError(f"duplicate tutorial id: {tutorial_id}")
         report["tutorials"][tutorial_id] = result

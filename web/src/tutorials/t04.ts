@@ -9,6 +9,7 @@ import {
   type TutorialEnvironmentStage,
   type TutorialStep,
 } from './t01'
+import type { TutorialPedagogy } from './pedagogy'
 
 export const t04Steps: TutorialStep[] = [
   { id: 'question', label: '01', title: 'Frame the edge risk', summary: 'Connect each geometric feature to a possible mesh failure.' },
@@ -37,6 +38,42 @@ export const t04Evidence = [
   { title: 'Trailing edges stay sharp', detail: 'Edge-normal spacing captures the thin trailing geometry without collapse.' },
   { title: 'Anisotropy transitions cleanly', detail: 'Projected and passage spacing blend into the surrounding volume mesh.' },
 ]
+
+export const t04Pedagogy: TutorialPedagogy = {
+  learningObjectives: [
+    'Explain why leading edges, trailing edges, and narrow passages create different mesh risks.',
+    'Choose explicit edge controls or Geometry AI from CAD provenance and passage risk.',
+    'Judge passage topology, critical-edge fidelity, and anisotropic transitions from generated evidence.',
+  ],
+  cfdConcepts: [
+    { id: 'leading', title: 'Leading edges carry strong pressure gradients', explanation: 'Flow turns rapidly around each leading edge, so local curvature fidelity influences stagnation and suction-side pressure gradients.', misconception: 'One global edge length does not guarantee consistent angular resolution on every leading-edge radius.' },
+    { id: 'passages', title: 'Gaps accelerate flow; trailing edges seed wakes', explanation: 'Slat and flap passages redirect accelerated flow, while sharp trailing edges start thin wakes that are sensitive to geometric loss.', misconception: 'A closed, valid mesh can still be physically unusable when a passage seals or a trailing edge becomes blunt.' },
+  ],
+  flow360Concepts: [
+    { id: 'methods', title: 'Each edge method expresses one risk', explanation: 'Angle, height, aspect-ratio, and projected spacing constrain curvature, normal thickness, stretching, and inherited anisotropy.', misconception: 'These methods are not interchangeable ways to ask for a generically finer edge.' },
+    { id: 'ai', title: 'Geometry AI replaces the explicit strategy', explanation: 'GeometryRefinement protects thin geometry and minimum passages through CAD-aware preparation instead of SurfaceEdgeRefinement rules.', misconception: 'In Flow360 25.10, Geometry AI should not be layered on top of incompatible explicit edge controls.' },
+  ],
+  derivations: [
+    { id: 'angle', parameter: 'Leading-edge angular resolution', basis: 'The 8° turn limit describes curvature independently of absolute leading-edge radius.', calculation: '360°/8° = 45 sectors for a complete-circle estimate', transfer: 'Keep an angular criterion across radii, then verify actual edge length and facets.' },
+    { id: 'height', parameter: 'Trailing-edge height normalized by chord', basis: 'The 0.7 mm teaching height is interpreted relative to the 1 m reference chord.', calculation: 'hTE/c = 0.0007/1 = 7×10⁻⁴', transfer: 'Recompute from new chord and actual trailing-edge thickness instead of copying 0.7 mm.' },
+    { id: 'passage', parameter: 'Minimum protected passage normalized by chord', basis: 'The 1.5 mm threshold states the smallest geometric passage that must survive preparation.', calculation: 'gmin/c = 0.0015/1 = 1.5×10⁻³', transfer: 'Measure the new critical gap and geometry tolerance before setting the threshold.' },
+  ],
+  experiments: [{ id: 'strategy', prediction: 'Which strategy is more robust when edge groups are missing but CAD faces and passages are trustworthy?', options: ['Geometry AI passage preservation', 'Explicit edge controls with missing groups'], controlledVariable: 'GeometryRefinement replaces explicit edge rules and uses a different CAD preparation path.', observation: 'Compare passage survival, edge fidelity, traceability, and dependence on grouping—not only setup length.' }],
+  failureModes: [
+    { id: 'groups', symptom: 'Some leading, trailing, or gap controls are absent.', cause: 'edgeName groups changed or disappeared during CAD import.', correction: 'Repair grouping provenance or use Geometry AI when its CAD assumptions are satisfied.' },
+    { id: 'sealed', symptom: 'A slat or flap passage closes or loses a continuous cell path.', cause: 'Tolerance, sealing, surface spacing, or passage protection is too coarse.', correction: 'Protect the measured minimum passage and inspect generated topology before volume meshing.' },
+  ],
+  evidenceRubric: [
+    { id: 'topology', observation: 'Passage topology', pass: 'Slat and flap gaps remain open with continuous usable cell paths.', fail: 'A gap seals, bridges, changes connectivity, or is unusably coarse.' },
+    { id: 'leading', observation: 'Leading-edge fidelity', pass: 'Each element turns smoothly without flat sectors or abrupt spacing.', fail: 'Polygonal edges or inconsistent resolution could distort the suction peak.' },
+    { id: 'trailing', observation: 'Trailing-edge fidelity', pass: 'Thin trailing geometry stays sharp with controlled normal spacing.', fail: 'The edge becomes blunt, disappears, or creates a discontinuous transition.' },
+    { id: 'consistent', observation: 'Strategy consistency', pass: 'Exactly one compatible strategy is active and its CAD provenance is verified.', fail: 'Incompatible controls are mixed or depend on missing geometry groups.' },
+  ],
+  transferQuestions: [
+    { prompt: 'When should audited explicit edge controls be preferred?', expected: 'When grouping is reliable and each local geometric risk needs a directly traceable method.' },
+    { prompt: 'What must be measured before reusing a passage threshold?', expected: 'The smallest important gap, geometry tolerance, chord scale, and any features intended to be sealed.' },
+  ],
+}
 
 export function t04Params(geometryAware: boolean): Record<string, unknown> {
   return geometryAware

@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: T01
 slug: first-lift-drag
 title: First trustworthy lift and drag result
@@ -14,6 +14,7 @@ artifacts:
   simulation: simulation.json
   plan: plan.md
   report: expected/report.md
+  pedagogy: pedagogy.yaml
 evidence:
   contract: expected/evidence.yaml
 coverage:
