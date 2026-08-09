@@ -2801,6 +2801,8 @@ button { color: inherit; }
   z-index: 3;
   top: 10px;
   left: 10px;
+  box-sizing: border-box;
+  width: min(360px, calc(100% - 20px));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2816,13 +2818,23 @@ button { color: inherit; }
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   font-weight: 600;
 }
+.viewer-field-panel > .viewer-field-label select {
+  width: 0;
+  min-width: 0;
+  flex: 1;
+}
 .viewer-field-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+}
+.viewer-field-controls .viewer-field-label select {
+  min-width: 0;
+  flex: 1;
 }
 .viewer-field-label select {
   font-size: 9px;
@@ -2838,6 +2850,21 @@ button { color: inherit; }
   gap: 4px;
   font-family: 'DM Mono';
   font-size: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.viewer-colormap-min,
+.viewer-colormap-max {
+  width: 9ch;
+  flex: 0 0 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewer-colormap-min {
+  text-align: right;
+}
+.viewer-colormap-max {
+  text-align: left;
 }
 .viewer-colormap-gradient {
   flex: 1;
