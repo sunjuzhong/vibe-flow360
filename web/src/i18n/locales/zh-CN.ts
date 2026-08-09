@@ -58,6 +58,7 @@ const messages: Record<string, string> = {
   Discard: '丢弃',
   Download: '下载',
   Preview: '预览',
+  'Full resolution': '全分辨率',
   Open: '打开',
   Hide: '隐藏',
   Show: '显示',

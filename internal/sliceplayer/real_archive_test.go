@@ -17,5 +17,9 @@ func TestRealArchiveWhenConfigured(t *testing.T) {
 	if !playback.Ready || playback.FrameCount == 0 || playback.Frames[0].Triangles == 0 {
 		t.Fatalf("unexpected playback: %#v", playback)
 	}
-	t.Logf("frames=%d vertices=%d triangles=%d fields=%v topology=%dB fields=%dB cache=%dB", playback.FrameCount, playback.Frames[0].Vertices, playback.Frames[0].Triangles, playback.Fields, playback.TopologyBytes, playback.FieldBytes, playback.CacheBytes)
+	frame := playback.Frames[0]
+	if frame.Triangles > maxPreviewTriangles && (frame.PreviewManifestPath == "" || frame.PreviewTriangles > maxPreviewTriangles) {
+		t.Fatalf("large frame has no bounded preview: %#v", frame)
+	}
+	t.Logf("frames=%d full=%d vertices/%d triangles preview=%d vertices/%d triangles fields=%v topology=%dB fields=%dB cache=%dB", playback.FrameCount, frame.Vertices, frame.Triangles, frame.PreviewVertices, frame.PreviewTriangles, playback.Fields, playback.TopologyBytes, playback.FieldBytes, playback.CacheBytes)
 }

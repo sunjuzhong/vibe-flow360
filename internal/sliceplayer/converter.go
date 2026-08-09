@@ -37,11 +37,14 @@ type Playback struct {
 }
 
 type PlaybackFrame struct {
-	Step         *int64        `json:"step,omitempty"`
-	ManifestPath string        `json:"manifest_path"`
-	Vertices     int           `json:"vertices"`
-	Triangles    int           `json:"triangles"`
-	Bounds       [2][3]float64 `json:"bounds"`
+	Step                *int64        `json:"step,omitempty"`
+	ManifestPath        string        `json:"manifest_path"`
+	Vertices            int           `json:"vertices"`
+	Triangles           int           `json:"triangles"`
+	Bounds              [2][3]float64 `json:"bounds"`
+	PreviewManifestPath string        `json:"preview_manifest_path,omitempty"`
+	PreviewVertices     int           `json:"preview_vertices,omitempty"`
+	PreviewTriangles    int           `json:"preview_triangles,omitempty"`
 }
 
 type uvfSection struct {
@@ -62,10 +65,12 @@ type convertedPiece struct {
 }
 
 type frameBuild struct {
-	Key      string
-	AssetKey string
-	Step     *int64
-	Pieces   []convertedPiece
+	Key           string
+	AssetKey      string
+	Step          *int64
+	Pieces        []convertedPiece
+	PreviewPieces []convertedPiece
+	HasPreview    bool
 }
 
 type pvtuDocument struct {
@@ -210,6 +215,28 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		}
 		playbackFieldBytes += fieldBytes
 		frame.Pieces = append(frame.Pieces, piece)
+		preview, generated, previewTopologyName, previewTopologyBytes, previewFieldBytes, previewErr := buildPreviewPiece(outputDir, frameDir, frame.AssetKey, len(frame.PreviewPieces), piece, cancelled)
+		if previewErr != nil {
+			return Playback{}, fmt.Errorf("build preview for %s: %w", clean, previewErr)
+		}
+		if generated {
+			_, previewTopologySeen := topologies[previewTopologyName]
+			previewBytes := previewFieldBytes
+			if !previewTopologySeen {
+				previewBytes += previewTopologyBytes
+			}
+			if maxOutputBytes > 0 && previewBytes > maxOutputBytes-outputBytes {
+				return Playback{}, fmt.Errorf("playable preview cache exceeds the configured %d byte limit", maxOutputBytes)
+			}
+			outputBytes += previewBytes
+			playbackFieldBytes += previewFieldBytes
+			if !previewTopologySeen {
+				topologies[previewTopologyName] = previewTopologyBytes
+				playbackTopologyBytes += previewTopologyBytes
+			}
+			frame.HasPreview = true
+		}
+		frame.PreviewPieces = append(frame.PreviewPieces, preview)
 	}
 	keys := make([]string, 0, len(frames))
 	for key := range frames {
@@ -239,6 +266,27 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 			return Playback{}, err
 		}
 		summary.ManifestPath = manifestName
+		if frame.HasPreview {
+			previewManifest, previewSummary, previewErr := buildFrameManifest(&frameBuild{Key: frame.Key, AssetKey: frame.AssetKey, Step: frame.Step, Pieces: frame.PreviewPieces})
+			if previewErr != nil {
+				return Playback{}, previewErr
+			}
+			previewName := frame.AssetKey + ".preview.manifest.json"
+			previewEncoded, encodeErr := json.MarshalIndent(previewManifest, "", "  ")
+			if encodeErr != nil {
+				return Playback{}, encodeErr
+			}
+			if err := atomicWrite(filepath.Join(outputDir, previewName), previewEncoded); err != nil {
+				return Playback{}, err
+			}
+			summary.PreviewManifestPath = previewName
+			summary.PreviewVertices = previewSummary.Vertices
+			summary.PreviewTriangles = previewSummary.Triangles
+		} else {
+			summary.PreviewManifestPath = summary.ManifestPath
+			summary.PreviewVertices = summary.Vertices
+			summary.PreviewTriangles = summary.Triangles
+		}
 		playback.Frames = append(playback.Frames, summary)
 		for _, piece := range frame.Pieces {
 			for name := range piece.Fields {

@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const IndexVersion = 3
+const IndexVersion = 4
 
 type Limits struct {
 	MaxEntries           int

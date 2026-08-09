@@ -402,8 +402,11 @@ export type SlicePlayerJob = {
       frames: Array<{
         step?: number
         manifest_path: string
+        preview_manifest_path?: string
         vertices: number
         triangles: number
+        preview_vertices?: number
+        preview_triangles?: number
         bounds: [[number, number, number], [number, number, number]]
       }>
     }

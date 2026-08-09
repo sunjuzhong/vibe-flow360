@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -66,6 +67,23 @@ func testVTU() string {
 		`</Cells></Piece></UnstructuredGrid></VTKFile>`
 }
 
+func testLargeVTU(triangles int) string {
+	connectivity := make([]uint32, 0, triangles*3)
+	offsets := make([]uint32, triangles)
+	types := make([]byte, triangles)
+	for index := 0; index < triangles; index++ {
+		connectivity = append(connectivity, 0, 1, 2)
+		offsets[index] = uint32((index + 1) * 3)
+		types[index] = 5
+	}
+	return fmt.Sprintf(`<?xml version="1.0"?><VTKFile type="UnstructuredGrid" header_type="UInt64"><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="%d"><PointData>`, triangles) +
+		`<DataArray Name="Mach" NumberOfComponents="1" type="Float32" format="binary">` + vtkBinary(float32Bytes(0, 1, 2, 3)) + `</DataArray></PointData><Points>` +
+		`<DataArray NumberOfComponents="3" type="Float32" format="binary">` + vtkBinary(float32Bytes(0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0)) + `</DataArray></Points><Cells>` +
+		`<DataArray Name="connectivity" type="UInt32" format="binary">` + vtkBinary(uint32Bytes(connectivity...)) + `</DataArray>` +
+		`<DataArray Name="offsets" type="UInt32" format="binary">` + vtkBinary(uint32Bytes(offsets...)) + `</DataArray>` +
+		`<DataArray Name="types" type="UInt8" format="binary">` + vtkBinary(types) + `</DataArray></Cells></Piece></UnstructuredGrid></VTKFile>`
+}
+
 func TestConvertTarGzBuildsPlayableUVFFrame(t *testing.T) {
 	archive := writeArchive(t, []archiveEntry{{name: "slice_Wake_000100_proc0.vtu", body: testVTU()}})
 	output := filepath.Join(t.TempDir(), "assets")
@@ -122,6 +140,25 @@ func TestConvertTarGzEnforcesDeduplicatedCacheLimit(t *testing.T) {
 	archive := writeArchive(t, []archiveEntry{{name: "slice_Wake_1.vtu", body: testVTU()}})
 	if _, err := ConvertTarGz(archive, t.TempDir(), 87, nil); err == nil || !strings.Contains(err.Error(), "cache exceeds") {
 		t.Fatalf("unexpected cache limit error: %v", err)
+	}
+}
+
+func TestConvertTarGzBuildsCompactPreviewForLargeFrames(t *testing.T) {
+	archive := writeArchive(t, []archiveEntry{{name: "slice_Wake_1.vtu", body: testLargeVTU(50_001)}})
+	output := t.TempDir()
+	playback, err := ConvertTarGz(archive, output, 10<<20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := playback.Frames[0]
+	if frame.PreviewManifestPath == "" || frame.PreviewManifestPath == frame.ManifestPath || frame.PreviewTriangles >= frame.Triangles || frame.PreviewTriangles > maxPreviewTriangles {
+		t.Fatalf("preview was not compacted: %#v", frame)
+	}
+	if frame.PreviewVertices > frame.Vertices {
+		t.Fatalf("preview added vertices: %#v", frame)
+	}
+	if _, err := os.Stat(filepath.Join(output, frame.PreviewManifestPath)); err != nil {
+		t.Fatal(err)
 	}
 }
 
