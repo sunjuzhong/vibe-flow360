@@ -32,6 +32,7 @@ type Report struct {
 	Slices            []SliceSummary `json:"slices"`
 	Formats           []string       `json:"formats"`
 	IndexReady        bool           `json:"index_ready"`
+	Playback          *Playback      `json:"playback,omitempty"`
 }
 
 type Job struct {
@@ -153,11 +154,16 @@ func (s *Store) Update(id string, progress int, stage string) (Job, error) {
 	})
 }
 
-func (s *Store) Complete(id string, index Index) (Job, error) {
+func (s *Store) Complete(id string, index Index, playback *Playback) (Job, error) {
 	if err := s.putIndex(index, s.cacheKeyForJob(id)); err != nil {
 		return Job{}, err
 	}
-	report := Report{IndexVersion: index.Version, CompressedBytes: index.CompressedBytes, UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount, Slices: index.Slices, Formats: index.Formats, IndexReady: true}
+	if playback != nil {
+		if err := s.putPlayback(*playback, s.cacheKeyForJob(id)); err != nil {
+			return Job{}, err
+		}
+	}
+	report := Report{IndexVersion: index.Version, CompressedBytes: index.CompressedBytes, UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount, Slices: index.Slices, Formats: index.Formats, IndexReady: true, Playback: playback}
 	return s.change(id, func(job *Job) error {
 		if job.Status == JobCancelled {
 			return errors.New("slice preparation was cancelled")
@@ -215,6 +221,43 @@ func (s *Store) Cached(cacheKey string) (Index, bool) {
 	return index, true
 }
 
+func (s *Store) CachedPlayback(cacheKey string) (*Playback, bool) {
+	payload, err := os.ReadFile(filepath.Join(s.cacheDirectory(cacheKey), "playback.json"))
+	if err != nil {
+		return nil, false
+	}
+	var playback Playback
+	if json.Unmarshal(payload, &playback) != nil || !playback.Ready {
+		return nil, false
+	}
+	return &playback, true
+}
+
+func (s *Store) AssetDirectory(cacheKey string) (string, error) {
+	directory := filepath.Join(s.cacheDirectory(cacheKey), "assets")
+	return directory, os.MkdirAll(directory, 0o700)
+}
+
+func (s *Store) AssetPath(jobID, relative string) (string, error) {
+	job, ok := s.Get(jobID)
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	clean, err := safeArchivePath(relative)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(s.cacheDirectory(job.CacheKey), "assets", filepath.FromSlash(clean))
+	info, err := os.Lstat(target)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("slice player asset is not a regular file")
+	}
+	return target, nil
+}
+
 func (s *Store) change(id string, update func(*Job) error) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -245,7 +288,21 @@ func (s *Store) putIndex(index Index, cacheKey string) error {
 	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(s.cacheDirectory(cacheKey), 0o700); err != nil {
+		return err
+	}
 	return atomicWrite(s.indexPath(cacheKey), payload)
+}
+func (s *Store) putPlayback(playback Playback, cacheKey string) error {
+	payload, err := json.MarshalIndent(playback, "", "  ")
+	if err != nil {
+		return err
+	}
+	directory := s.cacheDirectory(cacheKey)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	return atomicWrite(filepath.Join(directory, "playback.json"), payload)
 }
 func (s *Store) cacheKeyForJob(id string) string {
 	job, ok := s.Get(id)
@@ -255,8 +312,11 @@ func (s *Store) cacheKeyForJob(id string) string {
 	return job.CacheKey
 }
 func (s *Store) indexPath(cacheKey string) string {
+	return filepath.Join(s.cacheDirectory(cacheKey), "index.json")
+}
+func (s *Store) cacheDirectory(cacheKey string) string {
 	digest := sha256.Sum256([]byte(cacheKey))
-	return filepath.Join(s.cacheDir, hex.EncodeToString(digest[:])+".json")
+	return filepath.Join(s.cacheDir, hex.EncodeToString(digest[:]))
 }
 
 func atomicWrite(target string, payload []byte) error {

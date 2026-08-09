@@ -228,6 +228,7 @@ type Props = {
   cameraCommand?: ViewerCameraCommand | null
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
+  preserveCameraOnAssetChange?: boolean
 }
 
 export function Viewer3D({
@@ -268,6 +269,7 @@ export function Viewer3D({
   cameraCommand,
   showNormals = false,
   entityAppearances = {},
+  preserveCameraOnAssetChange = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -708,7 +710,9 @@ export function Viewer3D({
   useEffect(() => {
     if (manifest && state.status === 'ready') {
       const controller = new AbortController()
-      const preserveCamera = loadedAssetURLRef.current === manifest.asset_url && assetRef.current !== null
+      const preserveCamera = assetRef.current !== null && (
+        loadedAssetURLRef.current === manifest.asset_url || preserveCameraOnAssetChange
+      )
       setAssetState({ status: 'loading', message: 'Loading 3D resources…' })
       void updateGeometry(
         manifest,
@@ -749,7 +753,7 @@ export function Viewer3D({
       return () => controller.abort()
     }
     setAssetState(state)
-  }, [manifest, requestedLODLevel, state.status, updateGeometry])
+  }, [manifest, preserveCameraOnAssetChange, requestedLODLevel, state.status, updateGeometry])
 
   useEffect(() => {
     if (!selection) return

@@ -389,6 +389,20 @@ export type SlicePlayerJob = {
     slices: SlicePlayerSliceSummary[]
     formats: string[]
     index_ready: boolean
+    playback?: {
+      ready: boolean
+      frame_count: number
+      fields: string[]
+      field_ranges: Record<string, [number, number]>
+      bounds: [[number, number, number], [number, number, number]]
+      frames: Array<{
+        step?: number
+        manifest_path: string
+        vertices: number
+        triangles: number
+        bounds: [[number, number, number], [number, number, number]]
+      }>
+    }
   }
   created_at: string
   updated_at: string

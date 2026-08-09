@@ -115,9 +115,11 @@ func (s *Server) writeSlicePlayerJob(c *gin.Context, cancel bool) {
 
 func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 	if index, ok := s.slicePlayerJobs.Cached(cacheKey); ok {
-		_, _ = s.slicePlayerJobs.Update(jobID, 98, "restoring-index-cache")
-		_, _ = s.slicePlayerJobs.Complete(jobID, index)
-		return
+		if playback, playbackOK := s.slicePlayerJobs.CachedPlayback(cacheKey); playbackOK {
+			_, _ = s.slicePlayerJobs.Update(jobID, 98, "restoring-player-cache")
+			_, _ = s.slicePlayerJobs.Complete(jobID, index, playback)
+			return
+		}
 	}
 	if s.slicePlayerSlots != nil {
 		s.slicePlayerSlots <- struct{}{}
@@ -159,7 +161,7 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		}
 		if percent > lastProgress {
 			lastProgress = percent
-			_, _ = s.slicePlayerJobs.Update(jobID, 35+(percent*60/100), "scanning-archive")
+			_, _ = s.slicePlayerJobs.Update(jobID, 35+(percent*35/100), "scanning-archive")
 		}
 		return true
 	})
@@ -173,10 +175,44 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 	if s.slicePlayerJobs.IsCancelled(jobID) {
 		return
 	}
-	_, _ = s.slicePlayerJobs.Update(jobID, 97, "persisting-frame-index")
-	if _, err := s.slicePlayerJobs.Complete(jobID, index); err != nil {
+	_, _ = s.slicePlayerJobs.Update(jobID, 72, "converting-frames")
+	assetDirectory, err := s.slicePlayerJobs.AssetDirectory(cacheKey)
+	if err != nil {
+		_, _ = s.slicePlayerJobs.Fail(jobID, err)
+		return
+	}
+	playback, err := sliceplayer.ConvertTarGz(archivePath, assetDirectory, slicePlayerMaxArchiveBytes(), func() bool { return s.slicePlayerJobs.IsCancelled(jobID) })
+	if err != nil {
+		if s.slicePlayerJobs.IsCancelled(jobID) {
+			return
+		}
+		_, _ = s.slicePlayerJobs.Fail(jobID, err)
+		return
+	}
+	_, _ = s.slicePlayerJobs.Update(jobID, 97, "persisting-player-cache")
+	if _, err := s.slicePlayerJobs.Complete(jobID, index, &playback); err != nil {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
 	}
+}
+
+func (s *Server) slicePlayerAsset(c *gin.Context) {
+	caseID := c.Param("resource_id")
+	job, ok := s.slicePlayerJobs.Get(c.Param("job_id"))
+	if !ok || job.CaseID != caseID || job.Status != sliceplayer.JobCompleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Slice player asset was not found"})
+		return
+	}
+	relative := strings.TrimPrefix(c.Param("asset_path"), "/")
+	target, err := s.slicePlayerJobs.AssetPath(job.ID, relative)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Slice player asset was not found"})
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=31536000, immutable")
+	if strings.HasSuffix(strings.ToLower(target), ".bin") {
+		c.Header("Content-Type", "application/octet-stream")
+	}
+	c.File(target)
 }
 
 func (s *Server) registerSlicePlayerCancel(jobID string, cancel context.CancelFunc) {

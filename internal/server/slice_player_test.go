@@ -16,9 +16,10 @@ func TestSlicePlayerRoutesKeepCaseDetailLeafReachable(t *testing.T) {
 	app := &Server{router: gin.New()}
 	app.routes()
 	wanted := map[string]bool{
-		"GET /api/flow360/resources/Case/:resource_id":                          false,
-		"POST /api/flow360/resources/Case/:resource_id/slice-player/jobs":       false,
-		"GET /api/flow360/resources/Case/:resource_id/slice-player/jobs/latest": false,
+		"GET /api/flow360/resources/Case/:resource_id":                                              false,
+		"POST /api/flow360/resources/Case/:resource_id/slice-player/jobs":                           false,
+		"GET /api/flow360/resources/Case/:resource_id/slice-player/jobs/latest":                     false,
+		"GET /api/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id/assets/*asset_path": false,
 	}
 	for _, route := range app.router.Routes() {
 		key := route.Method + " " + route.Path

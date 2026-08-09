@@ -1,7 +1,8 @@
-import { AlertCircle, CheckCircle2, Database, LoaderCircle, Play, Square } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { AlertCircle, CheckCircle2, Database, LoaderCircle, Pause, Play, SkipBack, SkipForward, Square } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, type SlicePlayerJob } from '../api/client'
 import { useI18n } from '../i18n'
+import { LazyViewer3D, type ViewerManifest } from './viewer/LazyViewer3D'
 
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) return '—'
@@ -15,12 +16,66 @@ function stageLabel(stage: string) {
     case 'queued': return 'Waiting for the preparation worker'
     case 'downloading-archive': return 'Downloading the Slice archive to bounded local storage'
     case 'scanning-archive': return 'Scanning frames without extracting the full archive'
+    case 'converting-frames': return 'Converting VTU pieces into bounded playable frames'
     case 'persisting-frame-index': return 'Persisting the random-access frame index'
-    case 'restoring-index-cache': return 'Restoring the existing frame index'
+    case 'restoring-player-cache': return 'Restoring the existing player cache'
     case 'completed': return 'Archive index is ready'
     case 'cancelled': return 'Preparation was cancelled'
     default: return stage
   }
+}
+
+function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob }) {
+  const { t } = useI18n()
+  const playback = job.report?.playback
+  const [frameIndex, setFrameIndex] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [fps, setFps] = useState(2)
+  const [selectedField, setSelectedField] = useState<string | null>(playback?.fields[0] ?? null)
+  const frame = playback?.frames[frameIndex]
+
+  useEffect(() => {
+    if (!playing || !playback || playback.frame_count < 2) return
+    const timer = window.setInterval(() => setFrameIndex((value) => (value + 1) % playback.frame_count), 1000 / fps)
+    return () => window.clearInterval(timer)
+  }, [fps, playing, playback?.frame_count])
+
+  const manifest = useMemo<ViewerManifest | null>(() => {
+    if (!frame || !playback) return null
+    const assetPath = frame.manifest_path.split('/').map(encodeURIComponent).join('/')
+    return {
+      asset_url: `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(job.id)}/assets/${assetPath}`,
+      format: 'flow360-uvf',
+      bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
+      groups: [{ id: 'slice', name: 'Slice', color: '#789521', visible: true, triangles: frame.triangles, vertices: frame.vertices }],
+      vertices: frame.vertices,
+      elements: frame.triangles,
+    }
+  }, [caseId, frame, job.id, playback])
+
+  if (!playback?.ready || !frame || !manifest) return null
+  const move = (next: number) => setFrameIndex(Math.max(0, Math.min(playback.frame_count - 1, next)))
+  return (
+    <section className="slice-playback">
+      <div className="slice-playback-viewer">
+        <LazyViewer3D manifest={manifest} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
+          fieldNames={playback.fields} fieldRange={selectedField ? playback.field_ranges[selectedField] ?? null : null}
+          showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange />
+      </div>
+      <div className="slice-playback-controls">
+        <button aria-label={t('First frame')} onClick={() => { setPlaying(false); move(0) }}><SkipBack size={15} /></button>
+        <button className="slice-playback-primary" aria-label={playing ? t('Pause') : t('Play')} onClick={() => setPlaying((value) => !value)} disabled={playback.frame_count < 2}>
+          {playing ? <Pause size={16} /> : <Play size={16} />}
+        </button>
+        <button aria-label={t('Next frame')} onClick={() => { setPlaying(false); move(frameIndex + 1) }}><SkipForward size={15} /></button>
+        <input aria-label={t('Frame')} type="range" min={0} max={Math.max(0, playback.frame_count - 1)} value={frameIndex} onChange={(event) => { setPlaying(false); move(Number(event.target.value)) }} />
+        <span>{frameIndex + 1} / {playback.frame_count}<small>{t('step')} {frame.step ?? '—'}</small></span>
+        <select aria-label={t('Playback speed')} value={fps} onChange={(event) => setFps(Number(event.target.value))}>
+          {[1, 2, 5, 10].map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
+        </select>
+      </div>
+    </section>
+  )
 }
 
 export default function CaseSlicePlayerPanel({
@@ -44,7 +99,8 @@ export default function CaseSlicePlayerPanel({
       .then((latest) => {
         const sameSource = latest.result_path === resultPath
           && (!sizeBytes || !latest.source_size || latest.source_size === sizeBytes)
-        if (active && sameSource) setJob(latest)
+        const currentPlayer = !latest.report || latest.report.index_version >= 2
+        if (active && sameSource && currentPlayer) setJob(latest)
       })
       .catch(() => undefined)
       .finally(() => { if (active) setLoading(false) })
@@ -123,6 +179,7 @@ export default function CaseSlicePlayerPanel({
 
       {completed && job?.report && (
         <>
+          {job.report.playback?.ready && <SlicePlayback caseId={caseId} job={job} />}
           <section className="slice-player-ready" role="status">
             <CheckCircle2 size={18} />
             <span><strong>{t('Slice archive indexed')}</strong><small>{t('The frame index is cached and can be reused without downloading the archive again.')}</small></span>
@@ -143,7 +200,7 @@ export default function CaseSlicePlayerPanel({
             ))}
             {!job.report.slices.length && <div className="slice-player-state">{t('No named Slice sequence was found in the archive.')}</div>}
           </section>
-          <p className="slice-player-next">{t('The large-file index is ready. Visual frame conversion will use static-topology deduplication and bounded frame chunks.')}</p>
+          <p className="slice-player-next">{t('Frames are loaded on demand. Global field ranges stay fixed during playback so colors remain comparable over time.')}</p>
         </>
       )}
     </div>

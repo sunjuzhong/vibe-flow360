@@ -321,6 +321,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/Case/:resource_id/slice-player/jobs/latest", s.latestSlicePlayerJob)
 		api.GET("/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id", s.getSlicePlayerJob)
 		api.DELETE("/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id", s.cancelSlicePlayerJob)
+		api.GET("/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id/assets/*asset_path", s.slicePlayerAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/visualization/*asset_path", s.flow360ResourceVisualizationAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
 		api.POST("/flow360/compare", s.compareCases)

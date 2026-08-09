@@ -780,11 +780,25 @@
 .slice-player-slices article strong { overflow: hidden; color: #515b4d; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .slice-player-slices article small { margin-top: 2px; color: #8a9186; font-size: 11px; }
 .slice-player-next { margin: 0; padding: 9px 10px; border-radius: 7px; color: #70796b; background: #f1f2ed; font-size: 11px; line-height: 1.5; }
+.slice-playback { overflow: hidden; border: 1px solid #d9ddd0; border-radius: 10px; background: #fff; }
+.slice-playback-viewer { height: clamp(320px, 54vh, 620px); background: #eef0e9; }
+.slice-playback-viewer .viewer-3d { height: 100%; min-height: 0; }
+.slice-playback-controls { display: grid; grid-template-columns: 34px 38px 34px minmax(100px, 1fr) auto auto; align-items: center; gap: 7px; padding: 9px; border-top: 1px solid #e0e3da; }
+.slice-playback-controls button { display: grid; place-items: center; width: 34px; height: 32px; padding: 0; border: 1px solid #d8ddd0; border-radius: 7px; color: #5e6957; background: #fff; }
+.slice-playback-controls button:disabled { opacity: .4; }
+.slice-playback-controls .slice-playback-primary { width: 38px; color: #31420c; border-color: #acd139; background: #b9df48; }
+.slice-playback-controls input { width: 100%; accent-color: #789521; }
+.slice-playback-controls > span { min-width: 76px; color: #53604f; font: 11px 'DM Mono'; text-align: right; }
+.slice-playback-controls > span small { display: block; margin-top: 2px; color: #90978c; font: 9px 'DM Mono'; }
+.slice-playback-controls select { height: 32px; border: 1px solid #d8ddd0; border-radius: 7px; color: #586252; background: #fff; font: 10px 'DM Mono'; }
 
 @media (max-width: 620px) {
   .slice-player-facts { grid-template-columns: 1fr 1fr; }
   .slice-player-slices article { grid-template-columns: minmax(0, 1fr) 70px; }
   .slice-player-slices article > span:last-child { grid-column: 1 / -1; }
+  .slice-playback-viewer { height: 340px; }
+  .slice-playback-controls { grid-template-columns: 34px 38px 34px minmax(70px, 1fr); }
+  .slice-playback-controls > span { text-align: left; }
 }
 
 @media (max-width: 1100px) {

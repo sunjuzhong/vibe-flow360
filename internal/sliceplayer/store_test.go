@@ -17,7 +17,8 @@ func TestStorePersistsCompletedIndexAndReusesCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := Index{Version: IndexVersion, EntryCount: 1, Slices: []SliceSummary{{Name: "slice_wake", FrameCount: 1}}}
-	completed, err := store.Complete(job.ID, index)
+	playback := &Playback{Ready: true, FrameCount: 1}
+	completed, err := store.Complete(job.ID, index, playback)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,5 +37,8 @@ func TestStorePersistsCompletedIndexAndReusesCache(t *testing.T) {
 	cached, ok := reloaded.Cached(key)
 	if !ok || cached.EntryCount != 1 {
 		t.Fatalf("index cache was not restored: %#v", cached)
+	}
+	if restored, ok := reloaded.CachedPlayback(key); !ok || restored.FrameCount != 1 {
+		t.Fatalf("playback cache was not restored: %#v", restored)
 	}
 }
