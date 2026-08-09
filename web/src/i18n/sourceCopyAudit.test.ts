@@ -12,6 +12,7 @@ const intentionalRawCopy = new Set([
   'Catalyst', 'Log10', 'Log₁₀', 'Review &amp; Run', 'cm', 'inch', 'm', 'mm', 'null', 'undefined',
   '−X', '−Y', '−Z', 'ΔX', 'ΔY', 'ΔZ', 'ΔX / ΔY / ΔZ',
   '1 m', '17 m', '0.25 m · 10°', '0.15 m · 6°', '0.01 m', '0.005 m',
+  '+x', '0.08 m', '0.16 m',
   'first_layer_thickness', 'leftWing', 'rightWing', 'fuselage', 'operating_condition.alpha',
 ])
 

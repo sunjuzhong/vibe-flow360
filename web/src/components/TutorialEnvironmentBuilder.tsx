@@ -2,6 +2,7 @@ import { AlertTriangle, Check, CheckCircle2, Cloud, Folder, RefreshCw, Rocket } 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, type Flow360Status, type FolderNode } from '../api/client'
+import { useI18n } from '../i18n'
 import {
   createT01Environment,
   type TutorialEnvironmentClient,
@@ -78,9 +79,10 @@ export default function TutorialEnvironmentBuilder({
   createEnvironment = createT01Environment,
 }: TutorialEnvironmentBuilderProps) {
   const navigate = useNavigate()
+  const { t } = useI18n()
   const [folders, setFolders] = useState<FolderOption[]>([])
   const [folderId, setFolderId] = useState('')
-  const [projectName, setProjectName] = useState(defaultProjectName)
+  const [projectName, setProjectName] = useState(() => t(defaultProjectName))
   const [confirmed, setConfirmed] = useState(false)
   const [stage, setStage] = useState<TutorialEnvironmentStage | null>(null)
   const [result, setResult] = useState<TutorialEnvironmentResult | null>(null)

@@ -1,0 +1,16 @@
+schema_version: 1
+criteria:
+  - id: focused-wake-patch-valid
+    category: provenance
+    description: The focused-wake merge patch passes Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: variants/focused-wake.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: focused-corridor-reviewed
+    category: mesh
+    description: The longer corridor and tighter crossflow spacing preserve the expected wake path at an acceptable cell cost.
+    artifact: mesh comparison
+    required: true
+    check: {method: manual, metric: mesh.wake.variant-approved}
+limitations:
+  - More wake cells are justified only when downstream gradients or requested outputs require them.

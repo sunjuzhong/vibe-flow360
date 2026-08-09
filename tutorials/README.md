@@ -48,13 +48,17 @@ The coverage gate reports four disjoint states:
 - [T04 — Preserve multi-element airfoil edges and gaps](T04-airfoil-edge-refinement/README.md):
   explicit edge-spacing methods, passive projection, and a Geometry AI
   alternative for thin geometry and narrow passages.
+- [T05 — Place volume refinement where the wake travels](T05-wake-volume-refinement/README.md):
+  near-body, structured-box, and axisymmetric volume controls aligned with
+  cylinder separation and downstream wake transport.
 
-T01, T03, and T04 can be experienced locally without cloud execution charges:
+T01, T03, T04, and T05 can be experienced locally without cloud execution charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
 python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
 python3 tutorials/T04-airfoil-edge-refinement/build_simulation.py --check
+python3 tutorials/T05-wake-volume-refinement/build_simulation.py --check
 make tutorials-validate
 ```
 

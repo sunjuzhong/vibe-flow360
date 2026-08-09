@@ -1,0 +1,57 @@
+schema_version: 1
+id: T05
+slug: wake-volume-refinement
+title: Place volume refinement where the wake travels
+summary: Align near-body, structured-box, and axisymmetric controls with separation and downstream wake transport.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: VolumeMesh
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:UniformRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:UniformRefinement.entities', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:UniformRefinement.spacing', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:Sphere', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Sphere.center', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Sphere.radius', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:StructuredBoxRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:StructuredBoxRefinement.entities', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:StructuredBoxRefinement.spacing_axis1', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:StructuredBoxRefinement.spacing_axis2', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:StructuredBoxRefinement.spacing_normal', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:Box', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Box.center', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Box.size', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:AxisymmetricRefinement', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AxisymmetricRefinement.entities', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AxisymmetricRefinement.spacing_axial', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AxisymmetricRefinement.spacing_radial', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AxisymmetricRefinement.spacing_circumferential', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:Cylinder', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Cylinder.axis', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Cylinder.height', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:Cylinder.outer_radius', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:MeshSliceOutput', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshSliceOutput.slices', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:MeshSliceOutput.include_crinkled_slices', section: focused-wake, artifact: variants/focused-wake.patch.json}
+  - {feature: 'schema:type:Slice', section: baseline, artifact: simulation.json}
+assets:
+  - path: assets/cylinder.csm
+    sha256: 33aa1241a218d2f7f29a8d8535ddcd54e5a7c96403ea254fe1ff77b60e889928
+    source: Adapted from Flow360 examples/basic_simulations/steady/steady_3D_cylinder.py
+    license: LGPL-2.1-or-later
+variants:
+  - id: focused-wake
+    title: Extend and tighten the direction-aware wake corridor
+    patch: variants/focused-wake.patch.json
+    evidence: variants/focused-wake.evidence.yaml

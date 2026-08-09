@@ -162,6 +162,11 @@ height, aspect-ratio, and projected edge spacing with a mutually exclusive
 Geometry AI passage-preservation strategy, then creates two configured
 VolumeMesh Drafts without submitting cloud meshing.
 
+T05 teaches flow-aligned volume refinement around the bundled cylinder. It
+combines a near-body sphere, structured wake box, axisymmetric wake core, and
+center-plane mesh slice, then creates compact and focused-wake VolumeMesh
+Drafts without submitting cloud meshing.
+
 ## Agent configuration
 
 The default `builtin` provider preserves the current behavior. Without an API
