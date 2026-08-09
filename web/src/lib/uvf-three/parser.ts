@@ -79,5 +79,6 @@ function validateUVFBuffer(buffer: UVFBuffer) {
     ) {
       throw new Error(`UVF buffer ${buffer.path} contains an invalid section`)
     }
+    if (section.path !== undefined) safeUVFBufferPath(section.path)
   }
 }

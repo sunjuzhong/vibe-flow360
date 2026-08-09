@@ -99,7 +99,7 @@ export default function CaseSlicePlayerPanel({
       .then((latest) => {
         const sameSource = latest.result_path === resultPath
           && (!sizeBytes || !latest.source_size || latest.source_size === sizeBytes)
-        const currentPlayer = !latest.report || latest.report.index_version >= 2
+        const currentPlayer = !latest.report || latest.report.index_version >= 3
         if (active && sameSource && currentPlayer) setJob(latest)
       })
       .catch(() => undefined)

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { UVFLoader, accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
@@ -68,6 +68,65 @@ describe('Flow360 UVF Three.js library', () => {
     asset.dispose()
   })
 
+  it('loads shared topology and per-frame fields from separate buffers', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'slice', type: 'SolidGeometry', attributions: { faces: ['face'] },
+        resources: { buffers: { type: 'buffers', path: 'frame.bin', sections: [
+          { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12, path: 'topology.bin' },
+          { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36, path: 'topology.bin' },
+          { name: 'Mach', dType: 'float32', dimension: 1, offset: 0, length: 12 },
+        ] } },
+      },
+      { id: 'face', type: 'Face', properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 3 }] } } },
+    ])
+    const topology = new ArrayBuffer(48)
+    new Uint32Array(topology, 0, 3).set([0, 1, 2])
+    new Float32Array(topology, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    const fields = new Float32Array([0.1, 0.2, 0.3]).buffer
+    const asset = buildUVFAsset(manifest, new Map([['topology.bin', topology], ['frame.bin', fields]]))
+    expect(asset.vertices).toBe(3)
+    expect(asset.triangles).toBe(1)
+    expect(Array.from(collectFieldValues(asset, 'Mach'))).toEqual([expect.closeTo(0.1), expect.closeTo(0.2), expect.closeTo(0.3)])
+    asset.dispose()
+  })
+
+  it('fetches every section-specific buffer through UVFLoader', async () => {
+    const manifest = [{
+      id: 'slice', type: 'SolidGeometry', attributions: { faces: ['face'] },
+      resources: { buffers: { type: 'buffers', path: 'frame.bin', sections: [
+        { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12, path: 'topology.bin' },
+        { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36, path: 'topology.bin' },
+        { name: 'Mach', dType: 'float32', dimension: 1, offset: 0, length: 12 },
+      ] } },
+    }, { id: 'face', type: 'Face', properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 3 }] } } }]
+    const topology = new ArrayBuffer(48)
+    new Uint32Array(topology, 0, 3).set([0, 1, 2])
+    new Float32Array(topology, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    const requested: string[] = []
+    vi.stubGlobal('window', { location: { href: 'http://localhost/player/' } })
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      requested.push(url)
+      if (url.endsWith('manifest.json')) return new Response(JSON.stringify(manifest))
+      if (url.endsWith('topology.bin')) return new Response(topology)
+      if (url.endsWith('frame.bin')) return new Response(new Float32Array([1, 2, 3]).buffer)
+      return new Response(null, { status: 404 })
+    }))
+    try {
+      const asset = await new UVFLoader().load('manifest.json')
+      expect(asset.triangles).toBe(1)
+      expect(requested).toEqual([
+        'http://localhost/player/manifest.json',
+        'http://localhost/player/frame.bin',
+        'http://localhost/player/topology.bin',
+      ])
+      asset.dispose()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('derives stable render normals from indexed topology', () => {
     const manifest = parseUVFManifest([
       {
@@ -127,10 +186,10 @@ describe('Flow360 UVF Three.js library', () => {
 
   it('accepts multi-slice and multi-gigabyte manifests while preserving structural limits', () => {
     expect(() => validateUVFBufferFileCount(
-      Array.from({ length: 37 }, (_, index) => `slice-${index}.bin`),
+      Array.from({ length: 128 }, (_, index) => `slice-${index}.bin`),
     )).not.toThrow()
     expect(() => validateUVFBufferFileCount(
-      Array.from({ length: 65 }, (_, index) => `slice-${index}.bin`),
+      Array.from({ length: 257 }, (_, index) => `slice-${index}.bin`),
     )).toThrow('too many buffers')
 
     const multiGigabyteTotal = 6 * 1024 * 1024 * 1024

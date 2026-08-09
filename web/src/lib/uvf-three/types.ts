@@ -4,6 +4,7 @@ export type UVFBufferSection = {
   dimension: number
   offset: number
   length: number
+  path?: string
 }
 
 export type UVFBuffer = {

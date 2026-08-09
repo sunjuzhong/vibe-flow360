@@ -3,30 +3,37 @@ package sliceplayer
 import (
 	"archive/tar"
 	"compress/gzip"
-	"encoding/base64"
-	"encoding/binary"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 )
 
-const MaxConvertibleVTUBytes = int64(2 << 30)
+const (
+	MaxConvertibleVTUBytes = int64(50 << 30)
+	MaxDecodedArrayBytes   = int64(2 << 30)
+)
 
 type Playback struct {
-	Ready       bool                  `json:"ready"`
-	FrameCount  int                   `json:"frame_count"`
-	Fields      []string              `json:"fields"`
-	FieldRanges map[string][2]float64 `json:"field_ranges"`
-	Bounds      [2][3]float64         `json:"bounds"`
-	Frames      []PlaybackFrame       `json:"frames"`
+	Ready         bool                  `json:"ready"`
+	FrameCount    int                   `json:"frame_count"`
+	Fields        []string              `json:"fields"`
+	FieldRanges   map[string][2]float64 `json:"field_ranges"`
+	Bounds        [2][3]float64         `json:"bounds"`
+	Frames        []PlaybackFrame       `json:"frames"`
+	CacheBytes    int64                 `json:"cache_bytes"`
+	TopologyBytes int64                 `json:"topology_bytes"`
+	FieldBytes    int64                 `json:"field_bytes"`
+	TopologyCount int                   `json:"topology_count"`
 }
 
 type PlaybackFrame struct {
@@ -37,31 +44,13 @@ type PlaybackFrame struct {
 	Bounds       [2][3]float64 `json:"bounds"`
 }
 
-type vtkDataArray struct {
-	Name       string `xml:"Name,attr"`
-	Type       string `xml:"type,attr"`
-	Components int    `xml:"NumberOfComponents,attr"`
-	Format     string `xml:"format,attr"`
-	Data       string `xml:",chardata"`
-}
-
-type vtkDocument struct {
-	HeaderType string `xml:"header_type,attr"`
-	Piece      struct {
-		Points     int            `xml:"NumberOfPoints,attr"`
-		Cells      int            `xml:"NumberOfCells,attr"`
-		PointData  []vtkDataArray `xml:"PointData>DataArray"`
-		PointsData []vtkDataArray `xml:"Points>DataArray"`
-		CellsData  []vtkDataArray `xml:"Cells>DataArray"`
-	} `xml:"UnstructuredGrid>Piece"`
-}
-
 type uvfSection struct {
 	Name      string `json:"name"`
 	DType     string `json:"dType"`
 	Dimension int    `json:"dimension"`
 	Offset    int64  `json:"offset"`
 	Length    int64  `json:"length"`
+	Path      string `json:"path,omitempty"`
 }
 
 type convertedPiece struct {
@@ -73,9 +62,21 @@ type convertedPiece struct {
 }
 
 type frameBuild struct {
-	Key    string
-	Step   *int64
-	Pieces []convertedPiece
+	Key      string
+	AssetKey string
+	Step     *int64
+	Pieces   []convertedPiece
+}
+
+type pvtuDocument struct {
+	Pieces []struct {
+		Source string `xml:"Source,attr"`
+	} `xml:"PUnstructuredGrid>Piece"`
+}
+
+type referencedFrame struct {
+	Key  string
+	Step *int64
 }
 
 // ConvertTarGz converts VTU pieces sequentially. Only one archive entry is held
@@ -95,7 +96,12 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		return Playback{}, err
 	}
 	frames := map[string]*frameBuild{}
+	assetKeys := map[string]string{}
+	pieceFrames := map[string]referencedFrame{}
 	var outputBytes int64
+	var playbackTopologyBytes int64
+	var playbackFieldBytes int64
+	topologies := map[string]int64{}
 	reader := tar.NewReader(gz)
 	for {
 		header, nextErr := reader.Next()
@@ -115,43 +121,94 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
 			continue
 		}
-		if !strings.HasSuffix(strings.ToLower(clean), ".vtu") {
+		lowerName := strings.ToLower(clean)
+		if strings.HasSuffix(lowerName, ".pvtu") {
+			if header.Size <= 0 || header.Size > 1<<20 {
+				return Playback{}, fmt.Errorf("PVTU manifest %q exceeds the 1 MiB metadata limit", clean)
+			}
+			payload, readErr := io.ReadAll(io.LimitReader(reader, header.Size+1))
+			if readErr != nil {
+				return Playback{}, readErr
+			}
+			if int64(len(payload)) != header.Size {
+				return Playback{}, fmt.Errorf("PVTU manifest %q is truncated", clean)
+			}
+			var manifest pvtuDocument
+			if err := xml.Unmarshal(payload, &manifest); err != nil {
+				return Playback{}, fmt.Errorf("parse %s: %w", clean, err)
+			}
+			key, step := frameKey(clean)
+			for _, piece := range manifest.Pieces {
+				source := strings.ReplaceAll(strings.TrimSpace(piece.Source), "\\", "/")
+				sourceClean := path.Clean(source)
+				if source == "" || path.IsAbs(source) || sourceClean == ".." || strings.HasPrefix(sourceClean, "../") {
+					return Playback{}, fmt.Errorf("PVTU manifest %q contains unsafe Piece Source %q", clean, piece.Source)
+				}
+				joined, safeErr := safeArchivePath(path.Join(path.Dir(clean), sourceClean))
+				if safeErr != nil {
+					return Playback{}, safeErr
+				}
+				if existing, duplicate := pieceFrames[joined]; duplicate && existing.Key != key {
+					return Playback{}, fmt.Errorf("VTU piece %q is referenced by multiple PVTU frames", joined)
+				}
+				pieceFrames[joined] = referencedFrame{Key: key, Step: step}
+			}
+			continue
+		}
+		if !strings.HasSuffix(lowerName, ".vtu") {
 			continue
 		}
 		if header.Size <= 0 || header.Size > MaxConvertibleVTUBytes {
 			return Playback{}, fmt.Errorf("VTU entry %q exceeds the %d byte conversion limit", clean, MaxConvertibleVTUBytes)
 		}
-		payload, readErr := io.ReadAll(io.LimitReader(reader, header.Size+1))
-		if readErr != nil {
-			return Playback{}, readErr
-		}
-		if int64(len(payload)) != header.Size {
-			return Playback{}, fmt.Errorf("VTU entry %q is truncated", clean)
-		}
 		key, step := frameKey(clean)
+		if referenced, ok := pieceFrames[clean]; ok {
+			key, step = referenced.Key, referenced.Step
+		}
 		frame := frames[key]
 		if frame == nil {
-			frame = &frameBuild{Key: key, Step: step}
+			assetKey := safeComponent(key)
+			if existing, collision := assetKeys[assetKey]; collision && existing != key {
+				return Playback{}, fmt.Errorf("slice frame names %q and %q map to the same safe asset name", existing, key)
+			}
+			assetKeys[assetKey] = key
+			frame = &frameBuild{Key: key, AssetKey: assetKey, Step: step}
 			frames[key] = frame
 		}
-		frameDir := filepath.Join(outputDir, safeComponent(key))
+		frameDir := filepath.Join(outputDir, frame.AssetKey)
 		if err := os.MkdirAll(frameDir, 0o700); err != nil {
 			return Playback{}, err
 		}
 		bufferName := fmt.Sprintf("piece-%04d.bin", len(frame.Pieces))
-		piece, convertErr := convertVTU(payload, filepath.Join(frameDir, bufferName), bufferName)
+		document, streamErr := streamVTU(reader, header.Size, frameDir, cancelled)
+		if streamErr != nil {
+			return Playback{}, fmt.Errorf("stream %s: %w", clean, streamErr)
+		}
+		piece, convertErr := convertStreamedVTU(document, filepath.Join(frameDir, bufferName), bufferName, cancelled)
+		document.Close()
 		if convertErr != nil {
 			return Playback{}, fmt.Errorf("convert %s: %w", clean, convertErr)
 		}
-		pieceBytes := int64(0)
-		for _, section := range piece.Sections {
-			pieceBytes += section.Length
+		piece.Buffer = filepath.ToSlash(filepath.Join(frame.AssetKey, bufferName))
+		_, topologyName, topologyBytes, fieldBytes, splitErr := splitTopologyBuffer(outputDir, filepath.Join(frameDir, bufferName), &piece)
+		if splitErr != nil {
+			return Playback{}, splitErr
+		}
+		_, topologySeen := topologies[topologyName]
+		pieceBytes := fieldBytes
+		if !topologySeen {
+			pieceBytes += topologyBytes
 		}
 		if maxOutputBytes > 0 && pieceBytes > maxOutputBytes-outputBytes {
 			_ = os.Remove(filepath.Join(frameDir, bufferName))
 			return Playback{}, fmt.Errorf("playable frame cache exceeds the configured %d byte limit", maxOutputBytes)
 		}
 		outputBytes += pieceBytes
+		if !topologySeen {
+			topologies[topologyName] = topologyBytes
+			playbackTopologyBytes += topologyBytes
+		}
+		playbackFieldBytes += fieldBytes
 		frame.Pieces = append(frame.Pieces, piece)
 	}
 	keys := make([]string, 0, len(frames))
@@ -165,7 +222,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		}
 		return keys[i] < keys[j]
 	})
-	playback := Playback{Fields: []string{}, FieldRanges: map[string][2]float64{}}
+	playback := Playback{Fields: []string{}, FieldRanges: map[string][2]float64{}, CacheBytes: outputBytes, TopologyBytes: playbackTopologyBytes, FieldBytes: playbackFieldBytes, TopologyCount: len(topologies)}
 	fieldSet := map[string]struct{}{}
 	for _, key := range keys {
 		frame := frames[key]
@@ -173,15 +230,15 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		if manifestErr != nil {
 			return Playback{}, manifestErr
 		}
-		frameDir := filepath.Join(outputDir, safeComponent(key))
+		manifestName := frame.AssetKey + ".manifest.json"
 		encoded, marshalErr := json.MarshalIndent(manifest, "", "  ")
 		if marshalErr != nil {
 			return Playback{}, fmt.Errorf("encode frame manifest: %w", marshalErr)
 		}
-		if err := atomicWrite(filepath.Join(frameDir, "manifest.json"), encoded); err != nil {
+		if err := atomicWrite(filepath.Join(outputDir, manifestName), encoded); err != nil {
 			return Playback{}, err
 		}
-		summary.ManifestPath = filepath.ToSlash(filepath.Join(safeComponent(key), "manifest.json"))
+		summary.ManifestPath = manifestName
 		playback.Frames = append(playback.Frames, summary)
 		for _, piece := range frame.Pieces {
 			for name := range piece.Fields {
@@ -237,211 +294,108 @@ func safeComponent(value string) string {
 	return out.String()
 }
 
-func convertVTU(payload []byte, target, bufferName string) (convertedPiece, error) {
-	var document vtkDocument
-	if err := xml.Unmarshal(payload, &document); err != nil {
-		return convertedPiece{}, err
+func splitTopologyBuffer(outputDir, combinedPath string, piece *convertedPiece) (addedBytes int64, topologyName string, topologyBytes, fieldBytes int64, err error) {
+	if len(piece.Sections) < 2 || piece.Sections[0].Name != "indices" || piece.Sections[1].Name != "position" {
+		return 0, "", 0, 0, errors.New("converted VTU is missing structural sections")
 	}
-	if document.Piece.Points <= 0 || len(document.Piece.PointsData) == 0 {
-		return convertedPiece{}, errors.New("VTU has no points")
-	}
-	headerBytes := 8
-	if strings.EqualFold(document.HeaderType, "UInt32") {
-		headerBytes = 4
-	}
-	positions, err := decodeVTKBinary(document.Piece.PointsData[0], headerBytes)
+	topologyBytes = piece.Sections[0].Length + piece.Sections[1].Length
+	combined, err := os.Open(combinedPath)
 	if err != nil {
-		return convertedPiece{}, fmt.Errorf("decode points: %w", err)
+		return 0, "", 0, 0, err
 	}
-	if len(positions) != document.Piece.Points*3*4 {
-		return convertedPiece{}, errors.New("point array length does not match NumberOfPoints")
+	hash := sha256.New()
+	if _, err = io.CopyN(hash, combined, topologyBytes); err != nil {
+		combined.Close()
+		return 0, "", 0, 0, err
 	}
-	cells := map[string][]byte{}
-	for _, array := range document.Piece.CellsData {
-		value, decodeErr := decodeVTKBinary(array, headerBytes)
-		if decodeErr != nil {
-			return convertedPiece{}, decodeErr
+	topologyName = "topology-" + hex.EncodeToString(hash.Sum(nil)) + ".bin"
+	topologyPath := filepath.Join(outputDir, topologyName)
+	topologyAdded := int64(0)
+	if _, statErr := os.Stat(topologyPath); errors.Is(statErr, os.ErrNotExist) {
+		if _, err = combined.Seek(0, io.SeekStart); err != nil {
+			combined.Close()
+			return 0, "", 0, 0, err
 		}
-		cells[array.Name] = value
+		temporary, createErr := os.CreateTemp(outputDir, ".topology-*")
+		if createErr != nil {
+			combined.Close()
+			return 0, "", 0, 0, createErr
+		}
+		temporaryName := temporary.Name()
+		if chmodErr := temporary.Chmod(0o600); chmodErr != nil {
+			temporary.Close()
+			os.Remove(temporaryName)
+			combined.Close()
+			return 0, "", 0, 0, chmodErr
+		}
+		_, copyErr := io.CopyN(temporary, combined, topologyBytes)
+		closeErr := temporary.Close()
+		if copyErr != nil || closeErr != nil {
+			os.Remove(temporaryName)
+			combined.Close()
+			if copyErr != nil {
+				return 0, "", 0, 0, copyErr
+			}
+			return 0, "", 0, 0, closeErr
+		}
+		if renameErr := os.Rename(temporaryName, topologyPath); renameErr != nil {
+			os.Remove(temporaryName)
+			combined.Close()
+			return 0, "", 0, 0, renameErr
+		}
+		topologyAdded = topologyBytes
+	} else if statErr != nil {
+		combined.Close()
+		return 0, "", 0, 0, statErr
 	}
-	indices, err := triangulateCells(cells["connectivity"], cells["offsets"], cells["types"])
+	info, err := combined.Stat()
 	if err != nil {
-		return convertedPiece{}, err
+		combined.Close()
+		return 0, "", 0, 0, err
 	}
-	sections := []uvfSection{{Name: "indices", DType: "uint32", Dimension: 1, Offset: 0, Length: int64(len(indices))}, {Name: "position", DType: "float32", Dimension: 3, Offset: int64(len(indices)), Length: int64(len(positions))}}
-	chunks := [][]byte{indices, positions}
-	fields := map[string][2]float64{}
-	offset := int64(len(indices) + len(positions))
-	for _, array := range document.Piece.PointData {
-		if array.Name == "" || !strings.EqualFold(array.Type, "Float32") {
-			continue
+	fieldBytes = info.Size() - topologyBytes
+	for index := range piece.Sections {
+		if index < 2 {
+			piece.Sections[index].Path = topologyName
+		} else {
+			piece.Sections[index].Offset -= topologyBytes
 		}
-		values, decodeErr := decodeVTKBinary(array, headerBytes)
-		if decodeErr != nil {
-			return convertedPiece{}, fmt.Errorf("decode field %s: %w", array.Name, decodeErr)
-		}
-		components := array.Components
-		if components <= 0 {
-			components = 1
-		}
-		if len(values) != document.Piece.Points*components*4 {
-			continue
-		}
-		sections = append(sections, uvfSection{Name: array.Name, DType: "float32", Dimension: components, Offset: offset, Length: int64(len(values))})
-		chunks = append(chunks, values)
-		offset += int64(len(values))
-		fields[array.Name] = floatRange(values, components)
 	}
-	output, err := os.Create(target)
+	if fieldBytes == 0 {
+		piece.Buffer = topologyName
+		for index := range piece.Sections {
+			piece.Sections[index].Path = ""
+		}
+		combined.Close()
+		_ = os.Remove(combinedPath)
+		return topologyAdded, topologyName, topologyBytes, 0, nil
+	}
+	if _, err = combined.Seek(topologyBytes, io.SeekStart); err != nil {
+		combined.Close()
+		return 0, "", 0, 0, err
+	}
+	fieldTemp, err := os.CreateTemp(filepath.Dir(combinedPath), ".fields-*")
 	if err != nil {
-		return convertedPiece{}, err
+		combined.Close()
+		return 0, "", 0, 0, err
 	}
-	for _, chunk := range chunks {
-		if _, err = output.Write(chunk); err != nil {
-			output.Close()
-			return convertedPiece{}, err
+	fieldTempName := fieldTemp.Name()
+	_ = fieldTemp.Chmod(0o600)
+	_, copyErr := io.Copy(fieldTemp, combined)
+	closeErr := fieldTemp.Close()
+	combined.Close()
+	if copyErr != nil || closeErr != nil {
+		os.Remove(fieldTempName)
+		if copyErr != nil {
+			return 0, "", 0, 0, copyErr
 		}
+		return 0, "", 0, 0, closeErr
 	}
-	if err = output.Close(); err != nil {
-		return convertedPiece{}, err
+	if err = os.Rename(fieldTempName, combinedPath); err != nil {
+		os.Remove(fieldTempName)
+		return 0, "", 0, 0, err
 	}
-	bounds, err := positionBounds(positions)
-	if err != nil {
-		return convertedPiece{}, err
-	}
-	return convertedPiece{Buffer: bufferName, Sections: sections, Bounds: bounds, Fields: fields, Vertices: document.Piece.Points, Triangles: len(indices) / 12}, nil
-}
-
-func decodeVTKBinary(array vtkDataArray, headerBytes int) ([]byte, error) {
-	if !strings.EqualFold(array.Format, "binary") {
-		return nil, errors.New("only inline binary VTU arrays are supported")
-	}
-	encoded := strings.Map(func(r rune) rune {
-		if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
-			return -1
-		}
-		return r
-	}, array.Data)
-	headerChars := base64.StdEncoding.EncodedLen(headerBytes)
-	if len(encoded) < headerChars {
-		return nil, errors.New("binary array has no length header")
-	}
-	header, err := base64.StdEncoding.DecodeString(encoded[:headerChars])
-	if err != nil {
-		return nil, err
-	}
-	var length uint64
-	if headerBytes == 4 {
-		length = uint64(binary.LittleEndian.Uint32(header))
-	} else {
-		length = binary.LittleEndian.Uint64(header)
-	}
-	if length > uint64(MaxConvertibleVTUBytes) {
-		return nil, errors.New("decoded VTU array exceeds conversion limit")
-	}
-	decoded, err := base64.StdEncoding.DecodeString(encoded[headerChars:])
-	if err != nil {
-		return nil, err
-	}
-	if uint64(len(decoded)) != length {
-		return nil, fmt.Errorf("binary payload length is %d, expected %d", len(decoded), length)
-	}
-	return decoded, nil
-}
-
-func triangulateCells(connectivity, offsets, types []byte) ([]byte, error) {
-	if len(connectivity)%4 != 0 || len(offsets)%4 != 0 || len(types) != len(offsets)/4 {
-		return nil, errors.New("invalid VTU cell arrays")
-	}
-	conn := make([]uint32, len(connectivity)/4)
-	for i := range conn {
-		conn[i] = binary.LittleEndian.Uint32(connectivity[i*4:])
-	}
-	var triangles []uint32
-	start := 0
-	for i, cellType := range types {
-		end := int(binary.LittleEndian.Uint32(offsets[i*4:]))
-		if end < start || end > len(conn) {
-			return nil, errors.New("invalid VTU cell offset")
-		}
-		cell := conn[start:end]
-		switch cellType {
-		case 5:
-			if len(cell) == 3 {
-				triangles = append(triangles, cell...)
-			}
-		case 9:
-			if len(cell) == 4 {
-				triangles = append(triangles, cell[0], cell[1], cell[2], cell[0], cell[2], cell[3])
-			}
-		case 7:
-			for j := 1; j+1 < len(cell); j++ {
-				triangles = append(triangles, cell[0], cell[j], cell[j+1])
-			}
-		}
-		start = end
-	}
-	if len(triangles) == 0 {
-		return nil, errors.New("VTU contains no triangle, quad, or polygon surface cells")
-	}
-	result := make([]byte, len(triangles)*4)
-	for i, value := range triangles {
-		binary.LittleEndian.PutUint32(result[i*4:], value)
-	}
-	return result, nil
-}
-
-func positionBounds(data []byte) ([2][3]float64, error) {
-	var b [2][3]float64
-	for a := 0; a < 3; a++ {
-		b[0][a] = math.Inf(1)
-		b[1][a] = math.Inf(-1)
-	}
-	for i := 0; i+11 < len(data); i += 12 {
-		for a := 0; a < 3; a++ {
-			v := float64(math.Float32frombits(binary.LittleEndian.Uint32(data[i+a*4:])))
-			if math.IsNaN(v) || math.IsInf(v, 0) {
-				return [2][3]float64{}, errors.New("VTU contains non-finite point coordinates")
-			}
-			if v < b[0][a] {
-				b[0][a] = v
-			}
-			if v > b[1][a] {
-				b[1][a] = v
-			}
-		}
-	}
-	return b, nil
-}
-func floatRange(data []byte, components int) [2]float64 {
-	result := [2]float64{math.Inf(1), math.Inf(-1)}
-	for i := 0; i+components*4 <= len(data); i += components * 4 {
-		value := 0.0
-		for c := 0; c < components; c++ {
-			v := float64(math.Float32frombits(binary.LittleEndian.Uint32(data[i+c*4:])))
-			if components > 1 {
-				value += v * v
-			} else {
-				value = v
-			}
-		}
-		if components > 1 {
-			value = math.Sqrt(value)
-		}
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			continue
-		}
-		if value < result[0] {
-			result[0] = value
-		}
-		if value > result[1] {
-			result[1] = value
-		}
-	}
-	if math.IsInf(result[0], 0) || math.IsInf(result[1], 0) {
-		return [2]float64{0, 0}
-	}
-	return result
+	return topologyAdded + fieldBytes, topologyName, topologyBytes, fieldBytes, nil
 }
 
 func mergeBounds(a, b [2][3]float64, set bool) [2][3]float64 {

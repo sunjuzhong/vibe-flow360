@@ -1,6 +1,7 @@
 package sliceplayer
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -10,6 +11,28 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestVTKBase64DecoderStreamsAcrossArbitraryChunkBoundaries(t *testing.T) {
+	payload := bytes.Repeat([]byte{0x03, 0x7f, 0xa2, 0xff}, 40_000)
+	header := make([]byte, 8)
+	binary.LittleEndian.PutUint64(header, uint64(len(payload)))
+	encoded := []byte(base64.StdEncoding.EncodeToString(header) + base64.StdEncoding.EncodeToString(payload))
+	var output bytes.Buffer
+	decoder := vtkBase64Decoder{headerBytes: 8, output: &output}
+	for start := 0; start < len(encoded); {
+		end := start + 7
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		if err := decoder.WriteEncoded(encoded[start:end]); err != nil {
+			t.Fatal(err)
+		}
+		start = end
+	}
+	if written, err := decoder.Finish(); err != nil || written != int64(len(payload)) || !bytes.Equal(output.Bytes(), payload) {
+		t.Fatalf("streamed decoder mismatch: bytes=%d err=%v", written, err)
+	}
+}
 
 func vtkBinary(values []byte) string {
 	header := make([]byte, 8)
@@ -64,9 +87,41 @@ func TestConvertTarGzBuildsPlayableUVFFrame(t *testing.T) {
 	if json.Unmarshal(manifest, &entries) != nil || len(entries) != 2 {
 		t.Fatalf("invalid manifest: %s", manifest)
 	}
-	buffer, err := os.Stat(filepath.Join(filepath.Dir(filepath.Join(output, filepath.FromSlash(playback.Frames[0].ManifestPath))), "piece-0000.bin"))
-	if err != nil || buffer.Size() != 88 {
+	buffer, err := os.Stat(filepath.Join(output, "slice_Wake_000100", "piece-0000.bin"))
+	if err != nil || buffer.Size() != 16 {
 		t.Fatalf("unexpected buffer: %#v %v", buffer, err)
+	}
+	if playback.TopologyCount != 1 || playback.TopologyBytes != 72 || playback.FieldBytes != 16 || playback.CacheBytes != 88 {
+		t.Fatalf("unexpected deduplicated cache stats: %#v", playback)
+	}
+}
+
+func TestConvertTarGzDeduplicatesStaticTopologyAcrossTimeSteps(t *testing.T) {
+	archive := writeArchive(t, []archiveEntry{
+		{name: "slice_Wake_000100_proc0.vtu", body: testVTU()},
+		{name: "slice_Wake_000200_proc0.vtu", body: testVTU()},
+	})
+	output := t.TempDir()
+	playback, err := ConvertTarGz(archive, output, 1<<20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if playback.FrameCount != 2 || playback.TopologyCount != 1 || playback.TopologyBytes != 72 || playback.FieldBytes != 32 || playback.CacheBytes != 104 {
+		t.Fatalf("static topology was not deduplicated: %#v", playback)
+	}
+	if playback.Frames[0].Step == nil || *playback.Frames[0].Step != 100 || playback.Frames[1].Step == nil || *playback.Frames[1].Step != 200 {
+		t.Fatalf("global steps were not ordered: %#v", playback.Frames)
+	}
+	topologies, err := filepath.Glob(filepath.Join(output, "topology-*.bin"))
+	if err != nil || len(topologies) != 1 {
+		t.Fatalf("unexpected topology assets: %#v %v", topologies, err)
+	}
+}
+
+func TestConvertTarGzEnforcesDeduplicatedCacheLimit(t *testing.T) {
+	archive := writeArchive(t, []archiveEntry{{name: "slice_Wake_1.vtu", body: testVTU()}})
+	if _, err := ConvertTarGz(archive, t.TempDir(), 87, nil); err == nil || !strings.Contains(err.Error(), "cache exceeds") {
+		t.Fatalf("unexpected cache limit error: %v", err)
 	}
 }
 
@@ -78,5 +133,21 @@ func TestConvertTarGzGroupsProcessorPiecesIntoOneFrame(t *testing.T) {
 	}
 	if playback.FrameCount != 1 || playback.Frames[0].Vertices != 8 || playback.Frames[0].Triangles != 4 {
 		t.Fatalf("processor pieces were not grouped: %#v", playback)
+	}
+}
+
+func TestConvertTarGzUsesPVTUPieceReferencesForFrameGrouping(t *testing.T) {
+	manifest := `<?xml version="1.0"?><VTKFile><PUnstructuredGrid><Piece Source="unexpected-a.vtu"/><Piece Source="unexpected-b.vtu"/></PUnstructuredGrid></VTKFile>`
+	archive := writeArchive(t, []archiveEntry{
+		{name: "nested/slice_Wake_000123.pvtu", body: manifest},
+		{name: "nested/unexpected-a.vtu", body: testVTU()},
+		{name: "nested/unexpected-b.vtu", body: testVTU()},
+	})
+	playback, err := ConvertTarGz(archive, t.TempDir(), 1<<20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if playback.FrameCount != 1 || playback.Frames[0].Step == nil || *playback.Frames[0].Step != 123 || playback.Frames[0].Vertices != 8 {
+		t.Fatalf("PVTU pieces were not grouped by their manifest: %#v", playback)
 	}
 }

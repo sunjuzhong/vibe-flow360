@@ -392,6 +392,10 @@ export type SlicePlayerJob = {
     playback?: {
       ready: boolean
       frame_count: number
+      cache_bytes: number
+      topology_bytes: number
+      field_bytes: number
+      topology_count: number
       fields: string[]
       field_ranges: Record<string, [number, number]>
       bounds: [[number, number, number], [number, number, number]]

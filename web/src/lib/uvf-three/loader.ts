@@ -6,7 +6,8 @@ import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntit
 
 const maxManifestBytes = 2 * 1024 * 1024
 const maxBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_BUFFER_BYTES)
-const maxBufferFiles = 64
+const maxBufferFiles = 256
+const maxConcurrentBufferLoads = 4
 const maxTotalBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_TOTAL_BUFFER_BYTES)
 
 const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
@@ -29,30 +30,34 @@ export class UVFLoader {
     }
     const entries = parseUVFManifest(JSON.parse(manifestText))
     const solids = entries.filter((entry) => entry.type === 'SolidGeometry')
-    const paths = [...new Set(solids.map((solid) => safeUVFBufferPath(resolveUVFBuffer(solid, options.lodLevel).path)))]
+    const paths = [...new Set(solids.flatMap((solid) => {
+      const buffer = resolveUVFBuffer(solid, options.lodLevel)
+      return [buffer.path, ...buffer.sections.map((section) => section.path).filter((path): path is string => Boolean(path))]
+        .map(safeUVFBufferPath)
+    }))]
     if (!paths.length) throw new Error('UVF manifest has no geometry buffers')
     validateUVFBufferFileCount(paths)
 
     const buffers = new Map<string, ArrayBuffer>()
     let loadedFiles = 0
     let loadedBytes = 0
-    for (const path of paths) {
-      const bufferURL = new URL(path, resolvedManifestURL)
-      const response = await fetch(bufferURL, { signal: options.signal })
-      if (!response.ok) throw new Error(`UVF buffer request failed (${response.status}): ${path}`)
-      enforceContentLength(response, maxBufferBytes, `UVF buffer ${path}`)
-      const data = await response.arrayBuffer()
-      if (data.byteLength > maxBufferBytes) throw new Error(`UVF buffer ${path} exceeds the size limit`)
-      loadedBytes = accumulateUVFBufferBytes(loadedBytes, data.byteLength)
-      buffers.set(path, data)
-      loadedFiles++
-      options.onProgress?.({
-        loadedFiles,
-        totalFiles: paths.length,
-        progress: loadedFiles / paths.length,
-        path,
-      })
+    let nextPath = 0
+    const loadNext = async () => {
+      while (nextPath < paths.length) {
+        const path = paths[nextPath++]
+        const bufferURL = new URL(path, resolvedManifestURL)
+        const response = await fetch(bufferURL, { signal: options.signal })
+        if (!response.ok) throw new Error(`UVF buffer request failed (${response.status}): ${path}`)
+        enforceContentLength(response, maxBufferBytes, `UVF buffer ${path}`)
+        const data = await response.arrayBuffer()
+        if (data.byteLength > maxBufferBytes) throw new Error(`UVF buffer ${path} exceeds the size limit`)
+        loadedBytes = accumulateUVFBufferBytes(loadedBytes, data.byteLength)
+        buffers.set(path, data)
+        loadedFiles++
+        options.onProgress?.({ loadedFiles, totalFiles: paths.length, progress: loadedFiles / paths.length, path })
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(maxConcurrentBufferLoads, paths.length) }, loadNext))
     return buildUVFAsset(entries, buffers, options.lodLevel)
   }
 }
@@ -164,19 +169,17 @@ export function buildUVFAsset(
       throw new Error(`SolidGeometry ${solid.id} has no scene container`)
     }
     const bufferInfo = resolveUVFBuffer(solid, lodLevel)
-    const raw = buffers.get(bufferInfo.path)
-    if (!raw) throw new Error(`UVF buffer ${bufferInfo.path} was not loaded`)
     const positionSection = findSection(bufferInfo.sections, 'position')
     const normalSection = findSection(bufferInfo.sections, 'normal')
     const indexSection = findSection(bufferInfo.sections, 'indices')
     const edgeSection = findSection(bufferInfo.sections, 'edgePosition')
     const elementGroupSection = findSection(bufferInfo.sections, 'elementGroupId')
     if (!positionSection) throw new Error(`SolidGeometry ${solid.id} has no position section`)
-    const positions = floatSection(raw, positionSection)
-    const normals = normalSection ? floatSection(raw, normalSection) : null
-    const indices = indexSection ? uintSection(raw, indexSection) : null
-    const edgePositions = edgeSection ? floatSection(raw, edgeSection) : null
-    const elementGroupIds = elementGroupSection ? uintSection(raw, elementGroupSection) : null
+    const positions = floatSection(sectionBuffer(buffers, bufferInfo, positionSection), positionSection)
+    const normals = normalSection ? floatSection(sectionBuffer(buffers, bufferInfo, normalSection), normalSection) : null
+    const indices = indexSection ? uintSection(sectionBuffer(buffers, bufferInfo, indexSection), indexSection) : null
+    const edgePositions = edgeSection ? floatSection(sectionBuffer(buffers, bufferInfo, edgeSection), edgeSection) : null
+    const elementGroupIds = elementGroupSection ? uintSection(sectionBuffer(buffers, bufferInfo, elementGroupSection), elementGroupSection) : null
     vertices += positions.length / 3
     const vertexCount = positions.length / 3
     const renderNormals = deriveRenderNormals(positions, indices, normals)
@@ -184,7 +187,7 @@ export function buildUVFAsset(
     for (const section of bufferInfo.sections) {
       if (STRUCTURAL_SECTIONS.has(section.name) || section.dType !== 'float32') continue
       const dimension = Math.max(1, section.dimension)
-      const values = floatSection(raw, section)
+      const values = floatSection(sectionBuffer(buffers, bufferInfo, section), section)
       if (values.length / dimension !== vertexCount) continue
       fieldAttributes.set(section.name, new THREE.BufferAttribute(values, dimension))
       const range = finiteFieldRange(values, dimension)
@@ -803,6 +806,13 @@ function findSectionByName(geometry: THREE.BufferGeometry, fieldName: string): F
 
 function findSection(sections: UVFBufferSection[], name: string) {
   return sections.find((section) => section.name === name)
+}
+
+function sectionBuffer(buffers: Map<string, ArrayBuffer>, buffer: UVFBuffer, section: UVFBufferSection) {
+  const path = section.path ?? buffer.path
+  const raw = buffers.get(path)
+  if (!raw) throw new Error(`UVF buffer ${path} was not loaded`)
+  return raw
 }
 
 function floatSection(buffer: ArrayBuffer, section: UVFBufferSection) {
