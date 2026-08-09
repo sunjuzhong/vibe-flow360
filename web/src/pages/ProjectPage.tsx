@@ -923,7 +923,6 @@ export default function ProjectPage() {
                 annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
-                onRefresh={() => void loadDetail(false)}
               />
             )}
 

@@ -231,7 +231,6 @@ export default function CaseWorkspace({
   annotationsModel,
   geometryResourceId,
   onPlanCase,
-  onRefresh,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -240,7 +239,6 @@ export default function CaseWorkspace({
   annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
   onPlanCase: () => Promise<void>
-  onRefresh: () => void
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | null>(null)
@@ -599,9 +597,6 @@ export default function CaseWorkspace({
           )}
 
           <div className="case-review-actions">
-            <button className="toolbar-refresh" onClick={() => { onRefresh(); refetchConvergence() }} disabled={convergenceLoading} aria-label="Refresh case state">
-              <RotateCw size={13} /> Refresh
-            </button>
             <ResourceCreateDraftAction onCreate={onPlanCase} />
           </div>
           <small className="readiness-summary">Variations are staged as auditable Draft revisions before Flow360 execution.</small>

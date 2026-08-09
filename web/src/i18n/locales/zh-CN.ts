@@ -305,7 +305,6 @@ const messages: Record<string, string> = {
   'Close intervention': '关闭介入面板',
   'Agent intervention recovery': 'Agent 介入恢复',
   'Recovery details required': '需要恢复详情',
-  'Refresh case state': '刷新算例状态',
   'Spatial context fallback is active': '正在使用空间上下文回退',
 }
 

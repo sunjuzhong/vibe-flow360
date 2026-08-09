@@ -722,12 +722,10 @@
 
 .case-review-actions {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
   gap: 7px;
   margin-top: 9px;
 }
 
-.case-review-actions .toolbar-refresh,
 .case-review-actions .geometry-plan-action {
   min-height: 35px;
   margin: 0;
