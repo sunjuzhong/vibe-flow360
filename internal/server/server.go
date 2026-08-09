@@ -1643,11 +1643,8 @@ func isFailureState(state string) bool {
 }
 
 func (s *Server) flow360ResourceDetail(c *gin.Context) {
-	resourceType := c.Param("resource_type")
-	if resourceType == "" {
-		resourceType = "Geometry"
-	}
 	resourceID := c.Param("resource_id")
+	resourceType := resourceTypeForDetail(c.Param("resource_type"), resourceID)
 	cacheKey := resourceType + "/" + resourceID
 	if strings.EqualFold(c.Query("cache"), "only") {
 		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
@@ -1691,6 +1688,35 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	}
 	s.cacheLiveJSON("resource-detail", cacheKey, raw)
 	s.writeLiveJSON(c, raw)
+}
+
+// Static resource routes such as /resources/Case/:resource_id do not populate
+// Gin's :resource_type parameter. The resource ID is also authoritative when
+// an older Project snapshot contains a stale type, so normalize known prefixes
+// before choosing the CLI command and cache namespace.
+func resourceTypeForDetail(requestedType, resourceID string) string {
+	normalizedID := strings.ToLower(strings.TrimSpace(resourceID))
+	for _, candidate := range []struct {
+		prefix string
+		type_  string
+	}{
+		{prefix: "case-", type_: "Case"},
+		{prefix: "draft-", type_: "Draft"},
+		{prefix: "vm-", type_: "VolumeMesh"},
+		{prefix: "volume-mesh-", type_: "VolumeMesh"},
+		{prefix: "sm-", type_: "SurfaceMesh"},
+		{prefix: "surface-mesh-", type_: "SurfaceMesh"},
+		{prefix: "geo-", type_: "Geometry"},
+		{prefix: "geometry-", type_: "Geometry"},
+	} {
+		if strings.HasPrefix(normalizedID, candidate.prefix) {
+			return candidate.type_
+		}
+	}
+	if value := strings.TrimSpace(requestedType); value != "" {
+		return value
+	}
+	return "Geometry"
 }
 
 func (s *Server) serveResourceDetailSnapshot(c *gin.Context, resourceType, resourceID, cacheKey string) bool {

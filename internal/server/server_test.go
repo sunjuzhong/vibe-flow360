@@ -916,6 +916,50 @@ func TestGeometryDetailRouteCoexistsWithStaticDiagnosticRoutes(t *testing.T) {
 	}
 }
 
+func TestCaseDetailStaticRouteUsesCaseTypeAndCacheNamespace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mirror, err := projectmirror.New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := json.RawMessage(`{"id":"case-route","type":"Case","info":{"status":"completed"}}`)
+	if err := mirror.PutResource("prj-route", "Case", "case-route", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := projectcache.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{router: gin.New(), cache: cache, mirror: mirror}
+	api := app.router.Group("/api")
+	api.GET("/flow360/resources/:resource_type/:resource_id", app.flow360ResourceDetail)
+	api.GET("/flow360/resources/Case/:resource_id", app.flow360ResourceDetail)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-route?cache=only", nil)
+	app.router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Case detail route got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var body map[string]any
+	if json.Unmarshal(recorder.Body.Bytes(), &body) != nil || body["type"] != "Case" {
+		t.Fatalf("unexpected Case detail %#v", body)
+	}
+}
+
+func TestResourceDetailCorrectsStaleTypeFromResourceID(t *testing.T) {
+	if got := resourceTypeForDetail("Geometry", "case-be9b26d4"); got != "Case" {
+		t.Fatalf("got %q, want Case", got)
+	}
+	if got := resourceTypeForDetail("", "vm-123"); got != "VolumeMesh" {
+		t.Fatalf("got %q, want VolumeMesh", got)
+	}
+	if got := resourceTypeForDetail("SurfaceMesh", "custom-id"); got != "SurfaceMesh" {
+		t.Fatalf("got %q, want requested type", got)
+	}
+}
+
 func TestUpdateDraftParametersRequiresJSONObjectAndReturnsCanonicalParams(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	dir := t.TempDir()
