@@ -910,10 +910,10 @@ export const api = {
     simulation_params?: Record<string, unknown>
   }) =>
     mutate<ConfiguredDraft>(`/api/flow360/projects/${encodeURIComponent(projectId)}/drafts`, input),
-  renameDraft: (draftId: string, name: string) =>
-    replace<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/name`, { name }),
-  deleteDraft: (draftId: string, confirmed: boolean) =>
-    remove<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}?confirmed=${confirmed ? 'true' : 'false'}`),
+  renameDraft: (draftId: string, name: string, projectId?: string) =>
+    replace<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/name`, { name, project_id: projectId }),
+  deleteDraft: (draftId: string, confirmed: boolean, projectId?: string) =>
+    remove<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}?confirmed=${confirmed ? 'true' : 'false'}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
   draftParameterSchema: (draftId: string) =>
     json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
   validateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, paths: string[] = []) =>
@@ -921,14 +921,14 @@ export const api = {
       `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/validate`,
       { simulation_params: simulationParams, paths },
     ),
-  updateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>) =>
+  updateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, projectId?: string) =>
     replace<{ simulation_params: Record<string, unknown> }>(
-      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters`,
+      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`,
       { simulation_params: simulationParams },
     ),
-  patchDraftParameters: (draftId: string, patch: Record<string, unknown>) =>
+  patchDraftParameters: (draftId: string, patch: Record<string, unknown>, projectId?: string) =>
     partialUpdate<{ simulation_params: Record<string, unknown> }>(
-      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters`,
+      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`,
       { patch },
     ),
   startProjectSync: (projectId: string, force = false) =>

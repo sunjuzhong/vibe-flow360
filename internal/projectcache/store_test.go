@@ -134,6 +134,33 @@ func TestStoreSupportsFolderAndProjectListings(t *testing.T) {
 	}
 }
 
+func TestStoreSupportsDraftListingsAndExplicitInvalidation(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projectID := range []string{"prj-1", "prj-2"} {
+		if _, err := store.Put("draft-list", projectID, json.RawMessage(`{"records":[{"id":"draft-1"}]}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Delete("draft-list", "prj-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get("draft-list", "prj-1"); err == nil {
+		t.Fatal("deleted Draft listing remained cached")
+	}
+	if _, err := store.Get("draft-list", "prj-2"); err != nil {
+		t.Fatal("unrelated Draft listing was deleted")
+	}
+	if err := store.DeleteKind("draft-list"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get("draft-list", "prj-2"); err == nil {
+		t.Fatal("Draft listing cache kind was not cleared")
+	}
+}
+
 func TestStoreRejectsUnsupportedKind(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {

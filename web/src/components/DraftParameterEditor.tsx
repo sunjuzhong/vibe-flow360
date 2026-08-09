@@ -215,7 +215,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       setSyncError('')
       setFailedSyncFingerprint('')
       setSaved(false)
-      const response = await api.updateDraftParameters(draftId, next)
+      const response = await api.updateDraftParameters(draftId, next, project?.id)
       const canonical = response.simulation_params
       setBaseline(canonical)
       if (latestFingerprintRef.current === fingerprint) {
@@ -232,7 +232,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     } finally {
       setSaving(false)
     }
-  }, [draftId, schema])
+  }, [draftId, project?.id, schema])
 
   const save = async () => {
     const next = candidateResult.value

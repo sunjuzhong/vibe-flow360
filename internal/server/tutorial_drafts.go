@@ -89,6 +89,8 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 returned invalid canonical Draft parameters", "draft_id": draftID})
 		return
 	}
+	s.cacheConfiguredDraftDetail(detail, canonical)
+	s.syncDraftListSnapshot(c.Request.Context(), projectID)
 	var canonicalValue any
 	if err := json.Unmarshal(canonical, &canonicalValue); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode canonical Draft parameters"})

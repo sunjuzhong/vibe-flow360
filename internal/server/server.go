@@ -1195,10 +1195,17 @@ func (s *Server) submitPlanToFlow360(ctx context.Context, plan plans.Plan) (json
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.flow360.SetDraftSimulationParams(ctx, plan.RemoteIDs.DraftID, merged); err != nil {
+	canonical, err := s.flow360.SetDraftSimulationParams(ctx, plan.RemoteIDs.DraftID, merged)
+	if err != nil {
 		return nil, err
 	}
-	return s.flow360.RunExistingDraft(ctx, plan.RemoteIDs.DraftID, plan.Target)
+	s.syncCachedDraftParameters(plan.RemoteIDs.DraftID, canonical)
+	result, err := s.flow360.RunExistingDraft(ctx, plan.RemoteIDs.DraftID, plan.Target)
+	if err != nil {
+		return nil, err
+	}
+	s.syncDraftListSnapshot(ctx, plan.ProjectID)
+	return result, nil
 }
 
 func publicExecutionError(err error) error {
@@ -2571,7 +2578,8 @@ func (s *Server) renameFlow360Draft(c *gin.Context) {
 		return
 	}
 	var request struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		ProjectID string `json:"project_id"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft rename request"})
@@ -2588,6 +2596,8 @@ func (s *Server) renameFlow360Draft(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not rename this Draft; refresh and try again"})
 		return
 	}
+	s.syncCachedDraftName(draftID, raw)
+	s.syncDraftListSnapshot(c.Request.Context(), request.ProjectID)
 	s.writeLiveJSON(c, raw)
 }
 
@@ -2606,6 +2616,8 @@ func (s *Server) deleteFlow360Draft(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 could not delete this Draft; refresh and try again"})
 		return
 	}
+	s.deleteCachedDraftDetail(draftID)
+	s.syncDraftListSnapshot(c.Request.Context(), c.Query("project_id"))
 	s.writeLiveJSON(c, raw)
 }
 
@@ -2746,6 +2758,7 @@ func (s *Server) updateFlow360DraftParameters(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
+	s.syncCachedDraftParameters(draftID, canonical)
 	c.JSON(http.StatusOK, gin.H{"simulation_params": canonical})
 }
 
@@ -2781,6 +2794,7 @@ func (s *Server) patchFlow360DraftParameters(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
+	s.syncCachedDraftParameters(draftID, canonical)
 	c.JSON(http.StatusOK, gin.H{"simulation_params": canonical})
 }
 

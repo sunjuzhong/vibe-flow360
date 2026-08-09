@@ -486,10 +486,10 @@ export default function ProjectPage() {
   }
 
   const renameDraft = async (draftId: string, name: string) => {
-    await api.renameDraft(draftId, name)
-    setDrafts((current) => current.map((draft) => draft.id === draftId ? { ...draft, name } : draft))
+    const canonical = await api.renameDraft(draftId, name, projectId)
+    setDrafts((current) => current.map((draft) => draft.id === draftId ? { ...draft, ...canonical } : draft))
     setDraftDetail((current) => current
-      ? { ...current, info: { ...current.info, name } }
+      ? { ...current, info: { ...current.info, name: canonical.name } }
       : current)
   }
 
@@ -532,7 +532,7 @@ export default function ProjectPage() {
   }
 
   const deleteDraft = async (draftId: string) => {
-    await api.deleteDraft(draftId, true)
+    await api.deleteDraft(draftId, true, projectId)
     await loadDrafts()
     if (draftId === activeDraftId) {
       setActiveDraftId('')
@@ -1054,7 +1054,7 @@ export default function ProjectPage() {
         }}
         draftParameters={draftMode ? draftDetail?.simulation_params : undefined}
         onApplyDraftPatch={draftMode && activeDraft ? async (patch) => {
-          const response = await api.patchDraftParameters(activeDraft.id, patch)
+          const response = await api.patchDraftParameters(activeDraft.id, patch, projectId)
           setDraftDetail((current) => current ? { ...current, simulation_params: response.simulation_params } : current)
         } : undefined}
         contextLabel={draftMode && activeDraft

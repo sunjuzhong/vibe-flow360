@@ -15,6 +15,7 @@ var allowedKinds = map[string]struct{}{
 	"project-info":    {},
 	"project-tree":    {},
 	"project-items":   {},
+	"draft-list":      {},
 	"resource-detail": {},
 	"folder-tree":     {},
 	"project-list":    {},
@@ -124,6 +125,39 @@ func (s *Store) GetFresh(kind, key string, ttl time.Duration) (Entry, error) {
 		return Entry{}, errors.New("cache entry is expired")
 	}
 	return entry, nil
+}
+
+// Delete removes one cached snapshot. A missing entry is already consistent
+// with the requested state and is therefore not an error.
+func (s *Store) Delete(kind, key string) error {
+	if _, ok := allowedKinds[kind]; !ok {
+		return errors.New("unsupported cache kind")
+	}
+	if key == "" {
+		return errors.New("cache key is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := os.Remove(filepath.Join(s.dir, kind, cacheFileName(key)))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+// DeleteKind removes every snapshot of a kind. It is used when a mutation
+// does not carry the parent key needed to invalidate a single listing.
+func (s *Store) DeleteKind(kind string) error {
+	if _, ok := allowedKinds[kind]; !ok {
+		return errors.New("unsupported cache kind")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := os.RemoveAll(filepath.Join(s.dir, kind))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 func (s *Store) Cleanup(ttl time.Duration) (int, error) {
