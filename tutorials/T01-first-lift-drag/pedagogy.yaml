@@ -18,7 +18,7 @@ concepts:
     - id: force-origin
       title: Pressure and shear create forces
       explanation: Surface pressure acts normal to the aircraft and wall shear acts tangentially; their integrated components form dimensional lift and drag.
-      misconception: Lift and drag are not determined by residual convergence alone, and a colorful pressure contour is not an integrated force check.
+      misconception: Validate lift and drag with residual and force histories plus mesh and surface-field checks.
     - id: coefficients-and-alpha
       title: Coefficients enable controlled comparison
       explanation: Lift and drag coefficients normalize force by dynamic pressure and reference area, while angle of attack changes the flow direction relative to the aircraft.
@@ -44,10 +44,10 @@ parameter_derivations:
     calculation: coefficients use Sref = 24 m²; moments additionally use Lref = 2.4 m
     transfer: Use the project convention for planform or other reference area and record it explicitly before comparing designs.
   - id: first-layer-scope
-    parameter: First-layer teaching value
+    parameter: First-layer baseline assumption
     basis: The 1 mm value makes a wall-normal assumption visible but is not derived from the current Reynolds number and target y-plus.
     calculation: production t1 requires y+ target, density, viscosity, velocity, and wall-shear estimate
-    transfer: Replace the teaching value with a y-plus-based estimate and verify actual yPlus in the solved surface output.
+    transfer: Replace the baseline assumption with a y-plus-based estimate and verify actual yPlus in the solved surface output.
 experiments:
   - id: alpha-variant
     prediction: With all other assumptions fixed, what is the most defensible expectation when alpha changes from zero to five degrees?

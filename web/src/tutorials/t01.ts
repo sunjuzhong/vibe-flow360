@@ -39,11 +39,11 @@ export type TutorialEnvironmentResult = {
 }
 
 export const t01Steps: TutorialStep[] = [
-  { id: 'question', label: '01', title: 'Frame the question', summary: 'Start from the engineering decision, not the solver.' },
+  { id: 'question', label: '01', title: 'Frame the question', summary: 'Define the aerodynamic quantities, controlled variable, and required outputs.' },
   { id: 'geometry', label: '02', title: 'Understand the geometry', summary: 'Confirm units and assign physical meaning to surfaces.' },
   { id: 'setup', label: '03', title: 'Review the setup', summary: 'Connect mesh, physics, reference values, and outputs.' },
   { id: 'variant', label: '04', title: 'Try a variant', summary: 'Change only angle of attack and inspect the semantic diff.' },
-  { id: 'evidence', label: '05', title: 'Define trustworthy evidence', summary: 'Separate a completed run from a credible result.' },
+  { id: 'evidence', label: '05', title: 'Define acceptance evidence', summary: 'Set mesh, convergence, force, and surface-field criteria.' },
   { id: 'run', label: '06', title: 'Continue to Flow360', summary: 'Review the paid boundary before creating a cloud run.' },
 ]
 
@@ -73,7 +73,7 @@ export const t01Pedagogy: TutorialPedagogy = {
     'Reject a completed Case when mesh, convergence, forces, or fields provide insufficient evidence.',
   ],
   cfdConcepts: [
-    { id: 'forces', title: 'Pressure and shear create aerodynamic force', explanation: 'Pressure acts normal to the aircraft and wall shear tangentially; integrating their components produces dimensional lift and drag.', misconception: 'Residual convergence or a colorful pressure contour alone does not validate integrated force.' },
+    { id: 'forces', title: 'Pressure and shear create aerodynamic force', explanation: 'Pressure acts normal to the aircraft and wall shear tangentially; integrating their components produces dimensional lift and drag.', misconception: 'Validate integrated force with residual and force histories plus mesh and surface-field checks.' },
     { id: 'coefficients', title: 'Coefficients normalize the comparison', explanation: 'CL and CD divide forces by dynamic pressure and reference area, while angle of attack changes flow direction relative to the aircraft.', misconception: 'Lift does not increase indefinitely with alpha because separation and stall can make the response nonlinear.' },
   ],
   flow360Concepts: [
@@ -83,7 +83,7 @@ export const t01Pedagogy: TutorialPedagogy = {
   derivations: [
     { id: 'coeff', parameter: 'Aerodynamic coefficient normalization', basis: 'Forces become comparable after division by dynamic pressure and reference area.', calculation: 'q = ½ρV² · CL = L/(qSref) · CD = D/(qSref)', transfer: 'Recalculate q and verify Sref whenever velocity, density, scale, or convention changes.' },
     { id: 'reference', parameter: 'Reference area and moment length', basis: 'The bundled aircraft uses 24 m² area and 2.4 m length for coefficient normalization.', calculation: 'Sref = 24 m² · Lref = 2.4 m', transfer: 'Use and document the same reference convention before comparing another design.' },
-    { id: 'layer', parameter: 'First-layer teaching value versus y-plus', basis: 'The 1 mm value exposes an assumption but is not derived from this flow condition.', calculation: 'production t₁ needs target y+, ρ, μ, V, and a wall-shear estimate', transfer: 'Derive t₁ for the operating point and verify actual yPlus after solving.' },
+    { id: 'layer', parameter: 'First-layer baseline assumption versus y-plus', basis: 'The 1 mm baseline is an explicit assumption; this flow condition does not determine it.', calculation: 'production t₁ needs target y+, ρ, μ, V, and a wall-shear estimate', transfer: 'Derive t₁ for the operating point and verify actual yPlus after solving.' },
   ],
   experiments: [{ id: 'alpha', prediction: 'What is the most defensible expectation when only alpha changes from 0° to 5°?', options: ['Lift should increase and drag may also increase', 'Lift and drag must both remain unchanged'], controlledVariable: 'Only AerospaceCondition alpha changes; mesh, models, references, numerics, and outputs remain identical.', observation: 'Compare stable CL/CD histories, Cp patterns, separation indicators, and convergence—not one final force sample.' }],
   failureModes: [

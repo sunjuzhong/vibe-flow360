@@ -40,7 +40,7 @@ parameter_derivations:
     transfer: Preserve an angular criterion across different radii, then verify actual edge length and facet distribution on each element.
   - id: trailing-edge-scale
     parameter: Trailing-edge normal height
-    basis: Normalize the 0.7 mm teaching height by the one-metre reference chord to expose its geometric scale.
+    basis: Normalize the 0.7 mm baseline height by the one-metre reference chord to state its geometric scale.
     calculation: hTE/c = 0.0007/1 = 7×10⁻⁴
     transfer: Recompute the dimensional height from the new chord and actual trailing-edge thickness instead of copying 0.7 mm.
   - id: minimum-passage-scale

@@ -39,8 +39,8 @@ parameter_derivations:
     calculation: 360/10 ≈ 36 sectors; 360/6 ≈ 60 sectors
     transfer: Use the estimate to reason about curvature fidelity, then inspect the actual mesh because edge length may become the active limit.
   - id: first-layer-ratio
-    parameter: First-layer teaching ratio
-    basis: Normalize the teaching thickness by diameter while explicitly separating it from a production y-plus derivation.
+    parameter: First-layer baseline ratio
+    basis: Normalize the baseline thickness by diameter and keep it separate from a production y-plus derivation.
     calculation: baseline t1/D = 0.01; refined t1/D = 0.005
     transfer: For production, derive t1 from target y-plus, wall shear estimate, density, and viscosity rather than scaling this ratio blindly.
 experiments:

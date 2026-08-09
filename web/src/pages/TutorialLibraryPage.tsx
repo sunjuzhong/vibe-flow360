@@ -14,22 +14,22 @@ export default function TutorialLibraryPage() {
 
   return (
     <div className="tutorial-library-page">
-      <TopBar status={status} title="Learn by building trustworthy simulations" />
+      <TopBar status={status} title="Flow360 CFD tutorials" />
       <main className="tutorial-library">
         <header className="tutorial-library-hero">
           <div>
             <p className="eyebrow">GUIDED TUTORIALS</p>
-            <h1>Learn Flow360 through engineering decisions.</h1>
-            <p>Each tutorial connects a physical question to a reviewable setup, a controlled variant, and evidence you can use to decide whether the result is trustworthy.</p>
+            <h1>Build and review Flow360 CFD simulations.</h1>
+            <p>Configure geometry, mesh, operating conditions, controlled variants, and acceptance evidence for each case.</p>
           </div>
           <div className="tutorial-library-principle">
             <ShieldCheck size={21} />
-            <div><strong>Completion is not credibility</strong><span>Every lesson ends with an evidence contract, not just a green solver status.</span></div>
+            <div><strong>Four review stages</strong><span>Check geometry, mesh, convergence, and outputs before using a result.</span></div>
           </div>
         </header>
 
         <section className="tutorial-catalog-heading">
-          <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Start locally. Connect to cloud execution only after review.</p></div></div>
+          <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
           <span>4 available</span>
         </section>
 
@@ -42,8 +42,8 @@ export default function TutorialLibraryPage() {
             </div>
             <div className="tutorial-card-content">
               <p className="eyebrow">EXTERNAL AERODYNAMICS</p>
-              <h2>First trustworthy lift and drag result</h2>
-              <p>Set up a simple aircraft at 0° and 5° angle of attack, then learn why mesh review, convergence, and force stability all matter.</p>
+              <h2>Aircraft lift and drag at two angles of attack</h2>
+              <p>Set up the same aircraft at 0° and 5°, then check mesh quality, residual convergence, and force stability.</p>
               <div className="tutorial-card-meta">
                 <span><Clock3 size={13} /> 15–20 min</span>
                 <span><CheckCircle2 size={13} /> Browser guided</span>
