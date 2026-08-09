@@ -1,4 +1,4 @@
-import { Check, ChevronRight, GitPullRequestDraft, Pencil, Plus, RefreshCw, Settings2, SlidersHorizontal, X } from 'lucide-react'
+import { Check, ChevronRight, GitPullRequestDraft, Pencil, Play, Plus, RefreshCw, Settings2, SlidersHorizontal, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import type { DraftRecord, ResourceDetail } from '../api/client'
 import { useI18n } from '../i18n'
@@ -17,6 +17,7 @@ type Props = {
   onEnter: (draftId: string) => void
   onCreate: () => void
   onConfigure: () => void
+  onReviewRun: () => void
   onRename: (draftId: string, name: string) => Promise<void>
   onManage: () => void
   onRefresh: () => void
@@ -54,6 +55,7 @@ export default function ProjectDraftBar({
   onEnter,
   onCreate,
   onConfigure,
+  onReviewRun,
   onRename,
   onManage,
   onRefresh,
@@ -197,12 +199,13 @@ export default function ProjectDraftBar({
       </div>
 
       <div className="project-draft-actions">
-        <button type="button" onClick={onManage} title={t('Manage Drafts')} aria-label={t('Manage Drafts')}>
+        <button type="button" className="project-draft-utility" onClick={onManage} title={t('Manage Drafts')} aria-label={t('Manage Drafts')}>
           <Settings2 size={14} />
           <span>{t('Manage')}</span>
         </button>
         <button
           type="button"
+          className="project-draft-utility"
           onClick={startRename}
           disabled={!activeDraft || detailLoading || editingName}
           title={t('Rename Draft')}
@@ -220,6 +223,17 @@ export default function ProjectDraftBar({
         >
           <SlidersHorizontal size={14} />
           <span>{detailLoading ? t('Reading…') : t('Configure Draft')}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onReviewRun}
+          disabled={!selectedId || detailLoading}
+          title={t('Review and run this Draft')}
+          aria-label={t('Run this Draft')}
+          className="project-draft-run"
+        >
+          <Play size={14} />
+          <span>{t('Run')}</span>
         </button>
       </div>
     </section>

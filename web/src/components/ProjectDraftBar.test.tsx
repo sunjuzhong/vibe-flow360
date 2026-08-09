@@ -38,6 +38,7 @@ describe('ProjectDraftBar', () => {
         onEnter={() => undefined}
         onCreate={() => undefined}
         onConfigure={() => undefined}
+        onReviewRun={() => undefined}
         onRename={async () => undefined}
         onManage={() => undefined}
         onRefresh={() => undefined}
@@ -72,6 +73,7 @@ describe('ProjectDraftBar', () => {
         onEnter={() => undefined}
         onCreate={() => undefined}
         onConfigure={() => undefined}
+        onReviewRun={() => undefined}
         onRename={async () => undefined}
         onManage={() => undefined}
         onRefresh={() => undefined}
@@ -90,6 +92,8 @@ describe('ProjectDraftBar', () => {
     expect(markup).toContain('value="draft-2" selected=""')
     expect(markup).toContain('Configure Draft')
     expect(markup).toContain('Edit, validate, save, and optionally run this Draft')
+    expect(markup).toContain('aria-label="Run this Draft"')
+    expect(markup).toContain('>Run</span>')
     expect(markup).not.toContain('>Parameters<')
     expect(markup).not.toContain('>Review &amp; Run<')
     expect(markup).not.toContain('aria-label="Refresh Drafts"')

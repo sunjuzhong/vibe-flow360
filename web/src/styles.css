@@ -5316,7 +5316,11 @@ button { color: inherit; }
 }
 .project-draft-actions > button span { white-space: nowrap; }
 .project-draft-actions > button:disabled { opacity: .45; cursor: not-allowed; }
+.project-draft-actions > button.project-draft-utility { width: 34px; padding: 0; }
+.project-draft-actions > button.project-draft-utility span { display: none; }
 .project-draft-actions > button.project-draft-configure { border-color: #9eb44f; color: #354411; background: #eef4da; }
+.project-draft-actions > button.project-draft-run { border-color: #435323; color: #f5f8ed; background: #52652d; box-shadow: 0 4px 12px rgba(61,76,31,.16); }
+.project-draft-actions > button.project-draft-run:hover:not(:disabled) { background: #607637; }
 .draft-manager { padding-bottom: 20px; overflow-y: auto; }
 .draft-manager-create {
   display: grid;

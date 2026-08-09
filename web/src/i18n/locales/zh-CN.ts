@@ -212,6 +212,8 @@ const messages: Record<string, string> = {
   'REVIEWED VARIATIONS': '已审查变体',
   'Parameter Sweep': '参数扫描',
   'Review & Run': '审查并运行',
+  'Review and run this Draft': '审查并运行此草稿',
+  'Run this Draft': '运行此草稿',
   'Validate complete parameters before Flow360': '在 Flow360 执行前验证完整参数',
   'New revision': '新建修订',
   'REVIEW HISTORY': '审查历史',

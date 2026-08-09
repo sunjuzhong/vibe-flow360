@@ -780,6 +780,13 @@ export default function ProjectPage() {
                     setActivePanel('drafts')
                   }}
                   onConfigure={() => setActivePanel('parameters')}
+                  onReviewRun={() => {
+                    setActivePanel(null)
+                    setChatOpen(false)
+                    setInitialPlanId('')
+                    setPlanEntryMode('run')
+                    setPlanOpen(true)
+                  }}
                   onRename={renameDraft}
                   onManage={() => setActivePanel('drafts')}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
