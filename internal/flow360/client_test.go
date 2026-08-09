@@ -19,6 +19,33 @@ func TestFirstMeaningfulLinePrefersInstalledVersion(t *testing.T) {
 	}
 }
 
+func TestDownloadCaseResultToEnforcesLocalSizeBudget(t *testing.T) {
+	directory := t.TempDir()
+	binaryPath := filepath.Join(directory, "fake-flow360")
+	script := `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+printf '123456789' > "$output"
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(directory, "results")
+	_, err := (&Client{Binary: binaryPath}).DownloadCaseResultTo(context.Background(), "case-1", "results/slices.tar.gz", outputDir, 4)
+	if err == nil || !strings.Contains(err.Error(), "exceeds 4 byte") {
+		t.Fatalf("unexpected size-limit error: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(outputDir, "slices.tar.gz")); !os.IsNotExist(statErr) {
+		t.Fatalf("oversized result was not removed: %v", statErr)
+	}
+}
+
 func TestResolveFlow360BinaryPrefersExplicitConfiguration(t *testing.T) {
 	t.Setenv("VIBESIM_FLOW360_BINARY", "/opt/flow360/bin/flow360")
 	t.Setenv("VIBESIM_FLOW360_PYTHON", "")

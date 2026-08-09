@@ -363,6 +363,38 @@ export type ResourceDetail = {
   errors?: Record<string, string>
 }
 
+export type SlicePlayerSliceSummary = {
+  name: string
+  frame_count: number
+  first_step?: number
+  last_step?: number
+  formats: string[]
+  fields: string[]
+}
+
+export type SlicePlayerJob = {
+  id: string
+  case_id: string
+  result_path: string
+  source_size: number
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  stage: string
+  error?: string
+  report?: {
+    index_version: number
+    compressed_bytes: number
+    uncompressed_bytes: number
+    entry_count: number
+    slices: SlicePlayerSliceSummary[]
+    formats: string[]
+    index_ready: boolean
+  }
+  created_at: string
+  updated_at: string
+  finished_at?: string
+}
+
 export type DraftParameterSchemaResponse = {
   schema_version: number
   validator_version?: string
@@ -1007,6 +1039,23 @@ export const api = {
     if (!response.ok) throw await responseError(response)
     return response.text()
   },
+  startSlicePlayer: (caseId: string, resultPath: string, sizeBytes = 0) =>
+    mutate<SlicePlayerJob>(
+      `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs`,
+      { result_path: resultPath, size_bytes: sizeBytes },
+    ),
+  latestSlicePlayer: (caseId: string) =>
+    json<SlicePlayerJob>(
+      `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/latest`,
+    ),
+  slicePlayerJob: (caseId: string, jobId: string) =>
+    json<SlicePlayerJob>(
+      `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(jobId)}`,
+    ),
+  cancelSlicePlayer: (caseId: string, jobId: string) =>
+    remove<SlicePlayerJob>(
+      `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(jobId)}`,
+    ),
   compareCases: (caseIds: string[]) =>
     mutate<CompareResult>('/api/flow360/compare', { case_ids: caseIds, baseline: caseIds[0] }),
   sweep: (input: {

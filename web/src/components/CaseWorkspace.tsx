@@ -18,6 +18,7 @@ import {
   EyeOff,
   Info,
   Settings2,
+  Film,
 } from 'lucide-react'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
@@ -40,6 +41,7 @@ import {
 import { useI18n } from '../i18n'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
 import { StructuredDataView } from './StructuredDataView'
+import CaseSlicePlayerPanel from './CaseSlicePlayerPanel'
 import {
   createViewerContext,
   findLengthUnit,
@@ -83,6 +85,14 @@ export type CaseStatusView =
   | 'completed'
   | 'failed'
   | 'unknown'
+
+export function findSliceArchive(records: NonNullable<ResourceDetail['results']>['records']) {
+  return records?.find((record) => {
+    const resultPath = String(record.path ?? '').replaceAll('\\', '/').toLowerCase()
+    const resultName = String(record.name ?? '').toLowerCase()
+    return resultPath === 'results/slices.tar.gz' || (!resultPath && resultName === 'slices.tar.gz')
+  }) ?? null
+}
 
 export function mapCaseStatus(detail: ResourceDetail | null): CaseStatusView {
   const raw = resourceStatus(detail).toLowerCase()
@@ -241,7 +251,7 @@ export default function CaseWorkspace({
   onPlanCase: () => Promise<void>
 }) {
   const { t } = useI18n()
-  const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | null>(null)
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | 'slices' | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [caseFields, setCaseFields] = useState<string[]>([])
@@ -325,6 +335,7 @@ export default function CaseWorkspace({
   }, [detail?.id, resourceId])
 
   const resultRecords = detail?.results?.records ?? []
+  const sliceArchive = findSliceArchive(resultRecords)
   const reviewLevel = viewModel.status === 'failed'
     ? 'blocked'
     : viewModel.status === 'completed' && convResult?.status === 'converged'
@@ -587,6 +598,14 @@ export default function CaseWorkspace({
                 onClick={() => setActiveReviewDialog('convergence')}
               />
             )}
+            {sliceArchive && (
+              <ResourceReviewLauncher
+                icon={<Film size={14} />}
+                label={t('Time-series Slice player')}
+                summary={t('Prepare and inspect flow-field frames')}
+                onClick={() => setActiveReviewDialog('slices')}
+              />
+            )}
           </ResourceReviewLaunchers>
 
           {previewSource === 'fallback' && (
@@ -666,6 +685,20 @@ export default function CaseWorkspace({
                   </div>
                 ))}
               </div>
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'slices' && sliceArchive && (
+            <ResourceReviewDialog
+              title={t('Time-series Slice player')}
+              subtitle={t('Large-file preparation and frame index')}
+              icon={<Film size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <CaseSlicePlayerPanel
+                caseId={resourceId ?? detail?.id ?? ''}
+                resultPath={sliceArchive.path ?? 'results/slices.tar.gz'}
+                sizeBytes={sliceArchive.size_bytes}
+              />
             </ResourceReviewDialog>
           )}
         </>

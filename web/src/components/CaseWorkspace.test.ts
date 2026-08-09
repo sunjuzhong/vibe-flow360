@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseSurfaceVisibilityMap, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseSurfaceVisibilityMap, findSliceArchive, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -88,5 +88,16 @@ describe('Case surface visibility', () => {
   it('builds complete Show all and Hide all maps', () => {
     expect(caseSurfaceVisibilityMap(groups, true)).toEqual({ wall: true, farfield: true })
     expect(caseSurfaceVisibilityMap(groups, false)).toEqual({ wall: false, farfield: false })
+  })
+})
+
+describe('findSliceArchive', () => {
+  it('detects only the canonical Case Slice archive', () => {
+    expect(findSliceArchive([
+      { path: 'results/forces.csv' },
+      { path: 'results/slices.tar.gz', size_bytes: 123 },
+    ])).toMatchObject({ path: 'results/slices.tar.gz', size_bytes: 123 })
+    expect(findSliceArchive([{ name: 'slices.tar.gz' }])).toMatchObject({ name: 'slices.tar.gz' })
+    expect(findSliceArchive([{ path: 'results/surfaces.tar.gz' }])).toBeNull()
   })
 })

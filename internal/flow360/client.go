@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -611,14 +612,42 @@ func (c *Client) DownloadCaseResultTo(ctx context.Context, resourceID, resultPat
 		return "", errors.New("invalid result path")
 	}
 	outputPath := filepath.Join(outputDir, name)
-	if _, err := c.runWithTimeout(
-		ctx,
-		5*time.Minute,
+	downloadContext, cancelDownload := context.WithCancel(ctx)
+	defer cancelDownload()
+	var exceeded atomic.Bool
+	monitorDone := make(chan struct{})
+	if maxSize > 0 {
+		go func() {
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-monitorDone:
+					return
+				case <-ticker.C:
+					if info, statErr := os.Stat(outputPath); statErr == nil && info.Size() > maxSize {
+						exceeded.Store(true)
+						cancelDownload()
+						return
+					}
+				}
+			}
+		}()
+	}
+	_, runErr := c.runWithTimeout(
+		downloadContext,
+		30*time.Minute,
 		"case", "results", "get", resourceID, resultPath,
 		"--output", outputPath,
 		"--overwrite",
-	); err != nil {
-		return "", err
+	)
+	close(monitorDone)
+	if exceeded.Load() {
+		_ = os.Remove(outputPath)
+		return "", fmt.Errorf("result file exceeds %d byte analysis limit", maxSize)
+	}
+	if runErr != nil {
+		return "", runErr
 	}
 	info, err := os.Stat(outputPath)
 	if err != nil {

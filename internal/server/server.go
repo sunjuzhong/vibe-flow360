@@ -36,6 +36,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
+	"github.com/sunjuzhong/vibe-flow360/internal/sliceplayer"
 )
 
 //go:embed dist
@@ -55,18 +56,22 @@ type Server struct {
 	interventionEngine *agent.Engine
 	workDir            string
 
-	projectSyncClient  projectSyncClient
-	projectSyncMu      sync.Mutex
-	projectSyncJobs    map[string]struct{}
-	geometryDiagMu     sync.Mutex
-	geometryDiagCache  map[string]geometryDiagnosticsCacheEntry
-	geometryJobs       *geometrydiag.JobStore
-	geometryJobSlots   chan struct{}
-	annotationHandlers *AnnotationHandlers
-	aiCreateMu         sync.Mutex
-	aiCreateSessions   map[string]aiCreateSession
-	aiCreateProgressMu sync.Mutex
-	aiCreateProgress   map[string]aiCreateProgress
+	projectSyncClient   projectSyncClient
+	projectSyncMu       sync.Mutex
+	projectSyncJobs     map[string]struct{}
+	geometryDiagMu      sync.Mutex
+	geometryDiagCache   map[string]geometryDiagnosticsCacheEntry
+	geometryJobs        *geometrydiag.JobStore
+	geometryJobSlots    chan struct{}
+	slicePlayerJobs     *sliceplayer.Store
+	slicePlayerSlots    chan struct{}
+	slicePlayerCancelMu sync.Mutex
+	slicePlayerCancels  map[string]context.CancelFunc
+	annotationHandlers  *AnnotationHandlers
+	aiCreateMu          sync.Mutex
+	aiCreateSessions    map[string]aiCreateSession
+	aiCreateProgressMu  sync.Mutex
+	aiCreateProgress    map[string]aiCreateProgress
 }
 
 var allowedImportExtensions = map[string][]string{
@@ -116,6 +121,14 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	slicePlayerStore, err := sliceplayer.NewStore(filepath.Join(
+		dataDir,
+		"slice-player",
+		cacheNamespace(flowClient.Environment, flowClient.Profile),
+	))
+	if err != nil {
+		panic(err)
+	}
 	annotationStore, err := annotations.NewStore(filepath.Join(
 		dataDir,
 		"annotations",
@@ -154,6 +167,9 @@ func New() *Server {
 		geometryDiagCache:  map[string]geometryDiagnosticsCacheEntry{},
 		geometryJobs:       geometryJobStore,
 		geometryJobSlots:   make(chan struct{}, 2),
+		slicePlayerJobs:    slicePlayerStore,
+		slicePlayerSlots:   make(chan struct{}, 1),
+		slicePlayerCancels: map[string]context.CancelFunc{},
 		annotationHandlers: NewAnnotationHandlers(annotationStore),
 	}
 	app.loadAICreateState()
@@ -290,6 +306,7 @@ func (s *Server) routes() {
 		// static branch before :resource_type and does not fall back to the
 		// wildcard leaf, so register the Geometry detail leaf explicitly.
 		api.GET("/flow360/resources/Geometry/:resource_id", s.flow360ResourceDetail)
+		api.GET("/flow360/resources/Case/:resource_id", s.flow360ResourceDetail)
 		api.GET("/flow360/resources/:resource_type/:resource_id/logs", s.flow360ResourceLogs)
 		api.GET("/flow360/resources/:resource_type/:resource_id/download", s.flow360ResourceDownload)
 		api.GET("/flow360/resources/:resource_type/:resource_id/preview", s.flow360ResourcePreview)
@@ -300,6 +317,10 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/:job_id", s.getGeometryDiagnosticsJob)
 		api.DELETE("/flow360/resources/Geometry/:resource_id/diagnostics/jobs/:job_id", s.cancelGeometryDiagnosticsJob)
 		api.GET("/flow360/resources/Geometry/:resource_id/compare/:compare_id", s.flow360GeometryComparison)
+		api.POST("/flow360/resources/Case/:resource_id/slice-player/jobs", s.startSlicePlayerJob)
+		api.GET("/flow360/resources/Case/:resource_id/slice-player/jobs/latest", s.latestSlicePlayerJob)
+		api.GET("/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id", s.getSlicePlayerJob)
+		api.DELETE("/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id", s.cancelSlicePlayerJob)
 		api.GET("/flow360/resources/:resource_type/:resource_id/visualization/*asset_path", s.flow360ResourceVisualizationAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
 		api.POST("/flow360/compare", s.compareCases)
