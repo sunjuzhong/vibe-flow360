@@ -9,6 +9,7 @@ import {
   type TutorialEnvironmentStage,
   type TutorialStep,
 } from './t01'
+import type { TutorialPedagogy } from './pedagogy'
 
 export const t03Steps: TutorialStep[] = [
   { id: 'question', label: '01', title: 'Frame the mesh decision', summary: 'Decide what the mesh must resolve before choosing sizes.' },
@@ -37,6 +38,40 @@ export const t03Evidence = [
   { title: 'Growth is smooth', detail: 'Surface and wall-normal spacing transition gradually into the core mesh.' },
   { title: 'Quality reviewed', detail: 'No open boundaries, inverted cells, or unacceptable local quality remain.' },
 ]
+
+export const t03Pedagogy: TutorialPedagogy = {
+  learningObjectives: [
+    'Explain how curvature angle and maximum edge length jointly discretize a cylinder.',
+    'Separate first-layer teaching values from a production y-plus derivation.',
+    'Judge surface fidelity, layer continuity, transitions, and quality from generated evidence.',
+  ],
+  cfdConcepts: [
+    { id: 'facets', title: 'Curvature becomes planar facets', explanation: 'A smooth cylinder is approximated by planar surface elements. Their normal changes must remain small enough to preserve shape and pressure gradients.', misconception: 'Smooth CAD does not guarantee a smooth computational surface when curvature controls are loose.' },
+    { id: 'wall-gradient', title: 'The strongest gradient is wall-normal', explanation: 'No-slip velocity changes rapidly away from the wall, so anisotropic layers resolve a direction that surface triangles cannot.', misconception: 'A smaller first layer is not automatically correct without operating conditions, turbulence treatment, and a target y-plus.' },
+  ],
+  flow360Concepts: [
+    { id: 'surface', title: 'SurfaceRefinement controls tangential resolution', explanation: 'It applies local maximum edge length and curvature angle to the named cylinder faces while defaults govern the background.', misconception: 'A strict curvature angle does not replace an independent maximum edge length.' },
+    { id: 'layer', title: 'BoundaryLayer controls wall-normal resolution', explanation: 'It applies first-layer thickness and growth rate to wall faces, separately from surface tangential refinement.', misconception: 'Valid BoundaryLayer parameters do not prove that generated layers remain continuous.' },
+  ],
+  derivations: [
+    { id: 'sectors', parameter: 'Curvature angle as a facet estimate', basis: 'A full circle contains 360°, so the normal-angle limit estimates circumferential sectors.', calculation: '360°/10° ≈ 36 · 360°/6° ≈ 60', transfer: 'Use this only as an estimate; inspect the mesh because maximum edge length may become active.' },
+    { id: 'layer-ratio', parameter: 'First-layer thickness normalized by diameter', basis: 'Normalizing exposes the teaching scale while keeping it separate from a production y-plus calculation.', calculation: 'baseline t₁/D = 0.01 · refined t₁/D = 0.005', transfer: 'For production, derive t₁ from target y-plus, wall shear, density, and viscosity.' },
+  ],
+  experiments: [{ id: 'refine', prediction: 'What should visibly change when curvature, local edge length, and first-layer thickness are tightened?', options: ['More surface facets and a thinner first layer', 'A smaller farfield and different physics'], controlledVariable: 'Three spatial controls change; geometry, farfield, mesher, and growth rates stay fixed.', observation: 'Compare silhouette fidelity, layer thickness, continuity, transition, and expected cell cost in the same cross-section.' }],
+  failureModes: [
+    { id: 'faceted', symptom: 'The cylinder contains visibly flat sectors.', cause: 'Curvature angle or maximum edge length is too loose for the radius and pressure-resolution need.', correction: 'Tighten the active surface constraint and inspect the generated facet distribution.' },
+    { id: 'collapsed', symptom: 'Wall-normal layers terminate, collide, or jump abruptly.', cause: 'Thickness, growth, available space, or local surface resolution is incompatible with the geometry.', correction: 'Adjust the failing layer or surface control locally instead of refining the whole domain.' },
+  ],
+  evidenceRubric: [
+    { id: 'silhouette', observation: 'Circular silhouette', pass: 'The cross-section follows the circle without pressure-distorting flat sectors.', fail: 'Polygonal sectors remain obvious at the review scale.' },
+    { id: 'continuity', observation: 'Boundary-layer continuity', pass: 'Layers wrap continuously with gradual growth and no collision.', fail: 'Layers collapse, intersect, disappear, or jump around the circumference.' },
+    { id: 'transition', observation: 'Layer-to-core transition', pass: 'Anisotropic layers blend progressively into valid volume cells.', fail: 'Abrupt expansion, inverted cells, or isolated poor-quality regions remain.' },
+  ],
+  transferQuestions: [
+    { prompt: 'What additional information is needed for a production first-layer thickness?', expected: 'Density, viscosity, velocity or Reynolds number, wall-shear estimate, turbulence treatment, and target y-plus.' },
+    { prompt: 'When can maximum edge length dominate despite a strict curvature angle?', expected: 'On low-curvature regions where normals barely turn but long elements are still unacceptable.' },
+  ],
+}
 
 export function t03Params(refined: boolean): Record<string, unknown> {
   return refined

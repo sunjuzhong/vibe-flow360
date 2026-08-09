@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibe-flow360.local/schemas/pedagogy.schema.json",
+  "title": "Vibe Flow360 Tutorial Pedagogy Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "audience", "prerequisites", "learning_objectives", "concepts", "parameter_derivations", "experiments", "failure_modes", "evidence_rubric", "transfer_questions"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "audience": {"type": "string", "minLength": 20},
+    "prerequisites": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 5}},
+    "learning_objectives": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "objective", "assessment"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "objective": {"type": "string", "minLength": 20},
+          "assessment": {"type": "string", "minLength": 20}
+        }
+      }
+    },
+    "concepts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cfd", "flow360"],
+      "properties": {
+        "cfd": {"$ref": "#/$defs/conceptList"},
+        "flow360": {"$ref": "#/$defs/conceptList"}
+      }
+    },
+    "parameter_derivations": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "parameter", "basis", "calculation", "transfer"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "parameter": {"type": "string", "minLength": 2},
+          "basis": {"type": "string", "minLength": 20},
+          "calculation": {"type": "string", "minLength": 10},
+          "transfer": {"type": "string", "minLength": 20}
+        }
+      }
+    },
+    "experiments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "prediction", "options", "controlled_variable", "observation"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "prediction": {"type": "string", "minLength": 20},
+          "options": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 2}},
+          "controlled_variable": {"type": "string", "minLength": 10},
+          "observation": {"type": "string", "minLength": 20}
+        }
+      }
+    },
+    "failure_modes": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "symptom", "cause", "correction"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "symptom": {"type": "string", "minLength": 10},
+          "cause": {"type": "string", "minLength": 20},
+          "correction": {"type": "string", "minLength": 20}
+        }
+      }
+    },
+    "evidence_rubric": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "observation", "pass", "fail"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "observation": {"type": "string", "minLength": 10},
+          "pass": {"type": "string", "minLength": 15},
+          "fail": {"type": "string", "minLength": 15}
+        }
+      }
+    },
+    "transfer_questions": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["prompt", "expected"],
+        "properties": {
+          "prompt": {"type": "string", "minLength": 20},
+          "expected": {"type": "string", "minLength": 20}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "conceptList": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "explanation", "misconception"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "title": {"type": "string", "minLength": 5},
+          "explanation": {"type": "string", "minLength": 30},
+          "misconception": {"type": "string", "minLength": 20}
+        }
+      }
+    }
+  }
+}

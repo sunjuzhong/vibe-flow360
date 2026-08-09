@@ -1,0 +1,91 @@
+schema_version: 2
+audience: Beginners running a first external-aerodynamics comparison who need to distinguish solver completion from a trustworthy force result.
+prerequisites:
+  - Recognize lift, drag, velocity, pressure, and angle of attack.
+  - Know that a CFD result depends on geometry, mesh, physics, numerics, and outputs.
+learning_objectives:
+  - id: explain-force-coefficients
+    objective: Explain how pressure and wall shear produce forces and how reference quantities convert them to aerodynamic coefficients.
+    assessment: Identify how an incorrect reference area changes reported coefficients without changing the dimensional force.
+  - id: map-flow360-case
+    objective: Map geometry semantics, AerospaceCondition, reference geometry, models, time stepping, and outputs to Flow360 SimulationParams.
+    assessment: Locate the angle-of-attack patch and prove that the controlled variant changes no other simulation assumption.
+  - id: judge-trustworthy-result
+    objective: Judge mesh suitability, residual behavior, force stability, and surface-field sanity before using lift and drag.
+    assessment: Apply explicit pass and fail criteria and reject a completed Case when evidence is contradictory or incomplete.
+concepts:
+  cfd:
+    - id: force-origin
+      title: Pressure and shear create forces
+      explanation: Surface pressure acts normal to the aircraft and wall shear acts tangentially; their integrated components form dimensional lift and drag.
+      misconception: Lift and drag are not determined by residual convergence alone, and a colorful pressure contour is not an integrated force check.
+    - id: coefficients-and-alpha
+      title: Coefficients enable controlled comparison
+      explanation: Lift and drag coefficients normalize force by dynamic pressure and reference area, while angle of attack changes the flow direction relative to the aircraft.
+      misconception: Increasing angle of attack does not guarantee indefinitely increasing lift because separation and stall can invalidate a linear expectation.
+  flow360:
+    - id: aerospace-condition
+      title: AerospaceCondition defines the freestream
+      explanation: Velocity magnitude, alpha, beta, thermal state, and reference frame define the operating condition used by Flow360 models and boundaries.
+      misconception: Rotating only a visual aircraft icon does not change the serialized Flow360 operating condition.
+    - id: outputs-and-evidence
+      title: Outputs make hypotheses observable
+      explanation: ForceOutput and SurfaceOutput request integrated forces and fields such as Cp, Cf, yPlus, and CfVec needed for review after solving.
+      misconception: Requesting an output proves neither convergence nor physical correctness; it only makes evidence available if the Case runs.
+parameter_derivations:
+  - id: coefficient-normalization
+    parameter: Lift and drag coefficient normalization
+    basis: Dimensional forces become comparable only after division by dynamic pressure and the declared reference area.
+    calculation: q = ½ρV²; CL = L/(qSref); CD = D/(qSref)
+    transfer: Recalculate q and verify Sref whenever velocity, density, scale, or the aerodynamic reference definition changes.
+  - id: reference-area
+    parameter: Reference area and length
+    basis: The tutorial derives 24 m² area and 2.4 m moment length from the bundled aircraft reference geometry.
+    calculation: coefficients use Sref = 24 m²; moments additionally use Lref = 2.4 m
+    transfer: Use the project convention for planform or other reference area and record it explicitly before comparing designs.
+  - id: first-layer-scope
+    parameter: First-layer teaching value
+    basis: The 1 mm value makes a wall-normal assumption visible but is not derived from the current Reynolds number and target y-plus.
+    calculation: production t1 requires y+ target, density, viscosity, velocity, and wall-shear estimate
+    transfer: Replace the teaching value with a y-plus-based estimate and verify actual yPlus in the solved surface output.
+experiments:
+  - id: alpha-variant
+    prediction: With all other assumptions fixed, what is the most defensible expectation when alpha changes from zero to five degrees?
+    options: [Lift should increase and drag may also increase, Lift and drag must both remain unchanged]
+    controlled_variable: Only AerospaceCondition alpha changes; mesh, models, reference values, numerics, and requested outputs remain identical.
+    observation: Compare stable CL and CD histories, surface Cp patterns, separation indicators, and convergence rather than a single final force sample.
+failure_modes:
+  - id: wrong-reference-area
+    symptom: Force coefficients look implausible while dimensional forces and flow fields appear otherwise consistent.
+    cause: Reference area or length is wrong, uses different units, or follows a different convention from the intended comparison.
+    correction: Verify dimensional force, geometry units, Sref, Lref, and coefficient convention before changing the physics or mesh.
+  - id: false-convergence
+    symptom: Residuals decrease but CL or CD still drift or oscillate beyond the decision tolerance.
+    cause: The iterative solution has not reached force stability, or a genuinely unsteady flow is being forced into an unsuitable steady interpretation.
+    correction: Extend or revise the solve, inspect force histories and flow structures, and reconsider steady versus unsteady modeling.
+  - id: mesh-driven-force
+    symptom: Lift or drag changes materially after local mesh refinement even though solver histories look converged.
+    cause: Surface curvature, boundary layers, wakes, or pressure gradients were under-resolved in the baseline mesh.
+    correction: Perform a controlled mesh-sensitivity comparison and accept forces only after the engineering conclusion is stable.
+evidence_rubric:
+  - id: mesh-suitability
+    observation: Mesh suitability
+    pass: Geometry, boundary layers, wake regions, transitions, and quality are reviewed with no unresolved critical defect.
+    fail: Missing layers, poor geometry fidelity, abrupt refinement, or quality defects affect force-producing regions.
+  - id: convergence
+    observation: Residual and force convergence
+    pass: Primary residuals reduce substantially and CL/CD remain within the stated tolerance over the final review window.
+    fail: Residuals plateau at a problematic level, forces drift, or the two signals contradict each other.
+  - id: field-sanity
+    observation: Surface-field sanity
+    pass: Cp, Cf, yPlus, and CfVec patterns are physically coherent and explain the integrated force trend.
+    fail: Fields are missing, discontinuous, asymmetric without cause, or inconsistent with the reported forces.
+  - id: controlled-comparison
+    observation: Controlled alpha comparison
+    pass: The semantic diff proves that only alpha changes and both Cases use the same evidence window.
+    fail: Mesh, models, references, numerics, or review windows differ and confound the comparison.
+transfer_questions:
+  - prompt: If velocity doubles while CL remains similar, how should dimensional lift scale at unchanged density and area?
+    expected: Dynamic pressure and dimensional lift scale with velocity squared, so doubling velocity produces roughly four times the lift.
+  - prompt: Why can the five-degree result not prove the aircraft remains linear up to fifteen degrees?
+    expected: Separation and stall are nonlinear; additional controlled angles and suitable steady or unsteady evidence are required.

@@ -1,0 +1,77 @@
+schema_version: 2
+audience: Beginners who can identify a CFD geometry but have not yet designed a trustworthy mesh study.
+prerequisites:
+  - Know that a computational mesh discretizes the flow domain.
+learning_objectives:
+  - id: explain-physics
+    objective: Explain which physical gradient requires local resolution and in which direction it is transported.
+    assessment: Given a changed flow direction, place and orient the refinement region without copying coordinates.
+  - id: map-flow360
+    objective: Locate the Flow360 object and fields that express the intended physical resolution.
+    assessment: Identify the relevant SimulationParams path and explain the meaning of each controlled spacing.
+  - id: judge-evidence
+    objective: Distinguish valid parameters from generated evidence that is sufficient for an engineering decision.
+    assessment: Apply explicit pass and fail criteria to a mesh slice and justify acceptance or rejection.
+concepts:
+  cfd:
+    - id: transported-gradient
+      title: Transported gradients
+      explanation: Flow features are convected through the domain, so useful resolution follows the path of the gradients of interest.
+      misconception: A uniformly smaller global cell size is not automatically the most accurate use of a fixed cell budget.
+    - id: anisotropy
+      title: Directional resolution
+      explanation: Different gradient directions may require different spacings, allowing cells to remain longer along weak-gradient directions.
+      misconception: Anisotropic cells are not inherently low quality when their orientation follows the physics and transitions are smooth.
+  flow360:
+    - id: refinement-entity
+      title: Refinement entity
+      explanation: A geometric entity defines where a Flow360 refinement applies while the refinement object defines how spacing behaves there.
+      misconception: Creating a Box entity alone does not refine the volume until a compatible refinement references it.
+    - id: evidence-output
+      title: Evidence output
+      explanation: A requested mesh output describes which generated evidence should become available after meshing and does not create evidence locally.
+      misconception: A valid MeshSliceOutput configuration does not prove that a volume mesh already satisfies the intended spacing.
+parameter_derivations:
+  - id: region-length
+    parameter: Region length
+    basis: Normalize the teaching region by a characteristic geometry length so the reasoning transfers to another scale.
+    calculation: L_region / L_reference = 8
+    transfer: Recompute the dimensional length from the new reference geometry instead of copying the original metre value.
+  - id: spacing-ratio
+    parameter: Directional spacing
+    basis: Relate spacing to the feature thickness and use tighter spacing across the strongest expected gradient.
+    calculation: delta_cross / delta_axial < 1
+    transfer: Rotate or resize the spacing directions when the expected feature direction changes.
+experiments:
+  - id: extend-region
+    prediction: Which outcome is most likely when only the downstream refinement length is increased?
+    options: [More downstream coverage, Finer near-wall spacing]
+    controlled_variable: Downstream region length changes while near-wall and crossflow spacings remain fixed.
+    observation: Compare the refinement exit location and estimated cell cost without attributing unrelated changes to the variant.
+failure_modes:
+  - id: wrong-direction
+    symptom: Fine cells appear primarily outside the transported feature.
+    cause: The refinement entity is aligned with a coordinate axis rather than the actual flow or feature direction.
+    correction: Reorient the entity and its local spacing axes using the expected operating condition.
+  - id: abrupt-transition
+    symptom: Cell size changes abruptly at the refinement boundary.
+    cause: Local spacing is much smaller than the surrounding octree level without sufficient transition distance.
+    correction: Review growth and overlap, then adjust region size or intermediate spacing before solving.
+evidence_rubric:
+  - id: coverage
+    observation: Feature coverage
+    pass: Fine cells cover the complete feature and extend through the requested observation region.
+    fail: The feature exits the refined region before the requested downstream or crossflow location.
+  - id: alignment
+    observation: Refinement alignment
+    pass: Fine-cell directions and region orientation follow the expected transported gradients.
+    fail: Comparable resolution is wasted away from the feature or misses its expected path.
+  - id: transition
+    observation: Cell-size transition
+    pass: Neighboring levels blend progressively without a visually abrupt refinement boundary.
+    fail: A sharp size jump or isolated pocket creates an unnecessary quality risk.
+transfer_questions:
+  - prompt: How would you change the region if the freestream direction rotates by ten degrees?
+    expected: Rotate or widen the refinement using the new feature path while preserving spacing ratios tied to the gradients.
+  - prompt: Which evidence would justify paying for a longer refinement region?
+    expected: A requested downstream output or visible gradient must remain unresolved near the baseline region exit.

@@ -1,0 +1,87 @@
+schema_version: 2
+audience: Beginners learning why multi-element aerodynamic geometry needs feature-specific surface meshing rather than one global edge length.
+prerequisites:
+  - Recognize leading edges, trailing edges, slat gaps, and flap gaps on an airfoil.
+  - Know that surface mesh fidelity affects pressure and boundary-layer resolution.
+learning_objectives:
+  - id: explain-feature-risk
+    objective: Explain how leading-edge curvature, sharp trailing edges, and narrow passages create different meshing failure modes.
+    assessment: Match each geometric feature to curvature, normal-height, aspect-ratio, or passage-preservation evidence.
+  - id: choose-flow360-strategy
+    objective: Choose between explicit Flow360 edge controls and Geometry AI from CAD grouping provenance and passage risk.
+    assessment: State which objects are mutually exclusive and what information each strategy requires from the Geometry.
+  - id: judge-airfoil-mesh
+    objective: Judge whether element passages, critical edges, and anisotropic transitions survive the generated mesh.
+    assessment: Apply explicit pass and fail criteria to identical close-up views of slat, wing, flap, and symmetry regions.
+concepts:
+  cfd:
+    - id: leading-edge-pressure-gradient
+      title: Leading-edge curvature and pressure
+      explanation: Flow turns rapidly around each leading edge, creating strong pressure gradients whose accuracy depends on preserving local curvature.
+      misconception: A globally small edge length does not guarantee consistent angular resolution around every leading edge radius.
+    - id: passages-and-trailing-edges
+      title: Passages and thin wakes
+      explanation: Slat and flap gaps accelerate and redirect flow, while sharp trailing edges seed thin wakes that are sensitive to local geometry loss.
+      misconception: A mesh can be valid and closed yet still be physically unusable if a passage seals or a trailing edge becomes blunt.
+  flow360:
+    - id: edge-spacing-methods
+      title: Edge methods express different risks
+      explanation: Angle, height, aspect-ratio, and projected spacing constrain curvature, normal thickness, stretching, and inherited anisotropy respectively.
+      misconception: The four methods are not interchangeable ways to request a generically finer edge.
+    - id: geometry-ai-strategy
+      title: Geometry AI is an alternative strategy
+      explanation: GeometryRefinement preserves thin geometry and minimum passages using CAD-aware preparation instead of explicit SurfaceEdgeRefinement rules.
+      misconception: Geometry AI must not be layered on top of incompatible explicit edge rules in this Flow360 release.
+parameter_derivations:
+  - id: angular-resolution
+    parameter: Leading-edge angular resolution
+    basis: The eight-degree normal-turn limit expresses curvature resolution independently of the absolute leading-edge radius.
+    calculation: 360°/8° = 45 angular sectors for a complete circle estimate
+    transfer: Preserve an angular criterion across different radii, then verify actual edge length and facet distribution on each element.
+  - id: trailing-edge-scale
+    parameter: Trailing-edge normal height
+    basis: Normalize the 0.7 mm teaching height by the one-metre reference chord to expose its geometric scale.
+    calculation: hTE/c = 0.0007/1 = 7×10⁻⁴
+    transfer: Recompute the dimensional height from the new chord and actual trailing-edge thickness instead of copying 0.7 mm.
+  - id: minimum-passage-scale
+    parameter: Geometry AI minimum passage
+    basis: The 1.5 mm protected passage is an explicit geometric assumption relative to the one-metre chord.
+    calculation: gmin/c = 0.0015/1 = 1.5×10⁻³
+    transfer: Measure the smallest passage that must remain open and set the threshold below that physical gap with appropriate tolerance.
+experiments:
+  - id: explicit-versus-ai
+    prediction: Which strategy is more robust when reliable edge groups are missing but CAD faces and thin passages are trustworthy?
+    options: [Geometry AI passage preservation, Explicit edge controls with missing groups]
+    controlled_variable: The variant replaces explicit SurfaceEdgeRefinement objects with GeometryRefinement and changes the CAD preparation path.
+    observation: Compare passage survival, critical-edge fidelity, parameter traceability, and dependence on edge grouping rather than only setup length.
+failure_modes:
+  - id: lost-edge-groups
+    symptom: Intended leading, trailing, or gap controls are absent from part of the geometry.
+    cause: edgeName grouping changed or disappeared during CAD import, so explicit selectors no longer reference every critical edge.
+    correction: Repair and verify grouping provenance or choose the Geometry AI strategy when its CAD assumptions are satisfied.
+  - id: sealed-passage
+    symptom: A slat or flap passage closes, bridges, or contains no continuous usable cell path.
+    cause: Geometry tolerance, sealing, surface spacing, or passage protection is too coarse for the physical gap.
+    correction: Protect the measured minimum passage, tighten relevant geometry controls, and inspect the generated topology before volume meshing.
+evidence_rubric:
+  - id: passage-topology
+    observation: Slat and flap passage topology
+    pass: Both passages remain open with a continuous cell path and no unintended bridge or seal.
+    fail: A gap closes, changes connectivity, or becomes too poorly resolved for the intended flow.
+  - id: leading-edge-fidelity
+    observation: Leading-edge curvature fidelity
+    pass: Each element turns smoothly without visibly flat sectors or abrupt edge-spacing changes.
+    fail: Polygonal leading edges or inconsistent angular resolution could distort the suction peak.
+  - id: trailing-edge-fidelity
+    observation: Trailing-edge fidelity
+    pass: Thin trailing geometry remains sharp with controlled edge-normal spacing and no collapse.
+    fail: The trailing edge becomes blunt, disappears, or produces a discontinuous anisotropic transition.
+  - id: strategy-consistency
+    observation: Strategy consistency
+    pass: Exactly one compatible strategy is active and its required CAD provenance is verified.
+    fail: Incompatible explicit and Geometry AI controls are mixed or depend on missing groups.
+transfer_questions:
+  - prompt: Which strategy should you prefer when edge groups are audited and precise local edge intent is required?
+    expected: Prefer explicit controls when their grouping provenance is reliable and each geometric risk needs a directly traceable method.
+  - prompt: What must be measured before transferring the Geometry AI passage threshold to another airfoil?
+    expected: Measure the smallest physically important gap, geometry tolerance, chord scale, and features that may be intentionally sealed.

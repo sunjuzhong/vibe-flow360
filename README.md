@@ -152,6 +152,11 @@ Its final step can create a processed Flow360 Geometry and two configured
 Flow360 Case Drafts after an explicit Project-creation confirmation;
 mesh and Case execution remain separately locked behind the normal approval gate.
 
+All available Web tutorials implement Tutorial Standard v2: each lesson must
+connect CFD physics to Flow360 objects, derive its teaching values, ask for a
+prediction before revealing a controlled variant, teach realistic failure
+modes, apply explicit pass/fail evidence, and test transfer to a changed case.
+
 T03 adds a browser-native cylinder meshing lesson. Its final step creates the
 Geometry Project and baseline/refined VolumeMesh Drafts with curvature,
 surface spacing, first-layer thickness, growth rates, farfield, and beta mesher

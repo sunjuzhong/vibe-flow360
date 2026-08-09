@@ -1,0 +1,91 @@
+schema_version: 2
+audience: Beginners who know that a CFD mesh discretizes a flow domain but have not designed flow-aligned volume refinement.
+prerequisites:
+  - Recognize velocity, pressure, and a computational mesh as basic CFD quantities.
+  - Understand that the cylinder diameter is the reference length in this lesson.
+learning_objectives:
+  - id: explain-cylinder-wake
+    objective: Explain why boundary-layer separation creates shear layers and a downstream velocity-deficit wake behind a cylinder.
+    assessment: Sketch the expected wake direction and identify where gradients are strongest before seeing a refinement region.
+  - id: map-volume-controls
+    objective: Map near-body, directional-corridor, and wake-core resolution to the correct Flow360 entities and refinement objects.
+    assessment: Identify Sphere, Box, Cylinder, UniformRefinement, StructuredBoxRefinement, and AxisymmetricRefinement in SimulationParams.
+  - id: judge-wake-evidence
+    objective: Judge whether a generated volume mesh covers the intended wake with acceptable alignment, overlap, and transitions.
+    assessment: Apply the center-plane pass and fail rubric to choose between compact and focused Drafts.
+concepts:
+  cfd:
+    - id: separation-and-shear-layers
+      title: Separation and shear layers
+      explanation: An adverse pressure gradient makes the cylinder boundary layer detach; the two detached shear layers bound a low-momentum wake.
+      misconception: The wake is not a geometric shadow with uniform properties, and fine cells are not needed equally everywhere behind the body.
+    - id: wake-transport-and-anisotropy
+      title: Wake transport and anisotropy
+      explanation: Mean flow transports the velocity deficit downstream while the strongest gradients remain primarily across the wake, justifying tighter crossflow spacing.
+      misconception: Longer cells along the wake are not automatically poor quality when they align with weak axial gradients and transition smoothly.
+  flow360:
+    - id: entity-versus-refinement
+      title: Entity versus refinement
+      explanation: Sphere, Box, and Cylinder entities define locations; UniformRefinement, StructuredBoxRefinement, and AxisymmetricRefinement define spacing behavior.
+      misconception: Adding a Box entity alone does not refine the mesh until a compatible refinement references it through entities.
+    - id: mesh-slice-output
+      title: MeshSliceOutput is a request
+      explanation: MeshSliceOutput asks Flow360 to expose a generated center-plane mesh slice after meshing so region coverage and transitions can be inspected.
+      misconception: A valid MeshSliceOutput in a Draft is not evidence that a mesh already exists or satisfies the rubric.
+parameter_derivations:
+  - id: region-size-by-diameter
+    parameter: Wake corridor length
+    basis: Normalize downstream coverage by the one-metre cylinder diameter so the setup transfers to another geometric scale.
+    calculation: baseline Lwake/D = 8; focused Lwake/D = 12.5
+    transfer: Multiply the selected nondimensional reach by the new body diameter, then reassess it against the requested downstream outputs.
+  - id: directional-spacing-ratio
+    parameter: Structured-box spacing ratio
+    basis: Crossflow gradients are expected to be stronger than mean axial gradients, so crossflow spacing is intentionally tighter.
+    calculation: baseline Δcross/Δaxial = 0.16/0.35 = 0.46; focused = 0.08/0.24 = 0.33
+    transfer: Reorient the local axes with the expected wake and choose the ratio from gradient direction rather than copying metre values.
+  - id: octree-compatible-near-body
+    parameter: Near-body uniform spacing
+    basis: Flow360 casts uniform volume spacing to a supported octree level, so tutorial values use exact powers-of-two subdivisions.
+    calculation: baseline D/Δ = 4; focused D/Δ = 8
+    transfer: Choose an octree-compatible fraction of the new reference length and verify the serialized value before meshing.
+experiments:
+  - id: compact-versus-focused
+    prediction: When the wake corridor is extended and crossflow spacing is halved, which change should be visible in the generated mesh?
+    options: [More downstream fine cells and higher cost, A thinner first boundary-layer cell]
+    controlled_variable: The variant changes volume-refinement reach and spacing; the cylinder geometry and first boundary-layer thickness remain fixed.
+    observation: Compare the same center-plane view for downstream exit, cross-wake cell count, transition smoothness, and estimated total cell cost.
+failure_modes:
+  - id: corridor-misaligned
+    symptom: Fine cells form a long corridor that misses the velocity-deficit wake.
+    cause: The Box and Cylinder axes follow global positive x even though yaw or nearby geometry deflects the actual wake.
+    correction: Predict the feature path from the operating condition, then rotate or widen the entities and their directional spacing axes.
+  - id: corridor-too-short
+    symptom: The wake remains strong when it abruptly exits into coarse background cells.
+    cause: The corridor length was copied from a template without considering downstream outputs or the decay of the velocity deficit.
+    correction: Extend the region only until the requested evidence is resolved, then compare the added cell cost against the engineering value.
+  - id: wasteful-isotropic-refinement
+    symptom: Cell count rises substantially without improving the cross-wake gradient where evidence is needed.
+    cause: Equal spacing was applied in all directions or across the whole farfield instead of exploiting flow-aligned anisotropy.
+    correction: Keep tighter spacing across strong gradients and coarser spacing along weak axial gradients while reviewing cell quality.
+evidence_rubric:
+  - id: separation-coverage
+    observation: Near-body separation coverage
+    pass: The fine near-body region encloses the complete cylinder and overlaps the start of both detached shear layers.
+    fail: Either shear layer leaves the fine region before entering the downstream corridor.
+  - id: wake-alignment
+    observation: Directional wake alignment
+    pass: The box and cylindrical core follow the expected wake path with visibly tighter crossflow than axial spacing.
+    fail: Fine cells are concentrated away from the wake or use effectively isotropic spacing without justification.
+  - id: overlap-and-transition
+    observation: Region overlap and cell-size transition
+    pass: Sphere, box, core, and background levels blend progressively without isolated pockets or abrupt jumps.
+    fail: Region boundaries create sudden size changes, disconnected fine pockets, or avoidable quality risks.
+  - id: downstream-exit
+    observation: Downstream corridor exit
+    pass: The requested observation region ends before the mesh returns smoothly to background spacing.
+    fail: A still-important wake gradient crosses the refinement exit or the extra reach has no stated evidence purpose.
+transfer_questions:
+  - prompt: How should the refinement change when the freestream has a ten-degree yaw angle?
+    expected: Rotate the corridor toward the predicted mean wake or widen it for uncertainty, while preserving spacing directions relative to the wake rather than global axes.
+  - prompt: When is the focused twelve-and-a-half-diameter corridor not worth its added cell cost?
+    expected: Reject it when requested outputs end upstream, the baseline exit already shows weak gradients and smooth decay, or no decision benefits from the extra reach.

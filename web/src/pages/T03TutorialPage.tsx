@@ -20,11 +20,13 @@ import type { Flow360Status } from '../api/client'
 import { api } from '../api/client'
 import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
+import { TutorialConceptBridge, TutorialDerivations, TutorialEvidenceRubric, TutorialFailureModes, TutorialPrediction, TutorialTransferCheck } from '../components/TutorialTeachingBlocks'
 import {
   createT03Environment,
   t03Evidence,
   t03ParameterCards,
   t03Params,
+  t03Pedagogy,
   t03Progress,
   t03Steps,
   validateT03Setup,
@@ -103,6 +105,7 @@ export default function T03TutorialPage() {
           <div><Layers3/><span><strong>Protect the wall</strong>Make first-layer thickness and growth rate reviewable.</span></div>
           <div><ShieldCheck/><span><strong>Inspect before solve</strong>Define mesh evidence before paying for a Case.</span></div>
         </div>
+        <TutorialConceptBridge cfd={t03Pedagogy.cfdConcepts} flow360={t03Pedagogy.flow360Concepts}/>
       </>
       case 'geometry': return <>
         <div className="lesson-kicker"><CircleDot size={15}/> Geometry and curvature</div>
@@ -121,6 +124,7 @@ export default function T03TutorialPage() {
         <h1>Let global defaults establish policy, then refine the cylinder locally.</h1>
         <p className="lesson-lead">The local SurfaceRefinement and BoundaryLayer override attention around the body without forcing the full farfield to use the same spacing.</p>
         <div className="parameter-learning-grid">{t03ParameterCards.map((item) => <article key={item.label}><div><span className={`provenance ${item.provenance}`}>{item.provenance}</span><strong>{item.label}</strong></div><b>{item.value}</b><p>{item.why}</p></article>)}</div>
+        <TutorialDerivations items={t03Pedagogy.derivations}/>
         <button className="lesson-validate-button" onClick={() => setChecksVisible(true)}><ShieldCheck size={16}/> Validate this mesh setup in the browser</button>
         {checksVisible && <div className="setup-checks">{checks.map((check) => <div className={check.passed ? 'passed' : 'failed'} key={check.id}>{check.passed ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<span><strong>{check.label}</strong><small>{check.detail}</small></span></div>)}</div>}
       </>
@@ -128,6 +132,7 @@ export default function T03TutorialPage() {
         <div className="lesson-kicker"><ScanLine size={15}/> Controlled refinement</div>
         <h1>Tighten spatial controls without changing the model.</h1>
         <p className="lesson-lead">The refined Draft changes local edge length, local curvature angle, and first-layer thickness. Geometry, mesher, growth rate, and farfield stay fixed.</p>
+        <TutorialPrediction experiment={t03Pedagogy.experiments[0]}/>
         <div className="mesh-experiment">
           <div className="alpha-control" role="group" aria-label="Mesh fidelity">
             <button className={!refined ? 'active' : ''} onClick={() => setRefined(false)}><span>Baseline</span><strong>0.25 m · 10°</strong></button>
@@ -136,6 +141,7 @@ export default function T03TutorialPage() {
           <div className="cylinder-stage compact"><CylinderMeshVisual refined={refined}/></div>
           <div className="semantic-diff"><p className="eyebrow">SEMANTIC DIFF</p><div><code>first_layer_thickness</code><span>0.01 m</span><ArrowRight size={14}/><strong>{refined ? '0.005 m' : '0.01 m'}</strong></div><small>{refined ? 'Three spatial controls tighten; growth rate and domain remain identical.' : 'Choose Refined to apply the validated merge patch.'}</small></div>
         </div>
+        <TutorialFailureModes items={t03Pedagogy.failureModes}/>
         <button className="lesson-secondary-button" onClick={() => downloadJSON(params, refined)}><Download size={15}/> Download the selected mesh setup</button>
       </>
       case 'evidence': return <>
@@ -144,12 +150,14 @@ export default function T03TutorialPage() {
         <p className="lesson-lead">Review all four conditions. They establish what the generated SurfaceMesh and VolumeMesh must demonstrate before the solver stage.</p>
         <div className="evidence-checklist">{t03Evidence.map((item) => { const selected = evidenceReviewed.includes(item.title); return <button className={selected ? 'reviewed' : ''} key={item.title} onClick={() => setEvidenceReviewed((current) => selected ? current.filter((value) => value !== item.title) : [...current, item.title])}><span className="evidence-check">{selected && <Check size={15}/>}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span></button> })}</div>
         <div className={`lesson-callout ${evidenceReviewed.length === t03Evidence.length ? 'success' : ''}`}>{evidenceReviewed.length === t03Evidence.length ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<p><strong>{evidenceReviewed.length}/4 reviewed</strong>{evidenceReviewed.length === t03Evidence.length ? 'The mesh acceptance contract is ready for both Drafts.' : 'Review all four requirements before creating the experiment.'}</p></div>
+        <TutorialEvidenceRubric items={t03Pedagogy.evidenceRubric}/>
       </>
       default: return <>
         <div className="lesson-kicker"><Cloud size={15}/> Execution boundary</div>
         <h1>Create the mesh experiment without starting cloud meshing.</h1>
         <p className="lesson-lead">The app can now create the cylinder Geometry Project and two configured VolumeMesh Drafts. Surface and volume meshing remain explicit, separately approved actions.</p>
         <div className="run-readiness-card"><div className="run-ready-icon"><CheckCircle2 size={30}/></div><div><span>LOCAL TUTORIAL STATUS</span><strong>Baseline and refined mesh validated</strong><p>38 meshing schema capabilities are backed by the pinned Flow360 25.10.3 artifact.</p></div></div>
+        <TutorialTransferCheck items={t03Pedagogy.transferQuestions}/>
         <TutorialEnvironmentBuilder
           status={status}
           tutorialId="T03"

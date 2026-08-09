@@ -9,6 +9,7 @@ import {
   type TutorialEnvironmentStage,
   type TutorialStep,
 } from './t01'
+import type { TutorialPedagogy } from './pedagogy'
 
 export const t05Steps: TutorialStep[] = [
   { id: 'question', label: '01', title: 'Frame the cell-budget decision', summary: 'Connect transported wake gradients to where volume cells are useful.' },
@@ -37,6 +38,43 @@ export const t05Evidence = [
   { title: 'Overlaps transition smoothly', detail: 'Sphere, box, and core spacing blend without abrupt cell-size jumps.' },
   { title: 'Corridor exit is acceptable', detail: 'The center-plane slice shows sufficient downstream reach before returning to background spacing.' },
 ]
+
+export const t05Pedagogy: TutorialPedagogy = {
+  learningObjectives: [
+    'Explain how separation and shear layers create a downstream velocity-deficit wake.',
+    'Map three physical resolution roles to Flow360 entities and refinement objects.',
+    'Apply explicit mesh-slice criteria to accept or reject a wake-refinement strategy.',
+  ],
+  cfdConcepts: [
+    { id: 'separation', title: 'Separation creates the wake', explanation: 'An adverse pressure gradient makes the cylinder boundary layer detach. Two shear layers then bound a low-momentum, velocity-deficit region downstream.', misconception: 'The wake is not a uniform geometric shadow, so equal refinement everywhere behind the cylinder is wasteful.' },
+    { id: 'anisotropy', title: 'Wake gradients are directional', explanation: 'Mean flow transports the deficit downstream, while velocity changes most strongly across the shear layers. Crossflow spacing can therefore be tighter than axial spacing.', misconception: 'A longer axial cell is not automatically low quality when it follows a weak-gradient direction and transitions smoothly.' },
+  ],
+  flow360Concepts: [
+    { id: 'entity-refinement', title: 'Entities say where; refinements say how', explanation: 'Sphere, Box, and Cylinder locate regions. UniformRefinement, StructuredBoxRefinement, and AxisymmetricRefinement define spacing inside them.', misconception: 'A Box entity alone does not refine anything until a compatible refinement references it through entities.' },
+    { id: 'slice-request', title: 'MeshSliceOutput requests later evidence', explanation: 'The Draft asks Flow360 to expose a center-plane mesh slice after meshing so coverage, overlap, and transitions can be reviewed.', misconception: 'A valid output request is not proof that a volume mesh exists or already passes the evidence rubric.' },
+  ],
+  derivations: [
+    { id: 'length', parameter: 'Corridor length normalized by diameter', basis: 'The cylinder diameter D = 1 m is the reference length, so downstream reach is expressed as Lwake/D.', calculation: 'baseline: 8/1 = 8D · focused: 12.5/1 = 12.5D', transfer: 'For a different body, multiply the chosen reach in diameters by its new characteristic length.' },
+    { id: 'ratio', parameter: 'Crossflow-to-axial spacing ratio', basis: 'Stronger cross-wake gradients justify tighter crossflow spacing than axial spacing.', calculation: 'baseline: 0.16/0.35 = 0.46 · focused: 0.08/0.24 = 0.33', transfer: 'Rotate the local axes with the expected wake and preserve the gradient-based ratio, not the metre values.' },
+    { id: 'octree', parameter: 'Octree-compatible near-body spacing', basis: 'Flow360 casts uniform volume spacing to a supported octree level, so exact subdivisions avoid a hidden size change.', calculation: 'baseline: D/4 = 0.25 m · focused: D/8 = 0.125 m', transfer: 'Choose a supported fraction of the new reference length and inspect the serialized Draft value.' },
+  ],
+  experiments: [{ id: 'focus', prediction: 'What should change when only wake reach and crossflow resolution are increased?', options: ['More downstream fine cells and higher cost', 'A thinner first boundary-layer cell'], controlledVariable: 'Volume-region reach and spacing change; cylinder geometry and first-layer thickness do not.', observation: 'Compare downstream exit, cross-wake cell count, transition smoothness, and total cell cost in the same center-plane view.' }],
+  failureModes: [
+    { id: 'misaligned', symptom: 'The fine corridor misses the velocity-deficit wake.', cause: 'The region follows global +x even though yaw or nearby geometry deflects the wake.', correction: 'Rotate or widen the Box and Cylinder using the expected feature path.' },
+    { id: 'short', symptom: 'A strong wake exits abruptly into coarse background cells.', cause: 'Region length was copied without considering wake decay or downstream outputs.', correction: 'Extend only until requested evidence is resolved, then justify the added cell cost.' },
+    { id: 'isotropic', symptom: 'Cell count rises without improving the cross-wake gradient.', cause: 'Equal spacing was used in all directions instead of flow-aligned anisotropy.', correction: 'Tighten spacing across strong gradients and keep axial spacing deliberately coarser.' },
+  ],
+  evidenceRubric: [
+    { id: 'coverage', observation: 'Near-body separation coverage', pass: 'Fine cells enclose the cylinder and overlap the start of both shear layers.', fail: 'A shear layer leaves the fine region before entering the downstream corridor.' },
+    { id: 'alignment', observation: 'Directional wake alignment', pass: 'The box and core follow the wake with tighter crossflow than axial spacing.', fail: 'Fine cells miss the wake or use unjustified isotropic spacing.' },
+    { id: 'transition', observation: 'Region overlap and transition', pass: 'Sphere, box, core, and background levels blend progressively.', fail: 'Abrupt jumps, disconnected pockets, or avoidable quality risks appear.' },
+    { id: 'exit', observation: 'Downstream corridor exit', pass: 'Requested observation locations end before a smooth return to background spacing.', fail: 'An important gradient crosses the exit or the extra reach has no evidence purpose.' },
+  ],
+  transferQuestions: [
+    { prompt: 'How should the refinement change for a ten-degree yaw angle?', expected: 'Rotate toward the predicted wake or widen for uncertainty, preserving spacing directions relative to the wake.' },
+    { prompt: 'When is the focused 12.5D corridor not worth its added cost?', expected: 'When outputs end upstream, baseline-exit gradients are already weak, or no engineering decision benefits from the extra reach.' },
+  ],
+}
 
 export function t05Params(focused: boolean): Record<string, unknown> {
   return focused
