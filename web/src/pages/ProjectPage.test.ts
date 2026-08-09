@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ProjectSyncManifest } from '../api/client'
 import {
   draftCreationBase,
+  draftSourceNode,
   draftSourceResource,
   geometryContextId,
   initialProjectPanel,
+  isDraftDetailFor,
   panelDismissesFromAmbientInteraction,
   projectDraftResourcePath,
   projectDraftRootPath,
@@ -102,10 +104,29 @@ describe('Draft source resource context', () => {
     })?.id).toBe('geo-1')
   })
 
+  it('binds Draft actions to the actual source node instead of the visible Project root', () => {
+    const root = {
+      id: 'geo-1', name: 'Created Geometry', type: 'Geometry', children: [
+        { id: 'vm-1', name: 'Volume Mesh', type: 'VolumeMesh', children: [] },
+      ],
+    }
+    expect(draftSourceNode(root, items, {
+      id: 'draft-1', name: 'Baseline', source_item_id: 'vm-1',
+    }, null)).toEqual(root.children[0])
+  })
+
   it('does not reuse stale detail metadata while switching Drafts', () => {
     expect(draftSourceResource(items, { id: 'draft-2', name: 'Variant' }, {
       id: 'draft-1', type: 'Draft', info: { source_id: 'geo-1' },
     })).toBeNull()
+  })
+
+  it('treats the live Draft detail as authoritative over stale list metadata', () => {
+    expect(draftSourceResource(items, {
+      id: 'draft-1', name: 'Baseline', source_item_id: 'vm-1',
+    }, {
+      id: 'draft-1', type: 'Draft', info: { source_id: 'geo-1' },
+    })?.id).toBe('geo-1')
   })
 
   it('keeps the Draft query while the initial Project route resolves its resource', () => {
@@ -123,6 +144,14 @@ describe('Draft source resource context', () => {
       { id: 'draft-created', name: 'Created Draft' },
     ]
     expect(resolveActiveDraftId(drafts, 'draft-old', 'draft-created')).toBe('draft-created')
+  })
+})
+
+describe('Current Draft identity', () => {
+  it('accepts parameters only from the currently selected Draft', () => {
+    expect(isDraftDetailFor('draft-current', { id: 'draft-current', type: 'Draft' })).toBe(true)
+    expect(isDraftDetailFor('draft-current', { id: 'draft-other', type: 'Draft' })).toBe(false)
+    expect(isDraftDetailFor('draft-current', { id: 'draft-current', type: 'Case' })).toBe(false)
   })
 })
 

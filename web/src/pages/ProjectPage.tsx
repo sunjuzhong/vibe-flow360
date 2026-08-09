@@ -124,14 +124,29 @@ export function draftSourceResource(
   if (!draft) return null
   const info = detail?.id === draft.id ? detail.info : undefined
   const candidates = [
-    draft.source_id,
-    draft.source_item_id,
     info?.source_id,
     info?.source_item_id,
     info?.root_resource_id,
+    draft.source_id,
+    draft.source_item_id,
   ]
   const sourceId = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
   return sourceId ? items.find((item) => item.id === sourceId.trim()) ?? null : null
+}
+
+export function draftSourceNode(
+  root: ResourceNode | null,
+  items: ProjectItem[],
+  draft: DraftRecord | null,
+  detail: ResourceDetail | null,
+): ResourceNode | null {
+  const source = draftSourceResource(items, draft, detail)
+  if (!source) return null
+  return root ? findNode(root, source.id) ?? { id: source.id, name: source.name, type: source.type, children: [] } : null
+}
+
+export function isDraftDetailFor(draftId: string, detail: ResourceDetail | null | undefined) {
+  return Boolean(draftId && detail?.id === draftId && detail.type === 'Draft')
 }
 
 export function draftCreationBase(
@@ -194,6 +209,7 @@ export default function ProjectPage() {
   const [draftDetail, setDraftDetail] = useState<ResourceDetail | null>(null)
   const [draftDetailLoading, setDraftDetailLoading] = useState(false)
   const [draftDetailError, setDraftDetailError] = useState('')
+  const draftDetailRequestRef = useRef(0)
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [initialPlanId, setInitialPlanId] = useState('')
@@ -413,6 +429,10 @@ export default function ProjectPage() {
     () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
     [activeDraftId, drafts],
   )
+	const activeDraftSource = useMemo(
+	  () => draftSourceNode(root, items, activeDraft, draftDetail),
+	  [activeDraft, draftDetail, items, root],
+	)
   const draftMode = Boolean(requestedDraftId && activeDraft)
   const copilotScopeType = draftMode ? 'draft' : selected ? 'resource' : 'project'
   const copilotScopeId = draftMode ? activeDraft?.id : selected?.id
@@ -423,6 +443,7 @@ export default function ProjectPage() {
   }, [activeDraft?.id, draftMode, navigate, projectId, resourceId, root])
 
   const loadDraftDetail = useCallback(async () => {
+    const requestId = ++draftDetailRequestRef.current
     if (!activeDraftId) {
       setDraftDetail(null)
       setDraftDetailError('')
@@ -430,14 +451,18 @@ export default function ProjectPage() {
     }
     setDraftDetailLoading(true)
     setDraftDetailError('')
+    setDraftDetail(null)
     try {
       const response = await api.resourceDetail('Draft', activeDraftId)
+      if (requestId !== draftDetailRequestRef.current) return
+      if (!isDraftDetailFor(activeDraftId, response.data)) throw new Error('Flow360 returned a different Draft than the one requested.')
       setDraftDetail(response.data)
     } catch (cause) {
+      if (requestId !== draftDetailRequestRef.current) return
       setDraftDetail(null)
       setDraftDetailError(String(cause).replace('Error: ', ''))
     } finally {
-      setDraftDetailLoading(false)
+      if (requestId === draftDetailRequestRef.current) setDraftDetailLoading(false)
     }
   }, [activeDraftId])
 
@@ -1014,7 +1039,7 @@ export default function ProjectPage() {
               loading={draftDetailLoading}
               error={draftDetailError}
               project={project ?? undefined}
-              resource={selected}
+              resource={activeDraftSource ?? undefined}
               onClose={closePanel}
               onRetry={() => void loadDraftDetail()}
               onParametersSynced={(simulationParams) => setDraftDetail((current) => current
@@ -1097,7 +1122,7 @@ export default function ProjectPage() {
         })}
         suggestions={selected ? resourceSuggestions[selected.type] ?? [] : []}
       />
-      {project && selected && (
+      {project && (draftMode ? activeDraftSource : selected) && (
         <PlanPanel
           open={planOpen}
           onClose={() => {
@@ -1106,9 +1131,10 @@ export default function ProjectPage() {
             setPlanEntryMode('run')
           }}
           project={project}
-          resource={selected}
+          resource={(draftMode ? activeDraftSource : selected)!}
           detail={draftMode ? draftDetail : detail}
           draftId={draftMode ? activeDraft?.id : undefined}
+          draftName={draftMode ? activeDraft?.name : undefined}
           initialPlanId={initialPlanId}
           entryMode={planEntryMode}
           onEnterRun={() => setPlanEntryMode('run')}

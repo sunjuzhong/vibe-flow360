@@ -17,8 +17,10 @@ describe('DraftParametersDialog', () => {
       /></I18nProvider>,
     )
 
-    expect(markup).toContain('aria-label="Configure Draft"')
+    expect(markup).toContain('aria-label="Current Draft"')
     expect(markup).toContain('High AoA')
+    expect(markup).toContain('draft-1')
+    expect(markup).toContain('Changes save automatically to Flow360.')
     expect(markup).toContain('Loading the installed Flow360 schema…')
     expect(markup).not.toContain('Resource details')
     expect(markup).not.toContain('Overview')

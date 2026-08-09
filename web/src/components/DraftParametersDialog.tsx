@@ -38,14 +38,14 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
       className="project-parameters-dialog"
       role="dialog"
       aria-modal="true"
-      aria-label={t('Configure Draft')}
+      aria-label={t('Current Draft')}
       tabIndex={-1}
     >
       <header className="project-parameters-header">
         <Braces size={16} />
         <div>
-          <strong>{t('Configure Draft')}</strong>
-          <span>{draftName || t('Untitled Draft')}</span>
+          <strong>{t('Current Draft')}</strong>
+          <span>{draftName || t('Untitled Draft')} · {draftId} · {t('Changes save automatically to Flow360.')}</span>
         </div>
         <button type="button" onClick={onClose} aria-label={t('Close Draft configuration')}><X size={16} /></button>
       </header>

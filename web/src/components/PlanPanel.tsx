@@ -33,6 +33,7 @@ import {
   type SimulationStage,
 } from '../lib/planStages'
 import { errorMessage } from '../lib/errors'
+import { useI18n } from '../i18n'
 import { executionTemplate } from '../lib/planPresentation'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360ConfirmationDialog from './Flow360ConfirmationDialog'
@@ -111,6 +112,10 @@ export function shouldLoadExistingReview(draftId?: string, initialPlanId?: strin
   return Boolean(draftId || initialPlanId)
 }
 
+export function reviewMatchesDraft(currentDraftId?: string, reviewDraftId?: string) {
+  return !currentDraftId || currentDraftId === reviewDraftId
+}
+
 export default function PlanPanel({
   open,
   onClose,
@@ -118,6 +123,7 @@ export default function PlanPanel({
   resource,
   detail,
   draftId,
+  draftName,
   initialPlanId,
   entryMode = 'run',
   onEnterRun,
@@ -129,11 +135,13 @@ export default function PlanPanel({
   resource: ResourceNode
   detail: ResourceDetail | null
   draftId?: string
+  draftName?: string
   initialPlanId?: string
   entryMode?: PlanEntryMode
   onEnterRun?: () => void
   onSubmitted: () => void
 }) {
+  const { t } = useI18n()
   const options = targetOptions[resource.type] ?? []
   const [plans, setPlans] = useState<SimulationPlan[]>([])
   const [selected, setSelected] = useState<SimulationPlan | null>(null)
@@ -263,9 +271,12 @@ export default function PlanPanel({
     [selected],
   )
   const preflightErrors = selected?.preflight?.issues.filter((issue) => issue.level === 'error') ?? []
+  const selectedDraftId = selected?.remote_ids?.draft_id
+  const selectedMatchesDraft = reviewMatchesDraft(draftId, selectedDraftId)
   const preflightReady = Boolean(
     selected?.preflight?.valid
-    && selected.preflight.validated_revision === selected.revision,
+    && selected.preflight.validated_revision === selected.revision
+    && selectedMatchesDraft
   )
   const runMode = entryMode === 'run'
   const entryPresentation = planEntryPresentation(entryMode)
@@ -535,6 +546,10 @@ export default function PlanPanel({
 
   const requestRun = () => {
     if (!selected || !executeConfirmed || loading || submittingAction) return
+    if (!selectedMatchesDraft) {
+      setError(t('This review is not bound to the current Draft. Close it and run the current Draft again.'))
+      return
+    }
     if (selected.status !== 'approved' && selected.status !== 'failed') return
     if (selected.submission_id && selected.status !== 'failed') {
       setError('This Draft revision has already been submitted to Flow360 and is protected from double-submit.')
@@ -545,6 +560,10 @@ export default function PlanPanel({
 
   const run = async () => {
     if (!selected || loading || submittingAction) return
+    if (!selectedMatchesDraft) {
+      setError(t('This review is not bound to the current Draft. Close it and run the current Draft again.'))
+      return
+    }
     setRunConfirmationOpen(false)
     setLoading(true)
     setSubmittingAction('run')
@@ -623,6 +642,11 @@ export default function PlanPanel({
           </aside>}
 
           <main className="plan-main">
+            {draftId && <div className="plan-current-draft" aria-label={t('Current Draft')}>
+              <span>{t('Current Draft')}</span>
+              <strong>{draftName || draftId}</strong>
+              <code>{draftId}</code>
+            </div>}
             {reviewLoading ? (
               <div className="plan-review-loading" role="status" aria-live="polite">
                 <RefreshCw size={18} className="spin" />
@@ -866,7 +890,7 @@ export default function PlanPanel({
               <div className="plan-review">
                 {!draftId && <button className="plan-back" onClick={() => setShowForm(true)}><ChevronLeft size={13} /> New revision</button>}
                 <div className="plan-review-title">
-                  <div><p className="eyebrow">DRAFT REVIEW {selected.id}</p><h2>{selected.name}</h2><p>{runMode ? selected.intent : 'Review and improve this Draft’s parameter changes. Nothing will run from this panel.'}</p></div>
+                  <div><p className="eyebrow">DRAFT REVIEW {selected.id}</p><h2>{draftName || selected.name}</h2><p>{runMode ? selected.intent : 'Review and improve this Draft’s parameter changes. Nothing will run from this panel.'}</p></div>
                   <span className={`plan-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
                 </div>
 
@@ -1003,8 +1027,9 @@ export default function PlanPanel({
                   title="Run the approved Draft?"
                   description="This is the final handoff from review to Flow360. Vibe Flow360 will run only the validated Draft revision shown behind this dialog. The Draft remains available after the run."
                   targetLabel="Approved Draft revision"
-                  targetName={selected.name}
+                  targetName={draftName || selected.name}
                   details={[
+                    { label: t('Draft ID'), value: draftId || selectedDraftId || '—' },
                     { label: 'Source', value: `${resource.type} · ${resource.name}` },
                     {
                       label: 'Run up to',

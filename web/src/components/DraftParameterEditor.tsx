@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, Save, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
@@ -34,7 +34,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [error, setError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [failedSyncFingerprint, setFailedSyncFingerprint] = useState('')
-  const [saved, setSaved] = useState(false)
   const [validation, setValidation] = useState<DraftParameterValidationResponse | null>(null)
   const [validating, setValidating] = useState(false)
   const [validatedFingerprint, setValidatedFingerprint] = useState('')
@@ -42,14 +41,17 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [aiLoading, setAILoading] = useState(false)
   const [aiMessage, setAIMessage] = useState('')
   const latestFingerprintRef = useRef('')
+  const currentDraftIdRef = useRef(draftId)
   const onSavedRef = useRef(onSaved)
 
+  currentDraftIdRef.current = draftId
   onSavedRef.current = onSaved
 
   useEffect(() => {
-    setSaved(false)
     setSyncError('')
     setFailedSyncFingerprint('')
+    setSaving(false)
+    setAILoading(false)
     setAIPrompt('')
     setAIMessage('')
   }, [draftId])
@@ -173,7 +175,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setPreviewValue(next)
     if (schema) setFormValue(hydrateSchemaValue(schema, next, true))
     setDirty(true)
-    setSaved(false)
     setSyncError('')
     setFailedSyncFingerprint('')
     setValidation(null)
@@ -182,6 +183,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   const fillWithAI = async () => {
     if (!project || !resource || !candidateResult.value || !aiPrompt.trim() || aiLoading) return
+    const requestDraftId = draftId
     setAILoading(true)
     setAIMessage('')
     setError('')
@@ -199,23 +201,26 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         patch: createJSONMergePatch(baseline, candidateResult.value),
         autonomous: true,
       })
+      if (currentDraftIdRef.current !== requestDraftId) return
       if (!response.proposal) throw new Error(response.action.message || t('AI did not return parameter changes.'))
       applyCandidate(applyJSONMergePatch(baseline, response.proposal.patch))
       setAIMessage(response.action.message)
     } catch (cause) {
+      if (currentDraftIdRef.current !== requestDraftId) return
       setError(cleanError(cause))
     } finally {
-      setAILoading(false)
+      if (currentDraftIdRef.current === requestDraftId) setAILoading(false)
     }
   }
 
   const persistCandidate = useCallback(async (next: Record<string, unknown>, fingerprint: string) => {
+    const requestDraftId = draftId
     try {
       setSaving(true)
       setSyncError('')
       setFailedSyncFingerprint('')
-      setSaved(false)
       const response = await api.updateDraftParameters(draftId, next, project?.id)
+      if (currentDraftIdRef.current !== requestDraftId) return
       const canonical = response.simulation_params
       setBaseline(canonical)
       if (latestFingerprintRef.current === fingerprint) {
@@ -223,14 +228,14 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         setPreviewValue(canonical)
         if (schema) setFormValue(hydrateSchemaValue(schema, canonical, true))
         setDirty(false)
-        setSaved(true)
         onSavedRef.current?.(canonical)
       }
     } catch (cause) {
+      if (currentDraftIdRef.current !== requestDraftId) return
       setSyncError(cleanError(cause))
       setFailedSyncFingerprint(fingerprint)
     } finally {
-      setSaving(false)
+      if (currentDraftIdRef.current === requestDraftId) setSaving(false)
     }
   }, [draftId, project?.id, schema])
 
@@ -282,6 +287,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     fingerprint: candidateResult.fingerprint,
     validatedFingerprint,
   })
+  const firstValidationError = validation?.issues.find((issue) => issue.level === 'error')?.message
   const reviewRunStatus = syncError
     ? t('Retry Draft sync before Review & Run.')
     : dirty || saving
@@ -289,7 +295,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       : !validation || validatedFingerprint !== candidateResult.fingerprint
         ? t('Waiting for Flow360 validation before Review & Run.')
         : !validation.valid
-          ? t('Resolve the Flow360 validation errors before Review & Run.')
+          ? firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')
           : t('Latest Draft parameters are synced and ready for review.')
 
   if (readOnly) {
@@ -302,13 +308,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   return (
     <div className="draft-parameter-editor">
-      <div className="draft-config-flow" aria-label={t('Draft configuration workflow')}>
-        <span className="active">1 · {t('Edit')}</span><ArrowRight size={12} />
-        <span className={validation?.valid ? 'complete' : ''}>2 · {t('Validate')}</span><ArrowRight size={12} />
-        <span className={saved && !dirty ? 'complete' : ''}>3 · {t('Sync to Draft')}</span><ArrowRight size={12} />
-        <span>4 · {t('Review & Run')}</span>
-      </div>
-
       {project && resource && (
         <section className="draft-ai-config">
           <div><Sparkles size={15} /><span><strong>{t('Change this Draft with AI')}</strong><small>{t('Describe the engineering change. AI updates the same unsaved candidate shown in the form and JSON editor.')}</small></span></div>
@@ -342,14 +341,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
       {error && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{error}</div>}
       {syncError && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{syncError}</div>}
-      {saved && !error && <div className="draft-parameter-message success" role="status"><CheckCircle2 size={14} />{t('Draft parameters saved to Flow360. Nothing was run.')}</div>}
-
       {mode === 'form' && schema && (
         <div className="draft-parameter-form" role="tabpanel">
-          <div className="draft-parameter-form-guide">
-            <strong>{t('Complete SimulationParams schema')}</strong>
-            <span>{t('Configured fields show the current Draft value. “Not configured” fields remain absent from saved params until you change them.')}</span>
-          </div>
           <SchemaFormFields
             schema={schema}
             value={formValue}
@@ -363,7 +356,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             onChange={(next) => {
               setFormValue(next)
               setDirty(true)
-              setSaved(false)
               setSyncError('')
               setFailedSyncFingerprint('')
             }}
@@ -379,7 +371,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             onChange={(next) => {
               setJSONValue(next)
               setDirty(true)
-              setSaved(false)
               setSyncError('')
               setFailedSyncFingerprint('')
             }}
@@ -392,13 +383,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         </div>
       )}
 
-      <section className={`draft-validation-summary ${validating ? 'checking' : validation?.valid ? 'ready' : 'error'}`} aria-live="polite">
-        {validating ? <RefreshCw size={15} className="spin" /> : validation?.valid ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
-        <span>
-          <strong>{validating ? t('Validating current parameters…') : validation?.valid ? t('Flow360 validation passed') : t('Flow360 validation needs attention')}</strong>
-          <small>{validation?.valid ? t('This candidate can be saved to the Draft.') : t('You can save the Draft and continue editing, but Review & Run remains blocked until validation passes.')}</small>
-        </span>
-      </section>
+      {(validating || (validation && !validation.valid)) && (
+        <section className={`draft-validation-summary ${validating ? 'checking' : 'error'}`} aria-live="polite">
+          {validating ? <RefreshCw size={15} className="spin" /> : <AlertCircle size={15} />}
+          <span>
+            <strong>{validating ? t('Checking changes…') : t('Fix these before running')}</strong>
+            <small>{validating ? t('Flow360 is checking the latest Draft values.') : firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')}</small>
+          </span>
+        </section>
+      )}
       {validation && !validation.valid && (
         <div className="draft-validation-issues">
           {validation.issues.filter((issue) => issue.level === 'error').map((issue, index) => (
@@ -407,27 +400,27 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         </div>
       )}
 
-      <section className="draft-change-summary">
+      {changes.length > 0 && <section className="draft-change-summary">
         <header><strong>{t('Unsaved parameter changes')}</strong><span>{changes.length}</span></header>
-        {changes.length ? changes.slice(0, 20).map((change) => (
+        {changes.slice(0, 20).map((change) => (
           <div key={change.path}><code>{change.path}</code><small>{compactValue(change.before)}</small><ArrowRight size={11} /><small>{compactValue(change.after)}</small></div>
-        )) : <p>{t('No parameter values have changed.')}</p>}
+        ))}
         {changes.length > 20 && <p>{t('{count} additional changes').replace('{count}', String(changes.length - 20))}</p>}
-      </section>
+      </section>}
 
       <footer className="draft-config-actions">
         <span>{reviewRunStatus}</span>
-        <button
+        {syncError && <button
           type="button"
           className="draft-parameter-save"
-          disabled={saving || validating || !dirty || !validation || validatedFingerprint !== candidateResult.fingerprint || Boolean(candidateResult.error) || (mode === 'json' && Boolean(jsonSyntaxIssue(jsonValue)))}
+          disabled={saving || validating || !candidateResult.value || Boolean(candidateResult.error) || (mode === 'json' && Boolean(jsonSyntaxIssue(jsonValue)))}
           onClick={() => void save()}
         >
-          {saving ? <RefreshCw size={13} className="spin" /> : <Save size={13} />}
-          {saving ? t('Syncing…') : syncError ? t('Retry sync') : t('Sync now')}
-        </button>
+          <RefreshCw size={13} className={saving ? 'spin' : ''} />
+          {saving ? t('Syncing…') : t('Retry sync')}
+        </button>}
         {onReviewRun && (
-          <button type="button" className="draft-review-run" disabled={!reviewRunReady} title={reviewRunStatus} onClick={onReviewRun}><Play size={13} />{t('Review & Run')}</button>
+          <button type="button" className="draft-review-run" disabled={!reviewRunReady} title={reviewRunStatus} onClick={onReviewRun}><Play size={13} />{t('Run this Draft')}</button>
         )}
       </footer>
     </div>
