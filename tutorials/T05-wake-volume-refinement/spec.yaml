@@ -1,0 +1,19 @@
+schema_version: 1
+scenario: cylinder-wake-volume-refinement
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_unit: {value: m, provenance: provided}
+  cylinder_diameter: {value: 1, unit: m, provenance: adapted}
+  baseline_near_body_spacing: {value: 0.25, unit: m, provenance: inferred}
+  focused_near_body_spacing: {value: 0.125, unit: m, provenance: inferred}
+  baseline_wake_box_length: {value: 8, unit: m, provenance: inferred}
+  focused_wake_box_length: {value: 12.5, unit: m, provenance: inferred}
+  focused_axial_spacing: {value: 0.24, unit: m, provenance: inferred}
+  focused_crossflow_spacing: {value: 0.08, unit: m, provenance: inferred}
+  farfield_relative_size: {value: 40, provenance: adapted}
+review_required:
+  - Confirm the positive x-axis is the expected wake direction before accepting region placement.
+  - Inspect the center-plane cell-size transition from the cylinder into the wake corridor.
+  - Compare cell cost and downstream coverage before choosing the focused variant.
+  - Treat all teaching sizes as a starting point, not a grid-independence result.

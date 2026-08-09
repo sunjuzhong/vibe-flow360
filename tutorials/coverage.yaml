@@ -77,10 +77,29 @@ mappings:
     selector:
       owners: [AngleBasedRefinement, AspectRatioBasedRefinement, Edge, GeometryRefinement, HeightBasedRefinement, PassiveSpacing, ProjectAnisoSpacing, flow360_schema__models__simulation__meshing_param__edge_params__SurfaceEdgeRefinement]
   - tutorial: T05
+    section: wake-volume-baseline
+    status: verified
+    artifact: tutorials/T05-wake-volume-refinement/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:(UniformRefinement|Sphere|StructuredBoxRefinement|Box|AxisymmetricRefinement|Cylinder|MeshSliceOutput|Slice)|field:UniformRefinement\.(entities|spacing)|field:Sphere\.(center|radius)|field:StructuredBoxRefinement\.(entities|spacing_axis1|spacing_axis2|spacing_normal)|field:Box\.(center|size)|field:AxisymmetricRefinement\.(entities|spacing_axial|spacing_radial|spacing_circumferential)|field:Cylinder\.(axis|height|outer_radius)|field:MeshSliceOutput\.slices)$'
+  - tutorial: T05
+    section: focused-wake
+    status: verified
+    artifact: tutorials/T05-wake-volume-refinement/variants/focused-wake.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:field:MeshSliceOutput\.include_crinkled_slices$'
+  - tutorial: T05
     section: variants
     status: planned
     selector:
-      owners: [AxisymmetricBody, AxisymmetricRefinement, Box, Cylinder, MeshSliceOutput, OctreeSpacing, Sphere, StructuredBoxRefinement, UniformRefinement, VolumeMeshingDefaults, VolumeMeshingParams, VoxelGrid]
+      owners: [AxisymmetricRefinement, Box, Cylinder, MeshSliceOutput, Sphere, StructuredBoxRefinement, UniformRefinement]
+  - tutorial: T05
+    section: future-volume-controls
+    status: planned
+    selector:
+      owners: [AxisymmetricBody, OctreeSpacing, VolumeMeshingDefaults, VolumeMeshingParams, VoxelGrid]
   - tutorial: T06
     section: variants
     status: planned

@@ -1,0 +1,13 @@
+schema_version: 1
+engineering_question: Resolve separation and downstream wake transport behind a cylinder without paying for the same cell size throughout the farfield.
+decision: Choose whether broad isotropic refinement is sufficient or a longer direction-aware wake corridor is justified by the evidence requirement.
+inputs:
+  geometry: assets/cylinder.csm
+  length_unit: m
+  cylinder_diameter: 1 m
+  freestream_direction: positive x
+deliverables:
+  - A near-body region that resolves separation
+  - A structured downstream box aligned with wake transport
+  - An axisymmetric wake-core refinement with independent axial, radial, and circumferential spacing
+  - Baseline and focused-wake VolumeMesh Drafts with a center-plane evidence slice

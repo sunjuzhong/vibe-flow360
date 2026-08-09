@@ -5,6 +5,7 @@ import { hasTranslation, translate } from './translations'
 import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params } from '../tutorials/t04'
 import { t01Evidence, t01ParameterCards, t01Steps, t01ParamsForAlpha, validateT01Setup } from '../tutorials/t01'
 import { t03Evidence, t03ParameterCards, t03Steps, t03Params, validateT03Setup } from '../tutorials/t03'
+import { t05Evidence, t05ParameterCards, t05Steps, t05Params, validateT05Setup } from '../tutorials/t05'
 
 describe('language settings', () => {
   it('uses Chinese for Chinese system locales and English otherwise', () => {
@@ -165,8 +166,30 @@ describe('language settings', () => {
       ...t03Evidence.flatMap(({ title, detail }) => [title, detail]),
       ...validateT03Setup(t03Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT03Setup(t03Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...t05Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t05ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t05Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT05Setup(t05Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT05Setup(t05Params(true)).flatMap(({ label, detail }) => [label, detail]),
     ]
 
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T05 environment builder in Chinese', () => {
+    const messages = [
+      'VOLUME MESHING',
+      'WAKE REFINEMENT',
+      'Focused cylinder wake refinement strategy',
+      'Compact cylinder wake refinement strategy',
+      'Tutorial T05 · cylinder wake refinement',
+      'Build the T05 wake-mesh environment',
+      'The app uploads the bundled cylinder geometry and creates compact-wake and focused-wake VolumeMesh Drafts.',
+      'Near-body sphere, structured wake box, axisymmetric core, directional spacing, center-plane slice',
+      'Compact wake regions',
+      'Focused wake corridor',
+      'Both VolumeMesh Draft parameter sets are synced. No surface or volume mesh computation has been submitted.',
+    ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 })

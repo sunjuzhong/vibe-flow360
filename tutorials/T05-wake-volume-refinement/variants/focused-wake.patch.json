@@ -1,0 +1,210 @@
+{
+  "meshing": {
+    "outputs": [
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "Wake center plane",
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "origin": {
+                "units": "m",
+                "value": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "private_attribute_entity_type_name": "Slice",
+              "private_attribute_id": "50000000-0000-4000-8000-000000000504"
+            }
+          ]
+        },
+        "include_crinkled_slices": true,
+        "name": "Wake refinement evidence",
+        "output_type": "MeshSliceOutput"
+      }
+    ],
+    "refinements": [
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "name": "Near-body separation region",
+              "private_attribute_entity_type_name": "Sphere",
+              "private_attribute_id": "50000000-0000-4000-8000-000000000501",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              },
+              "radius": {
+                "units": "m",
+                "value": 1.75
+              }
+            }
+          ]
+        },
+        "name": "Resolve separation near the cylinder",
+        "refinement_type": "UniformRefinement",
+        "spacing": {
+          "units": "m",
+          "value": 0.125
+        }
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "angle_of_rotation": {
+                "units": "degree",
+                "value": 0.0
+              },
+              "axis_of_rotation": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  5.75,
+                  0.0,
+                  0.0
+                ]
+              },
+              "name": "Downstream wake corridor",
+              "private_attribute_constructor": "default",
+              "private_attribute_entity_type_name": "Box",
+              "private_attribute_id": "50000000-0000-4000-8000-000000000502",
+              "private_attribute_input_cache": {
+                "axes": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "center": {
+                  "units": "m",
+                  "value": [
+                    5.75,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "size": {
+                  "units": "m",
+                  "value": [
+                    12.5,
+                    2.4,
+                    2.4
+                  ]
+                }
+              },
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              },
+              "size": {
+                "units": "m",
+                "value": [
+                  12.5,
+                  2.4,
+                  2.4
+                ]
+              },
+              "type_name": "Box"
+            }
+          ]
+        },
+        "name": "Align resolution with wake transport",
+        "refinement_type": "StructuredBoxRefinement",
+        "spacing_axis1": {
+          "units": "m",
+          "value": 0.24
+        },
+        "spacing_axis2": {
+          "units": "m",
+          "value": 0.08
+        },
+        "spacing_normal": {
+          "units": "m",
+          "value": 0.08
+        }
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  5.5,
+                  0.0,
+                  0.0
+                ]
+              },
+              "height": {
+                "units": "m",
+                "value": 12.0
+              },
+              "inner_radius": {
+                "units": "m",
+                "value": 0.0
+              },
+              "name": "Wake core",
+              "outer_radius": {
+                "units": "m",
+                "value": 0.8
+              },
+              "private_attribute_entity_type_name": "Cylinder",
+              "private_attribute_id": "50000000-0000-4000-8000-000000000503",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              }
+            }
+          ]
+        },
+        "name": "Resolve the cylindrical wake core",
+        "refinement_type": "AxisymmetricRefinement",
+        "spacing_axial": {
+          "units": "m",
+          "value": 0.2
+        },
+        "spacing_circumferential": {
+          "units": "m",
+          "value": 0.08
+        },
+        "spacing_radial": {
+          "units": "m",
+          "value": 0.07
+        }
+      }
+    ]
+  }
+}

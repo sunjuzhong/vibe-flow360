@@ -1,0 +1,30 @@
+schema_version: 1
+criteria:
+  - id: pinned-volume-refinements-valid
+    category: provenance
+    description: Baseline parameters deserialize and pass Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: simulation.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: separation-region-covered
+    category: mesh
+    description: Near-body cells cover the cylinder and immediate separation region without a discontinuous jump.
+    artifact: center-plane mesh slice
+    required: true
+    check: {method: manual, metric: mesh.near-body.coverage}
+  - id: wake-corridor-aligned
+    category: mesh
+    description: The structured box and cylindrical core extend downstream along positive x rather than wasting cells upstream.
+    artifact: volume-region review
+    required: true
+    check: {method: manual, metric: mesh.wake.alignment}
+  - id: transition-reviewed
+    category: mesh
+    description: Axial and crossflow spacing transition smoothly into the background volume mesh.
+    artifact: center-plane mesh slice
+    required: true
+    check: {method: manual, metric: mesh.wake.transition}
+limitations:
+  - Region placement assumes the mean wake remains aligned with positive x.
+  - The tutorial does not establish grid independence or a production turbulence model.
+  - No volume mesh computation or solver Case is submitted.
