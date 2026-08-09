@@ -27,6 +27,8 @@ function stageLabel(stage: string) {
 
 type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report']>['playback']>['frames'][number]
 
+export const SLICE_PLAYBACK_FPS_OPTIONS = [1, 2, 5, 10, 15, 20, 24, 30] as const
+
 export function selectPlaybackAsset(frame: SlicePlaybackFrame) {
   return {
     manifestPath: frame.manifest_path,
@@ -85,7 +87,7 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
         <span>{frameIndex + 1} / {playback.frame_count}<small>{t('step')} {frame.step ?? '—'}</small></span>
         <small className="slice-playback-quality full">{t('Full resolution')}</small>
         <select aria-label={t('Playback speed')} value={fps} onChange={(event) => setFps(Number(event.target.value))}>
-          {[1, 2, 5, 10].map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
+          {SLICE_PLAYBACK_FPS_OPTIONS.map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
         </select>
       </div>
     </section>

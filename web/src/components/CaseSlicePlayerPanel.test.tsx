@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { selectPlaybackAsset } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { selectPlaybackAsset, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -29,5 +29,9 @@ describe('CaseSlicePlayerPanel', () => {
       vertices: 100_000,
       triangles: 200_000,
     })
+  })
+
+  it('offers smooth playback frame rates while retaining low-bandwidth choices', () => {
+    expect(SLICE_PLAYBACK_FPS_OPTIONS).toEqual([1, 2, 5, 10, 15, 20, 24, 30])
   })
 })
