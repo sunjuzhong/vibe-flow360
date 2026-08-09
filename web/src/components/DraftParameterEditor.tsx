@@ -1,5 +1,5 @@
 import { AlertCircle, ArrowRight, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, Save, Sparkles } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
@@ -12,7 +12,7 @@ type EditorMode = 'form' | 'json' | 'preview'
 type Props = {
   draftId: string
   parameters?: Record<string, unknown>
-  onSaved?: () => void
+  onSaved?: (parameters: Record<string, unknown>) => void
   onReviewRun?: () => void
   project?: ProjectInfo
   resource?: ResourceNode
@@ -32,6 +32,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
+  const [syncError, setSyncError] = useState('')
+  const [failedSyncFingerprint, setFailedSyncFingerprint] = useState('')
   const [saved, setSaved] = useState(false)
   const [validation, setValidation] = useState<DraftParameterValidationResponse | null>(null)
   const [validating, setValidating] = useState(false)
@@ -39,9 +41,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [aiPrompt, setAIPrompt] = useState('')
   const [aiLoading, setAILoading] = useState(false)
   const [aiMessage, setAIMessage] = useState('')
+  const latestFingerprintRef = useRef('')
+  const onSavedRef = useRef(onSaved)
+
+  onSavedRef.current = onSaved
 
   useEffect(() => {
     setSaved(false)
+    setSyncError('')
+    setFailedSyncFingerprint('')
     setAIPrompt('')
     setAIMessage('')
   }, [draftId])
@@ -76,7 +84,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       })
       .finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [draftId, initialBaseline, readOnly])
+  }, [draftId, readOnly])
 
   const candidateResult = useMemo(() => {
     try {
@@ -95,6 +103,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     () => candidateResult.value ? diffParameterValues(baseline, candidateResult.value) : [],
     [baseline, candidateResult.value],
   )
+
+  latestFingerprintRef.current = candidateResult.fingerprint
 
   useEffect(() => {
     if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint) return
@@ -164,6 +174,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     if (schema) setFormValue(hydrateSchemaValue(schema, next, true))
     setDirty(true)
     setSaved(false)
+    setSyncError('')
+    setFailedSyncFingerprint('')
     setValidation(null)
     setValidatedFingerprint('')
   }
@@ -197,34 +209,70 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     }
   }
 
-  const save = async () => {
+  const persistCandidate = useCallback(async (next: Record<string, unknown>, fingerprint: string) => {
     try {
       setSaving(true)
-      setError('')
+      setSyncError('')
+      setFailedSyncFingerprint('')
       setSaved(false)
-      const next = candidateResult.value
-      if (!next) throw new Error(candidateResult.error || t('Draft SimulationParams are invalid.'))
-      let currentValidation = validation
-      if (!currentValidation || validatedFingerprint !== candidateResult.fingerprint) {
-        currentValidation = await api.validateDraftParameters(draftId, next)
-        setValidation(currentValidation)
-        setValidatedFingerprint(candidateResult.fingerprint)
-      }
       const response = await api.updateDraftParameters(draftId, next)
       const canonical = response.simulation_params
       setBaseline(canonical)
-      setJSONValue(JSON.stringify(canonical, null, 2))
-      setPreviewValue(canonical)
-      if (schema) setFormValue(hydrateSchemaValue(schema, canonical, true))
-      setDirty(false)
-      setSaved(true)
-      onSaved?.()
+      if (latestFingerprintRef.current === fingerprint) {
+        setJSONValue(JSON.stringify(canonical, null, 2))
+        setPreviewValue(canonical)
+        if (schema) setFormValue(hydrateSchemaValue(schema, canonical, true))
+        setDirty(false)
+        setSaved(true)
+        onSavedRef.current?.(canonical)
+      }
     } catch (cause) {
-      setError(cleanError(cause))
+      setSyncError(cleanError(cause))
+      setFailedSyncFingerprint(fingerprint)
     } finally {
       setSaving(false)
     }
+  }, [draftId, schema])
+
+  const save = async () => {
+    const next = candidateResult.value
+    if (!next) {
+      setSyncError(candidateResult.error || t('Draft SimulationParams are invalid.'))
+      return
+    }
+    let currentValidation = validation
+    if (!currentValidation || validatedFingerprint !== candidateResult.fingerprint) {
+      try {
+        setValidating(true)
+        currentValidation = await api.validateDraftParameters(draftId, next)
+        setValidation(currentValidation)
+        setValidatedFingerprint(candidateResult.fingerprint)
+      } catch (cause) {
+        setSyncError(cleanError(cause))
+        return
+      } finally {
+        setValidating(false)
+      }
+    }
+    await persistCandidate(next, candidateResult.fingerprint)
   }
+
+  useEffect(() => {
+    if (!draftAutoSyncReady({
+      dirty,
+      saving,
+      validating,
+      candidate: candidateResult.value,
+      fingerprint: candidateResult.fingerprint,
+      validatedFingerprint,
+      hasValidation: Boolean(validation),
+      failedSyncFingerprint,
+    })) return
+    const next = candidateResult.value!
+    const fingerprint = candidateResult.fingerprint
+    const timer = window.setTimeout(() => void persistCandidate(next, fingerprint), 300)
+    return () => window.clearTimeout(timer)
+  }, [candidateResult.fingerprint, candidateResult.value, dirty, failedSyncFingerprint, persistCandidate, saving, validatedFingerprint, validating, validation])
 
   if (readOnly) {
     return <JsonPreview value={previewValue} empty={t('Flow360 did not return simulation parameters.')} className="draft-json-preview" />
@@ -239,7 +287,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       <div className="draft-config-flow" aria-label={t('Draft configuration workflow')}>
         <span className="active">1 · {t('Edit')}</span><ArrowRight size={12} />
         <span className={validation?.valid ? 'complete' : ''}>2 · {t('Validate')}</span><ArrowRight size={12} />
-        <span className={saved && !dirty ? 'complete' : ''}>3 · {t('Save to Draft')}</span><ArrowRight size={12} />
+        <span className={saved && !dirty ? 'complete' : ''}>3 · {t('Sync to Draft')}</span><ArrowRight size={12} />
         <span>4 · {t('Review & Run')}</span>
       </div>
 
@@ -269,10 +317,13 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             <Eye size={13} /> {t('Preview')}
           </button>
         </div>
-        <span className={`draft-unsaved-state ${dirty ? 'dirty' : 'saved'}`}>{dirty ? t('Unsaved changes') : t('Draft is synced with Flow360')}</span>
+        <span className={`draft-unsaved-state ${syncError ? 'error' : saving ? 'syncing' : dirty ? 'dirty' : 'saved'}`}>
+          {syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}
+        </span>
       </div>
 
       {error && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{error}</div>}
+      {syncError && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{syncError}</div>}
       {saved && !error && <div className="draft-parameter-message success" role="status"><CheckCircle2 size={14} />{t('Draft parameters saved to Flow360. Nothing was run.')}</div>}
 
       {mode === 'form' && schema && (
@@ -295,6 +346,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
               setFormValue(next)
               setDirty(true)
               setSaved(false)
+              setSyncError('')
+              setFailedSyncFingerprint('')
             }}
           />
         </div>
@@ -309,6 +362,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
               setJSONValue(next)
               setDirty(true)
               setSaved(false)
+              setSyncError('')
+              setFailedSyncFingerprint('')
             }}
           />
         </div>
@@ -343,7 +398,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       </section>
 
       <footer className="draft-config-actions">
-        <span>{t('Saving updates the Flow360 Draft but never starts a mesh or solver run.')}</span>
+        <span>{t('Changes sync automatically after validation. You can sync immediately if needed.')}</span>
         <button
           type="button"
           className="draft-parameter-save"
@@ -351,7 +406,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           onClick={() => void save()}
         >
           {saving ? <RefreshCw size={13} className="spin" /> : <Save size={13} />}
-          {saving ? t('Saving…') : t('Save to Flow360 Draft')}
+          {saving ? t('Syncing…') : syncError ? t('Retry sync') : t('Sync now')}
         </button>
         {onReviewRun && !dirty && validation?.valid && validatedFingerprint === candidateResult.fingerprint && (
           <button type="button" className="draft-review-run" onClick={onReviewRun}><Play size={13} />{t('Review & Run')}</button>
@@ -359,6 +414,35 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       </footer>
     </div>
   )
+}
+
+export function draftAutoSyncReady({
+  dirty,
+  saving,
+  validating,
+  candidate,
+  fingerprint,
+  validatedFingerprint,
+  hasValidation,
+  failedSyncFingerprint,
+}: {
+  dirty: boolean
+  saving: boolean
+  validating: boolean
+  candidate: Record<string, unknown> | null
+  fingerprint: string
+  validatedFingerprint: string
+  hasValidation: boolean
+  failedSyncFingerprint: string
+}) {
+  return dirty
+    && !saving
+    && !validating
+    && Boolean(candidate)
+    && Boolean(fingerprint)
+    && hasValidation
+    && validatedFingerprint === fingerprint
+    && failedSyncFingerprint !== fingerprint
 }
 
 export function configuredExpressionPaths(schema: DynamicFormSchema, value: unknown, path = ''): string[] {

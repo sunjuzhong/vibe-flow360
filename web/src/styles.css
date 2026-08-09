@@ -2143,6 +2143,8 @@ button { color: inherit; }
 .draft-ai-config-result { display: flex !important; align-items: center; gap: 6px; color: #587319 !important; }
 .draft-unsaved-state { padding: 5px 8px; border-radius: 999px; font: 10px 'DM Mono'; }
 .draft-unsaved-state.dirty { color: #8b6418; background: #f7edcf; }
+.draft-unsaved-state.syncing { color: #526b17; background: #edf4dc; }
+.draft-unsaved-state.error { color: #98483b; background: #f8e2dd; }
 .draft-unsaved-state.saved { color: #587018; background: #e8f0d2; }
 .draft-validation-summary { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; padding: 11px 12px; border: 1px solid; border-radius: 9px; }
 .draft-validation-summary > svg { flex: 0 0 auto; margin-top: 1px; }

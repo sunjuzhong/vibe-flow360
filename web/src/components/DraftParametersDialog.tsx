@@ -14,6 +14,7 @@ type Props = {
   resource?: ResourceNode
   onClose: () => void
   onRetry: () => void
+  onParametersSynced?: (parameters: Record<string, unknown>) => void
   onReviewRun?: () => void
 }
 
@@ -27,6 +28,7 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
   resource,
   onClose,
   onRetry,
+  onParametersSynced,
   onReviewRun,
 }, ref) {
   const { t } = useI18n()
@@ -62,7 +64,7 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
         )}
         {!loading && !error && detail && (
           detail.simulation_params
-            ? <DraftParameterEditor draftId={draftId} parameters={detail.simulation_params} project={project} resource={resource} onSaved={onRetry} onReviewRun={onReviewRun} />
+            ? <DraftParameterEditor draftId={draftId} parameters={detail.simulation_params} project={project} resource={resource} onSaved={onParametersSynced} onReviewRun={onReviewRun} />
             : <div className="detail-empty">{t('Flow360 did not return simulation parameters.')}</div>
         )}
       </div>

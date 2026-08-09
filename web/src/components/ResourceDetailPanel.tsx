@@ -294,7 +294,7 @@ export default function ResourceDetailPanel({
         {tab === 'parameters' && (
           resourceType === 'Draft'
             ? detail.simulation_params
-              ? <DraftParameterEditor draftId={resourceId} parameters={detail.simulation_params} onSaved={onRetry} />
+              ? <DraftParameterEditor draftId={resourceId} parameters={detail.simulation_params} />
               : <div className="detail-empty">Flow360 did not return simulation parameters.</div>
             : <JsonView value={detail.simulation_params} empty="Flow360 did not return simulation parameters." />
         )}

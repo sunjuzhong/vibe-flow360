@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DynamicFormSchema } from '../api/client'
-import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, parseParameterJSON } from './DraftParameterEditor'
+import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAutoSyncReady, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -81,5 +81,22 @@ describe('Draft parameter editor', () => {
       { operating_condition: { alpha: 0, beta: 0 }, outputs: ['forces'] },
       { operating_condition: { alpha: 5 }, outputs: ['forces'] },
     )).toEqual({ operating_condition: { alpha: 5, beta: null } })
+  })
+
+  it('auto-syncs only the latest validated candidate and stops retrying a failed revision', () => {
+    const ready = {
+      dirty: true,
+      saving: false,
+      validating: false,
+      candidate: { version: '25.2' },
+      fingerprint: '{"version":"25.2"}',
+      validatedFingerprint: '{"version":"25.2"}',
+      hasValidation: true,
+      failedSyncFingerprint: '',
+    }
+    expect(draftAutoSyncReady(ready)).toBe(true)
+    expect(draftAutoSyncReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
+    expect(draftAutoSyncReady({ ...ready, saving: true })).toBe(false)
+    expect(draftAutoSyncReady({ ...ready, failedSyncFingerprint: ready.fingerprint })).toBe(false)
   })
 })

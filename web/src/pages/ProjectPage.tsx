@@ -1010,6 +1010,9 @@ export default function ProjectPage() {
               resource={selected}
               onClose={closePanel}
               onRetry={() => void loadDraftDetail()}
+              onParametersSynced={(simulationParams) => setDraftDetail((current) => current
+                ? { ...current, simulation_params: simulationParams }
+                : current)}
               onReviewRun={() => {
                 setActivePanel(null)
                 setChatOpen(false)
