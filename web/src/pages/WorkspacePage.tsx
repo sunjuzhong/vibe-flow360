@@ -8,7 +8,6 @@ import {
   Search,
   FileUp,
   GitCompare,
-  Database,
   LayoutGrid,
   List,
   Sparkles,
@@ -298,7 +297,6 @@ export default function WorkspacePage() {
           </div>
           {selectedFolder && <div className="workspace-home-actions">
             <button className="ai-action" onClick={() => setImportOpen(true)}><FileUp size={16}/> New project</button>
-            <button className="ai-action" onClick={() => setSTEPLibraryOpen(true)}><Database size={16}/> STEP Library</button>
             <button className="ai-action" onClick={() => setAICreateOpen(true)}><Sparkles size={16}/> AI Create</button>
           </div>}
         </div>

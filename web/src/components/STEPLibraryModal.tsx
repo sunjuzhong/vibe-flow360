@@ -16,11 +16,12 @@ function StatusIcon({ version }: { version: STEPVersion }) {
   return <Loader2 className="spin" size={14} />
 }
 
-export default function STEPLibraryModal({ folder, onClose, onCreated, onUseInAICreate }: {
-  folder: FolderNode
-  onClose: () => void
-  onCreated: (result: STEPProjectResult) => void
+export default function STEPLibraryModal({ folder = null, onClose, onCreated, onUseInAICreate, embedded = false }: {
+  folder?: FolderNode | null
+  onClose?: () => void
+  onCreated?: (result: STEPProjectResult) => void
   onUseInAICreate?: (source: { asset_id: string; version_id: string; label: string }) => void
+  embedded?: boolean
 }) {
   const [assets, setAssets] = useState<STEPAsset[]>([])
   const [selectedAssetId, setSelectedAssetId] = useState('')
@@ -153,7 +154,7 @@ export default function STEPLibraryModal({ folder, onClose, onCreated, onUseInAI
   }
 
   const createProject = async () => {
-    if (!selectedAsset || !selectedVersion) return
+    if (!selectedAsset || !selectedVersion || !folder || !onCreated) return
     setBusy(true); setError('')
     try { onCreated(await api.createProjectFromSTEP(selectedAsset.id, selectedVersion.id, folder.id, selectedAsset.name))
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause))
@@ -171,9 +172,9 @@ export default function STEPLibraryModal({ folder, onClose, onCreated, onUseInAI
   const uploadMode = creationMode === 'upload-new' || creationMode === 'upload-version'
   const aiMode = creationMode === 'ai-new' || creationMode === 'ai-revise'
 
-  return <div className="step-library-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+  return <div className={embedded ? 'step-library-embedded' : 'step-library-overlay'} role={embedded ? undefined : 'presentation'} onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget && !busy) onClose?.() }}>
     <section className="step-library-modal" role="dialog" aria-modal="true" aria-labelledby="step-library-title">
-      <header><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div><button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button></header>
+      <header><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div>{!embedded && <button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button>}</header>
       <div className="step-library-layout">
         <aside>
           <div className="step-library-aside-title"><strong>Assets</strong><button type="button" onClick={() => setCreationMode('upload-new')}><Plus size={13} /> New</button></div>
@@ -211,7 +212,7 @@ export default function STEPLibraryModal({ folder, onClose, onCreated, onUseInAI
             </dl>
             {selectedVersion.validation.error && <p className="step-library-error"><XCircle size={14} /> {selectedVersion.validation.error}</p>}
             {!selectedVersion.geometry && <p className="step-library-note">This uploaded version has no editable parametric recipe. Upload a revised STEP as a new version; AI revision is available on AI-authored versions.</p>}
-            <div className="step-library-actions"><a href={api.stepVersionDownloadURL(selectedAsset.id, selectedVersion.id)}><Download size={13} /> Download</a><button type="button" onClick={() => void revalidate()} disabled={busy || selectedVersion.validation.status === 'validating'}><RefreshCw size={13} /> Validate again</button>{onUseInAICreate && <button type="button" onClick={() => onUseInAICreate({ asset_id: selectedAsset.id, version_id: selectedVersion.id, label: `${selectedAsset.name} V${selectedVersion.number}` })} disabled={busy || selectedVersion.validation.status !== 'ready'}><Sparkles size={13} /> Use in AI Create</button>}<button className="primary" type="button" onClick={() => void createProject()} disabled={busy || selectedVersion.validation.status !== 'ready'}>{busy ? <Loader2 className="spin" size={13} /> : <FolderOpen size={13} />} Create in {folder.name}</button></div>
+            <div className="step-library-actions"><a href={api.stepVersionDownloadURL(selectedAsset.id, selectedVersion.id)}><Download size={13} /> Download</a><button type="button" onClick={() => void revalidate()} disabled={busy || selectedVersion.validation.status === 'validating'}><RefreshCw size={13} /> Validate again</button>{onUseInAICreate && <button type="button" onClick={() => onUseInAICreate({ asset_id: selectedAsset.id, version_id: selectedVersion.id, label: `${selectedAsset.name} V${selectedVersion.number}` })} disabled={busy || selectedVersion.validation.status !== 'ready'}><Sparkles size={13} /> Use in AI Create</button>}{folder && onCreated && <button className="primary" type="button" onClick={() => void createProject()} disabled={busy || selectedVersion.validation.status !== 'ready'}>{busy ? <Loader2 className="spin" size={13} /> : <FolderOpen size={13} />} Create in {folder.name}</button>}</div>
           </section>}
           {error && <p className="step-library-error" role="alert"><XCircle size={14} /> {error}</p>}
         </main>

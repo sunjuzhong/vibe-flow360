@@ -15,4 +15,11 @@ describe('STEPLibraryModal', () => {
     expect(markup).toContain('downloading it later is optional')
     expect(markup).toContain('role="dialog"')
   })
+
+  it('renders as an embedded management surface without a destination folder', () => {
+    const markup = renderToStaticMarkup(<STEPLibraryModal embedded />)
+    expect(markup).toContain('step-library-embedded')
+    expect(markup).toContain('Upload new asset')
+    expect(markup).not.toContain('Close STEP library')
+  })
 })
