@@ -26,8 +26,8 @@ concepts:
   flow360:
     - id: entity-versus-refinement
       title: Entity versus refinement
-      explanation: Sphere, Box, and Cylinder entities define locations; UniformRefinement, StructuredBoxRefinement, and AxisymmetricRefinement define spacing behavior.
-      misconception: Adding a Box entity alone does not refine the mesh until a compatible refinement references it through entities.
+      explanation: Sphere, Box, and Cylinder entities define locations after their IDs are registered in project_entity_info.draft_entities; refinement objects define spacing behavior.
+      misconception: An entity embedded only in stored_entities is a dangling reference when its ID is absent from the Draft entity registry.
     - id: mesh-slice-output
       title: MeshSliceOutput is a request
       explanation: MeshSliceOutput asks Flow360 to expose a generated center-plane mesh slice after meshing so region coverage and transitions can be inspected.
@@ -55,6 +55,10 @@ experiments:
     controlled_variable: The variant changes volume-refinement reach and spacing; the cylinder geometry and first boundary-layer thickness remain fixed.
     observation: Compare the same center-plane view for downstream exit, cross-wake cell count, transition smoothness, and estimated total cell cost.
 failure_modes:
+  - id: unregistered-draft-entity
+    symptom: A refinement appears in SimulationParams but has no effective volume scope.
+    cause: Its Sphere, Box, Cylinder, or Slice ID is absent from project_entity_info.draft_entities.
+    correction: Create or register the Draft entity first, bind the refinement to the registered ID, save, and run preflight again.
   - id: corridor-misaligned
     symptom: Fine cells form a long corridor that misses the velocity-deficit wake.
     cause: The Box and Cylinder axes follow global positive x even though yaw or nearby geometry deflects the actual wake.
@@ -68,6 +72,10 @@ failure_modes:
     cause: Equal spacing was applied in all directions or across the whole farfield instead of exploiting flow-aligned anisotropy.
     correction: Keep tighter spacing across strong gradients and coarser spacing along weak axial gradients while reviewing cell quality.
 evidence_rubric:
+  - id: draft-entity-registration
+    observation: Draft entity registration
+    pass: Every volume and slice reference resolves to the same ID and type in project_entity_info.draft_entities.
+    fail: A stored_entities reference has no matching Draft entity, or its ID or type differs.
   - id: separation-coverage
     observation: Near-body separation coverage
     pass: The fine near-body region encloses the complete cylinder and overlaps the start of both detached shear layers.

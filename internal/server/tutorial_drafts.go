@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	flow360api "github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 )
 
@@ -71,6 +72,10 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "draft_id": draftID})
 			return
 		}
+	}
+	if err := flow360api.ValidateDraftEntityReferences(configured); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error(), "draft_id": draftID})
+		return
 	}
 	canonical, err := s.flow360.SetDraftSimulationParams(c.Request.Context(), draftID, configured)
 	if err != nil {

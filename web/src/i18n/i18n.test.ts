@@ -189,11 +189,12 @@ describe('language settings', () => {
       'Compact cylinder wake refinement strategy',
       'Tutorial T05 · cylinder wake refinement',
       'Build the T05 wake-mesh environment',
-      'The app uploads the bundled cylinder geometry and creates compact-wake and focused-wake VolumeMesh Drafts.',
-      'Near-body sphere, structured wake box, axisymmetric core, directional spacing, center-plane slice',
+      'The app uploads the bundled cylinder geometry, registers the Sphere, Box, Cylinder, and Slice entities, and creates compact-wake and focused-wake VolumeMesh Drafts.',
+      'Registered near-body sphere, structured wake box, axisymmetric core, directional spacing, center-plane slice',
       'Compact wake regions',
       'Focused wake corridor',
-      'Both VolumeMesh Draft parameter sets are synced. No surface or volume mesh computation has been submitted.',
+      'Both Draft entity catalogs and VolumeMesh parameter sets are synced. No surface or volume mesh computation has been submitted.',
+      'The bundled T05 parameters contain an unregistered Draft entity or invalid refinement relationship.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

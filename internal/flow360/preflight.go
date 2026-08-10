@@ -129,7 +129,19 @@ func (c *Client) PreflightSimulationParams(
 			return PreflightResult{}, fmt.Errorf("Flow360 schema preflight returned an invalid %s editor schema", stage)
 		}
 	}
-	return result, nil
+	return addDraftEntityReferencePreflight(result, params, levels), nil
+}
+
+func addDraftEntityReferencePreflight(result PreflightResult, params json.RawMessage, levels []string) PreflightResult {
+	if err := ValidateDraftEntityReferences(params); err != nil {
+		result.Valid = false
+		result.Issues = append(result.Issues, PreflightIssue{
+			Level: "error", Code: "draft_entity_unregistered",
+			Path:    "private_attribute_asset_cache.project_entity_info.draft_entities",
+			Message: err.Error(), Stages: append([]string(nil), levels...),
+		})
+	}
+	return result
 }
 
 // PlanFormSchema projects the installed Flow360 SimulationParams schema onto
