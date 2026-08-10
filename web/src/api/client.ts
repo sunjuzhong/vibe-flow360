@@ -207,6 +207,25 @@ export type STEPProjectResult = {
 	 step_version_id: string
 }
 
+export type STEPAIJob = {
+  id: string
+  status: 'queued' | 'running' | 'recovering' | 'needs_input' | 'completed' | 'failed' | 'cancelled'
+  stage: string
+  progress: number
+  detail?: string
+  request: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string }
+  asset_id?: string
+  version_id?: string
+  fields?: AICreateClarificationField[]
+  error?: string
+  created_at: string
+  updated_at: string
+}
+
+export type STEPPreviewManifest = import('../components/viewer/LazyViewer3D').ViewerManifest & {
+  comparison?: { version_id: string; volume_delta: number; solid_count_delta: number; face_count_delta: number; bounds_delta: number[] }
+}
+
 export type AgentProposalField = {
   key: string
   value: unknown
@@ -1360,21 +1379,32 @@ export const api = {
     return body as { asset: STEPAsset; version: STEPVersion }
   },
   aiDesignSTEPAsset: (input: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string }) =>
-    mutate<{ asset: STEPAsset; version: STEPVersion }>('/api/step-assets/ai-design', input),
+    mutate<STEPAIJob>('/api/step-assets/ai-design', input),
+  stepAIJob: (jobId: string) => json<STEPAIJob>(`/api/step-assets/ai-jobs/${encodeURIComponent(jobId)}`),
+  cancelStepAIJob: async (jobId: string) => {
+    const response = await fetch(`/api/step-assets/ai-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || response.statusText)
+    return body as STEPAIJob
+  },
   validateSTEPVersion: (assetId: string, versionId: string) =>
     mutate<STEPVersion>(`/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/validate`),
   stepVersionDownloadURL: (assetId: string, versionId: string) =>
     `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/download`,
+  stepVersionPreview: (assetId: string, versionId: string, compareVersionId?: string) => {
+    const params = compareVersionId ? `?compare_version_id=${encodeURIComponent(compareVersionId)}` : ''
+    return json<STEPPreviewManifest>(`/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/preview${params}`)
+  },
   createProjectFromSTEP: (assetId: string, versionId: string, folderId: string, name?: string) =>
     mutate<STEPProjectResult>(
       `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/create-project`,
       { folder_id: folderId, name },
     ),
-  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string) => {
+  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string, stepSource?: { asset_id: string; version_id: string }) => {
     const response = await fetch('/api/ai-create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers, request_id: requestId }),
+      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers, request_id: requestId, step_asset_id: stepSource?.asset_id, step_version_id: stepSource?.version_id }),
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {

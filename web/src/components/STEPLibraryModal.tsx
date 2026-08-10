@@ -1,6 +1,7 @@
 import { Box, CheckCircle2, Download, FileUp, FolderOpen, Loader2, Plus, RefreshCw, Sparkles, X, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { api, type FolderNode, type STEPAsset, type STEPProjectResult, type STEPVersion } from '../api/client'
+import { api, type FolderNode, type STEPAIJob, type STEPAsset, type STEPPreviewManifest, type STEPProjectResult, type STEPVersion } from '../api/client'
+import { LazyViewer3D } from './viewer/LazyViewer3D'
 import './STEPLibraryModal.css'
 
 function formatBytes(value: number) {
@@ -15,10 +16,11 @@ function StatusIcon({ version }: { version: STEPVersion }) {
   return <Loader2 className="spin" size={14} />
 }
 
-export default function STEPLibraryModal({ folder, onClose, onCreated }: {
+export default function STEPLibraryModal({ folder, onClose, onCreated, onUseInAICreate }: {
   folder: FolderNode
   onClose: () => void
   onCreated: (result: STEPProjectResult) => void
+  onUseInAICreate?: (source: { asset_id: string; version_id: string; label: string }) => void
 }) {
   const [assets, setAssets] = useState<STEPAsset[]>([])
   const [selectedAssetId, setSelectedAssetId] = useState('')
@@ -32,6 +34,10 @@ export default function STEPLibraryModal({ folder, onClose, onCreated }: {
   const [unit, setUnit] = useState<'m' | 'mm' | 'cm' | 'inch'>('m')
   const [file, setFile] = useState<File | null>(null)
   const [aiPrompt, setAIPrompt] = useState('')
+  const [aiJob, setAIJob] = useState<STEPAIJob | null>(null)
+  const [compareVersionId, setCompareVersionId] = useState('')
+  const [preview, setPreview] = useState<STEPPreviewManifest | null>(null)
+  const [previewError, setPreviewError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
   const selectedAsset = useMemo(
@@ -66,7 +72,41 @@ export default function STEPLibraryModal({ folder, onClose, onCreated }: {
     if (selectedAsset && !selectedAsset.versions.some((version) => version.id === selectedVersionId)) {
       setSelectedVersionId(selectedAsset.versions.at(-1)?.id ?? '')
     }
-  }, [selectedAsset, selectedVersionId])
+    if (compareVersionId === selectedVersionId || (compareVersionId && !selectedAsset?.versions.some((version) => version.id === compareVersionId))) {
+      setCompareVersionId('')
+    }
+  }, [selectedAsset, selectedVersionId, compareVersionId])
+
+  useEffect(() => {
+    if (!selectedAsset || !selectedVersion || selectedVersion.validation.status !== 'ready') { setPreview(null); return }
+    let active = true
+    setPreview(null); setPreviewError('')
+    api.stepVersionPreview(selectedAsset.id, selectedVersion.id, compareVersionId || undefined)
+      .then((value) => { if (active) setPreview(value) })
+      .catch((cause) => { if (active) setPreviewError(cause instanceof Error ? cause.message : String(cause)) })
+    return () => { active = false }
+  }, [selectedAsset?.id, selectedVersion?.id, selectedVersion?.validation.status, compareVersionId])
+
+  useEffect(() => {
+    if (!aiJob || !['queued', 'running', 'recovering'].includes(aiJob.status)) return
+    const timer = window.setInterval(async () => {
+      try {
+        const current = await api.stepAIJob(aiJob.id)
+        setAIJob(current)
+        if (current.status === 'completed') {
+          setSelectedAssetId(current.asset_id ?? '')
+          setSelectedVersionId(current.version_id ?? '')
+          setAIPrompt('')
+          await load(true)
+        } else if (current.status === 'failed' || current.status === 'needs_input') {
+          setError(current.error || current.detail || 'AI STEP generation needs attention.')
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    }, 1200)
+    return () => window.clearInterval(timer)
+  }, [aiJob?.id, aiJob?.status])
 
   const upload = async (event: FormEvent) => {
     event.preventDefault()
@@ -87,20 +127,29 @@ export default function STEPLibraryModal({ folder, onClose, onCreated }: {
     } finally { setBusy(false) }
   }
 
-  const designWithAI = async (event: FormEvent) => {
-    event.preventDefault()
+  const startAIDesign = async () => {
     if (!aiPrompt.trim()) return
     setBusy(true); setError('')
     try {
       const revise = creationMode === 'ai-revise' && selectedAsset && selectedVersion
-      const response = await api.aiDesignSTEPAsset({
+      const job = await api.aiDesignSTEPAsset({
         prompt: aiPrompt.trim(), name: creationMode === 'ai-new' ? assetName.trim() || undefined : undefined,
         asset_id: revise ? selectedAsset.id : undefined, parent_version_id: revise ? selectedVersion.id : undefined,
       })
-      setSelectedAssetId(response.asset.id); setSelectedVersionId(response.version.id); setAIPrompt('')
-      await load(true)
+      setAIJob(job)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause))
     } finally { setBusy(false) }
+  }
+
+  const designWithAI = (event: FormEvent) => {
+    event.preventDefault()
+    void startAIDesign()
+  }
+
+  const cancelAIDesign = async () => {
+    if (!aiJob) return
+    try { setAIJob(await api.cancelStepAIJob(aiJob.id))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
   const createProject = async () => {
@@ -152,15 +201,17 @@ export default function STEPLibraryModal({ folder, onClose, onCreated }: {
             <textarea value={aiPrompt} onChange={(event) => setAIPrompt(event.target.value)} placeholder={creationMode === 'ai-revise' ? 'Describe only the change, e.g. increase the chord by 10%…' : 'Describe the geometry and defining dimensions…'} rows={3} />
             <button type="submit" disabled={busy || !aiPrompt.trim()}>{busy ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />} {creationMode === 'ai-revise' ? 'Generate new version' : 'Generate STEP asset'}</button>
           </form>}
+          {aiJob && <section className={`step-ai-job status-${aiJob.status}`} aria-live="polite"><div><strong>{aiJob.detail || aiJob.stage}</strong><small>{aiJob.stage.replaceAll('-', ' ')} · {aiJob.progress}%</small></div><progress max={100} value={aiJob.progress} />{['queued', 'running', 'recovering'].includes(aiJob.status) && <button type="button" onClick={() => void cancelAIDesign()}>Cancel generation</button>}{['failed', 'needs_input', 'cancelled'].includes(aiJob.status) && <button type="button" onClick={() => void startAIDesign()}>Retry as a new job</button>}</section>}
           {selectedAsset && selectedVersion && <section className="step-library-detail">
             <div className="step-library-detail-heading"><div><p className="eyebrow">SELECTED ASSET</p><h3>{selectedAsset.name}</h3><small>{selectedAsset.description || 'No description'}</small></div><span className={`step-status status-${selectedVersion.validation.status}`}><StatusIcon version={selectedVersion} /> {selectedVersion.validation.status}</span></div>
             <div className="step-version-list">{selectedAsset.versions.map((version) => <button className={selectedVersion.id === version.id ? 'active' : ''} type="button" key={version.id} onClick={() => setSelectedVersionId(version.id)}>V{version.number}<small>{version.source}</small></button>)}</div>
+            {selectedVersion.validation.status === 'ready' && <section className="step-preview"><div className="step-preview-toolbar"><strong>3D exact-geometry preview</strong><label>Compare with <select value={compareVersionId} onChange={(event) => setCompareVersionId(event.target.value)}><option value="">No comparison</option>{selectedAsset.versions.filter((version) => version.id !== selectedVersion.id && version.validation.status === 'ready').map((version) => <option key={version.id} value={version.id}>V{version.number}</option>)}</select></label></div>{preview ? <LazyViewer3D key={preview.asset_url} manifest={preview} state={{ status: 'ready' }} showEntityLegend /> : <div className="step-preview-loading">{previewError || <><Loader2 className="spin" size={14} /> Tessellating exact STEP for browser preview…</>}</div>}{preview?.comparison && <div className="step-version-deltas"><span>Δ volume <strong>{preview.comparison.volume_delta.toPrecision(6)}</strong></span><span>Δ solids <strong>{preview.comparison.solid_count_delta}</strong></span><span>Δ faces <strong>{preview.comparison.face_count_delta}</strong></span><span title={preview.comparison.bounds_delta.join(' · ')}>Δ bounds <strong>{preview.comparison.bounds_delta.map((value) => value.toPrecision(3)).join(' · ')}</strong></span></div>}</section>}
             <dl><div><dt>File</dt><dd>{selectedVersion.file_name} · {formatBytes(selectedVersion.size)}</dd></div><div><dt>Unit</dt><dd>{selectedVersion.unit}</dd></div><div><dt>Fingerprint</dt><dd title={selectedVersion.sha256}>{selectedVersion.sha256.slice(0, 16)}…</dd></div>
               {selectedVersion.validation.report && <><div><dt>Exact solids / faces</dt><dd>{selectedVersion.validation.report.solid_count} / {selectedVersion.validation.report.face_count}</dd></div><div><dt>Volume</dt><dd>{selectedVersion.validation.report.volume.toPrecision(7)} {selectedVersion.unit}³</dd></div><div><dt>Kernel</dt><dd>{selectedVersion.validation.report.kernel}</dd></div>{selectedVersion.validation.report.bounds && <div><dt>Bounds</dt><dd>{selectedVersion.validation.report.bounds.map((value) => value.toPrecision(5)).join(' · ')}</dd></div>}</>}
             </dl>
             {selectedVersion.validation.error && <p className="step-library-error"><XCircle size={14} /> {selectedVersion.validation.error}</p>}
             {!selectedVersion.geometry && <p className="step-library-note">This uploaded version has no editable parametric recipe. Upload a revised STEP as a new version; AI revision is available on AI-authored versions.</p>}
-            <div className="step-library-actions"><a href={api.stepVersionDownloadURL(selectedAsset.id, selectedVersion.id)}><Download size={13} /> Download</a><button type="button" onClick={() => void revalidate()} disabled={busy || selectedVersion.validation.status === 'validating'}><RefreshCw size={13} /> Validate again</button><button className="primary" type="button" onClick={() => void createProject()} disabled={busy || selectedVersion.validation.status !== 'ready'}>{busy ? <Loader2 className="spin" size={13} /> : <FolderOpen size={13} />} Create in {folder.name}</button></div>
+            <div className="step-library-actions"><a href={api.stepVersionDownloadURL(selectedAsset.id, selectedVersion.id)}><Download size={13} /> Download</a><button type="button" onClick={() => void revalidate()} disabled={busy || selectedVersion.validation.status === 'validating'}><RefreshCw size={13} /> Validate again</button>{onUseInAICreate && <button type="button" onClick={() => onUseInAICreate({ asset_id: selectedAsset.id, version_id: selectedVersion.id, label: `${selectedAsset.name} V${selectedVersion.number}` })} disabled={busy || selectedVersion.validation.status !== 'ready'}><Sparkles size={13} /> Use in AI Create</button>}<button className="primary" type="button" onClick={() => void createProject()} disabled={busy || selectedVersion.validation.status !== 'ready'}>{busy ? <Loader2 className="spin" size={13} /> : <FolderOpen size={13} />} Create in {folder.name}</button></div>
           </section>}
           {error && <p className="step-library-error" role="alert"><XCircle size={14} /> {error}</p>}
         </main>

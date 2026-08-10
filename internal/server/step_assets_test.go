@@ -24,6 +24,16 @@ type fixedSTEPValidator struct {
 	err    error
 }
 
+type fixedSTEPPreviewer struct{ calls int }
+
+func (previewer *fixedSTEPPreviewer) PreviewSTEP(_ context.Context, _ []string, output string) (aicreate.STEPPreview, error) {
+	previewer.calls++
+	if err := os.WriteFile(output, []byte("glTF"), 0o600); err != nil {
+		return aicreate.STEPPreview{}, err
+	}
+	return aicreate.STEPPreview{Vertices: 24, Triangles: 12, Bounds: []float64{0, 0, 0, 12, 6, 3}}, nil
+}
+
 func (v fixedSTEPValidator) ValidateSTEP(context.Context, string) (aicreate.GeometryValidation, error) {
 	return v.report, v.err
 }
@@ -33,6 +43,7 @@ func stepAssetTestRouter(app *Server) *gin.Engine {
 	router.GET("/api/step-assets", app.listSTEPAssets)
 	router.POST("/api/step-assets", app.createSTEPAsset)
 	router.POST("/api/step-assets/:asset_id/versions/:version_id/create-project", app.createProjectFromSTEPAsset)
+	router.GET("/api/step-assets/:asset_id/versions/:version_id/preview", app.previewSTEPAssetVersion)
 	return router
 }
 
@@ -107,5 +118,69 @@ esac
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), asset.ID) || !strings.Contains(recorder.Body.String(), "project-step-1") {
 		t.Fatalf("create status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPrepareAICreateCADUsesValidatedLibraryVersion(t *testing.T) {
+	root := t.TempDir()
+	store, err := stepassets.NewStore(filepath.Join(root, "library"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, version, err := store.Create("Library bracket", "", "bracket.step", "mm", "upload", "", "", strings.NewReader("ISO-10303-21; MANIFOLD_SOLID_BREP ADVANCED_FACE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := aicreate.GeometryValidation{SolidCount: 1, FaceCount: 6, Volume: 125, Bounds: []float64{0, 0, 0, 10, 5, 2}, Kernel: "OpenCascade"}
+	if _, err := store.SetValidation(asset.ID, version.ID, stepassets.Validation{Status: stepassets.StatusReady, Report: &report}); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{workDir: root, stepAssets: store}
+	progressID := "aip-library-source-1234"
+	app.startAICreateProgress(progressID)
+	blueprint, validation, path, name, err := app.prepareAICreateCAD(context.Background(), aiCreateSession{ID: "aic-library", STEPAssetID: asset.ID, STEPVersionID: version.ID}, progressID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blueprint.Geometry.Generator != "step-library" || blueprint.Geometry.Unit != "mm" || path == "" || name != "bracket.step" || validation.Volume != 125 {
+		t.Fatalf("library source was not reused: blueprint=%#v validation=%#v path=%q name=%q", blueprint, validation, path, name)
+	}
+}
+
+func TestSTEPPreviewComparesReadyVersionsAndCachesAsset(t *testing.T) {
+	root := t.TempDir()
+	store, err := stepassets.NewStore(filepath.Join(root, "library"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, first, err := store.Create("Bracket", "", "bracket.step", "mm", "upload", "", "", strings.NewReader("ISO-10303-21; first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, second, err := store.AddVersion(asset.ID, "bracket-v2.step", "mm", "upload", "", first.ID, strings.NewReader("ISO-10303-21; second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstReport := aicreate.GeometryValidation{SolidCount: 1, FaceCount: 6, Volume: 100, Bounds: []float64{0, 0, 0, 10, 5, 2}}
+	secondReport := aicreate.GeometryValidation{SolidCount: 2, FaceCount: 9, Volume: 120, Bounds: []float64{-1, 0, 0, 12, 6, 3}}
+	if _, err := store.SetValidation(asset.ID, first.ID, stepassets.Validation{Status: stepassets.StatusReady, Report: &firstReport}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetValidation(asset.ID, second.ID, stepassets.Validation{Status: stepassets.StatusReady, Report: &secondReport}); err != nil {
+		t.Fatal(err)
+	}
+	previewer := &fixedSTEPPreviewer{}
+	app := &Server{workDir: root, stepAssets: store, stepPreviewer: previewer}
+	router := stepAssetTestRouter(app)
+	path := "/api/step-assets/" + asset.ID + "/versions/" + second.ID + "/preview?compare_version_id=" + first.ID
+	for attempt := 0; attempt < 2; attempt++ {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"volume_delta":20`) || !strings.Contains(recorder.Body.String(), `"bounds_delta"`) {
+			t.Fatalf("preview status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("preview cache missed: calls=%d", previewer.calls)
 	}
 }

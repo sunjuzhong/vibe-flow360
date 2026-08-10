@@ -54,7 +54,11 @@ type Server struct {
 	compareWorkspaces  *compareworkspace.Store
 	cadGenerator       aicreate.Generator
 	stepValidator      aicreate.STEPValidator
+	stepPreviewer      aicreate.STEPPreviewer
 	stepAssets         *stepassets.Store
+	stepJobMu          sync.Mutex
+	stepJobCancels     map[string]context.CancelFunc
+	stepJobSlots       chan struct{}
 	plans              *plans.Store
 	imports            *importplans.Store
 	cache              *projectcache.Store
@@ -178,7 +182,10 @@ func New() *Server {
 		compareWorkspaces:  compareWorkspaceStore,
 		cadGenerator:       cadRuntime,
 		stepValidator:      cadRuntime,
+		stepPreviewer:      cadRuntime,
 		stepAssets:         stepAssetStore,
+		stepJobCancels:     map[string]context.CancelFunc{},
+		stepJobSlots:       make(chan struct{}, 1),
 		plans:              planStore,
 		imports:            importStore,
 		cache:              cacheStore,
@@ -198,6 +205,7 @@ func New() *Server {
 	}
 	app.loadAICreateState()
 	app.resumeSTEPValidations()
+	app.resumeAISTEPJobs()
 	app.routes()
 
 	go app.startImportCleanupLoop()
@@ -384,10 +392,14 @@ func (s *Server) routes() {
 		api.GET("/step-assets", s.listSTEPAssets)
 		api.POST("/step-assets", s.createSTEPAsset)
 		api.POST("/step-assets/ai-design", s.aiDesignSTEPAsset)
+		api.GET("/step-assets/ai-jobs/:job_id", s.getAISTEPJob)
+		api.DELETE("/step-assets/ai-jobs/:job_id", s.cancelAISTEPJob)
 		api.GET("/step-assets/:asset_id", s.getSTEPAsset)
 		api.POST("/step-assets/:asset_id/versions", s.createSTEPAssetVersion)
 		api.POST("/step-assets/:asset_id/versions/:version_id/validate", s.validateSTEPAssetVersion)
 		api.GET("/step-assets/:asset_id/versions/:version_id/download", s.downloadSTEPAssetVersion)
+		api.GET("/step-assets/:asset_id/versions/:version_id/preview", s.previewSTEPAssetVersion)
+		api.GET("/step-assets/:asset_id/versions/:version_id/preview.glb", s.previewSTEPAssetVersionFile)
 		api.POST("/step-assets/:asset_id/versions/:version_id/create-project", s.createProjectFromSTEPAsset)
 		api.POST("/ai-create", s.aiCreateProject)
 		api.GET("/ai-create/progress/:request_id", s.aiCreateProgressStatus)
