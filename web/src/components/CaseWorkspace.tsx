@@ -517,10 +517,6 @@ export default function CaseWorkspace({
     setActivePlayerArchive({ kind, record })
     setActiveReviewDialog('slices')
   }
-  const openTimeSeriesPlayerKind = (kind: CaseTimeSeriesArchiveKind) => {
-    const archive = timeSeriesArchives.find((candidate) => candidate.kind === kind)
-    if (archive) openTimeSeriesPlayer(archive.record)
-  }
   const handleViewerSelection = (selection: ViewerSelection) => {
     setViewerSelection(selection)
     const selectedMember = visualizationGroups
@@ -628,18 +624,10 @@ export default function CaseWorkspace({
                       const visible = group.entityIds.some((entityId) => entityVisibility[entityId] ?? group.visible)
                       if (!group.entityIds.length) {
                         return (
-                          <button
-                            type="button"
-                            className={`case-result-row ${group.playbackKind ? 'previewable' : ''}`}
-                            disabled={!group.playbackKind}
-                            onClick={() => { if (group.playbackKind) openTimeSeriesPlayerKind(group.playbackKind) }}
-                            aria-label={group.playbackKind ? t(caseTimeSeriesPlayerTitle(group.playbackKind)) : t('Visualization output is not available in the 3D preview')}
-                            key={group.id}
-                          >
+                          <div className="case-result-row" key={group.id}>
                             {group.playbackKind ? <Film size={11} /> : <CircleDashed size={11} />}
                             <span>{group.source === 'archive' ? t(group.name) : group.name}</span>
-                            <small>{group.playbackKind ? t('Open') : t('Not available in 3D preview')}</small>
-                          </button>
+                          </div>
                         )
                       }
                       return (
