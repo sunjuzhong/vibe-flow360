@@ -1617,7 +1617,7 @@ export default function GeometryWorkspace({
                 <div><dt>{t('Mesh')}</dt><dd>{t('{triangles} triangles · {duration} ms')
                   .replace('{triangles}', diagnosticReport.topology.triangle_count.toLocaleString(language))
                   .replace('{duration}', diagnosticReport.topology.duration_ms.toLocaleString(language))}</dd></div>
-                <div><dt>{t('Completed')}</dt><dd>{new Date(diagnosticReport.topology.completed_at).toLocaleString(language)}</dd></div>
+                <div><dt>{t('Completed at')}</dt><dd>{new Date(diagnosticReport.topology.completed_at).toLocaleString(language)}</dd></div>
               </dl>
               {diagnosticReport.topology.limitations.map((limitation) => <small key={limitation}>{t(limitation)}</small>)}
               <button type="button" disabled={diagnosticBusy || !resourceId} onClick={() => void runDiagnostics()}>

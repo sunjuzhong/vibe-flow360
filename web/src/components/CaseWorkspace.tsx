@@ -67,6 +67,10 @@ export function convergenceTrendLabel(metric: Pick<ConvergenceMetric, 'stable' |
   }
 }
 
+export function localizeConvergenceReason(reason: string, translate: (value: string) => string): string {
+  return reason.split('; ').map((part) => translate(part)).join('; ')
+}
+
 function formatAssessmentKey(key: string): string {
   switch (key) {
     case 'residuals': return 'Residual Convergence'
@@ -754,14 +758,10 @@ export default function CaseWorkspace({
         <>
           <div className={`geometry-readiness-card ${reviewLevel}`}>
             <div className="geometry-panel-heading case-review-heading">
-              <div><span>CASE REVIEW</span><strong>{reviewLabel}</strong></div>
+              <div><span>{t('CASE REVIEW')}</span><strong>{t(reviewLabel)}</strong></div>
               <StatusBadge status={viewModel.status} />
             </div>
-            <p>{reviewDetail}</p>
-            <div className="geometry-readiness-counts">
-              <span className={reviewLevel === 'blocked' ? 'blocked' : 'warning'}>Status · {statusLabel(viewModel.status)}</span>
-              {convResult && <span className={convResult.status === 'converged' ? 'ready' : 'warning'}>Convergence · {convResult.status}</span>}
-            </div>
+            <p>{t(reviewDetail)}</p>
           </div>
 
           <ViewerAssetInformation stats={viewerAssetStats} />
@@ -771,7 +771,7 @@ export default function CaseWorkspace({
               {convResult.status === 'converged' ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
               <div>
                 <strong>{t(formatConvergenceStatus(convResult.status))}</strong>
-                <p>{convResult.reason}</p>
+                <p>{localizeConvergenceReason(convResult.reason, t)}</p>
               </div>
             </div>
           )}

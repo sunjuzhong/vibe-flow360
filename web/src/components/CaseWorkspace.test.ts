@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -80,6 +81,15 @@ describe('convergenceTrendLabel', () => {
     expect(convergenceTrendLabel({ stable: false, trend: 'Increasing' })).toBe('increasing')
     expect(convergenceTrendLabel({ stable: false, trend: 'decreasing' })).toBe('decreasing')
     expect(convergenceTrendLabel({ stable: false, trend: 'custom-trend' })).toBe('custom-trend')
+  })
+})
+
+describe('localizeConvergenceReason', () => {
+  it('translates each deterministic analyzer reason while preserving metric values', () => {
+    const reason = '2_momy not stable: drift=2.08e-05; 2_momy oscillating'
+    expect(localizeConvergenceReason(reason, (value) => translate(value, 'zh-CN'))).toBe(
+      '2_momy 不稳定：漂移=2.08e-05; 2_momy 振荡',
+    )
   })
 })
 

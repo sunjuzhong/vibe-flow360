@@ -78,6 +78,9 @@ describe('language settings', () => {
     expect(translate('decreasing', 'zh-CN')).toBe('下降')
     expect(translate('Not Converged — Results show drift or instability', 'zh-CN')).toBe('未收敛 — 结果存在漂移或不稳定')
     expect(translate('Residual Convergence', 'zh-CN')).toBe('残差收敛')
+    expect(translate('Completed', 'zh-CN')).toBe('已完成')
+    expect(translate('Completed at', 'zh-CN')).toBe('完成时间')
+    expect(translate('2_momy oscillating', 'zh-CN')).toBe('2_momy 振荡')
   })
 
   it('covers the complete AI Create session chrome in Chinese', () => {
