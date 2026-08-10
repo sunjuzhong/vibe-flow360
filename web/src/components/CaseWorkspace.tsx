@@ -546,6 +546,7 @@ export default function CaseWorkspace({
           {resultPreview && (
             <ResultTablePreview
               path={resultPreview.path}
+              cacheScope={`${projectId}:Case:${resourceId ?? detail?.id ?? ''}`}
               content={resultPreview.content}
               loading={resultPreview.loading}
               error={resultPreview.error}

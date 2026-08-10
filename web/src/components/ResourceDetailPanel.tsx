@@ -311,6 +311,7 @@ export default function ResourceDetailPanel({
             {previewResult && (
               <ResultTablePreview
                 path={previewResult.path}
+                cacheScope={`${projectId}:${resourceType}:${resourceId}`}
                 content={previewResult.content}
                 candidates={results.flatMap((result, index) => result.path && /\.csv$/i.test(result.path)
                   ? [{ path: result.path, label: result.name ?? `Result ${index + 1}` }]

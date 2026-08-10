@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import { ResultTablePreview, isTabularResult, parseResultTable, summarizeResultTable } from './ResultTablePreview'
+import { fingerprintResultContent, ResultTablePreview, isTabularResult, parseResultTable, summarizeResultTable } from './ResultTablePreview'
 
 describe('parseResultTable', () => {
   it('parses quoted CSV cells and fills uneven rows', () => {
@@ -36,14 +36,26 @@ describe('parseResultTable', () => {
 
   it('summarizes every parsed row and bounds representative samples for AI interpretation', () => {
     const table = parseResultTable(`step,value,label\n${Array.from({ length: 5101 }, (_, index) => `${index + 1},${index * 2},${index % 2 ? 'odd' : 'even'}`).join('\n')}`, 'result.csv')
-    const summary = summarizeResultTable(table, 'result.csv', 'zh-CN')
+    const summary = summarizeResultTable(table, 'project:test:case:test', 'result.csv', 'zh-CN', 'a'.repeat(64))
 
     expect(summary.total_rows).toBe(5101)
+    expect(summary.scope).toBe('project:test:case:test')
+    expect(summary.fingerprint).toBe('a'.repeat(64))
     expect(table.rows).toHaveLength(5000)
     expect(summary.columns.find((column) => column.field === 'value')?.mean).toBe(5100)
     expect(summary.columns.find((column) => column.field === 'label')?.unique).toBe(2)
     expect(summary.sample_rows).toHaveLength(24)
     expect(summary.sample_rows.at(-1)?.step).toBe('5101')
+  })
+
+  it('fingerprints full CSV content for stable cache invalidation', async () => {
+    const first = await fingerprintResultContent('step,value\n1,0.1')
+    const same = await fingerprintResultContent('step,value\n1,0.1')
+    const changed = await fingerprintResultContent('step,value\n1,0.2')
+
+    expect(first).toMatch(/^[a-f0-9]{64}$/)
+    expect(same).toBe(first)
+    expect(changed).not.toBe(first)
   })
 })
 

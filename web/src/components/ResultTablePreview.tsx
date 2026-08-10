@@ -1,10 +1,10 @@
 import { AlertCircle, BarChart3, FileSpreadsheet, Loader2, RefreshCw, Sparkles, Table2, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { api, type ResultInterpretationRequest } from '../api/client'
+import type { ResultInterpretationRequest } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { DatasetPicker, datasetCompatibility, recommendResultChart, ResultChartPanel, type ChartDataset } from './ResultChartPanel'
+import { ResultAIInterpretationDialog } from './ResultAIInterpretationDialog'
 
 const MAX_CHART_ROWS = 5000
 const MAX_TABLE_ROWS = 200
@@ -19,7 +19,12 @@ export type ParsedResultTable = {
   delimiter: 'comma' | 'tab' | 'whitespace'
 }
 
-export function summarizeResultTable(table: ParsedResultTable, path: string, language: string): ResultInterpretationRequest {
+export async function fingerprintResultContent(content: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export function summarizeResultTable(table: ParsedResultTable, scope: string, path: string, language: string, fingerprint: string): ResultInterpretationRequest {
   const clip = (value: string, maximum = 500) => value.length > maximum ? `${value.slice(0, maximum)}…` : value
   const columns = table.headers.map((field, columnIndex) => {
     const values = table.analysisRows.map((row) => row[columnIndex] ?? '')
@@ -49,7 +54,9 @@ export function summarizeResultTable(table: ParsedResultTable, path: string, lan
     sampleIndexes.add(sampleCount === 1 ? 0 : Math.round(index * (table.analysisRows.length - 1) / (sampleCount - 1)))
   }
   return {
+    scope,
     path,
+    fingerprint,
     language,
     total_rows: table.totalRows,
     delimiter: table.delimiter,
@@ -163,6 +170,7 @@ export function ResultTablePreview({
   error = '',
   candidates = [],
   loadCandidate,
+  cacheScope,
   onClose,
 }: {
   path: string
@@ -171,6 +179,7 @@ export function ResultTablePreview({
   error?: string
   candidates?: { path: string; label?: string }[]
   loadCandidate?: (path: string) => Promise<string>
+  cacheScope?: string
   onClose: () => void
 }) {
   const { t, language } = useI18n()
@@ -183,9 +192,9 @@ export function ResultTablePreview({
   const [tablePath, setTablePath] = useState(path)
   const [candidateLoading, setCandidateLoading] = useState('')
   const [candidateError, setCandidateError] = useState('')
-  const [interpretation, setInterpretation] = useState('')
-  const [interpretationError, setInterpretationError] = useState('')
-  const [interpreting, setInterpreting] = useState(false)
+  const [aiOpen, setAIOpen] = useState(false)
+  const [aiInput, setAIInput] = useState<ResultInterpretationRequest | null>(null)
+  const [preparingAI, setPreparingAI] = useState(false)
   const datasets = useMemo<ChartDataset[]>(() => table ? [{ path, table }, ...extraDatasets] : extraDatasets, [extraDatasets, path, table])
   const selectedTable = datasets.find((dataset) => dataset.path === tablePath) ?? datasets[0]
 
@@ -193,8 +202,8 @@ export function ResultTablePreview({
     setExtraDatasets([])
     setTablePath(path)
     setCandidateError('')
-    setInterpretation('')
-    setInterpretationError('')
+    setAIOpen(false)
+    setAIInput(null)
   }, [path])
 
   useEffect(() => {
@@ -221,17 +230,16 @@ export function ResultTablePreview({
     }
   }
 
-  const interpret = async () => {
-    if (!table || interpreting) return
-    setInterpreting(true)
-    setInterpretationError('')
+  const openInterpretation = async () => {
+    if (!table || content === undefined || preparingAI) return
+    setAIOpen(true)
+    if (aiInput) return
+    setPreparingAI(true)
     try {
-      const result = await api.interpretResult(summarizeResultTable(table, path, language))
-      setInterpretation(result.interpretation)
-    } catch (failure) {
-      setInterpretationError(String(failure).replace('Error: ', ''))
+      const fingerprint = await fingerprintResultContent(content)
+      setAIInput(summarizeResultTable(table, cacheScope ?? path, path, language, fingerprint))
     } finally {
-      setInterpreting(false)
+      setPreparingAI(false)
     }
   }
 
@@ -267,21 +275,15 @@ export function ResultTablePreview({
               <span>{t(`${table.delimiter} separated`)}</span>
               {table.truncated && <em>{t('Chart data truncated')}</em>}
               {table.totalRows > MAX_TABLE_ROWS && <em>{t(`Table shows first ${MAX_TABLE_ROWS}`)}</em>}
-              <button className="result-ai-trigger" type="button" onClick={() => void interpret()} disabled={interpreting || table.rows.length === 0}>
-                {interpreting ? <Loader2 className="spin" size={12} /> : <Sparkles size={12} />}
-                {t(interpreting ? 'Interpreting…' : interpretation ? 'Interpret again' : 'AI interpretation')}
+              <button className="result-ai-trigger" type="button" onClick={() => void openInterpretation()} disabled={preparingAI || table.rows.length === 0}>
+                {preparingAI ? <Loader2 className="spin" size={12} /> : <Sparkles size={12} />}
+                {t('AI interpretation')}
               </button>
               <div className="result-preview-view-toggle" role="group" aria-label={t('Result view')}>
                 <button className={view === 'chart' ? 'selected' : ''} onClick={() => setView('chart')} disabled={!recommendation?.yColumns.length}><BarChart3 size={12} />{t('Chart')}</button>
                 <button className={view === 'table' ? 'selected' : ''} onClick={() => setView('table')}><Table2 size={12} />{t('Table')}</button>
               </div>
             </div>
-            {(interpretation || interpretationError) && (
-              <section className={`result-ai-interpretation${interpretationError ? ' error' : ''}`} aria-live="polite">
-                <header><Sparkles size={14} /><strong>{t('AI interpretation')}</strong><button type="button" onClick={() => { setInterpretation(''); setInterpretationError('') }} aria-label={t('Close AI interpretation')}><X size={12} /></button></header>
-                {interpretationError ? <p role="alert">{t(interpretationError)}</p> : <ReactMarkdown>{interpretation}</ReactMarkdown>}
-              </section>
-            )}
             {view === 'chart' && recommendation && (
               <>
                 {loadCandidate && candidates.length > 0 && (
@@ -322,6 +324,7 @@ export function ResultTablePreview({
           </>
         )}
       </section>
+      <ResultAIInterpretationDialog open={aiOpen} input={aiInput} onClose={() => setAIOpen(false)} />
     </div>
   )
 }

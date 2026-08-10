@@ -40,12 +40,28 @@ export type ResultColumnSummary = {
 }
 
 export type ResultInterpretationRequest = {
+  scope: string
   path: string
+  fingerprint: string
   language: string
   total_rows: number
   delimiter: string
   columns: ResultColumnSummary[]
   sample_rows: Array<Record<string, string>>
+  mode?: 'load' | 'regenerate' | 'ask' | 'clear'
+  question?: string
+}
+
+export type ResultInterpretationResponse = {
+  key: string
+  interpretation: string
+  messages: ChatMessage[]
+  cached: boolean
+  provider: string
+  model: string
+  prompt_version: string
+  generated_at: string
+  updated_at: string
 }
 
 export type ChatMessage = {
@@ -1200,7 +1216,7 @@ export const api = {
   },
   agentState: () => json<AgentState>('/api/agent/state'),
   interpretResult: (input: ResultInterpretationRequest) =>
-    mutate<{ interpretation: string }>('/api/agent/interpret-result', input),
+    mutate<ResultInterpretationResponse>('/api/agent/interpret-result', input),
   agentChatSession: (projectId: string, scopeType: 'project' | 'resource' | 'draft', scopeId?: string, resourceId?: string) => {
     const params = new URLSearchParams({ project_id: projectId })
     params.set('scope_type', scopeType)

@@ -48,6 +48,7 @@ type Server struct {
 	flow360            *flow360.Client
 	agent              *agent.Service
 	chatSessions       *agent.ChatStore
+	resultAI           *resultInterpretationStore
 	cadGenerator       aicreate.Generator
 	plans              *plans.Store
 	imports            *importplans.Store
@@ -148,6 +149,10 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	resultAIStore, err := newResultInterpretationStore(filepath.Join(dataDir, "result-interpretations"))
+	if err != nil {
+		panic(err)
+	}
 	interventionEngine := agent.NewEngine(interventionStore, planStore, aiService)
 
 	app := &Server{
@@ -155,6 +160,7 @@ func New() *Server {
 		flow360:            flowClient,
 		agent:              aiService,
 		chatSessions:       chatStore,
+		resultAI:           resultAIStore,
 		cadGenerator:       aicreate.NewCadQueryGenerator(),
 		plans:              planStore,
 		imports:            importStore,
