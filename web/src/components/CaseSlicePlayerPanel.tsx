@@ -1,7 +1,8 @@
 import { AlertCircle, CheckCircle2, Database, LoaderCircle, Pause, Play, SkipBack, SkipForward, Square } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SlicePlayerJob } from '../api/client'
 import { useI18n } from '../i18n'
+import { UVFAssetLRU } from '../lib/uvf-three'
 import { LazyViewer3D, type ViewerManifest } from './viewer/LazyViewer3D'
 
 function formatBytes(value: number) {
@@ -29,6 +30,19 @@ type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report']>['pla
 
 export const SLICE_PLAYBACK_FPS_OPTIONS = [1, 2, 5, 10, 15, 20, 24, 30] as const
 
+export function slicePlaybackPrefetchIndices(current: number, frameCount: number) {
+  if (frameCount < 2) return []
+  return [...new Set([1, 2, -1]
+    .map((offset) => (current + offset + frameCount) % frameCount)
+    .filter((index) => index !== current))]
+}
+
+export function sliceFrameAssetURL(caseId: string, jobId: string, frame: SlicePlaybackFrame) {
+  const manifestPath = selectPlaybackAsset(frame).manifestPath
+  const assetPath = manifestPath.split('/').map(encodeURIComponent).join('/')
+  return `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(jobId)}/assets/${assetPath}`
+}
+
 export function selectPlaybackAsset(frame: SlicePlaybackFrame) {
   return {
     manifestPath: frame.manifest_path,
@@ -44,20 +58,37 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
   const [playing, setPlaying] = useState(false)
   const [fps, setFps] = useState(2)
   const [selectedField, setSelectedField] = useState<string | null>(playback?.fields[0] ?? null)
+  const assetCache = useMemo(() => new UVFAssetLRU(5), [])
+  const frameReadyRef = useRef(false)
   const frame = playback?.frames[frameIndex]
+
+  useEffect(() => () => assetCache.dispose(), [assetCache])
 
   useEffect(() => {
     if (!playing || !playback || playback.frame_count < 2) return
-    const timer = window.setInterval(() => setFrameIndex((value) => (value + 1) % playback.frame_count), 1000 / fps)
+    const timer = window.setInterval(() => {
+      if (!frameReadyRef.current) return
+      frameReadyRef.current = false
+      setFrameIndex((value) => (value + 1) % playback.frame_count)
+    }, 1000 / fps)
     return () => window.clearInterval(timer)
   }, [fps, playing, playback?.frame_count])
 
+  const frameAssetURLs = useMemo(() => playback?.frames.map((item) => (
+    sliceFrameAssetURL(caseId, job.id, item)
+  )) ?? [], [caseId, job.id, playback?.frames])
+
+  useEffect(() => {
+    const targets = slicePlaybackPrefetchIndices(frameIndex, frameAssetURLs.length)
+      .map((index) => frameAssetURLs[index])
+    assetCache.prefetch(targets)
+  }, [assetCache, frameAssetURLs, frameIndex])
+
   const manifest = useMemo<ViewerManifest | null>(() => {
     if (!frame || !playback) return null
-    const { manifestPath, vertices, triangles } = selectPlaybackAsset(frame)
-    const assetPath = manifestPath.split('/').map(encodeURIComponent).join('/')
+    const { vertices, triangles } = selectPlaybackAsset(frame)
     return {
-      asset_url: `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(job.id)}/assets/${assetPath}`,
+      asset_url: sliceFrameAssetURL(caseId, job.id, frame),
       format: 'flow360-uvf',
       bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
       groups: [{ id: 'slice', name: 'Slice', color: '#789521', visible: true, triangles, vertices }],
@@ -66,14 +97,25 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
     }
   }, [caseId, frame, job.id, playback])
 
+  const handleAssetReady = useCallback((assetURL: string) => {
+    if (assetURL === manifest?.asset_url) frameReadyRef.current = true
+  }, [manifest?.asset_url])
+
   if (!playback?.ready || !frame || !manifest) return null
-  const move = (next: number) => setFrameIndex(Math.max(0, Math.min(playback.frame_count - 1, next)))
+  const move = (next: number) => {
+    const target = Math.max(0, Math.min(playback.frame_count - 1, next))
+    setFrameIndex((current) => {
+      if (current !== target) frameReadyRef.current = false
+      return target
+    })
+  }
   return (
     <section className="slice-playback">
       <div className="slice-playback-viewer">
         <LazyViewer3D manifest={manifest} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
           fieldNames={playback.fields} fieldRange={selectedField ? playback.field_ranges[selectedField] ?? null : null}
-          showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange />
+          showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
+          uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
       </div>
       <div className="slice-playback-controls">
         <button aria-label={t('First frame')} onClick={() => { setPlaying(false); move(0) }}><SkipBack size={15} /></button>

@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
 import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
-import type { UVFAsset, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
+import type { UVFAsset, UVFAssetLRU, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
   configurePerspectiveCameraForBounds,
@@ -237,6 +237,8 @@ type Props = {
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
   preserveCameraOnAssetChange?: boolean
+  uvfAssetCache?: UVFAssetLRU
+  onAssetReady?: (assetURL: string) => void
 }
 
 export function Viewer3D({
@@ -278,6 +280,8 @@ export function Viewer3D({
   showNormals = false,
   entityAppearances = {},
   preserveCameraOnAssetChange = false,
+  uvfAssetCache,
+  onAssetReady,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -329,6 +333,7 @@ export function Viewer3D({
 
   const [wireframeOn, setWireframeOn] = useState(false)
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
+  const onAssetReadyRef = useRef(onAssetReady)
   const onFieldHistogramChangeRef = useRef(onFieldHistogramChange)
   const onFieldExtremaChangeRef = useRef(onFieldExtremaChange)
   const onFieldFilterMatchCountRef = useRef(onFieldFilterMatchCount)
@@ -388,7 +393,8 @@ export function Viewer3D({
     onFieldExtremaChangeRef.current = onFieldExtremaChange
     onFieldFilterMatchCountRef.current = onFieldFilterMatchCount
     onCaptureRef.current = onCapture
-  }, [onCapture, onFieldExtremaChange, onFieldFilterMatchCount, onFieldHistogramChange, onFieldsDiscovered])
+    onAssetReadyRef.current = onAssetReady
+  }, [onAssetReady, onCapture, onFieldExtremaChange, onFieldFilterMatchCount, onFieldHistogramChange, onFieldsDiscovered])
 
   useEffect(() => {
     onAssetStatsChange?.(assetStats)
@@ -517,17 +523,25 @@ export function Viewer3D({
     let nextFields: UVFFieldInfo[] = []
     const nextMeshes = new Map<string, THREE.Mesh>()
     if (manifest.format === 'flow360-uvf') {
-      const asset = await new UVFLoader().load(manifest.asset_url, {
-        signal,
-        lodLevel,
-        onProgress: ({ progress }) => onProgress(progress),
-      })
+      const asset = await (uvfAssetCache
+        ? uvfAssetCache.acquire(manifest.asset_url, {
+          signal,
+          onProgress: ({ progress }) => onProgress(progress),
+        })
+        : new UVFLoader().load(manifest.asset_url, {
+          signal,
+          lodLevel,
+          onProgress: ({ progress }) => onProgress(progress),
+        }))
+      const disposeAsset = uvfAssetCache
+        ? () => uvfAssetCache.release(manifest.asset_url)
+        : asset.dispose
       if (signal.aborted) {
-        asset.dispose()
+        disposeAsset()
         return
       }
       root = asset.object
-      nextDispose = asset.dispose
+      nextDispose = disposeAsset
       nextUVFAsset = asset
       nextAssetStats = { faces: asset.faces, edges: asset.edges, triangles: asset.triangles }
       nextPrecisionInfo = { levels: commonPrecisionLevels(asset.entityLODs), currentLevel: asset.currentLOD }
@@ -566,13 +580,16 @@ export function Viewer3D({
       }
       nextMeshes.set(`${groupId}-${object.uuid}`, object)
     })
-    const bounds = new THREE.Box3().setFromObject(root)
-    const size = bounds.getSize(new THREE.Vector3())
-    const center = bounds.getCenter(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z, 0.001)
-    const scale = 2 / maxDim
-    root.scale.setScalar(scale)
-    root.position.copy(center.multiplyScalar(-scale))
+    if (root.userData.viewerNormalized !== true) {
+      const bounds = new THREE.Box3().setFromObject(root)
+      const size = bounds.getSize(new THREE.Vector3())
+      const center = bounds.getCenter(new THREE.Vector3())
+      const maxDim = Math.max(size.x, size.y, size.z, 0.001)
+      const scale = 2 / maxDim
+      root.scale.setScalar(scale)
+      root.position.copy(center.multiplyScalar(-scale))
+      root.userData.viewerNormalized = true
+    }
     if (nextUVFAsset) {
       const presentation = framePresentationRef.current
       const nextField = nextFields.find((field) => field.name === presentation.selectedField)
@@ -616,7 +633,7 @@ export function Viewer3D({
         fitCameraToObject(camera, controls, root)
       }
     }
-  }, [fitCameraToObject])
+  }, [fitCameraToObject, uvfAssetCache])
 
   useEffect(() => {
     const container = containerRef.current
@@ -758,6 +775,7 @@ export function Viewer3D({
         .then(() => {
           if (!controller.signal.aborted) {
             loadedAssetURLRef.current = manifest.asset_url
+            onAssetReadyRef.current?.(manifest.asset_url)
             if (requestedLODLevel !== undefined) setPrecisionNotice({ assetURL: manifest.asset_url, message: '' })
             setAssetState({ status: 'ready' })
           }

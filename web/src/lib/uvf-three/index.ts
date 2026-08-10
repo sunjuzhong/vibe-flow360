@@ -20,6 +20,7 @@ export {
   validateUVFBufferFileCount,
 } from './loader'
 export { sampleColormap, applyScalarField, createColormapTexture, listColormaps, type ColormapName } from './colormap'
+export { UVFAssetLRU, type UVFAssetLoadOptions } from './assetCache'
 export { canUseLogFieldScale, formatFieldRange, formatFieldValue, normalizeFieldValue, resolveFieldScale } from './fieldScale'
 export { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 export type {
