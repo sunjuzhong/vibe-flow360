@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { createEngineeringLightRig, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube } from './Viewer3D'
+import { createEngineeringLightRig, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -65,6 +65,21 @@ describe('Viewer3D layout state', () => {
     expect(html).toContain('aria-label="Isometric view"')
     expect(html).not.toContain('<svg')
     expect(html).not.toContain('Fit selected')
+  })
+
+  it('integrates display modes into the shared bottom toolbar', () => {
+    const html = renderViewer(
+      <ViewerToolbar displayControls={<button type="button">Wire</button>}>
+        <button type="button">Fit</button>
+      </ViewerToolbar>,
+    )
+
+    expect(html.match(/role="toolbar"/g)).toHaveLength(1)
+    expect(html).toContain('viewer-toolbar-slot viewer-action-toolbar-slot')
+    expect(html).toContain('viewer-display-controls')
+    expect(html).toContain('aria-label="Viewer display modes"')
+    expect(html.indexOf('Wire')).toBeLessThan(html.indexOf('Fit'))
+    expect(html).not.toContain('viewer-view-toolbar')
   })
 
   it('uses balanced engineering lighting with an explicit underside fill', () => {

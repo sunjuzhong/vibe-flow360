@@ -111,7 +111,7 @@
 
 /* Modal content is portalled to the document body. Hide canvas-only display
    controls while it is open so they do not read as detached modal actions. */
-.geometry-capability-open .viewer-view-toolbar {
+.geometry-capability-open .viewer-display-controls {
   visibility: hidden;
   pointer-events: none;
 }

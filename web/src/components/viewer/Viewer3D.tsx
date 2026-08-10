@@ -1449,36 +1449,37 @@ export function Viewer3D({
       {viewerReady && (
         <>
           <ViewerNavCube onCommand={applyCameraCommand} />
-          {(toolbar || assetStats) && (
-            <div className="viewer-view-toolbar" role="toolbar" aria-label="Viewer display modes">
-              {toolbar}
-              {assetStats && (
-                <>
-                  <ViewerPrecisionControl
-                    levels={precisionInfo.levels}
-                    currentLevel={precisionInfo.currentLevel}
-                    selection={precisionSelection}
-                    unavailableLevels={unavailablePrecisionLevels}
-                    onChange={(selection) => {
-                      setPrecisionNotice({ assetURL: manifest?.asset_url ?? null, message: '' })
-                      setPrecision({ assetURL: manifest?.asset_url ?? null, selection })
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
-                    onClick={handleWireframeToggle}
-                    aria-label="Toggle wireframe overlay"
-                    aria-pressed={effectiveWireframe}
-                    title="Toggle wireframe overlay"
-                  >
-                    Wire
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-          <div className="viewer-toolbar-slot viewer-action-toolbar-slot" role="toolbar" aria-label="Common viewer actions">
+          <ViewerToolbar
+            displayControls={(toolbar || assetStats) ? (
+              <>
+                {toolbar}
+                {assetStats && (
+                  <>
+                    <ViewerPrecisionControl
+                      levels={precisionInfo.levels}
+                      currentLevel={precisionInfo.currentLevel}
+                      selection={precisionSelection}
+                      unavailableLevels={unavailablePrecisionLevels}
+                      onChange={(selection) => {
+                        setPrecisionNotice({ assetURL: manifest?.asset_url ?? null, message: '' })
+                        setPrecision({ assetURL: manifest?.asset_url ?? null, selection })
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={`viewer-wireframe-toggle ${effectiveWireframe ? 'active' : ''}`}
+                      onClick={handleWireframeToggle}
+                      aria-label={t('Toggle wireframe overlay')}
+                      aria-pressed={effectiveWireframe}
+                      title={t('Toggle wireframe overlay')}
+                    >
+                      {t('Wire')}
+                    </button>
+                  </>
+                )}
+              </>
+            ) : null}
+          >
             <button
               className="viewer-top-toolbar-fit viewer-icon-tooltip"
               data-tooltip={fitTargetsSelection
@@ -1506,7 +1507,7 @@ export function Viewer3D({
               </button>
             )}
             {topToolbar}
-          </div>
+          </ViewerToolbar>
         </>
       )}
       {snapStatus && viewerReady && (
@@ -1633,6 +1634,26 @@ export function Viewer3D({
           {manifest.warnings.map((w, i) => <span key={i}>{w}</span>)}
         </div>
       )}
+    </div>
+  )
+}
+
+export function ViewerToolbar({
+  displayControls,
+  children,
+}: {
+  displayControls?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const { t } = useI18n()
+  return (
+    <div className="viewer-toolbar-slot viewer-action-toolbar-slot" role="toolbar" aria-label={t('Common viewer actions')}>
+      {displayControls && (
+        <div className="viewer-display-controls" role="group" aria-label={t('Viewer display modes')}>
+          {displayControls}
+        </div>
+      )}
+      {children}
     </div>
   )
 }
