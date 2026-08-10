@@ -143,6 +143,42 @@ func TestNormalizeVisualizationManifestRemovesEmptyCasePlaceholders(t *testing.T
 	}
 }
 
+func TestNormalizeCaseVisualizationManifestSelectsLatestAnimationFrame(t *testing.T) {
+	manifest := json.RawMessage(`[
+		{"id":"root_group","type":"GeometryGroup","attributions":{"members":["slices","boundaries"]}},
+		{"id":"slices","type":"GeometryGroup","attributions":{"members":["wake_animation"]}},
+		{"id":"wake_animation","type":"GeometryGroup","attributions":{"members":["midspan"]}},
+		{"id":"midspan","type":"SolidGeometry","resources":{"buffers":{"type":"animation","frames":[
+			{"timestamp":8,"resource":{"type":"buffers","path":"midspan_8.bin","sections":[{"name":"position"}]}},
+			{"timestamp":16,"resource":{"type":"buffers","path":"midspan_16.bin","sections":[{"name":"position"}]}}
+		]}}},
+		{"id":"boundaries","type":"GeometryGroup","attributions":{"members":["wall"]}},
+		{"id":"wall","type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"wall.bin","sections":[]}}}
+	]`)
+
+	normalized, err := NormalizeCaseVisualizationManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(normalized)
+	if !strings.Contains(text, `"path":"midspan_16.bin"`) || strings.Contains(text, `"path":"midspan_8.bin"`) {
+		t.Fatalf("latest animation frame was not selected: %s", normalized)
+	}
+	if !strings.Contains(text, `"id":"wake_animation"`) || !strings.Contains(text, `"id":"midspan"`) {
+		t.Fatalf("animation hierarchy was pruned: %s", normalized)
+	}
+	if !strings.Contains(text, `"vibesimNormalizationVersion":2`) {
+		t.Fatalf("Case normalization version was not stamped: %s", normalized)
+	}
+	paths, err := TessellationDefaultBinPaths(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(paths, []string{"midspan_16.bin", "wall.bin"}) {
+		t.Fatalf("unexpected selected buffers: %#v", paths)
+	}
+}
+
 func TestResourceVisualizationRejectsUnsupportedTypeWithTypedError(t *testing.T) {
 	client := &Client{}
 	_, err := client.ResourceVisualization(context.Background(), "Unknown", "asset-1")

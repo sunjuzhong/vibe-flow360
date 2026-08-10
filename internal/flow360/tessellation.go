@@ -466,7 +466,11 @@ func (c *Client) ResourceVisualization(
 			fmt.Errorf("read manifest: %w", err),
 		)
 	}
-	manifest, err = NormalizeVisualizationManifest(manifest)
+	if resourceType == "Case" {
+		manifest, err = NormalizeCaseVisualizationManifest(manifest)
+	} else {
+		manifest, err = NormalizeVisualizationManifest(manifest)
+	}
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
 	}
@@ -522,6 +526,7 @@ func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 	}
 	invalidSolids := map[string]struct{}{}
 	renderableSolids := 0
+	buffersChanged := false
 	for _, entry := range entries {
 		if entry["type"] != "SolidGeometry" {
 			continue
@@ -532,6 +537,16 @@ func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 		if buffers == nil {
 			invalidSolids[id] = struct{}{}
 			continue
+		}
+		if buffers["type"] == "animation" {
+			selected := latestAnimationBuffer(buffers)
+			if selected == nil {
+				invalidSolids[id] = struct{}{}
+				continue
+			}
+			resources["buffers"] = selected
+			buffers = selected
+			buffersChanged = true
 		}
 		selected, err := defaultTessellationBuffer(buffers)
 		if err != nil {
@@ -563,7 +578,7 @@ func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 		}
 		filtered = append(filtered, entry)
 	}
-	changed := len(filtered) != len(entries)
+	changed := buffersChanged || len(filtered) != len(entries)
 	filtered, referencesChanged := pruneVisualizationReferences(filtered)
 	if !changed && !referencesChanged {
 		return manifest, nil
@@ -576,6 +591,55 @@ func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 		return nil, fmt.Errorf("normalized visualization manifest exceeds %d byte limit", maxTessellationManifestSize)
 	}
 	return encoded, nil
+}
+
+const caseVisualizationNormalizationVersion = 2
+
+// NormalizeCaseVisualizationManifest additionally stamps the normalized Case
+// asset. The stamp makes older cached manifests (which pruned animation
+// geometry) refresh once, while current manifests remain cacheable.
+func NormalizeCaseVisualizationManifest(manifest json.RawMessage) (json.RawMessage, error) {
+	normalized, err := NormalizeVisualizationManifest(manifest)
+	if err != nil {
+		return nil, err
+	}
+	var entries []map[string]any
+	if json.Unmarshal(normalized, &entries) != nil {
+		return nil, errors.New("normalized Case visualization manifest is invalid")
+	}
+	for _, entry := range entries {
+		if entry["id"] != "root_group" {
+			continue
+		}
+		properties, _ := entry["properties"].(map[string]any)
+		if properties == nil {
+			properties = map[string]any{}
+			entry["properties"] = properties
+		}
+		if version, ok := properties["vibesimNormalizationVersion"].(float64); ok && version == caseVisualizationNormalizationVersion {
+			return normalized, nil
+		}
+		properties["vibesimNormalizationVersion"] = caseVisualizationNormalizationVersion
+		encoded, encodeErr := json.Marshal(entries)
+		if encodeErr != nil {
+			return nil, fmt.Errorf("encode normalized Case visualization manifest: %w", encodeErr)
+		}
+		return encoded, nil
+	}
+	return normalized, nil
+}
+
+func latestAnimationBuffer(buffers map[string]any) map[string]any {
+	frames, _ := buffers["frames"].([]any)
+	for index := len(frames) - 1; index >= 0; index-- {
+		frame, _ := frames[index].(map[string]any)
+		resource, _ := frame["resource"].(map[string]any)
+		path, _ := resource["path"].(string)
+		if strings.TrimSpace(path) != "" {
+			return resource
+		}
+	}
+	return nil
 }
 
 // pruneVisualizationReferences keeps the manifest graph internally consistent
@@ -981,6 +1045,13 @@ for entry in entries:
         if type(default) is not int or default < 0 or default >= len(levels):
             raise ValueError("invalid default visualization LOD")
         candidates = [levels[default]]
+    elif buffers.get("type") == "animation":
+        candidates = []
+        for frame in reversed(buffers.get("frames", [])):
+            resource = frame.get("resource", {})
+            if resource.get("path"):
+                candidates = [resource]
+                break
     else:
         candidates = [buffers]
     for candidate in candidates:

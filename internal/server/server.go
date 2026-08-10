@@ -1823,7 +1823,11 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		manifest, manifestErr := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
 		if manifestErr == nil {
 			originalManifest := manifest
-			manifest, manifestErr = flow360.NormalizeVisualizationManifest(manifest)
+			if resourceType == "Case" {
+				manifest, manifestErr = flow360.NormalizeCaseVisualizationManifest(manifest)
+			} else {
+				manifest, manifestErr = flow360.NormalizeVisualizationManifest(manifest)
+			}
 			manifestChanged := manifestErr == nil && !bytes.Equal(originalManifest, manifest)
 			assetURL := visualizationManifestURL(resourceType, resourceID, manifest)
 			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)

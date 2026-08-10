@@ -195,6 +195,25 @@ describe('groupCaseVisualizationMembers', () => {
       ] },
     ])
   })
+
+  it('merges a configured Slice output into its renderable manifest container', () => {
+    const groups = [
+      { id: 'midspan', name: 'midspan', color: '#fff', visible: false, triangles: 145_136, path: ['slices', 'wake_animation'] },
+    ]
+    const configured = caseConfiguredVisualizationMembers({
+      outputs: [
+        { output_type: 'SliceOutput', name: 'wake_animation', private_attribute_id: 'slice-1' },
+      ],
+    }, ['slices'])
+
+    expect(caseVisualizationSections(groups, true, configured)[0].members).toMatchObject([{
+      name: 'wake_animation',
+      entityIds: ['midspan'],
+      triangles: 145_136,
+      playbackKind: 'slices',
+      source: 'manifest',
+    }])
+  })
 })
 
 describe('Case object field capabilities', () => {
