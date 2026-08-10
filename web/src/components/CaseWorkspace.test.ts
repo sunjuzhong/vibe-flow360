@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, groupCaseVisualizationMembers, isSliceArchiveResult, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, groupCaseVisualizationMembers, isSliceArchiveResult, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -140,6 +140,27 @@ describe('groupCaseVisualizationMembers', () => {
     ]
     expect(caseVisualizationSections(groups, true)).toHaveLength(1)
     expect(caseVisualizationSections(groups, true)[0].members).toHaveLength(1)
+  })
+})
+
+describe('Case object field capabilities', () => {
+  const entities = [
+    { id: 'wall', name: 'Wall', type: 'Face', parentId: 'body', children: [], fields: ['Cp', 'yPlus'] },
+    { id: 'qcriterion', name: 'Q', type: 'SolidGeometry', parentId: 'isosurfaces', children: [], fields: ['Mach'] },
+    { id: 'streamline', name: 'Wake', type: 'SolidGeometry', parentId: 'streamlines', children: [], fields: [] },
+  ]
+
+  it('returns only fields physically present on the selected render entity', () => {
+    expect(caseObjectFieldNames(entities, 'wall')).toEqual(['Cp', 'yPlus'])
+    expect(caseObjectFieldNames(entities, 'qcriterion')).toEqual(['Mach'])
+    expect(caseObjectFieldNames(entities, 'streamline')).toEqual([])
+    expect(caseObjectFieldNames(entities, null)).toEqual([])
+  })
+
+  it('clears a field that is not supported by the next selection', () => {
+    expect(caseFieldForSelection('Cp', ['Cp', 'yPlus'])).toBe('Cp')
+    expect(caseFieldForSelection('Cp', ['Mach'])).toBeNull()
+    expect(caseFieldForSelection('Mach', [])).toBeNull()
   })
 })
 

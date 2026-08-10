@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
 import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
-import type { UVFAsset, UVFAssetLRU, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
+import type { UVFAsset, UVFAssetLRU, UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
   configurePerspectiveCameraForBounds,
@@ -211,9 +211,11 @@ type Props = {
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
+  onEntitiesDiscovered?: (entities: UVFEntityInfo[]) => void
   selectedField?: string | null
   onSelectedFieldChange?: (field: string | null) => void
   fieldNames?: string[]
+  fieldEntityIds?: string[]
   fieldRange?: [number, number] | null
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
@@ -242,6 +244,7 @@ type Props = {
   preserveCameraOnAssetChange?: boolean
   uvfAssetCache?: UVFAssetLRU
   onAssetReady?: (assetURL: string) => void
+  fitSelectionWhenSelected?: boolean
 }
 
 export function Viewer3D({
@@ -254,9 +257,11 @@ export function Viewer3D({
   wireframe,
   onWireframeChange,
   onFieldsDiscovered,
+  onEntitiesDiscovered,
   selectedField: controlledSelectedField,
   onSelectedFieldChange,
   fieldNames,
+  fieldEntityIds,
   fieldRange,
   onFieldHistogramChange,
   onFieldExtremaChange,
@@ -285,6 +290,7 @@ export function Viewer3D({
   preserveCameraOnAssetChange = false,
   uvfAssetCache,
   onAssetReady,
+  fitSelectionWhenSelected = false,
 }: Props) {
   const { t } = useI18n()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -343,6 +349,7 @@ export function Viewer3D({
 
   const [wireframeOn, setWireframeOn] = useState(false)
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
+  const onEntitiesDiscoveredRef = useRef(onEntitiesDiscovered)
   const onAssetReadyRef = useRef(onAssetReady)
   const onFieldHistogramChangeRef = useRef(onFieldHistogramChange)
   const onFieldExtremaChangeRef = useRef(onFieldExtremaChange)
@@ -360,8 +367,8 @@ export function Viewer3D({
     ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
     : 'linear'
   const effectiveWireframe = wireframe ?? wireframeOn
-  const framePresentationRef = useRef({ selectedField, colormap, fieldRange, fieldScale, wireframe: effectiveWireframe })
-  framePresentationRef.current = { selectedField, colormap, fieldRange, fieldScale, wireframe: effectiveWireframe }
+  const framePresentationRef = useRef({ selectedField, colormap, fieldRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe })
+  framePresentationRef.current = { selectedField, colormap, fieldRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe }
   const precisionSelection = precision.assetURL === manifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const unavailablePrecisionLevels = new Set(
@@ -373,6 +380,7 @@ export function Viewer3D({
     if (!manifest?.asset_url) return null
     return { id: manifest.asset_url, type: manifest.format || 'viewer-asset' }
   }, [manifest?.asset_url, manifest?.format, resourceRef])
+  const fitTargetsSelection = fitSelectionWhenSelected && Boolean(selection?.groupId)
   const snapIndicatorAnnotations = useMemo<readonly OverlayAnnotation[]>(() => {
     const indicator = snapStatus?.indicator
     if (!indicator || snapStatus.mode === 'surface' || snapStatus.mode === 'unavailable') return []
@@ -399,12 +407,13 @@ export function Viewer3D({
 
   useEffect(() => {
     onFieldsDiscoveredRef.current = onFieldsDiscovered
+    onEntitiesDiscoveredRef.current = onEntitiesDiscovered
     onFieldHistogramChangeRef.current = onFieldHistogramChange
     onFieldExtremaChangeRef.current = onFieldExtremaChange
     onFieldFilterMatchCountRef.current = onFieldFilterMatchCount
     onCaptureRef.current = onCapture
     onAssetReadyRef.current = onAssetReady
-  }, [onAssetReady, onCapture, onFieldExtremaChange, onFieldFilterMatchCount, onFieldHistogramChange, onFieldsDiscovered])
+  }, [onAssetReady, onCapture, onEntitiesDiscovered, onFieldExtremaChange, onFieldFilterMatchCount, onFieldHistogramChange, onFieldsDiscovered])
 
   useEffect(() => {
     onAssetStatsChange?.(assetStats)
@@ -531,6 +540,7 @@ export function Viewer3D({
       setAssetStats(null)
       assetBoundsSphereRef.current = null
       setAvailableFields([])
+      onEntitiesDiscoveredRef.current?.([])
       setInternalSelectedField(null)
     }
 
@@ -615,6 +625,7 @@ export function Viewer3D({
       const nextField = nextFields.find((field) => field.name === presentation.selectedField)
       applyFieldColoring(nextUVFAsset, presentation.selectedField, presentation.colormap, {
         range: presentation.fieldRange,
+        entityIds: presentation.fieldEntityIds,
         scale: nextField
           ? resolveFieldScale(presentation.fieldScale, nextField.min, nextField.max)
           : 'linear',
@@ -634,6 +645,7 @@ export function Viewer3D({
     setPrecisionInfo(nextPrecisionInfo)
     setAvailableFields(nextFields)
     onFieldsDiscoveredRef.current?.(nextFields)
+    onEntitiesDiscoveredRef.current?.(nextUVFAsset?.entities ?? [])
     setInternalSelectedField(null)
     const assetBoundsSphere = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere())
     assetBoundsSphereRef.current = Number.isFinite(assetBoundsSphere.radius) && assetBoundsSphere.radius > 0
@@ -1073,6 +1085,8 @@ export function Viewer3D({
           const mesh = meshForEntity(pick.entityId)
           const asset = uvfAssetRef.current
           if (!selectedField || !asset || !mesh) return false
+          const meshGroupId = String(mesh.userData.groupId ?? mesh.userData.entityId ?? '')
+          if (fieldEntityIds?.length && !fieldEntityIds.includes(meshGroupId)) return false
           const field = probeFieldAtIntersection(
             asset,
             mesh,
@@ -1317,10 +1331,11 @@ export function Viewer3D({
     if (uvfAssetRef.current) {
       applyFieldColoring(uvfAssetRef.current, selectedField, colormap, {
         range: fieldRange,
+        entityIds: fieldEntityIds,
         scale: resolvedFieldScale,
       })
     }
-  }, [assetState.status, selectedField, colormap, fieldRange, resolvedFieldScale])
+  }, [assetState.status, selectedField, colormap, fieldEntityIds, fieldRange, resolvedFieldScale])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -1466,10 +1481,12 @@ export function Viewer3D({
           <div className="viewer-toolbar-slot viewer-action-toolbar-slot" role="toolbar" aria-label="Common viewer actions">
             <button
               className="viewer-top-toolbar-fit viewer-icon-tooltip"
-              data-tooltip={t('Fit visible surfaces in the viewport')}
+              data-tooltip={fitTargetsSelection
+                ? t('Fit selected visualization object in the viewport')
+                : t('Fit visible surfaces in the viewport')}
               type="button"
-              onClick={() => applyCameraCommand('fit')}
-              aria-label={t('Fit visible surfaces')}
+              onClick={() => applyCameraCommand(fitTargetsSelection ? 'fit-selection' : 'fit')}
+              aria-label={fitTargetsSelection ? t('Fit selected visualization object') : t('Fit visible surfaces')}
             >
               <Focus size={14} /> <span>{t('Fit')}</span>
             </button>

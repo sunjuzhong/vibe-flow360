@@ -323,7 +323,7 @@ export function buildUVFAsset(
       return computed ? { ...field, ...computed } : field
     })
     .sort((a, b) => a.name.localeCompare(b.name))
-  const entities = buildEntityCatalog(entries, objectByID, parentByID)
+  const entities = buildEntityCatalog(entries, objectByID, parentByID, fields)
   return {
     object: root,
     faces,
@@ -392,7 +392,9 @@ export function applyFieldColoring(
     const geometry = object.geometry
     const positionAttr = geometry.getAttribute('position')
     if (!positionAttr) return
-    if (field) {
+    const entityId = String(object.userData.groupId ?? object.userData.entityId ?? '')
+    const inScope = !options.entityIds || options.entityIds.includes(entityId)
+    if (field && inScope) {
       const fieldSection = findSectionByName(geometry, field.name)
       if (fieldSection) {
         const vertexCount = positionAttr.count
@@ -1097,6 +1099,7 @@ function buildEntityCatalog(
   entries: UVFEntry[],
   objectByID: Map<string, THREE.Object3D>,
   parentByID: Map<string, string>,
+  fields: UVFFieldInfo[],
 ): UVFEntityInfo[] {
   const childrenByID = new Map<string, string[]>()
   for (const [childId, parentId] of parentByID) {
@@ -1106,13 +1109,24 @@ function buildEntityCatalog(
   }
   return entries
     .filter((entry) => objectByID.has(entry.id))
-    .map((entry) => ({
-      id: entry.id,
-      name: entry.name || entry.id,
-      type: entry.type,
-      parentId: parentByID.get(entry.id) ?? null,
-      children: childrenByID.get(entry.id) ?? [],
-    }))
+    .map((entry) => {
+      const object = objectByID.get(entry.id)!
+      const entityFields = fields.filter((field) => {
+        let available = false
+        object.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.geometry.getAttribute(field.name)) available = true
+        })
+        return available
+      }).map((field) => field.name)
+      return {
+        id: entry.id,
+        name: entry.name || entry.id,
+        type: entry.type,
+        parentId: parentByID.get(entry.id) ?? null,
+        children: childrenByID.get(entry.id) ?? [],
+        fields: entityFields,
+      }
+    })
 }
 
 function validateValueRange(

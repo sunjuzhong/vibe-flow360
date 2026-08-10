@@ -389,6 +389,8 @@ describe('Flow360 UVF Three.js library', () => {
     const asset = buildUVFAsset(manifest, new Map([['body.bin', data]]))
     expect(asset.fields).toHaveLength(1)
     expect(asset.fields[0]).toMatchObject({ name: 'pressure', min: 0, max: 1, dimension: 1 })
+    expect(asset.entities.find((entity) => entity.id === 'face-1')?.fields).toEqual(['pressure'])
+    expect(asset.entities.find((entity) => entity.id === 'body-1')?.fields).toEqual(['pressure'])
     const face = asset.getEntityObject('face-1')!
     expect(face).toHaveProperty('geometry')
     expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material).toMatchObject({
@@ -398,7 +400,10 @@ describe('Flow360 UVF Three.js library', () => {
     expect((face as import('three').Mesh).geometry.getAttribute('pressure').count).toBe(3)
     // Apply field coloring
     const baseColor = (face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material.color.getHex()
-    applyFieldColoring(asset, 'pressure', 'grayscale')
+    applyFieldColoring(asset, 'pressure', 'grayscale', { entityIds: ['another-face'] })
+    expect((face as THREE.Mesh).geometry.getAttribute('color')).toBeUndefined()
+    expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshPhongMaterial)
+    applyFieldColoring(asset, 'pressure', 'grayscale', { entityIds: ['face-1'] })
     expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshBasicMaterial)
     expect(((face as THREE.Mesh).material as THREE.MeshBasicMaterial).toneMapped).toBe(false)
     const colorAttribute = (face as import('three').Mesh).geometry.getAttribute('color')
@@ -570,9 +575,9 @@ describe('Flow360 UVF Three.js library', () => {
     expect(face.parent).toBe(solid)
     expect(group.position.toArray()).toEqual([2, 3, 4])
     expect(asset.entities).toEqual([
-      { id: 'root-group', name: 'Assembly', type: 'GeometryGroup', parentId: null, children: ['body-1'] },
-      { id: 'body-1', name: 'body-1', type: 'SolidGeometry', parentId: 'root-group', children: ['face-1'] },
-      { id: 'face-1', name: 'face-1', type: 'Face', parentId: 'body-1', children: [] },
+      { id: 'root-group', name: 'Assembly', type: 'GeometryGroup', parentId: null, children: ['body-1'], fields: [] },
+      { id: 'body-1', name: 'body-1', type: 'SolidGeometry', parentId: 'root-group', children: ['face-1'], fields: [] },
+      { id: 'face-1', name: 'face-1', type: 'Face', parentId: 'body-1', children: [], fields: [] },
     ])
 
     setEntityVisibility(asset, 'root-group', false)

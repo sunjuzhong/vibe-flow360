@@ -490,6 +490,8 @@ Object.assign(messages, {
   'No visualization objects were reported by the asset.': '可视化资源未报告任何可视化对象。',
   'Visualization object': '可视化对象',
   'Select visualization object': '选择可视化对象',
+  'Fit selected visualization object': '适应所选可视化对象',
+  'Fit selected visualization object in the viewport': '在视口中适应所选可视化对象',
   'Hide visualization object': '隐藏可视化对象',
   'Show visualization object': '显示可视化对象',
   object: '对象',

@@ -47,6 +47,7 @@ import {
   findLengthUnit,
 } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
+import type { UVFEntityInfo } from '../lib/uvf-three'
 import {
   ManifestMemberGroup,
   manifestVisibilityMap,
@@ -182,6 +183,14 @@ function caseVisualizationCategoryLabel(category: CaseVisualizationCategory): st
   }
 }
 
+export function caseObjectFieldNames(entities: UVFEntityInfo[], entityId: string | null): string[] {
+  return entities.find((entity) => entity.id === entityId)?.fields ?? []
+}
+
+export function caseFieldForSelection(activeField: string | null, fieldNames: string[]): string | null {
+  return activeField && fieldNames.includes(activeField) ? activeField : null
+}
+
 export function visibleCaseSurfaceCount(groups: CaseSurfaceGroup[], visibility: Record<string, boolean>): number {
   return visibleManifestMemberCount(groups, visibility)
 }
@@ -315,6 +324,7 @@ export default function CaseWorkspace({
   const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | 'slices' | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
+  const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const [resultPreview, setResultPreview] = useState<{
@@ -346,11 +356,24 @@ export default function CaseWorkspace({
     [sliceArchive, surfaceGroups],
   )
   const selectedVisualizationObject = surfaceGroups.find((group) => group.id === viewerSelection.groupId) ?? null
+  const selectedFieldNames = useMemo(
+    () => caseObjectFieldNames(viewerEntities, viewerSelection.groupId),
+    [viewerEntities, viewerSelection.groupId],
+  )
+  const selectedFieldEntityIds = useMemo(
+    () => viewerSelection.groupId ? [viewerSelection.groupId] : [],
+    [viewerSelection.groupId],
+  )
 
   useEffect(() => {
     setEntityVisibility(Object.fromEntries(surfaceGroups.map((group) => [group.id, group.visible])))
     setViewerSelection({ groupId: null })
   }, [manifest?.asset_url])
+
+  useEffect(() => {
+    const compatibleField = caseFieldForSelection(activeField, selectedFieldNames)
+    if (compatibleField !== activeField) setActiveField(compatibleField)
+  }, [activeField, selectedFieldNames])
 
   const toggleSurfaceVisibility = (groupId: string) => {
     const group = surfaceGroups.find((candidate) => candidate.id === groupId)
@@ -558,7 +581,11 @@ export default function CaseWorkspace({
             onEntityVisibilityChange={setEntityVisibility}
             selectedField={activeField}
             onSelectedFieldChange={setActiveField}
+            fieldNames={selectedFieldNames}
+            fieldEntityIds={selectedFieldEntityIds}
+            showFieldPanel={Boolean(selectedVisualizationObject && selectedFieldNames.length > 0)}
             showEntityLegend={false}
+            onEntitiesDiscovered={setViewerEntities}
             onAssetStatsChange={setViewerAssetStats}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
@@ -567,6 +594,7 @@ export default function CaseWorkspace({
             onDoubleClick={tools.onDoubleClick}
             toolbar={activeField && <span className="viewer-toolbar-field-hint">Field · {activeField}</span>}
             topToolbar={<ViewerToolsDock model={tools} />}
+            fitSelectionWhenSelected
           />
           <ViewerToolPanel model={tools} />
           {previewSource === 'fallback' && (

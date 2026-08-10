@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
 import type { Viewer3D as Viewer3DComponent } from './Viewer3D'
 
-import type { UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
+import type { UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 
 const Viewer = lazy(() => import('./Viewer3D').then((module) => ({ default: module.Viewer3D })))
 
@@ -24,9 +24,11 @@ export type ViewerToolbarProps = {
   entityVisibility?: Record<string, boolean>
   onEntityVisibilityChange?: (visibility: Record<string, boolean>) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
+  onEntitiesDiscovered?: (entities: UVFEntityInfo[]) => void
   selectedField?: string | null
   onSelectedFieldChange?: (field: string | null) => void
   fieldNames?: string[]
+  fieldEntityIds?: string[]
   fieldRange?: [number, number] | null
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void

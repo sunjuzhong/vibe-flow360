@@ -96,6 +96,7 @@ export type UVFFieldColorOptions = {
   range?: [number, number] | null
   outsideColor?: [number, number, number]
   scale?: UVFResolvedFieldScale
+  entityIds?: string[] | null
 }
 
 export type UVFFieldProbe = {
@@ -130,6 +131,7 @@ export type UVFEntityInfo = {
   type: string
   parentId: string | null
   children: string[]
+  fields: string[]
 }
 
 export type UVFAsset = {
