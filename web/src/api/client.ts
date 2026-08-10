@@ -159,6 +159,54 @@ export type AICreateProgress = {
   updated_at: string
 }
 
+export type STEPValidationReport = {
+	 solid_count: number
+	 face_count: number
+	 volume: number
+	 bounds?: number[]
+	 kernel: string
+	 body_names?: string[]
+	 face_names?: string[]
+	 face_coverage_checked?: boolean
+}
+
+export type STEPVersion = {
+	 id: string
+	 asset_id: string
+	 number: number
+	 file_name: string
+	 unit: 'm' | 'mm' | 'cm' | 'inch'
+	 size: number
+	 sha256: string
+	 source: 'upload' | 'ai' | string
+	 prompt?: string
+	 parent_version_id?: string
+	 validation: {
+		 status: 'validating' | 'ready' | 'blocked'
+		 report?: STEPValidationReport
+		 error?: string
+	 }
+	 geometry?: Record<string, unknown>
+	 created_at: string
+}
+
+export type STEPAsset = {
+	 id: string
+	 name: string
+	 description?: string
+	 versions: STEPVersion[]
+	 created_at: string
+	 updated_at: string
+}
+
+export type STEPProjectResult = {
+	 project_id: string
+	 root_resource_id: string
+	 root_resource_type?: string
+	 step_asset_id: string
+	 step_version_id: string
+}
+
 export type AgentProposalField = {
   key: string
   value: unknown
@@ -1301,6 +1349,27 @@ export const api = {
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string, sync = false) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run${sync ? '?sync=true' : ''}`),
+  stepAssets: () => json<{ assets: STEPAsset[] }>('/api/step-assets'),
+  uploadSTEPAsset: async (form: FormData, assetId?: string) => {
+    const path = assetId
+      ? `/api/step-assets/${encodeURIComponent(assetId)}/versions`
+      : '/api/step-assets'
+    const response = await fetch(path, { method: 'POST', body: form })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || response.statusText)
+    return body as { asset: STEPAsset; version: STEPVersion }
+  },
+  aiDesignSTEPAsset: (input: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string }) =>
+    mutate<{ asset: STEPAsset; version: STEPVersion }>('/api/step-assets/ai-design', input),
+  validateSTEPVersion: (assetId: string, versionId: string) =>
+    mutate<STEPVersion>(`/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/validate`),
+  stepVersionDownloadURL: (assetId: string, versionId: string) =>
+    `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/download`,
+  createProjectFromSTEP: (assetId: string, versionId: string, folderId: string, name?: string) =>
+    mutate<STEPProjectResult>(
+      `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/create-project`,
+      { folder_id: folderId, name },
+    ),
   aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string) => {
     const response = await fetch('/api/ai-create', {
       method: 'POST',

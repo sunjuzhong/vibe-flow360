@@ -33,6 +33,13 @@ func TestCadQueryGeneratorExportsDynamicBooleanSTEP(t *testing.T) {
 	if _, err := os.Stat(outputPath); err != nil {
 		t.Fatalf("STEP output is missing: %v", err)
 	}
+	roundTrip, err := NewCadQueryGenerator().ValidateSTEP(context.Background(), outputPath)
+	if err != nil {
+		t.Fatalf("standalone STEP library validation failed: %v", err)
+	}
+	if roundTrip.SolidCount != validation.SolidCount || roundTrip.FaceCount != validation.FaceCount {
+		t.Fatalf("standalone validation changed topology: generated=%#v validated=%#v", validation, roundTrip)
+	}
 }
 
 func TestCadQueryGeneratorExportsNamedMultiBodySTEP(t *testing.T) {
