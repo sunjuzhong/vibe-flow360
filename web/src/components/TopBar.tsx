@@ -1,4 +1,4 @@
-import { BookOpen, Cloud, Sparkles } from 'lucide-react'
+import { BookOpen, Cloud, Database, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
 import LanguageSettings from './LanguageSettings'
@@ -13,6 +13,7 @@ export default function TopBar({ status, title = 'Flow360 simulation workspace' 
       </Link>
       <div className="product-topbar-title">{title}</div>
       <div className="product-topbar-actions">
+        <Link className="tutorials-nav-link" to="/step-library"><Database size={14}/> STEP Library</Link>
         <Link className="tutorials-nav-link" to="/tutorials"><BookOpen size={14}/> Tutorials</Link>
         <LanguageSettings />
         <div className={`connection-pill ${status?.available ? 'online' : ''}`}>
