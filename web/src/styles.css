@@ -5082,7 +5082,9 @@ button { color: inherit; }
   border-radius: 8px;
   color: #555b51;
   background: #fff;
-  font: 700 8px inherit;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
 }
 

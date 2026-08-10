@@ -36,4 +36,12 @@ describe('Web typography tokens', () => {
     expect(styles).toContain('max-height: calc(100dvh - 48px)')
     expect(styles).toContain('overflow-y: auto')
   })
+
+  it('keeps Project shell actions compact with an explicit type size', () => {
+    const shellActions = styles.match(/\.project-shell-actions > button \{[\s\S]*?\n\}/)?.[0]
+
+    expect(shellActions).toContain('font-family: inherit')
+    expect(shellActions).toContain('font-size: var(--text-sm)')
+    expect(shellActions).toContain('font-weight: var(--weight-semibold)')
+  })
 })
