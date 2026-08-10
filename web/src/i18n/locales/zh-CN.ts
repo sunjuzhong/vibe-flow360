@@ -357,6 +357,8 @@ Object.assign(messages, {
   'Time-series Slice player': '时序切片播放器',
   'Time-series Surface player': '时序表面播放器',
   'Final volume snapshot': '最终体场快照',
+  'Visualization output is not available in the 3D preview': '该可视化输出在三维预览中不可用',
+  'Not available in 3D preview': '三维预览不可用',
   'Time-series Slice archive': '时序切片归档',
   'Prepare and inspect flow-field frames': '准备并检查流场帧',
   'Large-file preparation and frame index': '大文件准备与帧索引',

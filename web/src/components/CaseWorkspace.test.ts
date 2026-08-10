@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -131,7 +131,11 @@ describe('groupCaseVisualizationMembers', () => {
       'slices',
       'isosurfaces',
     ])
-    expect(caseVisualizationSections(groups, true)[1].members).toEqual([])
+    expect(caseVisualizationSections(groups, true)[1].members).toMatchObject([{
+      name: 'Time-series Slice archive',
+      entityIds: [],
+      playbackKind: 'slices',
+    }])
   })
 
   it('does not duplicate Slices when the manifest already contains Slice geometry', () => {
@@ -140,6 +144,37 @@ describe('groupCaseVisualizationMembers', () => {
     ]
     expect(caseVisualizationSections(groups, true)).toHaveLength(1)
     expect(caseVisualizationSections(groups, true)[0].members).toHaveLength(1)
+  })
+
+  it('combines configured outputs with auto manifest containers into four Case items', () => {
+    const groups = [
+      { id: 'fluid/wall', name: 'fluid/wall', color: '#fff', visible: true, triangles: 624, path: ['surface_output', 'Boundaries (Auto)'] },
+      { id: 'qcriterion', name: 'qcriterion', color: '#fff', visible: true, triangles: 3_688, path: ['isosurfaces', 'Isosurfaces (Auto)'] },
+    ]
+    const configured = caseConfiguredVisualizationMembers({
+      outputs: [
+        { output_type: 'SurfaceOutput', name: 'cylinder_surface', private_attribute_id: 'surface-1' },
+        { output_type: 'SliceOutput', name: 'wake_animation', private_attribute_id: 'slice-1' },
+        { output_type: 'ForceOutput', name: 'forces' },
+      ],
+    }, ['slices', 'surfaces'])
+    const sections = caseVisualizationSections(groups, true, configured)
+
+    expect(sections.map(({ category, members }) => ({
+      category,
+      members: members.map(({ name, entityIds, playbackKind }) => ({ name, entityIds, playbackKind })),
+    }))).toEqual([
+      { category: 'surfaces', members: [
+        { name: 'Cylinder_surface', entityIds: [], playbackKind: 'surfaces' },
+        { name: 'Boundaries (Auto)', entityIds: ['fluid/wall'], playbackKind: undefined },
+      ] },
+      { category: 'slices', members: [
+        { name: 'Wake_animation', entityIds: [], playbackKind: 'slices' },
+      ] },
+      { category: 'isosurfaces', members: [
+        { name: 'Isosurfaces (Auto)', entityIds: ['qcriterion'], playbackKind: undefined },
+      ] },
+    ])
   })
 })
 

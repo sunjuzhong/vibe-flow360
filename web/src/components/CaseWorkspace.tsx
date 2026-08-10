@@ -48,11 +48,7 @@ import {
 } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFEntityInfo } from '../lib/uvf-three'
-import {
-  ManifestMemberGroup,
-  manifestVisibilityMap,
-  visibleManifestMemberCount,
-} from './ManifestMemberGroup'
+import { ManifestMemberGroup } from './ManifestMemberGroup'
 
 function formatConvergenceStatus(status: string): string {
   switch (status) {
@@ -142,13 +138,19 @@ export function isTerminal(view: CaseStatusView): boolean {
   return view === 'completed' || view === 'failed'
 }
 
-type CaseSurfaceGroup = { id: string; visible: boolean }
+type CaseSurfaceGroup = { id: string; visible: boolean; entityIds?: string[] }
 
 export type CaseVisualizationCategory = 'surfaces' | 'slices' | 'isosurfaces' | 'streamlines'
 
 export type CaseVisualizationGroup = {
   category: CaseVisualizationCategory
-  members: MeshGroupData[]
+  members: CaseVisualizationMember[]
+}
+
+export type CaseVisualizationMember = MeshGroupData & {
+  entityIds: string[]
+  playbackKind?: CaseTimeSeriesArchiveKind
+  source: 'manifest' | 'output' | 'archive'
 }
 
 const caseVisualizationCategoryOrder: CaseVisualizationCategory[] = [
@@ -159,7 +161,7 @@ const caseVisualizationCategoryOrder: CaseVisualizationCategory[] = [
 ]
 
 export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisualizationGroup[] {
-  const categorized = new Map<CaseVisualizationCategory, MeshGroupData[]>(
+  const categorized = new Map<CaseVisualizationCategory, CaseVisualizationMember[]>(
     caseVisualizationCategoryOrder.map((category) => [category, []]),
   )
   for (const group of groups) {
@@ -172,25 +174,111 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
         : hints.some((hint) => hint.includes('slice'))
           ? 'slices'
           : 'surfaces'
-    categorized.get(category)!.push(group)
+    const containerName = group.path?.at(-1) || group.name
+    const members = categorized.get(category)!
+    const existing = members.find((member) => member.name === containerName)
+    if (existing) {
+      existing.entityIds.push(group.id)
+      existing.visible ||= group.visible
+      existing.triangles = (existing.triangles ?? 0) + (group.triangles ?? 0)
+      existing.vertices = (existing.vertices ?? 0) + (group.vertices ?? 0)
+      continue
+    }
+    members.push({
+      ...group,
+      name: containerName,
+      entityIds: [group.id],
+      source: 'manifest',
+    })
   }
   return caseVisualizationCategoryOrder
     .map((category) => ({ category, members: categorized.get(category)! }))
     .filter((group) => group.members.length > 0)
 }
 
+function visualizationOutputCategory(outputType: string): CaseVisualizationCategory | null {
+  switch (outputType.toLowerCase()) {
+    case 'surfaceoutput': return 'surfaces'
+    case 'sliceoutput': return 'slices'
+    case 'isosurfaceoutput': return 'isosurfaces'
+    case 'streamlineoutput': return 'streamlines'
+    default: return null
+  }
+}
+
+function outputPlaybackKind(category: CaseVisualizationCategory, archives: CaseTimeSeriesArchiveKind[]) {
+  const kind = category === 'surfaces' ? 'surfaces' : category === 'slices' ? 'slices' : null
+  return kind && archives.includes(kind) ? kind : undefined
+}
+
+export function caseConfiguredVisualizationMembers(
+  simulationParams: unknown,
+  archives: CaseTimeSeriesArchiveKind[],
+): CaseVisualizationMember[] {
+  if (!simulationParams || typeof simulationParams !== 'object' || Array.isArray(simulationParams)) return []
+  const outputs = (simulationParams as Record<string, unknown>).outputs
+  if (!Array.isArray(outputs)) return []
+  return outputs.flatMap((value, index) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    const output = value as Record<string, unknown>
+    const category = visualizationOutputCategory(String(output.output_type ?? ''))
+    if (!category) return []
+    const rawName = String(output.name ?? '').trim() || `${category} ${index + 1}`
+    const name = rawName.charAt(0).toUpperCase() + rawName.slice(1)
+    return [{
+      id: `case-output:${String(output.private_attribute_id ?? `${category}-${index}`)}`,
+      name,
+      color: '#8da0a6',
+      visible: false,
+      entityIds: [],
+      playbackKind: outputPlaybackKind(category, archives),
+      source: 'output' as const,
+      path: [category],
+    }]
+  })
+}
+
 export function caseVisualizationSections(
   groups: MeshGroupData[],
   hasSliceArchive: boolean,
+  configuredMembers: CaseVisualizationMember[] = [],
 ): CaseVisualizationGroup[] {
   const sections = groupCaseVisualizationMembers(groups)
-  if (!hasSliceArchive || sections.some((section) => section.category === 'slices')) return sections
-  const sliceSection: CaseVisualizationGroup = { category: 'slices', members: [] }
-  return [...sections, sliceSection]
-    .sort((left, right) => (
+  const byCategory = new Map(sections.map((section) => [section.category, section]))
+  for (const member of configuredMembers) {
+    const category = member.path?.[0] as CaseVisualizationCategory
+    let section = byCategory.get(category)
+    if (!section) {
+      section = { category, members: [] }
+      byCategory.set(category, section)
+    }
+    const normalizedName = member.name.toLowerCase().replaceAll(/[^a-z0-9]/g, '')
+    const existing = section.members.find((candidate) => (
+      candidate.name.toLowerCase().replaceAll(/[^a-z0-9]/g, '') === normalizedName
+    ))
+    if (existing) existing.playbackKind ??= member.playbackKind
+    else {
+      const firstAutomatic = section.members.findIndex((candidate) => candidate.source !== 'output')
+      if (firstAutomatic < 0) section.members.push(member)
+      else section.members.splice(firstAutomatic, 0, member)
+    }
+  }
+  if (hasSliceArchive && !byCategory.has('slices')) {
+    byCategory.set('slices', { category: 'slices', members: [{
+      id: 'case-archive:slices',
+      name: 'Time-series Slice archive',
+      color: '#8da0a6',
+      visible: false,
+      entityIds: [],
+      playbackKind: 'slices',
+      source: 'archive',
+      path: ['slices'],
+    }] })
+  }
+  return [...byCategory.values()].sort((left, right) => (
       caseVisualizationCategoryOrder.indexOf(left.category)
       - caseVisualizationCategoryOrder.indexOf(right.category)
-    ))
+  ))
 }
 
 function caseVisualizationCategoryLabel(category: CaseVisualizationCategory): string {
@@ -211,11 +299,14 @@ export function caseFieldForSelection(activeField: string | null, fieldNames: st
 }
 
 export function visibleCaseSurfaceCount(groups: CaseSurfaceGroup[], visibility: Record<string, boolean>): number {
-  return visibleManifestMemberCount(groups, visibility)
+  return groups.filter((group) => {
+    const entityIds = group.entityIds ?? [group.id]
+    return entityIds.length > 0 && entityIds.some((id) => visibility[id] ?? group.visible)
+  }).length
 }
 
 export function caseSurfaceVisibilityMap(groups: CaseSurfaceGroup[], visible: boolean): Record<string, boolean> {
-  return manifestVisibilityMap(groups, visible)
+  return Object.fromEntries(groups.flatMap((group) => (group.entityIds ?? [group.id]).map((id) => [id, visible])))
 }
 
 function findMetric(value: unknown, aliases: string[]): unknown {
@@ -343,6 +434,7 @@ export default function CaseWorkspace({
   const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | 'slices' | null>(null)
   const [activePlayerArchive, setActivePlayerArchive] = useState<{ kind: CaseTimeSeriesArchiveKind; record: CaseResultRecord } | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
+  const [selectedVisualizationId, setSelectedVisualizationId] = useState<string | null>(null)
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
@@ -359,6 +451,7 @@ export default function CaseWorkspace({
   const resultRecords = detail?.results?.records ?? []
   const sliceArchive = findSliceArchive(resultRecords)
   const timeSeriesArchives = findTimeSeriesArchives(resultRecords)
+  const hasSurfaceArchive = timeSeriesArchives.some(({ kind }) => kind === 'surfaces')
   const hasErrors = Boolean(detail?.errors && Object.keys(detail.errors).length)
 
   const { result: convergence, loading: convergenceLoading, refetch: refetchConvergence } =
@@ -372,23 +465,37 @@ export default function CaseWorkspace({
     geometryResourceId ?? null,
   )
   const surfaceGroups = manifest?.groups ?? []
-  const visualizationGroups = useMemo(
-    () => caseVisualizationSections(surfaceGroups, Boolean(sliceArchive)),
-    [sliceArchive, surfaceGroups],
+  const configuredVisualizationMembers = useMemo(
+    () => caseConfiguredVisualizationMembers(
+      detail?.simulation_params ?? { outputs: findMetric(detail?.summary, ['outputs']) },
+      [
+        ...(sliceArchive ? ['slices' as const] : []),
+        ...(hasSurfaceArchive ? ['surfaces' as const] : []),
+      ],
+    ),
+    [detail?.simulation_params, detail?.summary, hasSurfaceArchive, sliceArchive],
   )
-  const selectedVisualizationObject = surfaceGroups.find((group) => group.id === viewerSelection.groupId) ?? null
+  const visualizationGroups = useMemo(
+    () => caseVisualizationSections(surfaceGroups, Boolean(sliceArchive), configuredVisualizationMembers),
+    [configuredVisualizationMembers, sliceArchive, surfaceGroups],
+  )
+  const selectedVisualizationObject = visualizationGroups
+    .flatMap(({ members }) => members)
+    .find((member) => member.id === selectedVisualizationId) ?? null
   const selectedFieldNames = useMemo(
-    () => caseObjectFieldNames(viewerEntities, viewerSelection.groupId),
-    [viewerEntities, viewerSelection.groupId],
+    () => [...new Set((selectedVisualizationObject?.entityIds ?? [])
+      .flatMap((entityId) => caseObjectFieldNames(viewerEntities, entityId)))],
+    [selectedVisualizationObject, viewerEntities],
   )
   const selectedFieldEntityIds = useMemo(
-    () => viewerSelection.groupId ? [viewerSelection.groupId] : [],
-    [viewerSelection.groupId],
+    () => selectedVisualizationObject?.entityIds ?? [],
+    [selectedVisualizationObject],
   )
 
   useEffect(() => {
     setEntityVisibility(Object.fromEntries(surfaceGroups.map((group) => [group.id, group.visible])))
     setViewerSelection({ groupId: null })
+    setSelectedVisualizationId(null)
   }, [manifest?.asset_url])
 
   useEffect(() => {
@@ -396,13 +503,12 @@ export default function CaseWorkspace({
     if (compatibleField !== activeField) setActiveField(compatibleField)
   }, [activeField, selectedFieldNames])
 
-  const toggleSurfaceVisibility = (groupId: string) => {
-    const group = surfaceGroups.find((candidate) => candidate.id === groupId)
-    if (!group) return
-    setEntityVisibility((current) => ({
-      ...current,
-      [groupId]: !(current[groupId] ?? group.visible),
-    }))
+  const toggleSurfaceVisibility = (member: CaseVisualizationMember) => {
+    if (!member.entityIds.length) return
+    setEntityVisibility((current) => {
+      const visible = member.entityIds.some((entityId) => current[entityId] ?? member.visible)
+      return { ...current, ...Object.fromEntries(member.entityIds.map((entityId) => [entityId, !visible])) }
+    })
   }
 
   const openTimeSeriesPlayer = (record: CaseResultRecord) => {
@@ -410,6 +516,17 @@ export default function CaseWorkspace({
     if (!kind) return
     setActivePlayerArchive({ kind, record })
     setActiveReviewDialog('slices')
+  }
+  const openTimeSeriesPlayerKind = (kind: CaseTimeSeriesArchiveKind) => {
+    const archive = timeSeriesArchives.find((candidate) => candidate.kind === kind)
+    if (archive) openTimeSeriesPlayer(archive.record)
+  }
+  const handleViewerSelection = (selection: ViewerSelection) => {
+    setViewerSelection(selection)
+    const selectedMember = visualizationGroups
+      .flatMap(({ members }) => members)
+      .find((member) => selection.groupId && member.entityIds.includes(selection.groupId))
+    setSelectedVisualizationId(selectedMember?.id ?? null)
   }
   const unit = findLengthUnit([
     detail?.simulation_params,
@@ -476,7 +593,7 @@ export default function CaseWorkspace({
               <span>{previewSource === 'fallback' ? 'CONTEXT' : 'SOLUTION'}</span>
               <strong>{previewSource === 'fallback' ? t('Geometry context') : t('Visualization objects')}</strong>
             </div>
-            <span className="geometry-count-badge">{surfaceGroups.length}</span>
+            <span className="geometry-count-badge">{visualizationGroups.reduce((total, group) => total + group.members.length, 0)}</span>
           </div>
           <div className="case-surface-inventory">
             {visualizationGroups.map(({ category, members }) => {
@@ -484,7 +601,8 @@ export default function CaseWorkspace({
                 ? t('Geometry surfaces')
                 : t(caseVisualizationCategoryLabel(category))
               const categoryVisibleCount = visibleCaseSurfaceCount(members, entityVisibility)
-              const archiveShortcut = category === 'slices' && members.length === 0 && Boolean(sliceArchive)
+              const hasRenderableMembers = members.some((member) => member.entityIds.length > 0)
+              const renderableMemberCount = members.filter((member) => member.entityIds.length > 0).length
               const CategoryIcon = category === 'surfaces'
                 ? Layers
                 : category === 'slices'
@@ -498,31 +616,38 @@ export default function CaseWorkspace({
                   label={categoryLabel}
                   memberLabel={categoryLabel}
                   icon={<CategoryIcon size={13} aria-hidden="true" />}
-                  total={archiveShortcut ? 1 : members.length}
+                  total={hasRenderableMembers ? renderableMemberCount : members.length}
                   visibleCount={categoryVisibleCount}
                   onHideAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, false) }))}
                   onShowAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, true) }))}
                   defaultExpanded={false}
-                  showVisibilityControl={!archiveShortcut}
+                  showVisibilityControl={hasRenderableMembers}
                 >
                   <div className="case-surface-list">
-                    {archiveShortcut && (
-                      <button
-                        type="button"
-                        className="case-result-row previewable"
-                        onClick={() => openTimeSeriesPlayer(sliceArchive!)}
-                        aria-label={t('Time-series Slice player')}
-                      >
-                        <Film size={11} />
-                        <span>{t('Time-series Slice archive')}</span>
-                        <small>{t('Open')}</small>
-                      </button>
-                    )}
                     {members.map((group) => {
-                      const visible = entityVisibility[group.id] ?? group.visible
+                      const visible = group.entityIds.some((entityId) => entityVisibility[entityId] ?? group.visible)
+                      if (!group.entityIds.length) {
+                        return (
+                          <button
+                            type="button"
+                            className={`case-result-row ${group.playbackKind ? 'previewable' : ''}`}
+                            disabled={!group.playbackKind}
+                            onClick={() => { if (group.playbackKind) openTimeSeriesPlayerKind(group.playbackKind) }}
+                            aria-label={group.playbackKind ? t(caseTimeSeriesPlayerTitle(group.playbackKind)) : t('Visualization output is not available in the 3D preview')}
+                            key={group.id}
+                          >
+                            {group.playbackKind ? <Film size={11} /> : <CircleDashed size={11} />}
+                            <span>{group.source === 'archive' ? t(group.name) : group.name}</span>
+                            <small>{group.playbackKind ? t('Open') : t('Not available in 3D preview')}</small>
+                          </button>
+                        )
+                      }
                       return (
-                        <div className={`geometry-entity-row ${viewerSelection.groupId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
-                          <button type="button" className="geometry-entity-select" onClick={() => setViewerSelection({ groupId: group.id })} title={t('Select visualization object')}>
+                        <div className={`geometry-entity-row ${selectedVisualizationId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
+                          <button type="button" className="geometry-entity-select" onClick={() => {
+                            setSelectedVisualizationId(group.id)
+                            setViewerSelection({ groupId: group.entityIds[0] ?? null })
+                          }} title={t('Select visualization object')}>
                             <span className="viewer-color-swatch" style={{ background: group.color }} />
                             <span>{group.name}</span>
                             <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} tris` : t('object')}</small>
@@ -532,7 +657,7 @@ export default function CaseWorkspace({
                             className="geometry-entity-visibility"
                             aria-label={t(visible ? 'Hide visualization object' : 'Show visualization object')}
                             aria-pressed={visible}
-                            onClick={() => toggleSurfaceVisibility(group.id)}
+                            onClick={() => toggleSurfaceVisibility(group)}
                           >
                             {visible ? <Eye size={13} /> : <EyeOff size={13} />}
                           </button>
@@ -606,7 +731,7 @@ export default function CaseWorkspace({
             manifest={manifest}
             state={viewerState}
             selection={viewerSelection}
-            onSelectionChange={setViewerSelection}
+            onSelectionChange={handleViewerSelection}
             entityVisibility={entityVisibility}
             onEntityVisibilityChange={setEntityVisibility}
             selectedField={activeField}
