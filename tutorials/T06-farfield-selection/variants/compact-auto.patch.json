@@ -1,0 +1,194 @@
+{
+  "meshing": {
+    "volume_zones": [
+      {
+        "enclosed_entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "bounding_entities": {
+                "stored_entities": [
+                  {
+                    "axis": [
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    "center": {
+                      "units": "m",
+                      "value": [
+                        3.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    "height": {
+                      "units": "m",
+                      "value": 6.0
+                    },
+                    "inner_radius": {
+                      "units": "m",
+                      "value": 0.0
+                    },
+                    "name": "Rotor-envelope boundary",
+                    "outer_radius": {
+                      "units": "m",
+                      "value": 1.5
+                    },
+                    "private_attribute_entity_type_name": "Cylinder",
+                    "private_attribute_id": "60000000-0000-4000-8000-000000000601",
+                    "private_attribute_zone_boundary_names": {
+                      "items": []
+                    }
+                  }
+                ]
+              },
+              "center": {
+                "units": "m",
+                "value": [
+                  3.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "name": "Rotor service volume",
+              "private_attribute_entity_type_name": "CustomVolume",
+              "private_attribute_id": "60000000-0000-4000-8000-000000000602",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              }
+            }
+          ]
+        },
+        "method": "auto",
+        "name": "Generated external domain",
+        "relative_size": 8.0,
+        "type": "AutomatedFarfield"
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  3.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "height": {
+                "units": "m",
+                "value": 6.0
+              },
+              "inner_radius": {
+                "units": "m",
+                "value": 0.0
+              },
+              "name": "Rotor-envelope boundary",
+              "outer_radius": {
+                "units": "m",
+                "value": 1.5
+              },
+              "private_attribute_entity_type_name": "Cylinder",
+              "private_attribute_id": "60000000-0000-4000-8000-000000000601",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              }
+            }
+          ]
+        },
+        "name": "Rotor-envelope mesh control",
+        "spacing_axial": {
+          "units": "m",
+          "value": 0.2
+        },
+        "spacing_circumferential": {
+          "units": "m",
+          "value": 0.12
+        },
+        "spacing_radial": {
+          "units": "m",
+          "value": 0.12
+        },
+        "type": "RotationVolume"
+      },
+      {
+        "element_type": "mixed",
+        "entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "bounding_entities": {
+                "stored_entities": [
+                  {
+                    "axis": [
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    "center": {
+                      "units": "m",
+                      "value": [
+                        3.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    "height": {
+                      "units": "m",
+                      "value": 6.0
+                    },
+                    "inner_radius": {
+                      "units": "m",
+                      "value": 0.0
+                    },
+                    "name": "Rotor-envelope boundary",
+                    "outer_radius": {
+                      "units": "m",
+                      "value": 1.5
+                    },
+                    "private_attribute_entity_type_name": "Cylinder",
+                    "private_attribute_id": "60000000-0000-4000-8000-000000000601",
+                    "private_attribute_zone_boundary_names": {
+                      "items": []
+                    }
+                  }
+                ]
+              },
+              "center": {
+                "units": "m",
+                "value": [
+                  3.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "name": "Rotor service volume",
+              "private_attribute_entity_type_name": "CustomVolume",
+              "private_attribute_id": "60000000-0000-4000-8000-000000000602",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              }
+            }
+          ]
+        },
+        "name": "Rotor service custom zone",
+        "type": "CustomZones"
+      }
+    ]
+  }
+}

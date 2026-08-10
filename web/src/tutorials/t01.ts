@@ -35,7 +35,7 @@ export type TutorialEnvironmentResult = {
   projectId: string
   rootResourceId: string
   baselineDraft: ConfiguredDraft
-  variantDraft: ConfiguredDraft
+  variantDraft?: ConfiguredDraft
 }
 
 export const t01Steps: TutorialStep[] = [

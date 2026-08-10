@@ -1,0 +1,50 @@
+schema_version: 2
+id: T06
+slug: farfield-selection
+title: Choose an external domain that does not disturb drag
+summary: Compare generated and CAD-defined farfields using boundary-distance, blockage, enclosure, and mesh-evidence checks.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: VolumeMesh
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:AutomatedFarfield', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AutomatedFarfield.enclosed_entities', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AutomatedFarfield.method', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AutomatedFarfield.name', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AutomatedFarfield.relative_size', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AutomatedFarfield.type', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:MeshingParams.volume_zones[]=AutomatedFarfield', section: automatic-baseline, artifact: simulation.json}
+  - {feature: 'schema:type:UserDefinedFarfield', section: manual-domain, artifact: variants/manual-domain.patch.json}
+  - {feature: 'schema:field:UserDefinedFarfield.name', section: manual-domain, artifact: variants/manual-domain.patch.json}
+  - {feature: 'schema:field:UserDefinedFarfield.type', section: manual-domain, artifact: variants/manual-domain.patch.json}
+  - {feature: 'schema:variant:MeshingParams.volume_zones[]=UserDefinedFarfield', section: manual-domain, artifact: variants/manual-domain.patch.json}
+assets:
+  - path: assets/sphere-body.csm
+    sha256: e44807191e61d8273a58b2d79bfe62346a98ed4ece3cc6c5ca96c171e6550a21
+    source: Authored for T06 from the OpenCSM primitives used by Flow360 examples
+    license: LGPL-2.1-or-later
+  - path: assets/manual-domain.csm
+    sha256: bad445c1076ab4aafbada175ee73f1432cefdf59da024f95c1b1c77677c55621
+    source: Authored for T06 from the OpenCSM boolean-domain pattern used by TutorialAutoMeshingInternalFlow
+    license: LGPL-2.1-or-later
+variants:
+  - id: compact-auto
+    title: Move the generated farfield from 20D to 8D
+    patch: variants/compact-auto.patch.json
+    evidence: variants/compact-auto.evidence.yaml
+  - id: manual-domain
+    title: Use a CAD-defined asymmetric external domain
+    patch: variants/manual-domain.patch.json
+    evidence: variants/manual-domain.evidence.yaml

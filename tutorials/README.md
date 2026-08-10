@@ -54,14 +54,18 @@ The coverage gate reports four disjoint states:
 - [T05 — Place volume refinement where the wake travels](T05-wake-volume-refinement/README.md):
   near-body, structured-box, and axisymmetric volume controls aligned with
   cylinder separation and downstream wake transport.
+- [T06 — Choose the external farfield domain](T06-farfield-selection/README.md):
+  automatic and CAD-defined external domains, enclosed CustomVolume rules,
+  normalized boundary placement, blockage, and domain-size sensitivity.
 
-T01, T03, T04, and T05 can be experienced locally without cloud execution charges:
+T01, T03, T04, T05, and T06 can be experienced locally without cloud execution charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
 python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
 python3 tutorials/T04-airfoil-edge-refinement/build_simulation.py --check
 python3 tutorials/T05-wake-volume-refinement/build_simulation.py --check
+python3 tutorials/T06-farfield-selection/build_simulation.py --check
 make tutorials-validate
 ```
 

@@ -45,6 +45,7 @@ tutorials-test:
 	python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
 	python3 tutorials/T04-airfoil-edge-refinement/build_simulation.py --check
 	python3 tutorials/T05-wake-volume-refinement/build_simulation.py --check
+	python3 tutorials/T06-farfield-selection/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:

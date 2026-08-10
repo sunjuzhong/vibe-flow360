@@ -36,11 +36,11 @@ export function tutorialEnvironmentPath(
 }
 
 const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-drafts', 'ready']
-function stageCopy(draftKind: string): Record<TutorialEnvironmentStage, string> {
+function stageCopy(draftKind: string, draftCount: 1 | 2): Record<TutorialEnvironmentStage, string> {
   return {
     staging: 'Stage bundled geometry',
     'creating-project': 'Create and process Geometry',
-    'creating-drafts': `Configure two ${draftKind} Drafts`,
+    'creating-drafts': `Configure ${draftCount === 1 ? 'one' : 'two'} ${draftKind} Draft${draftCount === 1 ? '' : 's'}`,
     ready: 'Ready for review',
   }
 }
@@ -62,6 +62,7 @@ export type TutorialEnvironmentBuilderProps = {
   baselineValue?: string
   variantValue?: string
   successDescription?: string
+  draftCount?: 1 | 2
   createEnvironment?: EnvironmentCreator
 }
 
@@ -76,6 +77,7 @@ export default function TutorialEnvironmentBuilder({
   baselineValue = 'α = 0°',
   variantValue = 'α = 5°',
   successDescription = 'The Geometry is processed and both Case Drafts have their parameters configured. No mesh or Case computation has been submitted.',
+  draftCount = 2,
   createEnvironment = createT01Environment,
 }: TutorialEnvironmentBuilderProps) {
   const navigate = useNavigate()
@@ -88,7 +90,7 @@ export default function TutorialEnvironmentBuilder({
   const [result, setResult] = useState<TutorialEnvironmentResult | null>(null)
   const [error, setError] = useState('')
   const busy = stage !== null && stage !== 'ready'
-  const stages = stageCopy(draftKind)
+  const stages = stageCopy(draftKind, draftCount)
 
   useEffect(() => {
     api.folders()
@@ -103,6 +105,9 @@ export default function TutorialEnvironmentBuilder({
   const currentStage = stage ? stageOrder.indexOf(stage) : -1
   const canCreate = Boolean(status?.available && folderId && projectName.trim() && confirmed && !busy && !result)
   const selectedFolder = useMemo(() => folders.find((folder) => folder.id === folderId), [folders, folderId])
+  const authorizationCopy = draftCount === 1
+    ? `I reviewed the destination and authorize creation of this remote Flow360 Project and one configured ${draftKind} Draft. Nothing is submitted until I review and run a Draft.`
+    : `I reviewed the destination and authorize creation of this remote Flow360 Project and two configured ${draftKind} Drafts. Nothing is submitted until I review and run a Draft.`
 
   const create = async () => {
     if (!canCreate) return
@@ -126,7 +131,7 @@ export default function TutorialEnvironmentBuilder({
       <div className="environment-success-heading"><CheckCircle2 size={28}/><div><span>EXPERIMENT ENVIRONMENT READY</span><strong>{projectName}</strong><p>{successDescription}</p></div></div>
       <div className="environment-plan-pair">
         <article><span>BASELINE</span><strong>{baselineValue}</strong><small>Draft parameters synced</small></article>
-        <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>Draft parameters synced</small></article>
+        {draftCount === 2 && <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>Draft parameters synced</small></article>}
       </div>
       <button className="lesson-workspace-button" onClick={() => navigate(tutorialEnvironmentPath(result, tutorialId))}>
         <span>Review configured Drafts</span><Rocket size={17}/>
@@ -164,10 +169,10 @@ export default function TutorialEnvironmentBuilder({
 
     <label className="environment-confirm">
       <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={busy}/>
-      <span>I reviewed the destination and authorize creation of this remote Flow360 Project and two configured {draftKind} Drafts. Nothing is submitted until I review and run a Draft.</span>
+      <span>{t(authorizationCopy)}</span>
     </label>
     <button className="environment-create-button" disabled={!canCreate} onClick={() => void create()}>
-      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stages[stage] : `Create Project + 2 ${draftKind} Drafts`}
+      {busy ? <RefreshCw size={16} className="spin"/> : <Rocket size={16}/>} {busy && stage ? stages[stage] : `Create Project + ${draftCount} ${draftKind} Draft${draftCount === 1 ? '' : 's'}`}
     </button>
   </div>
 }

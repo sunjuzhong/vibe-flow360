@@ -1,0 +1,16 @@
+schema_version: 1
+criteria:
+  - id: compact-auto-patch-valid
+    category: provenance
+    description: The 8D automatic-farfield merge patch passes Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: variants/compact-auto.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: compact-domain-sensitive
+    category: force
+    description: Drag, pressure, and wake evidence are compared against the 20D baseline before the compact domain is accepted.
+    artifact: domain-size comparison
+    required: true
+    check: {method: manual, metric: result.farfield.sensitivity}
+limitations:
+  - The 8D value is a sensitivity candidate, not a production recommendation.
