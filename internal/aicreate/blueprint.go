@@ -203,6 +203,33 @@ func RepairAfterGenerationFailure(ctx context.Context, model Completer, intent s
 	return designFromAgentResponse(ctx, model, userPrompt, repaired, false)
 }
 
+// ReviseGeometry asks the constrained CAD agent to apply a design change to an
+// AI-authored parametric recipe. Imported STEP files do not have such a recipe
+// and must be revised in their source CAD system or uploaded as a new version.
+func ReviseGeometry(ctx context.Context, model Completer, current Geometry, change string) (Blueprint, error) {
+	change = strings.TrimSpace(change)
+	if change == "" {
+		return Blueprint{}, errors.New("geometry change request is required")
+	}
+	if model == nil {
+		return Blueprint{}, errors.New("STEP geometry agent is unavailable")
+	}
+	if err := validateGeometry(current); err != nil {
+		return Blueprint{}, errors.New("this STEP version has no editable AI CAD recipe")
+	}
+	currentJSON, err := json.Marshal(current)
+	if err != nil {
+		return Blueprint{}, fmt.Errorf("encode current CAD recipe: %w", err)
+	}
+	userPrompt := "Apply this requested change to the existing exact CAD recipe:\n" + change +
+		"\n\nReturn a complete AI_CREATE_GEOMETRY_V1 JSON object with the revised geometry. Preserve all unaffected dimensions, semantic face coverage, and body names. The simulation fields are engineering hints only and may use defensible positive baseline values. Never mutate the existing version; this response will become a new version.\nCurrent geometry:\n" + string(currentJSON)
+	raw, err := model.Complete(ctx, geometryAgentSystemPrompt(), userPrompt, "")
+	if err != nil {
+		return Blueprint{}, fmt.Errorf("geometry revision agent failed: %w", err)
+	}
+	return designFromAgentResponse(ctx, model, userPrompt, raw, true)
+}
+
 func designFromAgentResponse(ctx context.Context, model Completer, userPrompt, raw string, allowRepair bool) (Blueprint, error) {
 	var response designResponse
 	if err := json.Unmarshal(extractJSONObject(raw), &response); err != nil {

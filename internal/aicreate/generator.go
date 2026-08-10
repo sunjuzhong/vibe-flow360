@@ -18,6 +18,9 @@ import (
 //go:embed assets/generate_cad.py
 var cadGeneratorScript []byte
 
+//go:embed assets/validate_step.py
+var stepValidatorScript []byte
+
 type GeometryValidation struct {
 	SolidCount           int       `json:"solid_count"`
 	FaceCount            int       `json:"face_count"`
@@ -34,6 +37,10 @@ type GeometryValidation struct {
 
 type Generator interface {
 	Generate(context.Context, Geometry, string) (GeometryValidation, error)
+}
+
+type STEPValidator interface {
+	ValidateSTEP(context.Context, string) (GeometryValidation, error)
 }
 
 type GenerationFailureKind string
@@ -173,6 +180,72 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 			"Flow360 boundary coverage validation failed: %d of %d faces are named, %d are unnamed, and %d have overlapping assignments; every result face must be assigned exactly one semantic boundary name",
 			validation.NamedFaceCount, validation.FaceCount, validation.UnnamedFaceCount, validation.OverlappingFaceCount,
 		)}
+	}
+	return validation, nil
+}
+
+func (g *CadQueryGenerator) ValidateSTEP(ctx context.Context, inputPath string) (GeometryValidation, error) {
+	var validation GeometryValidation
+	absoluteInputPath, err := filepath.Abs(inputPath)
+	if err != nil {
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("resolve STEP path: %w", err)}
+	}
+	inputPath = filepath.Clean(absoluteInputPath)
+	extension := strings.ToLower(filepath.Ext(inputPath))
+	if extension != ".step" && extension != ".stp" {
+		return validation, &GenerationError{Kind: GenerationGeometryFailure, Err: errors.New("CAD input path must use the .step or .stp extension")}
+	}
+	if info, statErr := os.Stat(inputPath); statErr != nil || !info.Mode().IsRegular() {
+		if statErr == nil {
+			statErr = errors.New("path is not a regular file")
+		}
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("read STEP input: %w", statErr)}
+	}
+	uvBinary, err := resolveCADRuntimeBinary(g.UVBinary)
+	if err != nil {
+		return validation, &GenerationError{Kind: GenerationRuntimeFailure, Err: err}
+	}
+	directory, err := os.MkdirTemp("", "vibesim-step-validation-")
+	if err != nil {
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("prepare STEP validator: %w", err)}
+	}
+	defer os.RemoveAll(directory)
+	scriptPath := filepath.Join(directory, "validate_step.py")
+	if err := os.WriteFile(scriptPath, stepValidatorScript, 0o500); err != nil {
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("write STEP validator: %w", err)}
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, g.Timeout)
+	defer cancel()
+	args := []string{"run", "--no-project"}
+	if g.Offline {
+		args = append(args, "--offline")
+	}
+	args = append(args, "--python", firstConfigured(g.Python, "3.11"), "--with", "cadquery==2.6.1", "python", scriptPath, inputPath)
+	command := exec.CommandContext(runCtx, uvBinary, args...)
+	command.Dir = directory
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + directory, "TMPDIR=" + directory, "UV_NO_PROGRESS=1"}
+	if g.CacheDir != "" {
+		command.Env = append(command.Env, "UV_CACHE_DIR="+g.CacheDir)
+	}
+	if g.PythonDir != "" {
+		command.Env = append(command.Env, "UV_PYTHON_INSTALL_DIR="+g.PythonDir)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("STEP validation timed out after %s", g.Timeout)}
+		}
+		return validation, &GenerationError{Kind: classifyCADExecutionFailure(stderr.String()), Err: fmt.Errorf("STEP validation failed: %s", truncateOutput(stderr.Bytes(), 1200))}
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &validation); err != nil {
+		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("STEP validator returned invalid data: %w: %s", err, truncateOutput(stdout.Bytes(), 600))}
+	}
+	if validation.SolidCount < 1 || validation.FaceCount < 1 || validation.Volume <= 0 {
+		return validation, &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("STEP topology validation failed: solids=%d faces=%d volume=%g", validation.SolidCount, validation.FaceCount, validation.Volume)}
 	}
 	return validation, nil
 }
