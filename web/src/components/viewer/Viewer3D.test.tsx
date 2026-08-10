@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { createEngineeringLightRig, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
+import { createEngineeringLightRig, mergeViewerManifestMetadata, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -9,6 +9,24 @@ function renderViewer(viewer: React.ReactNode) {
 }
 
 describe('Viewer3D layout state', () => {
+  it('merges independently selectable asset-layer metadata', () => {
+    const base = {
+      format: 'flow360-uvf', asset_url: '/base.json', bounding_box: { min: [0, 0, 0], max: [1, 1, 1] },
+      groups: [{ id: 'wall', name: 'Wall', color: '#fff', visible: true }], vertices: 10, elements: 4,
+    } satisfies import('./Viewer3D').ViewerManifest
+    const overlay = {
+      format: 'flow360-uvf', asset_url: '/surface.json', bounding_box: { min: [-1, 0, 0], max: [2, 3, 1] },
+      groups: [{ id: 'cylinder', name: 'Cylinder', color: '#789521', visible: true }], vertices: 20, elements: 8,
+    } satisfies import('./Viewer3D').ViewerManifest
+    expect(mergeViewerManifestMetadata([base, overlay])).toMatchObject({
+      asset_url: '/base.json|/surface.json',
+      bounding_box: { min: [-1, 0, 0], max: [2, 3, 1] },
+      vertices: 30,
+      elements: 12,
+      groups: [{ id: 'wall' }, { id: 'cylinder' }],
+    })
+  })
+
   it('keeps the previous frame visible during a seamless asset transition', () => {
     expect(shouldKeepPreviousAssetVisible(true, true, 'loading')).toBe(true)
     expect(shouldKeepPreviousAssetVisible(false, true, 'loading')).toBe(false)

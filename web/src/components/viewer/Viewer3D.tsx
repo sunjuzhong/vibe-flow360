@@ -80,6 +80,32 @@ export type ViewerManifest = {
   elements: number
   download_url?: string
   warnings?: string[]
+  entity_id_prefix?: string
+}
+
+const EMPTY_VIEWER_MANIFESTS: ViewerManifest[] = []
+
+export function viewerManifestSetKey(manifests: readonly ViewerManifest[]): string {
+  return manifests.map((item) => item.asset_url).filter(Boolean).join('|')
+}
+
+export function mergeViewerManifestMetadata(manifests: readonly ViewerManifest[]): ViewerManifest | null {
+  const primary = manifests[0]
+  if (!primary) return null
+  const bounds = manifests.reduce((combined, item) => ({
+    min: combined.min.map((value, index) => Math.min(value, item.bounding_box.min[index])) as [number, number, number],
+    max: combined.max.map((value, index) => Math.max(value, item.bounding_box.max[index])) as [number, number, number],
+  }), primary.bounding_box)
+  return {
+    ...primary,
+    asset_url: viewerManifestSetKey(manifests),
+    bounding_box: bounds,
+    groups: manifests.flatMap((item) => item.groups),
+    edges: manifests.flatMap((item) => item.edges ?? []),
+    vertices: manifests.reduce((total, item) => total + item.vertices, 0),
+    elements: manifests.reduce((total, item) => total + item.elements, 0),
+    warnings: manifests.flatMap((item) => item.warnings ?? []),
+  }
 }
 
 export type ViewerSelection = {
@@ -203,6 +229,7 @@ export function shouldKeepPreviousAssetVisible(
 
 type Props = {
   manifest: ViewerManifest | null
+  additionalManifests?: ViewerManifest[]
   state: ViewerState
   onSelectionChange?: (selection: ViewerSelection) => void
   selection?: ViewerSelection
@@ -249,6 +276,7 @@ type Props = {
 
 export function Viewer3D({
   manifest,
+  additionalManifests = EMPTY_VIEWER_MANIFESTS,
   state,
   onSelectionChange,
   selection,
@@ -293,6 +321,11 @@ export function Viewer3D({
   fitSelectionWhenSelected = false,
 }: Props) {
   const { t } = useI18n()
+  const activeManifests = useMemo(
+    () => manifest ? [manifest, ...additionalManifests.filter((item) => item.asset_url !== manifest.asset_url)] : [],
+    [additionalManifests, manifest],
+  )
+  const displayManifest = useMemo(() => mergeViewerManifestMetadata(activeManifests), [activeManifests])
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -369,12 +402,12 @@ export function Viewer3D({
   const effectiveWireframe = wireframe ?? wireframeOn
   const framePresentationRef = useRef({ selectedField, colormap, fieldRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe })
   framePresentationRef.current = { selectedField, colormap, fieldRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe }
-  const precisionSelection = precision.assetURL === manifest?.asset_url ? precision.selection : 'default'
+  const precisionSelection = precision.assetURL === displayManifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const unavailablePrecisionLevels = new Set(
-    unavailablePrecision.assetURL === manifest?.asset_url ? unavailablePrecision.levels : [],
+    unavailablePrecision.assetURL === displayManifest?.asset_url ? unavailablePrecision.levels : [],
   )
-  const activePrecisionNotice = precisionNotice.assetURL === manifest?.asset_url ? precisionNotice.message : ''
+  const activePrecisionNotice = precisionNotice.assetURL === displayManifest?.asset_url ? precisionNotice.message : ''
   const activeResourceRef = useMemo<ResourceRef | null>(() => {
     if (resourceRef) return resourceRef
     if (!manifest?.asset_url) return null
@@ -395,9 +428,9 @@ export function Viewer3D({
     }]
   }, [snapStatus])
   const manifestEntityVisibility = useMemo(() => [
-    ...(manifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
-    ...(manifest?.edges ?? []).map((edge) => [edge.id, true] as const),
-  ], [manifest])
+    ...(displayManifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
+    ...(displayManifest?.edges ?? []).map((edge) => [edge.id, true] as const),
+  ], [displayManifest])
   const effectiveGroupVisibility = Object.fromEntries(
     manifestEntityVisibility.map(([entityId, defaultVisible]) => [
       entityId,
@@ -518,7 +551,7 @@ export function Viewer3D({
   }, [])
 
   const updateGeometry = useCallback(async (
-    manifest: ViewerManifest,
+    manifests: ViewerManifest[],
     signal: AbortSignal,
     onProgress: (progress: number) => void,
     lodLevel?: number,
@@ -544,72 +577,134 @@ export function Viewer3D({
       setInternalSelectedField(null)
     }
 
-    if (!manifest.asset_url) return
-    let root: THREE.Object3D
-    let nextDispose: (() => void) | null = null
+    const loadableManifests = manifests.filter((item) => item.asset_url)
+    if (!loadableManifests.length) return
+    const root = new THREE.Group()
+    root.name = 'Viewer asset layers'
+    const disposers: Array<() => void> = []
+    const uvfAssets: UVFAsset[] = []
+    const uvfAssetPrefixes = new Map<UVFAsset, string>()
+    let nextDispose: (() => void) | null = () => disposers.forEach((dispose) => dispose())
     let nextUVFAsset: UVFAsset | null = null
-    let nextAssetStats: ViewerAssetStats | null = null
+    let nextAssetStats: ViewerAssetStats | null = { faces: 0, edges: 0, triangles: 0 }
     let nextPrecisionInfo = { levels: 1, currentLevel: 0 }
-    let nextFields: UVFFieldInfo[] = []
+    const nextFieldMap = new Map<string, UVFFieldInfo>()
     const nextMeshes = new Map<string, THREE.Mesh>()
-    if (manifest.format === 'flow360-uvf') {
-      const asset = await (uvfAssetCache
-        ? uvfAssetCache.acquire(manifest.asset_url, {
-          signal,
-          onProgress: ({ progress }) => onProgress(progress),
+    try {
+      for (let manifestIndex = 0; manifestIndex < loadableManifests.length; manifestIndex += 1) {
+        const layerManifest = loadableManifests[manifestIndex]
+        let layerRoot: THREE.Object3D
+        if (layerManifest.format === 'flow360-uvf') {
+          const asset = await (uvfAssetCache
+            ? uvfAssetCache.acquire(layerManifest.asset_url, {
+              signal,
+              onProgress: ({ progress }) => onProgress((manifestIndex + progress) / loadableManifests.length),
+            })
+            : new UVFLoader().load(layerManifest.asset_url, {
+              signal,
+              lodLevel,
+              onProgress: ({ progress }) => onProgress((manifestIndex + progress) / loadableManifests.length),
+            }))
+          const disposeAsset = uvfAssetCache
+            ? () => uvfAssetCache.release(layerManifest.asset_url)
+            : asset.dispose
+          disposers.push(disposeAsset)
+          if (signal.aborted) throw new DOMException('Viewer asset load was aborted', 'AbortError')
+          layerRoot = asset.object
+          uvfAssets.push(asset)
+          uvfAssetPrefixes.set(asset, layerManifest.entity_id_prefix ?? '')
+          nextAssetStats.faces += asset.faces
+          nextAssetStats.edges += asset.edges
+          nextAssetStats.triangles += asset.triangles
+          const levels = commonPrecisionLevels(asset.entityLODs)
+          nextPrecisionInfo = {
+            levels: uvfAssets.length === 1 ? levels : Math.min(nextPrecisionInfo.levels, levels),
+            currentLevel: Math.min(nextPrecisionInfo.currentLevel, asset.currentLOD),
+          }
+          for (const field of asset.fields) {
+            const previous = nextFieldMap.get(field.name)
+            nextFieldMap.set(field.name, previous
+              ? { ...previous, min: Math.min(previous.min, field.min), max: Math.max(previous.max, field.max) }
+              : field)
+          }
+        } else {
+          const gltf = await new GLTFLoader().loadAsync(layerManifest.asset_url)
+          if (signal.aborted) {
+            disposeObject(gltf.scene)
+            throw new DOMException('Viewer asset load was aborted', 'AbortError')
+          }
+          layerRoot = gltf.scene
+          disposers.push(() => disposeObject(layerRoot))
+        }
+        const fallbackGroup = layerManifest.groups[0]
+        layerRoot.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return
+          const embeddedEntityID = String(object.userData.entityId ?? object.userData.groupId ?? '')
+          const embeddedGroupID = embeddedEntityID
+            ? `${layerManifest.entity_id_prefix ?? ''}${embeddedEntityID}`
+            : ''
+          const group = layerManifest.groups.find((candidate) => candidate.id === embeddedGroupID)
+            ?? layerManifest.groups.find((candidate) => object.name.toLowerCase().includes(candidate.name.toLowerCase()))
+            ?? fallbackGroup
+          const groupId = group?.id ?? embeddedGroupID ?? object.uuid
+          object.userData.entityId = embeddedGroupID || groupId
+          object.userData.groupId = groupId
+          object.visible = group?.visible ?? true
+          if (group) {
+            const previous = Array.isArray(object.material) ? object.material : [object.material]
+            previous.forEach((material) => material.dispose())
+            object.material = new THREE.MeshPhongMaterial({
+              color: new THREE.Color(group.color),
+              transparent: false,
+              opacity: 1,
+              side: THREE.DoubleSide,
+            })
+          }
+          nextMeshes.set(`${groupId}-${object.uuid}`, object)
         })
-        : new UVFLoader().load(manifest.asset_url, {
-          signal,
-          lodLevel,
-          onProgress: ({ progress }) => onProgress(progress),
-        }))
-      const disposeAsset = uvfAssetCache
-        ? () => uvfAssetCache.release(manifest.asset_url)
-        : asset.dispose
-      if (signal.aborted) {
-        disposeAsset()
-        return
+        root.add(layerRoot)
       }
-      root = asset.object
-      nextDispose = disposeAsset
-      nextUVFAsset = asset
-      nextAssetStats = { faces: asset.faces, edges: asset.edges, triangles: asset.triangles }
-      nextPrecisionInfo = { levels: commonPrecisionLevels(asset.entityLODs), currentLevel: asset.currentLOD }
-      nextFields = asset.fields
-    } else {
-      const gltf = await new GLTFLoader().loadAsync(manifest.asset_url)
-      if (signal.aborted) {
-        disposeObject(gltf.scene)
-        return
-      }
-      root = gltf.scene
-      nextDispose = () => disposeObject(root)
+    } catch (cause) {
+      disposers.forEach((dispose) => dispose())
+      throw cause
     }
-    const fallbackGroup = manifest.groups[0]
-    root.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return
-      const embeddedGroupID = String(object.userData.entityId ?? object.userData.groupId ?? '')
-      const group = manifest.groups.find((candidate) => candidate.id === embeddedGroupID)
-        ?? manifest.groups.find((candidate) =>
-          object.name.toLowerCase().includes(candidate.name.toLowerCase()),
-        )
-        ?? fallbackGroup
-      const groupId = group?.id ?? object.uuid
-      object.userData.entityId = embeddedGroupID || groupId
-      object.userData.groupId = groupId
-      object.visible = group?.visible ?? true
-      if (group) {
-        const previous = Array.isArray(object.material) ? object.material : [object.material]
-        previous.forEach((material) => material.dispose())
-        object.material = new THREE.MeshPhongMaterial({
-          color: new THREE.Color(group.color),
-          transparent: false,
-          opacity: 1,
-          side: THREE.DoubleSide,
-        })
+    const nextFields = [...nextFieldMap.values()].sort((left, right) => left.name.localeCompare(right.name))
+    if (uvfAssets.length) {
+      nextUVFAsset = {
+        object: root,
+        faces: nextAssetStats.faces,
+        edges: nextAssetStats.edges,
+        vertices: uvfAssets.reduce((total, asset) => total + asset.vertices, 0),
+        triangles: nextAssetStats.triangles,
+        fields: nextFields,
+        lodLevels: nextPrecisionInfo.levels,
+        currentLOD: nextPrecisionInfo.currentLevel,
+        entityLODs: Object.fromEntries(uvfAssets.flatMap((asset) => {
+          const prefix = uvfAssetPrefixes.get(asset) ?? ''
+          return Object.entries(asset.entityLODs).map(([entityId, info]) => [`${prefix}${entityId}`, info])
+        })),
+        entities: uvfAssets.flatMap((asset) => {
+          const prefix = uvfAssetPrefixes.get(asset) ?? ''
+          return asset.entities.map((entity) => ({
+            ...entity,
+            id: `${prefix}${entity.id}`,
+            parentId: entity.parentId ? `${prefix}${entity.parentId}` : null,
+            children: entity.children.map((child) => `${prefix}${child}`),
+          }))
+        }),
+        getEntityObject: (entityId) => {
+          for (const asset of uvfAssets) {
+            const prefix = uvfAssetPrefixes.get(asset) ?? ''
+            if (!prefix || entityId.startsWith(prefix)) {
+              const object = asset.getEntityObject(prefix ? entityId.slice(prefix.length) : entityId)
+              if (object) return object
+            }
+          }
+          return undefined
+        },
+        dispose: () => disposers.forEach((dispose) => dispose()),
       }
-      nextMeshes.set(`${groupId}-${object.uuid}`, object)
-    })
+    }
     if (root.userData.viewerNormalized !== true) {
       const bounds = new THREE.Box3().setFromObject(root)
       const size = bounds.getSize(new THREE.Vector3())
@@ -791,14 +886,14 @@ export function Viewer3D({
   })
 
   useEffect(() => {
-    if (manifest && state.status === 'ready') {
+    if (displayManifest && activeManifests.length && state.status === 'ready') {
       const controller = new AbortController()
       const preserveCamera = assetRef.current !== null && (
-        loadedAssetURLRef.current === manifest.asset_url || preserveCameraOnAssetChange
+        loadedAssetURLRef.current === displayManifest.asset_url || preserveCameraOnAssetChange
       )
       setAssetState({ status: 'loading', message: 'Loading 3D resources…' })
       void updateGeometry(
-        manifest,
+        activeManifests,
         controller.signal,
         (progress) => setAssetState({ status: 'loading', message: 'Loading 3D resources…', progress }),
         requestedLODLevel,
@@ -806,9 +901,9 @@ export function Viewer3D({
       )
         .then(() => {
           if (!controller.signal.aborted) {
-            loadedAssetURLRef.current = manifest.asset_url
-            onAssetReadyRef.current?.(manifest.asset_url)
-            if (requestedLODLevel !== undefined) setPrecisionNotice({ assetURL: manifest.asset_url, message: '' })
+            loadedAssetURLRef.current = displayManifest.asset_url
+            onAssetReadyRef.current?.(displayManifest.asset_url)
+            if (requestedLODLevel !== undefined) setPrecisionNotice({ assetURL: displayManifest.asset_url, message: '' })
             setAssetState({ status: 'ready' })
           }
         })
@@ -816,14 +911,14 @@ export function Viewer3D({
           if (controller.signal.aborted) return
           if (requestedLODLevel !== undefined) {
             setUnavailablePrecision((current) => ({
-              assetURL: manifest.asset_url,
-              levels: current.assetURL === manifest.asset_url
+              assetURL: displayManifest.asset_url,
+              levels: current.assetURL === displayManifest.asset_url
                 ? [...new Set([...current.levels, requestedLODLevel])]
                 : [requestedLODLevel],
             }))
-            setPrecision({ assetURL: manifest.asset_url, selection: 'default' })
+            setPrecision({ assetURL: displayManifest.asset_url, selection: 'default' })
             setPrecisionNotice({
-              assetURL: manifest.asset_url,
+              assetURL: displayManifest.asset_url,
               message: precisionFallbackNotice(requestedLODLevel, precisionInfo.currentLevel),
             })
             setAssetState({ status: 'loading', message: 'Selected precision is unavailable. Restoring manifest default…' })
@@ -837,7 +932,7 @@ export function Viewer3D({
       return () => controller.abort()
     }
     setAssetState(state)
-  }, [manifest, preserveCameraOnAssetChange, requestedLODLevel, state.status, updateGeometry])
+  }, [activeManifests, displayManifest, preserveCameraOnAssetChange, requestedLODLevel, state.status, updateGeometry])
 
   useEffect(() => {
     if (!selection) return
@@ -846,7 +941,7 @@ export function Viewer3D({
       const groupId = String(mesh.userData.groupId ?? '')
       const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
       const appearance = entityAppearances[groupId]
-      const defaultColor = manifest?.groups.find((group) => group.id === groupId)?.color ?? '#6f8790'
+      const defaultColor = displayManifest?.groups.find((group) => group.id === groupId)?.color ?? '#6f8790'
       const style = resolveViewerMaterialStyle(
         defaultColor,
         appearance,
@@ -889,13 +984,13 @@ export function Viewer3D({
         material.needsUpdate = true
       })
     })
-  }, [assetState.status, selection, manifest, entityVisibility, groupVisibility, entityAppearances])
+  }, [assetState.status, selection, displayManifest, entityVisibility, groupVisibility, entityAppearances])
 
   useEffect(() => {
-    if (!manifest) return
+    if (!displayManifest) return
     const entityIds = [
-      ...manifest.groups.map((group) => group.id),
-      ...(manifest.edges ?? []).map((edge) => edge.id),
+      ...displayManifest.groups.map((group) => group.id),
+      ...(displayManifest.edges ?? []).map((edge) => edge.id),
     ]
     for (const entityId of entityIds) {
       const visible = effectiveGroupVisibility[entityId] !== false
@@ -907,7 +1002,7 @@ export function Viewer3D({
         })
       }
     }
-  }, [assetState.status, entityVisibility, groupVisibility, manifest])
+  }, [assetState.status, displayManifest, entityVisibility, groupVisibility])
 
   useEffect(() => {
     const clipping = clipPlane
@@ -1396,7 +1491,7 @@ export function Viewer3D({
   return (
     <div
       className="viewer-3d-container"
-      data-viewer-format={manifest?.format ?? ''}
+      data-viewer-format={displayManifest?.format ?? ''}
       data-viewer-faces={assetStats?.faces ?? ''}
       data-viewer-edges={assetStats?.edges ?? ''}
       data-viewer-status={visibleState.status}
@@ -1461,8 +1556,8 @@ export function Viewer3D({
                       selection={precisionSelection}
                       unavailableLevels={unavailablePrecisionLevels}
                       onChange={(selection) => {
-                        setPrecisionNotice({ assetURL: manifest?.asset_url ?? null, message: '' })
-                        setPrecision({ assetURL: manifest?.asset_url ?? null, selection })
+                        setPrecisionNotice({ assetURL: displayManifest?.asset_url ?? null, message: '' })
+                        setPrecision({ assetURL: displayManifest?.asset_url ?? null, selection })
                       }}
                     />
                     <button
@@ -1592,15 +1687,15 @@ export function Viewer3D({
           {floatingPanel}
         </div>
       )}
-      {showEntityLegend && manifest && (
+      {showEntityLegend && displayManifest && (
         <div className="viewer-legend">
           <div className="viewer-legend-header">
             <span>Groups / Zones / Regions</span>
             <span className="viewer-hover-label">
-              {hoveredGroup ? `Hover: ${manifest.groups.find((g) => g.id === hoveredGroup)?.name ?? hoveredGroup}` : ''}
+              {hoveredGroup ? `Hover: ${displayManifest.groups.find((g) => g.id === hoveredGroup)?.name ?? hoveredGroup}` : ''}
             </span>
           </div>
-          {manifest.groups.map((g) => (
+          {displayManifest.groups.map((g) => (
             <div
               key={g.id}
                 className={`viewer-legend-item ${(selection?.groupIds ?? [selection?.groupId]).includes(g.id) ? 'selected' : ''} ${effectiveGroupVisibility[g.id] === false ? 'hidden' : ''}`}

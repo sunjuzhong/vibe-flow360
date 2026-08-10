@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -115,6 +115,37 @@ describe('Case surface visibility', () => {
       { id: 'boundaries', visible: true, entityIds: ['wall'] },
     ]
     expect(caseVisualizationGroupCounts(members, {})).toEqual({ total: 2, visible: 1 })
+  })
+})
+
+describe('Case archive layers', () => {
+  it('turns a prepared archive frame into independently selectable Viewer groups', () => {
+    const member = {
+      id: 'case-output:cylinder', name: 'Cylinder_surface', color: '#789521', visible: false,
+      entityIds: [], playbackKind: 'surfaces' as const, source: 'output' as const, path: ['surfaces'],
+    }
+    const frame = {
+      manifest_path: 'surface.manifest.json', preview_manifest_path: 'surface.preview.manifest.json',
+      vertices: 100, triangles: 80, preview_vertices: 50, preview_triangles: 40,
+      bounds: [[-1, -2, 0], [3, 2, 1]] as [[number, number, number], [number, number, number]],
+    }
+    expect(caseArchiveLayerFromEntries(member, '/surface.preview.manifest.json', frame, [
+      { id: 'piece-0', type: 'SolidGeometry', resources: { buffers: { sections: [
+        { name: 'position' }, { name: 'Cp' }, { name: 'velocity' },
+      ] } } },
+      { id: 'surface-face-0', name: 'Cylinder_surface', type: 'Face' },
+    ])).toMatchObject({
+      memberId: 'case-output:cylinder',
+      entityIds: ['archive:case-output:cylinder:surface-face-0'],
+      fields: ['Cp', 'velocity'],
+      manifest: {
+        asset_url: '/surface.preview.manifest.json',
+        elements: 40,
+        vertices: 50,
+        entity_id_prefix: 'archive:case-output:cylinder:',
+        groups: [{ id: 'archive:case-output:cylinder:surface-face-0', name: 'Cylinder_surface', visible: true }],
+      },
+    })
   })
 })
 

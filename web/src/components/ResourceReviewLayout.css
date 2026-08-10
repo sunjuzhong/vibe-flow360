@@ -566,6 +566,19 @@
   padding-left: 7px;
 }
 
+.case-surface-list .case-archive-entity-icon {
+  display: inline-flex;
+  width: 12px;
+  align-items: center;
+  justify-content: center;
+  color: #60777c;
+}
+
+.case-surface-list .archive-placeholder .geometry-entity-visibility:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
 .case-result-inventory {
   flex: 0 0 auto;
   border-top: 1px solid #e3e4dd;

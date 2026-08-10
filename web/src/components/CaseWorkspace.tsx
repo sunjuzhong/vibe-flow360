@@ -16,13 +16,14 @@ import {
   EyeOff,
   Info,
   Film,
+  LoaderCircle,
 } from 'lucide-react'
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
-import { api, type ResourceDetail } from '../api/client'
+import { api, type ResourceDetail, type SlicePlayerJob } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
-import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerSelection } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerManifest, type ViewerSelection } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
@@ -37,7 +38,7 @@ import {
 } from './ResourceReviewDialog'
 import { useI18n } from '../i18n'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, type CaseTimeSeriesArchiveKind } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, slicePlayerAssetURL, type CaseTimeSeriesArchiveKind, type SlicePlaybackFrame } from './CaseSlicePlayerPanel'
 import {
   createViewerContext,
   findLengthUnit,
@@ -163,6 +164,54 @@ export type CaseVisualizationMember = MeshGroupData & {
   entityIds: string[]
   playbackKind?: CaseTimeSeriesArchiveKind
   source: 'manifest' | 'output' | 'archive'
+}
+
+export type CaseArchiveLayer = {
+  memberId: string
+  manifest: ViewerManifest
+  entityIds: string[]
+  fields: string[]
+}
+
+type ArchiveManifestEntry = {
+  id?: unknown
+  name?: unknown
+  type?: unknown
+  resources?: { buffers?: { sections?: Array<{ name?: unknown }> } }
+}
+
+export function caseArchiveLayerFromEntries(
+  member: CaseVisualizationMember,
+  assetURL: string,
+  frame: NonNullable<NonNullable<SlicePlayerJob['report']>['playback']>['frames'][number],
+  entries: ArchiveManifestEntry[],
+): CaseArchiveLayer | null {
+  const faces = entries.filter((entry) => entry.type === 'Face' && typeof entry.id === 'string')
+  if (!faces.length) return null
+  const fields = [...new Set(entries.flatMap((entry) => entry.resources?.buffers?.sections ?? [])
+    .map((section) => String(section.name ?? ''))
+    .filter((name) => name && !['indices', 'position', 'normal', 'edgePosition'].includes(name)))]
+  const entityIDPrefix = `archive:${member.id}:`
+  const entityIds = faces.map((entry) => `${entityIDPrefix}${String(entry.id)}`)
+  return {
+    memberId: member.id,
+    entityIds,
+    fields,
+    manifest: {
+      asset_url: assetURL,
+      format: 'flow360-uvf',
+      entity_id_prefix: entityIDPrefix,
+      bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
+      groups: faces.map((entry, index) => ({
+        id: `${entityIDPrefix}${String(entry.id)}`,
+        name: faces.length === 1 ? member.name : `${member.name} ${index + 1}`,
+        color: member.color,
+        visible: true,
+      })),
+      vertices: frame.preview_vertices || frame.vertices,
+      elements: frame.preview_triangles || frame.triangles,
+    },
+  }
 }
 
 const caseVisualizationCategoryOrder: CaseVisualizationCategory[] = [
@@ -430,13 +479,17 @@ export default function CaseWorkspace({
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'convergence' | 'slices' | null>(null)
-  const [activePlayerArchive, setActivePlayerArchive] = useState<{ kind: CaseTimeSeriesArchiveKind; record: CaseResultRecord } | null>(null)
+  const [activePlayerArchive, setActivePlayerArchive] = useState<{ kind: CaseTimeSeriesArchiveKind; record: CaseResultRecord; memberId?: string } | null>(null)
+  const [archiveLayers, setArchiveLayers] = useState<Record<string, CaseArchiveLayer>>({})
+  const [archiveLayerLoading, setArchiveLayerLoading] = useState<string | null>(null)
+  const [archiveLayerError, setArchiveLayerError] = useState('')
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [selectedVisualizationId, setSelectedVisualizationId] = useState<string | null>(null)
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
+  const archiveLayerRequestRef = useRef<Record<string, number>>({})
   const [resultPreview, setResultPreview] = useState<{
     path: string
     content?: string
@@ -472,9 +525,27 @@ export default function CaseWorkspace({
     ),
     [detail?.simulation_params, detail?.summary, hasSurfaceArchive, sliceArchive],
   )
-  const visualizationGroups = useMemo(
+  const configuredVisualizationGroups = useMemo(
     () => caseVisualizationSections(surfaceGroups, Boolean(sliceArchive), configuredVisualizationMembers),
     [configuredVisualizationMembers, sliceArchive, surfaceGroups],
+  )
+  const visualizationGroups = useMemo(() => configuredVisualizationGroups.map((section) => ({
+    ...section,
+    members: section.members.map((member) => {
+      const layer = archiveLayers[member.id]
+      return layer ? {
+        ...member,
+        entityIds: layer.entityIds,
+        triangles: layer.manifest.elements,
+        vertices: layer.manifest.vertices,
+        visible: true,
+        source: 'archive' as const,
+      } : member
+    }),
+  })), [archiveLayers, configuredVisualizationGroups])
+  const archiveLayerManifests = useMemo(
+    () => Object.values(archiveLayers).map((layer) => layer.manifest),
+    [archiveLayers],
   )
   const selectedVisualizationObject = visualizationGroups
     .flatMap(({ members }) => members)
@@ -496,6 +567,12 @@ export default function CaseWorkspace({
   }, [manifest?.asset_url])
 
   useEffect(() => {
+    setArchiveLayers({})
+    setArchiveLayerLoading(null)
+    setArchiveLayerError('')
+  }, [resourceId, detail?.id])
+
+  useEffect(() => {
     const compatibleField = caseFieldForSelection(activeField, selectedFieldNames)
     if (compatibleField !== activeField) setActiveField(compatibleField)
   }, [activeField, selectedFieldNames])
@@ -507,6 +584,68 @@ export default function CaseWorkspace({
       return { ...current, ...Object.fromEntries(member.entityIds.map((entityId) => [entityId, !visible])) }
     })
   }
+
+  const installArchiveLayer = useCallback(async (member: CaseVisualizationMember, job: SlicePlayerJob, requestedFrame?: SlicePlaybackFrame) => {
+    const requestID = (archiveLayerRequestRef.current[member.id] ?? 0) + 1
+    archiveLayerRequestRef.current[member.id] = requestID
+    const frame = requestedFrame ?? job.report?.playback?.frames[0]
+    if (!job.report?.playback?.ready || !frame) throw new Error(t('No playable frame is available in this result archive.'))
+    const manifestPath = frame.preview_manifest_path || frame.manifest_path
+    const assetURL = slicePlayerAssetURL(resourceId ?? detail?.id ?? '', job.id, manifestPath)
+    const response = await fetch(assetURL)
+    if (!response.ok) throw new Error(t('The prepared result layer could not be loaded.'))
+    const entries = await response.json() as ArchiveManifestEntry[]
+    const layer = caseArchiveLayerFromEntries(member, assetURL, frame, entries)
+    if (!layer) throw new Error(t('The prepared result layer contains no selectable surfaces.'))
+    if (archiveLayerRequestRef.current[member.id] !== requestID) return
+    setArchiveLayers((current) => ({ ...current, [member.id]: layer }))
+    setEntityVisibility((current) => ({
+      ...current,
+      ...Object.fromEntries(layer.entityIds.map((entityId) => [entityId, true])),
+    }))
+    setSelectedVisualizationId(member.id)
+    setViewerSelection({ groupId: layer.entityIds[0] ?? null, groupIds: layer.entityIds })
+    setArchiveLayerError('')
+  }, [detail?.id, resourceId, t])
+
+  const activateArchiveMember = useCallback(async (member: CaseVisualizationMember) => {
+    setSelectedVisualizationId(member.id)
+    const loaded = archiveLayers[member.id]
+    if (loaded) {
+      setViewerSelection({ groupId: loaded.entityIds[0] ?? null, groupIds: loaded.entityIds })
+      return
+    }
+    if (!member.playbackKind) return
+    const archive = timeSeriesArchives.find(({ kind }) => kind === member.playbackKind)
+    if (!archive) return
+    setArchiveLayerLoading(member.id)
+    setArchiveLayerError('')
+    try {
+      const job = await api.latestSlicePlayer(resourceId ?? detail?.id ?? '', archive.record.path ?? `results/${member.playbackKind}.tar.gz`)
+      if (job.status === 'completed' && job.report?.playback?.ready) {
+        await installArchiveLayer(member, job)
+      } else {
+        setActivePlayerArchive({ kind: member.playbackKind, record: archive.record, memberId: member.id })
+        setActiveReviewDialog('slices')
+      }
+    } catch {
+      setActivePlayerArchive({ kind: member.playbackKind, record: archive.record, memberId: member.id })
+      setActiveReviewDialog('slices')
+    } finally {
+      setArchiveLayerLoading(null)
+    }
+  }, [archiveLayers, detail?.id, installArchiveLayer, resourceId, timeSeriesArchives])
+
+  const handleArchivePlaybackFrameChange = useCallback((job: SlicePlayerJob, frame: SlicePlaybackFrame) => {
+    const memberId = activePlayerArchive?.memberId
+    if (!memberId) return
+    const member = configuredVisualizationGroups
+      .flatMap(({ members }) => members)
+      .find((candidate) => candidate.id === memberId)
+    if (!member) return
+    void installArchiveLayer(member, job, frame)
+      .catch((cause) => setArchiveLayerError(cause instanceof Error ? cause.message : String(cause)))
+  }, [activePlayerArchive?.memberId, configuredVisualizationGroups, installArchiveLayer])
 
   const openTimeSeriesPlayer = (record: CaseResultRecord) => {
     const kind = timeSeriesArchiveKind(record)
@@ -619,17 +758,30 @@ export default function CaseWorkspace({
                     {members.map((group) => {
                       const visible = group.entityIds.some((entityId) => entityVisibility[entityId] ?? group.visible)
                       if (!group.entityIds.length) {
+                        const loadingLayer = archiveLayerLoading === group.id
                         return (
-                          <div className="case-result-row" key={group.id}>
-                            {group.playbackKind ? <Film size={11} /> : <CircleDashed size={11} />}
-                            <span>{group.source === 'archive' ? t(group.name) : group.name}</span>
-                            <span
-                              className="case-result-unavailable-visibility"
-                              title={t('Visualization output is not available in the 3D preview')}
-                              aria-label={t('Visualization output is not available in the 3D preview')}
+                          <div className={`geometry-entity-row archive-placeholder ${selectedVisualizationId === group.id ? 'selected' : ''}`} key={group.id}>
+                            <button
+                              type="button"
+                              className="geometry-entity-select"
+                              onClick={() => void activateArchiveMember(group)}
+                              title={t(group.playbackKind ? 'Load result layer into the 3D view' : 'Select visualization object')}
                             >
-                              <EyeOff size={13} aria-hidden="true" />
-                            </span>
+                              <span className="case-archive-entity-icon">{group.playbackKind ? <Film size={11} /> : <CircleDashed size={11} />}</span>
+                              <span>{group.source === 'archive' ? t(group.name) : group.name}</span>
+                              <small>{group.playbackKind ? t('Result archive layer') : t('Unavailable')}</small>
+                            </button>
+                            <button
+                              type="button"
+                              className="geometry-entity-visibility"
+                              disabled={!group.playbackKind || loadingLayer}
+                              onClick={() => void activateArchiveMember(group)}
+                              title={t(group.playbackKind ? 'Load result layer into the 3D view' : 'Visualization output is not available in the 3D preview')}
+                              aria-label={t(group.playbackKind ? 'Load result layer into the 3D view' : 'Visualization output is not available in the 3D preview')}
+                              aria-pressed={false}
+                            >
+                              {loadingLayer ? <LoaderCircle className="spin" size={13} /> : <EyeOff size={13} />}
+                            </button>
                           </div>
                         )
                       }
@@ -637,7 +789,7 @@ export default function CaseWorkspace({
                         <div className={`geometry-entity-row ${selectedVisualizationId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
                           <button type="button" className="geometry-entity-select" onClick={() => {
                             setSelectedVisualizationId(group.id)
-                            setViewerSelection({ groupId: group.entityIds[0] ?? null })
+                            setViewerSelection({ groupId: group.entityIds[0] ?? null, groupIds: group.entityIds })
                           }} title={t('Select visualization object')}>
                             <span className="viewer-color-swatch" style={{ background: group.color }} />
                             <span>{group.name}</span>
@@ -662,6 +814,7 @@ export default function CaseWorkspace({
             {visualizationGroups.length === 0 && (
               <div className="geometry-empty-list">{t('No visualization objects were reported by the asset.')}</div>
             )}
+            {archiveLayerError && <div className="slice-player-error" role="alert"><AlertCircle size={13} />{archiveLayerError}</div>}
           </div>
           <div className="case-result-inventory">
             <ManifestMemberGroup
@@ -720,6 +873,8 @@ export default function CaseWorkspace({
         <>
           <LazyViewer3D
             manifest={manifest}
+            additionalManifests={archiveLayerManifests}
+            preserveCameraOnAssetChange
             state={viewerState}
             selection={viewerSelection}
             onSelectionChange={handleViewerSelection}
@@ -883,6 +1038,7 @@ export default function CaseWorkspace({
                 resultPath={activePlayerArchive.record.path ?? `results/${activePlayerArchive.kind}.tar.gz`}
                 archiveKind={activePlayerArchive.kind}
                 sizeBytes={activePlayerArchive.record.size_bytes}
+                onPlaybackFrameChange={handleArchivePlaybackFrameChange}
               />
             </ResourceReviewDialog>
           )}

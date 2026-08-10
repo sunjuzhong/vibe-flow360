@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -58,5 +58,7 @@ describe('CaseSlicePlayerPanel', () => {
       triangles: 1,
       bounds: [[0, 0, 0], [1, 1, 1]],
     })).toBe('/api/flow360/resources/Case/case%2F1/slice-player/jobs/job%201/assets/slice%20frame/1.manifest.json')
+    expect(slicePlayerAssetURL('case/1', 'job 1', 'surface frame/1.preview.manifest.json'))
+      .toBe('/api/flow360/resources/Case/case%2F1/slice-player/jobs/job%201/assets/surface%20frame/1.preview.manifest.json')
   })
 })

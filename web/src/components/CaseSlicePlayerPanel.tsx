@@ -40,7 +40,7 @@ function stageLabel(stage: string) {
   }
 }
 
-type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report']>['playback']>['frames'][number]
+export type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report']>['playback']>['frames'][number]
 
 export const SLICE_PLAYBACK_FPS_OPTIONS = [1, 2, 5, 10, 15, 20, 24, 30] as const
 
@@ -52,7 +52,10 @@ export function slicePlaybackPrefetchIndices(current: number, frameCount: number
 }
 
 export function sliceFrameAssetURL(caseId: string, jobId: string, frame: SlicePlaybackFrame) {
-  const manifestPath = selectPlaybackAsset(frame).manifestPath
+  return slicePlayerAssetURL(caseId, jobId, selectPlaybackAsset(frame).manifestPath)
+}
+
+export function slicePlayerAssetURL(caseId: string, jobId: string, manifestPath: string) {
   const assetPath = manifestPath.split('/').map(encodeURIComponent).join('/')
   return `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(jobId)}/assets/${assetPath}`
 }
@@ -69,7 +72,12 @@ export function sliceFieldPanelVisible(playing: boolean) {
   return !playing
 }
 
-function SlicePlayback({ caseId, job, archiveKind }: { caseId: string; job: SlicePlayerJob; archiveKind: CaseTimeSeriesArchiveKind }) {
+function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
+  caseId: string
+  job: SlicePlayerJob
+  archiveKind: CaseTimeSeriesArchiveKind
+  onFrameChange?: (job: SlicePlayerJob, frame: SlicePlaybackFrame) => void
+}) {
   const { t } = useI18n()
   const playback = job.report?.playback
   const [frameIndex, setFrameIndex] = useState(0)
@@ -79,6 +87,10 @@ function SlicePlayback({ caseId, job, archiveKind }: { caseId: string; job: Slic
   const assetCache = useMemo(() => new UVFAssetLRU(5), [])
   const frameReadyRef = useRef(false)
   const frame = playback?.frames[frameIndex]
+
+  useEffect(() => {
+    if (frame && !playing) onFrameChange?.(job, frame)
+  }, [frame, job.id, onFrameChange, playing])
 
   useEffect(() => () => assetCache.dispose(), [assetCache])
 
@@ -160,11 +172,13 @@ export default function CaseSlicePlayerPanel({
   resultPath,
   archiveKind,
   sizeBytes = 0,
+  onPlaybackFrameChange,
 }: {
   caseId: string
   resultPath: string
   archiveKind: CaseTimeSeriesArchiveKind
   sizeBytes?: number
+  onPlaybackFrameChange?: (job: SlicePlayerJob, frame: SlicePlaybackFrame) => void
 }) {
   const { t } = useI18n()
   const [job, setJob] = useState<SlicePlayerJob | null>(null)
@@ -221,12 +235,12 @@ export default function CaseSlicePlayerPanel({
     }
   }
 
+  const running = job?.status === 'queued' || job?.status === 'running'
+  const completed = job?.status === 'completed' && job.report?.index_ready
+
   if (loading) {
     return <div className="slice-player-state" role="status"><LoaderCircle className="spin" size={18} />{t('Reading time-series player state…')}</div>
   }
-
-  const running = job?.status === 'queued' || job?.status === 'running'
-  const completed = job?.status === 'completed' && job.report?.index_ready
   return (
     <div className="slice-player-panel">
       <section className="slice-player-source">
@@ -258,7 +272,7 @@ export default function CaseSlicePlayerPanel({
 
       {completed && job?.report && (
         <>
-          {job.report.playback?.ready && <SlicePlayback caseId={caseId} job={job} archiveKind={archiveKind} />}
+          {job.report.playback?.ready && <SlicePlayback caseId={caseId} job={job} archiveKind={archiveKind} onFrameChange={onPlaybackFrameChange} />}
           <section className="slice-player-ready" role="status">
             <CheckCircle2 size={18} />
             <span><strong>{t(indexedTitle(archiveKind))}</strong><small>{t('The frame index is cached and can be reused without downloading the archive again.')}</small></span>
