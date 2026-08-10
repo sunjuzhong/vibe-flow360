@@ -4,6 +4,7 @@ import { localeOptions } from './locales'
 import { hasTranslation, translate } from './translations'
 import { t04Evidence, t04ParameterCards, t04Steps, validateT04Setup, t04Params, t04Pedagogy } from '../tutorials/t04'
 import { t01Evidence, t01ParameterCards, t01Steps, t01ParamsForAlpha, t01Pedagogy, validateT01Setup } from '../tutorials/t01'
+import { t02Evidence, t02ParameterCards, t02Steps, t02Params, t02Pedagogy, validateT02Setup } from '../tutorials/t02'
 import { t03Evidence, t03ParameterCards, t03Steps, t03Params, t03Pedagogy, validateT03Setup } from '../tutorials/t03'
 import { t05Evidence, t05ParameterCards, t05Steps, t05Params, t05Pedagogy, validateT05Setup } from '../tutorials/t05'
 import { t06Evidence, t06ParameterCards, t06Steps, t06Params, t06Pedagogy, validateT06Setup } from '../tutorials/t06'
@@ -165,6 +166,12 @@ describe('language settings', () => {
       ...validateT01Setup(t01ParamsForAlpha(0)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT01Setup(t01ParamsForAlpha(5)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t01Pedagogy),
+      ...t02Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t02ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t02Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT02Setup(t02Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT02Setup(t02Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t02Pedagogy),
       ...t03Steps.flatMap(({ title, summary }) => [title, summary]),
       ...t03ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
       ...t03Evidence.flatMap(({ title, detail }) => [title, detail]),
@@ -203,6 +210,22 @@ describe('language settings', () => {
       'Focused wake corridor',
       'Both Draft entity catalogs and VolumeMesh parameter sets are synced. No surface or volume mesh computation has been submitted.',
       'The bundled T05 parameters contain an unregistered Draft entity or invalid refinement relationship.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T02 environment builder in Chinese', () => {
+    const messages = [
+      'OPERATING CONDITIONS',
+      'WIND-TUNNEL SIMILARITY',
+      'Build the T02 wind-tunnel experiment',
+      'The app uploads the bundled aircraft CAD and creates Mach-only and Mach-plus-Reynolds Case Drafts with complete parameters.',
+      'Mach 0.18, alpha 4°, 288.15 K, 2.4 m chord, ambient and Reynolds-matched densities',
+      'Mach only · Re 10.1M',
+      'Mach + Reynolds · Re 6.0M',
+      'Both Case Draft parameter sets are synced. No surface mesh, volume mesh, or solver Case has been submitted.',
+      'Create Project + 2 Case Drafts',
+      'Tutorial T02 · wind-tunnel similarity',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

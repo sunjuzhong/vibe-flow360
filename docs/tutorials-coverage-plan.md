@@ -60,6 +60,7 @@ Tutorials 是 Vibe Flow360 中相对独立的学习与示范模块。它不是�
 | ID | 完整工程意图 | 主要功能点 | 官方素材 | 状态 |
 |---|---|---|---|---|
 | T01 | 从一份飞机 CAD 得到第一组可信的升阻力结果 | units、entity grouping、`ReferenceGeometry`、`AerospaceCondition`、自动远场、Wall/Freestream、surface force fields、Geometry→Case 全链路 | `getting_started/quick_start.py` | adapt |
+| T02 | 在仿真与风洞之间同时匹配 Mach 和 Reynolds 数 | `ThermalState`、`AerospaceCondition.from_mach` / `from_mach_reynolds`、项目长度单位、速度/密度/动压推导、受控工况对比 | T01 内置飞机 CAD 与 `2D_crm.py` / `2D_gaw2.py` 的工况构造方式 | compose |
 | T03 | 为三维圆柱建立曲率敏感且包含边界层的外流网格 | `MeshingDefaults`、曲率、增长率、首层厚度、`SurfaceRefinement`、`BoundaryLayer`、表面网格检查 | `basic_simulations/steady/steady_3D_cylinder.py` | adapt |
 | T04 | 捕捉翼型前缘、尾缘和缝翼间隙 | `GeometryRefinement`、`SurfaceEdgeRefinement`、Angle/Height/AspectRatio refinement、ProjectAnisoSpacing、PassiveSpacing | `advanced_simulations/aerodynamics/airfoils/2D_30p30n.py` | compose |
 | T05 | 在尾流、激波或关注区域布置体网格加密 | `UniformRefinement`、`StructuredBoxRefinement`、`AxisymmetricRefinement`、octree spacing、volume defaults、mesh slice output | CRM/GAW2 与 rotorcraft examples | compose |
@@ -73,7 +74,6 @@ Tutorials 是 Vibe Flow360 中相对独立的学习与示范模块。它不是�
 
 | ID | 完整工程意图 | 主要功能点 | 官方素材 | 状态 |
 |---|---|---|---|---|
-| T11 | 在给定高度、Mach 和 Reynolds 数下计算翼型性能 | `ThermalState`、standard atmosphere、`AerospaceCondition` constructors、alpha/beta、reference condition | `advanced_simulations/aerodynamics/airfoils/2D_crm.py`、`2D_gaw2.py` | adapt |
 | T12 | 计算低速液体流动及重力影响 | `LiquidOperatingCondition`、Water、密度/黏度、`Gravity`、低 Mach 数处理 | 暂无完整官方 tutorial | new |
 | T13 | 计算高温可压缩混合气或组分输运 | Gas、`ThermallyPerfectGas`、NASA9、Sutherland、FrozenSpecies、Species、`SpeciesTransportModel` | 暂无完整官方 tutorial | new |
 | T14 | 用圆柱案例比较层流、SA 与 k-omega SST | `Fluid`、None/SpalartAllmaras/KOmegaSST、turbulence quantities、model constants、solver tolerances | steady/unsteady cylinder、airfoil examples | compose |
@@ -175,7 +175,7 @@ features:
 | 阶段 | 内容 | 交付结果 |
 |---|---|---|
 | P0 覆盖基线 | 固定目标 Flow360 版本；导出 public feature registry；将本表拆成机器可读 manifest | 能准确列出 missing，而不是主观声称全覆盖 |
-| P1 黄金路径 | T01、T03、T07、T11、T19、T28、T33、T40 | 外流、内流、网格、运行、结果和报告形成第一个完整闭环 |
+| P1 黄金路径 | T01、T02、T03、T07、T19、T28、T33、T40 | 外流、工况相似性、内流、网格、运行、结果和报告形成第一个完整闭环；原 T11 的基础工况范围已前移到 T02 |
 | P2 核心物理 | T14–T18、T20–T26、T29 | 湍流、边界、CHT、旋转、BET、非定常主能力覆盖 |
 | P3 高级结果 | T31–T39、T41、T43 | UDD/UDF、全部输出族、sweep、fork 与可信度教学 |
 | P4 缺口专篇 | T12、T13、T22、T23、T27、T30、T39 | 为官方现有 examples 未充分覆盖的 schema 功能创建新场景 |

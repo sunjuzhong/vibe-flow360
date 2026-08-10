@@ -23,6 +23,7 @@ import TopBar from '../components/TopBar'
 import TutorialEnvironmentBuilder from '../components/TutorialEnvironmentBuilder'
 import { TutorialConceptBridge, TutorialDerivations, TutorialEvidenceRubric, TutorialFailureModes, TutorialPrediction, TutorialTransferCheck } from '../components/TutorialTeachingBlocks'
 import T03TutorialPage from './T03TutorialPage'
+import T02TutorialPage from './T02TutorialPage'
 import T04TutorialPage from './T04TutorialPage'
 import T05TutorialPage from './T05TutorialPage'
 import T06TutorialPage from './T06TutorialPage'
@@ -75,6 +76,7 @@ function downloadJSON(params: Record<string, unknown>, alpha: number) {
 
 export default function TutorialPage() {
   const { tutorialId = '' } = useParams()
+  if (tutorialId.toUpperCase() === 'T02') return <T02TutorialPage />
   if (tutorialId.toUpperCase() === 'T03') return <T03TutorialPage />
   if (tutorialId.toUpperCase() === 'T04') return <T04TutorialPage />
   if (tutorialId.toUpperCase() === 'T05') return <T05TutorialPage />

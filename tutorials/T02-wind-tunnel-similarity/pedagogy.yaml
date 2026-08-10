@@ -1,0 +1,104 @@
+schema_version: 2
+audience: Beginners who can identify velocity and density but have not used nondimensional similarity to reproduce an aerodynamic experiment.
+prerequisites:
+  - Know that aerodynamic forces depend on the flow condition as well as the geometry.
+  - Recognize chord as the reference length used for this comparison.
+learning_objectives:
+  - id: distinguish-mach-reynolds
+    objective: Explain why matching Mach number fixes compressibility similarity but does not by itself match viscous Reynolds-number effects.
+    assessment: Calculate both Mach and chord Reynolds number for a proposed wind-tunnel condition and identify a mismatch.
+  - id: map-condition-constructors
+    objective: Choose the appropriate Flow360 AerospaceCondition constructor and interpret its generated velocity and ThermalState fields.
+    assessment: Distinguish from_mach from from_mach_reynolds in the serialized SimulationParams and explain the density change.
+  - id: judge-similarity-evidence
+    objective: Judge whether geometry scale, Mach, Reynolds number, temperature, and reference conventions support comparison with target data.
+    assessment: Apply the operating-condition evidence rubric before accepting a coefficient comparison.
+concepts:
+  cfd:
+    - id: compressibility-similarity
+      title: Mach number controls compressibility similarity
+      explanation: Mach number is velocity divided by local speed of sound, so equal Mach at equal gas temperature gives equal velocity relative to acoustic propagation.
+      misconception: Equal velocity is not equal Mach when gas temperature or composition changes the speed of sound.
+    - id: viscous-similarity
+      title: Reynolds number controls the inertia-to-viscosity ratio
+      explanation: Reynolds number rho V L divided by mu affects boundary-layer thickness, transition, separation, skin friction, and therefore aerodynamic coefficients.
+      misconception: Matching Mach and angle of attack does not match Reynolds number when density, viscosity, or reference length differs.
+  flow360:
+    - id: aerospace-constructors
+      title: AerospaceCondition constructors preserve the engineering inputs
+      explanation: from_mach derives velocity from Mach and ThermalState, while from_mach_reynolds also derives a density that satisfies reynolds_mesh_unit for the project length unit.
+      misconception: reynolds_mesh_unit is Reynolds number per project mesh unit, not automatically the Reynolds number based on aircraft chord.
+    - id: thermal-state
+      title: ThermalState supplies density, temperature, and air properties
+      explanation: Flow360 serializes the derived velocity and complete ThermalState so the solver receives consistent density, viscosity model, and thermodynamic properties.
+      misconception: The same temperature does not require the same density because a pressurized or reduced-pressure tunnel can change density independently.
+parameter_derivations:
+  - id: velocity-from-mach
+    parameter: Mach-derived velocity
+    basis: At 288.15 K, air has a speed of sound near 340.29 metres per second.
+    calculation: V = M a = 0.18 x 340.29 = 61.25 m/s
+    transfer: Recalculate speed of sound and velocity whenever temperature or gas composition changes.
+  - id: reynolds-per-mesh-unit
+    parameter: reynolds_mesh_unit
+    basis: The target chord Reynolds number must be divided by the 2.4 m chord because the project mesh unit is one metre.
+    calculation: Re_mesh = Re_chord / L_chord = 6.0e6 / 2.4 = 2.5e6 per m
+    transfer: Divide the target Reynolds number by the reference length expressed in project length units.
+  - id: matched-density
+    parameter: Reynolds-matched density
+    basis: With Mach, temperature, viscosity, velocity, and chord fixed, density is the remaining wind-tunnel control.
+    calculation: rho = Re mu / (V L) = 6.0e6 x 1.789e-5 / (61.25 x 2.4) = 0.730 kg/m^3
+    transfer: Solve the Reynolds relation for the quantity the facility can control, then verify the resulting pressure and dynamic pressure are feasible.
+  - id: dynamic-pressure
+    parameter: Dynamic pressure
+    basis: Dimensional force scales with one-half density times velocity squared even when coefficients are reported.
+    calculation: q_ambient = 2298 Pa; q_matched = 1370 Pa; ratio = 0.596
+    transfer: Recalculate dimensional load limits whenever density or velocity changes, even if the coefficient target remains unchanged.
+experiments:
+  - id: match-reynolds
+    prediction: What changes when density is reduced to match Reynolds number while Mach, temperature, alpha, and geometry remain fixed?
+    options: [Velocity stays fixed while dynamic pressure and Reynolds number decrease, Velocity must double and Mach changes]
+    controlled_variable: The variant changes the AerospaceCondition constructor and derived density; Mach, temperature, alpha, beta, geometry, models, mesh, and outputs remain fixed.
+    observation: Compare serialized velocity, density, chord Reynolds number, dynamic pressure, yPlus, CL, CD, and dimensional forces using matched review windows.
+failure_modes:
+  - id: mesh-unit-versus-chord
+    symptom: The requested Reynolds number is 2.4 times larger than the intended chord Reynolds number.
+    cause: Six million was passed directly as reynolds_mesh_unit even though the reference chord spans 2.4 project length units.
+    correction: Divide target chord Reynolds number by chord length in project units and store 2.5 million per metre.
+  - id: mach-only-match
+    symptom: Mach and alpha match the experiment but separation or drag differs systematically.
+    cause: Ambient density produces chord Reynolds number near ten million instead of the six-million target.
+    correction: Use from_mach_reynolds or otherwise reproduce a feasible thermal state that matches both nondimensional groups.
+  - id: coefficient-reference-mismatch
+    symptom: CL or CD differs by a constant scale even though dimensional forces and flow fields appear coherent.
+    cause: Reference area, length, or coefficient convention differs between Flow360 and the experiment.
+    correction: Align reference geometry and force conventions before changing turbulence, numerics, or mesh settings.
+  - id: stale-wall-resolution
+    symptom: The matched-density Case shows a different yPlus range on the same first-layer mesh.
+    cause: Wall-unit spacing depends on density, viscosity, velocity, and wall shear, all of which participate in the operating condition.
+    correction: Recalculate the first-layer target and review actual yPlus before accepting the coefficient comparison.
+evidence_rubric:
+  - id: geometry-scale
+    observation: Geometry scale and reference convention
+    pass: Project units, 2.4 m reference length, 24 m2 area, and target-data conventions agree.
+    fail: Any scale or normalization convention is missing, inconsistent, or inferred from appearance alone.
+  - id: nondimensional-groups
+    observation: Mach and chord Reynolds number
+    pass: Serialized Mach is 0.18 and rho V L divided by mu reproduces six million for the matched Draft.
+    fail: Only velocity or Mach is checked, or reynolds_mesh_unit is mistaken for chord Reynolds number.
+  - id: thermal-consistency
+    observation: ThermalState consistency
+    pass: Temperature, density, viscosity model, Mach-derived velocity, and dynamic pressure form one feasible condition.
+    fail: Values were edited independently into a thermodynamically or facility-infeasible combination.
+  - id: controlled-comparison
+    observation: Controlled Draft difference
+    pass: Constructor inputs and derived density are the only operating-condition differences; geometry, alpha, models, mesh, and outputs match.
+    fail: Geometry, reference values, mesh, models, or review windows also change.
+  - id: result-evidence
+    observation: Coefficient and wall-resolution evidence
+    pass: CL, CD, Cp, yPlus, residuals, and force histories support comparison over matched stable windows.
+    fail: A final coefficient is compared without convergence, surface-field, or wall-resolution evidence.
+transfer_questions:
+  - prompt: What happens to the target reynolds_mesh_unit if the same six-million experiment uses a 1.5 m chord in a metre-based Project?
+    expected: Divide six million by 1.5, giving four million per project metre before calling from_mach_reynolds.
+  - prompt: Why can two Cases with identical Mach and Reynolds number still fail to reproduce the same aerodynamic coefficients?
+    expected: Geometry, roughness, transition, turbulence modeling, boundary conditions, reference conventions, or unsteady behavior may still differ.

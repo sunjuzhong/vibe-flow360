@@ -1,0 +1,23 @@
+schema_version: 1
+criteria:
+  - id: mach-baseline-valid
+    category: provenance
+    description: The Mach-only baseline passes Geometry-to-Case validation with Flow360 25.10.3.
+    artifact: simulation.json
+    required: true
+    check: {method: present, metric: flow360.validation.case}
+  - id: ambient-condition-calculated
+    category: convergence
+    description: Mach 0.18 at 288.15 K produces 61.25 m/s and an ambient chord Reynolds number near ten million.
+    artifact: operating-condition calculation
+    required: true
+    check: {method: manual, metric: condition.ambient.calculation}
+  - id: comparison-contract-reviewed
+    category: force
+    description: Geometry scale, coefficient references, convergence windows, force histories, Cp, and yPlus checks are fixed before comparison.
+    artifact: comparison review
+    required: true
+    check: {method: manual, metric: result.similarity.contract}
+limitations:
+  - No mesh or solver Case is submitted by environment creation.
+  - Matching Mach and Reynolds number does not resolve transition-model, roughness, or tunnel-wall differences.

@@ -1,0 +1,38 @@
+schema_version: 2
+id: T02
+slug: wind-tunnel-similarity
+title: Match Mach and Reynolds number before comparing aerodynamics
+summary: Reproduce a wind-tunnel condition by deriving velocity, density, dynamic pressure, and Reynolds scaling from the same aircraft geometry.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:AerospaceCondition', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AerospaceCondition.private_attribute_constructor', section: variants, artifact: variants/match-reynolds.patch.json}
+  - {feature: 'schema:field:AerospaceCondition.private_attribute_input_cache', section: variants, artifact: variants/match-reynolds.patch.json}
+  - {feature: 'schema:field:AerospaceCondition.velocity_magnitude', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AerospaceCondition.velocity_magnitude.value', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:type:ThermalState', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ThermalState.temperature', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:ThermalState.density', section: variants, artifact: variants/match-reynolds.patch.json}
+  - {feature: 'schema:type:Air', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AerospaceConditionCache.mach', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:AerospaceConditionCache.reynolds_mesh_unit', section: variants, artifact: variants/match-reynolds.patch.json}
+  - {feature: 'schema:field:AerospaceConditionCache.project_length_unit', section: variants, artifact: variants/match-reynolds.patch.json}
+variants:
+  - id: match-reynolds
+    title: Match the six-million chord Reynolds number
+    patch: variants/match-reynolds.patch.json
+    evidence: variants/match-reynolds.evidence.yaml

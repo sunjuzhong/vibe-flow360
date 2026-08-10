@@ -1,0 +1,16 @@
+schema_version: 1
+criteria:
+  - id: reynolds-variant-valid
+    category: provenance
+    description: The Reynolds-matched merge patch passes Geometry-to-Case validation with Flow360 25.10.3.
+    artifact: variants/match-reynolds.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.case}
+  - id: target-reynolds-reproduced
+    category: convergence
+    description: The serialized 0.730 kg/m3 density reproduces chord Reynolds number six million at the unchanged 61.25 m/s velocity.
+    artifact: operating-condition calculation
+    required: true
+    check: {method: manual, metric: condition.reynolds.target}
+limitations:
+  - The lower density changes dynamic pressure and wall-unit spacing as well as Reynolds number.

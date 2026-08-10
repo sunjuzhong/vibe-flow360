@@ -45,6 +45,20 @@ mappings:
     status: planned
     selector:
       owners: [SimulationParams, UnitSystemConfig, ReferenceGeometry, CoordinateSystem, CoordinateSystemAssignmentGroup, CoordinateSystemParent, EntitySelector, Predicate, GeometryBodyGroup, MirrorPlane, MirroredGeometryBodyGroup, MirroredSurface, Surface]
+  - tutorial: T02
+    section: baseline
+    status: verified
+    artifact: tutorials/T02-wind-tunnel-similarity/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:(Air|AerospaceCondition|ThermalState)|field:AerospaceCondition\.(velocity_magnitude|velocity_magnitude\.value)|field:ThermalState\.temperature|field:AerospaceConditionCache\.mach)$'
+  - tutorial: T02
+    section: reynolds-matched-variant
+    status: verified
+    artifact: tutorials/T02-wind-tunnel-similarity/variants/match-reynolds.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(field:AerospaceCondition\.(private_attribute_constructor|private_attribute_input_cache)|field:ThermalState\.density|field:AerospaceConditionCache\.(reynolds_mesh_unit|project_length_unit))$'
   - tutorial: T03
     section: baseline
     status: verified
@@ -139,8 +153,8 @@ mappings:
     status: planned
     selector:
       owners: [BodyRefinement, CastellatedMeshControls, ModularMeshingWorkflow, QualityMetrics, RegionRefinement, SmoothControls, SnapControls, SurfaceMeshingDefaults, SurfaceMeshingParams, flow360_schema__models__simulation__meshing_param__snappy__snappy_mesh_refinements__SurfaceEdgeRefinement]
-  - tutorial: T11
-    section: baseline
+  - tutorial: T02
+    section: future-operating-condition-branches
     status: planned
     selector:
       owners: [Air, AerospaceCondition, GenericReferenceCondition, Mach, Temperature, ThermalState]

@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Box, CheckCircle2, CircleDot, Clock3, Plane, ShieldCheck, Target, Waypoints } from 'lucide-react'
+import { ArrowRight, BookOpen, Box, CheckCircle2, CircleDot, Clock3, Gauge, Plane, ShieldCheck, Target, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>5 available</span>
+          <span>6 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -51,6 +51,10 @@ export default function TutorialLibraryPage() {
               </div>
               <span className="tutorial-start">Start tutorial <ArrowRight size={15} /></span>
             </div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T02">
+            <div className="tutorial-card-visual airfoil-card-visual"><Gauge size={52} strokeWidth={1.1}/><span className="tutorial-id">T02</span><span className="tutorial-level">OPERATING CONDITIONS</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">WIND-TUNNEL SIMILARITY</p><h2>Match Mach and Reynolds number</h2><p>Derive velocity, density, and dynamic pressure, then compare a Mach-only condition with the Reynolds-matched experiment.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 18–22 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
           <Link className="tutorial-card" to="/tutorials/T03">
             <div className="tutorial-card-visual mesh-card-visual">
