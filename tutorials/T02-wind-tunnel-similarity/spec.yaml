@@ -1,0 +1,19 @@
+schema_version: 1
+scenario: aircraft-wind-tunnel-similarity
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  reference_length: {value: 2.4, unit: m, provenance: provided}
+  mach: {value: 0.18, provenance: provided}
+  alpha: {value: 4, unit: degree, provenance: provided}
+  temperature: {value: 288.15, unit: K, provenance: provided}
+  target_chord_reynolds: {value: 6000000, provenance: provided}
+  target_reynolds_mesh_unit: {value: 2500000, provenance: derived}
+  velocity: {value: 61.2529, unit: m/s, provenance: derived}
+  ambient_density: {value: 1.225, unit: kg/m^3, provenance: provided}
+  matched_density: {value: 0.730291, unit: kg/m^3, provenance: derived}
+review_required:
+  - Confirm the 2.4 m reference length is the chord convention used by the target data.
+  - Confirm Flow360 serializes the same Mach-derived velocity for both Drafts.
+  - Confirm only the thermal density and constructor inputs change in the controlled variant.
+  - Recalculate first-layer requirements and dimensional loads after changing density.

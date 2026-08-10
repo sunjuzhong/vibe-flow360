@@ -1,0 +1,23 @@
+{
+  "operating_condition": {
+    "private_attribute_constructor": "from_mach_reynolds",
+    "private_attribute_input_cache": {
+      "project_length_unit": {
+        "units": "m",
+        "value": 1.0
+      },
+      "reynolds_mesh_unit": 2500000.0,
+      "temperature": {
+        "units": "K",
+        "value": 288.15
+      },
+      "thermal_state": null
+    },
+    "thermal_state": {
+      "density": {
+        "units": "Pa*s**2/m**2",
+        "value": 0.730290733688675
+      }
+    }
+  }
+}

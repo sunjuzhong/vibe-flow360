@@ -1,0 +1,16 @@
+schema_version: 1
+engineering_question: Reproduce a Mach 0.18 wind-tunnel measurement on the bundled aircraft without confusing velocity matching with Reynolds-number similarity.
+decision: Choose the Reynolds-matched thermal state before comparing aerodynamic coefficients with the target experiment.
+inputs:
+  geometry: Bundled T01 aircraft CAD
+  geometry_unit: m
+  reference_length: 2.4 m
+  mach: 0.18
+  angle_of_attack: 4 degrees
+  temperature: 288.15 K
+  target_chord_reynolds: 6000000
+deliverables:
+  - An ambient-density baseline that matches Mach but produces a chord Reynolds number near ten million
+  - A density-adjusted variant that matches Mach 0.18 and chord Reynolds number six million
+  - A calculation chain for velocity, viscosity, density, and dynamic pressure
+  - Two configured Case Drafts created from the bundled Geometry Project
