@@ -3,6 +3,7 @@ import { Box } from 'lucide-react'
 import { describe, expect, it, vi } from 'vitest'
 import {
   ManifestMemberGroup,
+  manifestMemberGroupVisibility,
   manifestVisibilityMap,
   visibleManifestMemberCount,
 } from './ManifestMemberGroup'
@@ -22,6 +23,10 @@ describe('ManifestMemberGroup', () => {
     })
     expect(visibleManifestMemberCount(members, {})).toBe(2)
     expect(visibleManifestMemberCount(members, { farfield: true, symmetry: false })).toBe(2)
+    expect(manifestMemberGroupVisibility(0, 0)).toBe('empty')
+    expect(manifestMemberGroupVisibility(3, 0)).toBe('hidden')
+    expect(manifestMemberGroupVisibility(3, 1)).toBe('visible')
+    expect(manifestMemberGroupVisibility(3, 3)).toBe('visible')
   })
 
   it('renders a consistent one-row header with one contextual visibility action', () => {
@@ -44,6 +49,10 @@ describe('ManifestMemberGroup', () => {
     expect(markup).toContain('title="2/3 visible"')
     expect(markup).toContain('>2/3</span>')
     expect(markup).toContain('aria-label="Hide all surfaces"')
+    expect(markup).toContain('aria-pressed="true"')
+    expect(markup).toContain('data-visibility-state="visible"')
+    expect(markup).toContain('lucide-eye"')
+    expect(markup).not.toContain('lucide-eye-off')
     expect(markup).not.toContain('aria-label="Show all surfaces"')
     expect(markup).toContain('members stay mounted')
   })
@@ -78,6 +87,9 @@ describe('ManifestMemberGroup', () => {
       </ManifestMemberGroup>,
     )
     expect(hiddenMarkup).toContain('aria-label="Show all surfaces"')
+    expect(hiddenMarkup).toContain('aria-pressed="false"')
+    expect(hiddenMarkup).toContain('data-visibility-state="hidden"')
+    expect(hiddenMarkup).toContain('lucide-eye-off')
     expect(hiddenMarkup).not.toContain('aria-label="Hide all surfaces"')
     expect(hiddenMarkup).not.toMatch(/aria-label="Show all surfaces"[^>]*disabled=""/)
   })

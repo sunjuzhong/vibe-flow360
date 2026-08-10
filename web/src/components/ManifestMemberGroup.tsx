@@ -21,6 +21,16 @@ export function visibleManifestMemberCount<T extends ManifestMember>(
   return members.filter((member) => visibility[member.id] ?? member.visible ?? defaultVisible).length
 }
 
+export type ManifestMemberGroupVisibility = 'empty' | 'hidden' | 'visible'
+
+export function manifestMemberGroupVisibility(
+  total: number,
+  visibleCount: number,
+): ManifestMemberGroupVisibility {
+  if (total <= 0) return 'empty'
+  return visibleCount > 0 ? 'visible' : 'hidden'
+}
+
 export function ManifestMemberGroup({
   label,
   memberLabel,
@@ -46,8 +56,12 @@ export function ManifestMemberGroup({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const contentId = useId()
-  const bulkAction = visibleCount > 0 ? 'Hide' : 'Show'
-  const BulkIcon = visibleCount > 0 ? EyeOff : Eye
+  const visibilityState = manifestMemberGroupVisibility(total, visibleCount)
+  const hasVisibleMembers = visibilityState === 'visible'
+  const bulkAction = hasVisibleMembers ? 'Hide' : 'Show'
+  // The icon communicates the current aggregate state; the accessible label
+  // communicates the action that clicking it will perform.
+  const VisibilityIcon = hasVisibleMembers ? Eye : EyeOff
 
   return (
     <section className="manifest-member-group">
@@ -73,10 +87,12 @@ export function ManifestMemberGroup({
             className="manifest-member-group__visibility"
             aria-label={`${bulkAction} all ${memberLabel}`}
             title={`${bulkAction} all ${memberLabel}`}
-            disabled={total === 0}
-            onClick={visibleCount > 0 ? onHideAll : onShowAll}
+            aria-pressed={hasVisibleMembers}
+            data-visibility-state={visibilityState}
+            disabled={visibilityState === 'empty'}
+            onClick={hasVisibleMembers ? onHideAll : onShowAll}
           >
-            <BulkIcon size={14} aria-hidden="true" />
+            <VisibilityIcon size={14} aria-hidden="true" />
           </button>
         )}
       </div>
