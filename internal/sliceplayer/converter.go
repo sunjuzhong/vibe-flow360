@@ -174,7 +174,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		if frame == nil {
 			assetKey := safeComponent(key)
 			if existing, collision := assetKeys[assetKey]; collision && existing != key {
-				return Playback{}, fmt.Errorf("slice frame names %q and %q map to the same safe asset name", existing, key)
+				return Playback{}, fmt.Errorf("time-series frame names %q and %q map to the same safe asset name", existing, key)
 			}
 			assetKeys[assetKey] = key
 			frame = &frameBuild{Key: key, AssetKey: assetKey, Step: step}
@@ -316,7 +316,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 	sort.Strings(playback.Fields)
 	playback.Ready = playback.FrameCount > 0
 	if !playback.Ready {
-		return Playback{}, errors.New("slice archive contains no convertible VTU frames")
+		return Playback{}, errors.New("time-series archive contains no convertible VTU surface frames")
 	}
 	return playback, nil
 }

@@ -42,3 +42,24 @@ func TestStorePersistsCompletedIndexAndReusesCache(t *testing.T) {
 		t.Fatalf("playback cache was not restored: %#v", restored)
 	}
 }
+
+func TestLatestForResultPathKeepsArchiveJobsIndependent(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices, err := store.Create("case-1", "results/slices.tar.gz", 10, "slice-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := store.Create("case-1", "results/surfaces.tar.gz", 20, "surface-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest, ok := store.LatestForResultPath("case-1", "results/slices.tar.gz"); !ok || latest.ID != slices.ID {
+		t.Fatalf("unexpected Slice job: %#v", latest)
+	}
+	if latest, ok := store.LatestForResultPath("case-1", "results/surfaces.tar.gz"); !ok || latest.ID != surfaces.ID {
+		t.Fatalf("unexpected Surface job: %#v", latest)
+	}
+}

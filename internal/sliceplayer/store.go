@@ -86,7 +86,7 @@ func NewStore(root string) (*Store, error) {
 			now := time.Now().UTC()
 			job.Status = JobFailed
 			job.Stage = "interrupted"
-			job.Error = "slice preparation was interrupted by server restart; start it again"
+			job.Error = "time-series preparation was interrupted by server restart; start it again"
 			job.UpdatedAt = now
 			job.FinishedAt = &now
 			_ = store.writeJob(job)
@@ -124,12 +124,16 @@ func (s *Store) Get(id string) (Job, bool) {
 }
 
 func (s *Store) Latest(caseID string) (Job, bool) {
+	return s.LatestForResultPath(caseID, "")
+}
+
+func (s *Store) LatestForResultPath(caseID, resultPath string) (Job, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var latest Job
 	found := false
 	for _, job := range s.jobs {
-		if job.CaseID == caseID && (!found || job.UpdatedAt.After(latest.UpdatedAt)) {
+		if job.CaseID == caseID && (resultPath == "" || job.ResultPath == resultPath) && (!found || job.UpdatedAt.After(latest.UpdatedAt)) {
 			latest, found = job, true
 		}
 	}
@@ -139,7 +143,7 @@ func (s *Store) Latest(caseID string) (Job, bool) {
 func (s *Store) Update(id string, progress int, stage string) (Job, error) {
 	return s.change(id, func(job *Job) error {
 		if terminal(job.Status) {
-			return errors.New("slice preparation is already finished")
+			return errors.New("time-series preparation is already finished")
 		}
 		job.Status = JobRunning
 		if progress < 0 {
@@ -166,7 +170,7 @@ func (s *Store) Complete(id string, index Index, playback *Playback) (Job, error
 	report := Report{IndexVersion: index.Version, CompressedBytes: index.CompressedBytes, UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount, Slices: index.Slices, Formats: index.Formats, IndexReady: true, Playback: playback}
 	return s.change(id, func(job *Job) error {
 		if job.Status == JobCancelled {
-			return errors.New("slice preparation was cancelled")
+			return errors.New("time-series preparation was cancelled")
 		}
 		now := time.Now().UTC()
 		job.Status = JobCompleted
@@ -195,7 +199,7 @@ func (s *Store) Fail(id string, cause error) (Job, error) {
 func (s *Store) Cancel(id string) (Job, error) {
 	return s.change(id, func(job *Job) error {
 		if terminal(job.Status) {
-			return errors.New("slice preparation is already finished")
+			return errors.New("time-series preparation is already finished")
 		}
 		now := time.Now().UTC()
 		job.Status = JobCancelled

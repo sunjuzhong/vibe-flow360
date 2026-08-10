@@ -120,3 +120,24 @@ func TestScanTarGzGroupsParallelVTKPiecesAndReadsFields(t *testing.T) {
 		t.Fatalf("unexpected field catalog: %#v", slice.Fields)
 	}
 }
+
+func TestScanTarGzGroupsSurfaceTimeSeries(t *testing.T) {
+	manifest := `<?xml version="1.0"?><VTKFile><PUnstructuredGrid><PPointData><PDataArray Name="Cp"/></PPointData><Piece Source="surface_wall_time_10_proc0.vtu"/></PUnstructuredGrid></VTKFile>`
+	filename := writeArchive(t, []archiveEntry{
+		{name: "surface_wall_time_10.pvtu", body: manifest},
+		{name: "surface_wall_time_10_proc0.vtu", body: "piece"},
+		{name: "surface_wall_time_20.pvtu", body: strings.ReplaceAll(manifest, "10", "20")},
+		{name: "surface_wall_time_20_proc0.vtu", body: "piece"},
+	})
+	index, err := ScanTarGz(filename, Limits{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Slices) != 1 {
+		t.Fatalf("surface frames were not grouped: %#v", index.Slices)
+	}
+	sequence := index.Slices[0]
+	if sequence.Name != "surface_wall_time" || sequence.FrameCount != 2 || sequence.FirstStep == nil || *sequence.FirstStep != 10 || sequence.LastStep == nil || *sequence.LastStep != 20 {
+		t.Fatalf("unexpected surface sequence: %#v", sequence)
+	}
+}

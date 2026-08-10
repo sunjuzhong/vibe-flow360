@@ -62,7 +62,7 @@ type Index struct {
 	CreatedAt         time.Time      `json:"created_at"`
 }
 
-var ErrCancelled = errors.New("slice archive scan cancelled")
+var ErrCancelled = errors.New("time-series archive scan cancelled")
 
 type ProgressFunc func(percent int, compressedBytes int64) bool
 
@@ -84,12 +84,12 @@ func ScanTarGz(filename string, limits Limits, progress ProgressFunc) (Index, er
 	limits = normalizeLimits(limits)
 	file, err := os.Open(filename)
 	if err != nil {
-		return Index{}, fmt.Errorf("open slice archive: %w", err)
+		return Index{}, fmt.Errorf("open time-series archive: %w", err)
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return Index{}, fmt.Errorf("inspect slice archive: %w", err)
+		return Index{}, fmt.Errorf("inspect time-series archive: %w", err)
 	}
 	counter := &countingReader{r: file}
 	gzipReader, err := gzip.NewReader(counter)
@@ -106,30 +106,30 @@ func ScanTarGz(filename string, limits Limits, progress ProgressFunc) (Index, er
 			break
 		}
 		if nextErr != nil {
-			return Index{}, fmt.Errorf("scan slice archive: %w", nextErr)
+			return Index{}, fmt.Errorf("scan time-series archive: %w", nextErr)
 		}
 		index.EntryCount++
 		if index.EntryCount > limits.MaxEntries {
-			return Index{}, fmt.Errorf("slice archive exceeds %d entries", limits.MaxEntries)
+			return Index{}, fmt.Errorf("time-series archive exceeds %d entries", limits.MaxEntries)
 		}
 		if len(header.Name) > limits.MaxPathBytes {
-			return Index{}, fmt.Errorf("slice archive path exceeds %d bytes", limits.MaxPathBytes)
+			return Index{}, fmt.Errorf("time-series archive path exceeds %d bytes", limits.MaxPathBytes)
 		}
 		cleaned, cleanErr := safeArchivePath(header.Name)
 		if cleanErr != nil {
 			return Index{}, cleanErr
 		}
 		if header.Size < 0 || header.Size > limits.MaxEntryBytes {
-			return Index{}, fmt.Errorf("slice archive entry %q exceeds %d bytes", cleaned, limits.MaxEntryBytes)
+			return Index{}, fmt.Errorf("time-series archive entry %q exceeds %d bytes", cleaned, limits.MaxEntryBytes)
 		}
 		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA && header.Typeflag != tar.TypeDir {
-			return Index{}, fmt.Errorf("slice archive entry %q has unsupported link or special-file type", cleaned)
+			return Index{}, fmt.Errorf("time-series archive entry %q has unsupported link or special-file type", cleaned)
 		}
 		if header.Typeflag == tar.TypeDir {
 			continue
 		}
 		if header.Size > limits.MaxUncompressedBytes-index.UncompressedBytes {
-			return Index{}, fmt.Errorf("slice archive exceeds %d uncompressed bytes", limits.MaxUncompressedBytes)
+			return Index{}, fmt.Errorf("time-series archive exceeds %d uncompressed bytes", limits.MaxUncompressedBytes)
 		}
 		index.UncompressedBytes += header.Size
 		format := archiveFormat(cleaned)
@@ -177,7 +177,7 @@ func safeArchivePath(name string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(name), "\\", "/")
 	cleaned := path.Clean(normalized)
 	if normalized == "" || cleaned == "." || path.IsAbs(normalized) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return "", fmt.Errorf("slice archive contains unsafe path %q", name)
+		return "", fmt.Errorf("time-series archive contains unsafe path %q", name)
 	}
 	return cleaned, nil
 }
@@ -204,7 +204,8 @@ func inferSliceAndStep(filename string) (string, *int64) {
 			return trimStepSuffix(strings.TrimSuffix(part, filepath.Ext(part))), step
 		}
 	}
-	if strings.Contains(strings.ToLower(stem), "slice") {
+	lowerStem := strings.ToLower(stem)
+	if strings.Contains(lowerStem, "slice") || strings.Contains(lowerStem, "surface") || strings.Contains(lowerStem, "volume") {
 		return trimStepSuffix(stem), step
 	}
 	return "", step

@@ -12,10 +12,24 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** order).toFixed(order > 1 ? 1 : 0)} ${units[order]}`
 }
 
+export type CaseTimeSeriesArchiveKind = 'slices' | 'surfaces'
+
+export function caseTimeSeriesPlayerTitle(kind: CaseTimeSeriesArchiveKind) {
+  return kind === 'surfaces' ? 'Time-series Surface player' : 'Time-series Slice player'
+}
+
+function prepareTitle(kind: CaseTimeSeriesArchiveKind) {
+  return kind === 'surfaces' ? 'Prepare the time-series Surface player' : 'Prepare the time-series Slice player'
+}
+
+function indexedTitle(kind: CaseTimeSeriesArchiveKind) {
+  return kind === 'surfaces' ? 'Surface archive indexed' : 'Slice archive indexed'
+}
+
 function stageLabel(stage: string) {
   switch (stage) {
     case 'queued': return 'Waiting for the preparation worker'
-    case 'downloading-archive': return 'Downloading the Slice archive to bounded local storage'
+    case 'downloading-archive': return 'Downloading the time-series archive to bounded local storage'
     case 'scanning-archive': return 'Scanning frames without extracting the full archive'
     case 'converting-frames': return 'Converting VTU pieces into bounded playable frames'
     case 'persisting-frame-index': return 'Persisting the random-access frame index'
@@ -55,7 +69,7 @@ export function sliceFieldPanelVisible(playing: boolean) {
   return !playing
 }
 
-function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob }) {
+function SlicePlayback({ caseId, job, archiveKind }: { caseId: string; job: SlicePlayerJob; archiveKind: CaseTimeSeriesArchiveKind }) {
   const { t } = useI18n()
   const playback = job.report?.playback
   const [frameIndex, setFrameIndex] = useState(0)
@@ -95,11 +109,11 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
       asset_url: sliceFrameAssetURL(caseId, job.id, frame),
       format: 'flow360-uvf',
       bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
-      groups: [{ id: 'slice', name: 'Slice', color: '#789521', visible: true, triangles, vertices }],
+      groups: [{ id: archiveKind, name: archiveKind === 'surfaces' ? 'Surface' : 'Slice', color: '#789521', visible: true, triangles, vertices }],
       vertices,
       elements: triangles,
     }
-  }, [caseId, frame, job.id, playback])
+  }, [archiveKind, caseId, frame, job.id, playback])
 
   const handleAssetReady = useCallback((assetURL: string) => {
     if (assetURL === manifest?.asset_url) frameReadyRef.current = true
@@ -144,10 +158,12 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
 export default function CaseSlicePlayerPanel({
   caseId,
   resultPath,
+  archiveKind,
   sizeBytes = 0,
 }: {
   caseId: string
   resultPath: string
+  archiveKind: CaseTimeSeriesArchiveKind
   sizeBytes?: number
 }) {
   const { t } = useI18n()
@@ -158,7 +174,7 @@ export default function CaseSlicePlayerPanel({
 
   useEffect(() => {
     let active = true
-    api.latestSlicePlayer(caseId)
+    api.latestSlicePlayer(caseId, resultPath)
       .then((latest) => {
         const sameSource = latest.result_path === resultPath
           && (!sizeBytes || !latest.source_size || latest.source_size === sizeBytes)
@@ -206,7 +222,7 @@ export default function CaseSlicePlayerPanel({
   }
 
   if (loading) {
-    return <div className="slice-player-state" role="status"><LoaderCircle className="spin" size={18} />{t('Reading Slice player state…')}</div>
+    return <div className="slice-player-state" role="status"><LoaderCircle className="spin" size={18} />{t('Reading time-series player state…')}</div>
   }
 
   const running = job?.status === 'queued' || job?.status === 'running'
@@ -221,7 +237,7 @@ export default function CaseSlicePlayerPanel({
       {!job && (
         <section className="slice-player-empty">
           <Play size={24} />
-          <strong>{t('Prepare the time-series Slice player')}</strong>
+          <strong>{t(prepareTitle(archiveKind))}</strong>
           <p>{t('The archive is downloaded to local storage and scanned sequentially. It is never loaded into browser memory or fully extracted.')}</p>
           <button className="geometry-plan-action" disabled={actionBusy} onClick={() => void prepare()}>
             {actionBusy ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}{t('Prepare player')}
@@ -232,7 +248,7 @@ export default function CaseSlicePlayerPanel({
       {job && !completed && (
         <section className={`slice-player-progress ${job.status}`}>
           <div><strong>{t(stageLabel(job.stage))}</strong><span>{job.progress}%</span></div>
-          <progress max={100} value={job.progress} aria-label={t('Slice player preparation progress')} />
+          <progress max={100} value={job.progress} aria-label={t('Time-series player preparation progress')} />
           {running && <button className="toolbar-refresh" disabled={actionBusy} onClick={() => void cancel()}><Square size={12} />{t('Cancel preparation')}</button>}
           {(job.status === 'failed' || job.status === 'cancelled') && <button className="geometry-plan-action" disabled={actionBusy} onClick={() => void prepare()}>{t('Try preparation again')}</button>}
         </section>
@@ -242,13 +258,13 @@ export default function CaseSlicePlayerPanel({
 
       {completed && job?.report && (
         <>
-          {job.report.playback?.ready && <SlicePlayback caseId={caseId} job={job} />}
+          {job.report.playback?.ready && <SlicePlayback caseId={caseId} job={job} archiveKind={archiveKind} />}
           <section className="slice-player-ready" role="status">
             <CheckCircle2 size={18} />
-            <span><strong>{t('Slice archive indexed')}</strong><small>{t('The frame index is cached and can be reused without downloading the archive again.')}</small></span>
+            <span><strong>{t(indexedTitle(archiveKind))}</strong><small>{t('The frame index is cached and can be reused without downloading the archive again.')}</small></span>
           </section>
           <dl className="slice-player-facts">
-            <div><dt>{t('Slices')}</dt><dd>{job.report.slices.length}</dd></div>
+            <div><dt>{t('Sequences')}</dt><dd>{job.report.slices.length}</dd></div>
             <div><dt>{t('Archive entries')}</dt><dd>{job.report.entry_count.toLocaleString()}</dd></div>
             <div><dt>{t('Compressed')}</dt><dd>{formatBytes(job.report.compressed_bytes)}</dd></div>
             <div><dt>{t('Expanded stream')}</dt><dd>{formatBytes(job.report.uncompressed_bytes)}</dd></div>
@@ -261,7 +277,7 @@ export default function CaseSlicePlayerPanel({
                 <span><strong>{slice.first_step ?? '—'} → {slice.last_step ?? '—'}</strong><small>{t('global steps')}</small></span>
               </article>
             ))}
-            {!job.report.slices.length && <div className="slice-player-state">{t('No named Slice sequence was found in the archive.')}</div>}
+            {!job.report.slices.length && <div className="slice-player-state">{t('No named time sequence was found in the archive.')}</div>}
           </section>
           <p className="slice-player-next">{t('Frames are loaded on demand. Global field ranges stay fixed during playback so colors remain comparable over time.')}</p>
         </>

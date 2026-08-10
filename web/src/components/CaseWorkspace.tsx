@@ -41,7 +41,7 @@ import {
 import { useI18n } from '../i18n'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
 import { StructuredDataView } from './StructuredDataView'
-import CaseSlicePlayerPanel from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, type CaseTimeSeriesArchiveKind } from './CaseSlicePlayerPanel'
 import {
   createViewerContext,
   findLengthUnit,
@@ -89,13 +89,32 @@ export type CaseStatusView =
 type CaseResultRecord = NonNullable<NonNullable<ResourceDetail['results']>['records']>[number]
 
 export function isSliceArchiveResult(record: CaseResultRecord) {
+  return timeSeriesArchiveKind(record) === 'slices'
+}
+
+export function timeSeriesArchiveKind(record: CaseResultRecord): CaseTimeSeriesArchiveKind | null {
   const resultPath = String(record.path ?? '').replaceAll('\\', '/').toLowerCase()
   const resultName = String(record.name ?? '').toLowerCase()
-  return resultPath === 'results/slices.tar.gz' || (!resultPath && resultName === 'slices.tar.gz')
+  if (resultPath === 'results/slices.tar.gz' || (!resultPath && resultName === 'slices.tar.gz')) return 'slices'
+  if (resultPath === 'results/surfaces.tar.gz' || (!resultPath && resultName === 'surfaces.tar.gz')) return 'surfaces'
+  return null
+}
+
+export function isVolumeSnapshotArchive(record: CaseResultRecord) {
+  const resultPath = String(record.path ?? '').replaceAll('\\', '/').toLowerCase()
+  const resultName = String(record.name ?? '').toLowerCase()
+  return resultPath === 'results/volumes.tar.gz' || (!resultPath && resultName === 'volumes.tar.gz')
 }
 
 export function findSliceArchive(records: NonNullable<ResourceDetail['results']>['records']) {
   return records?.find(isSliceArchiveResult) ?? null
+}
+
+export function findTimeSeriesArchives(records: NonNullable<ResourceDetail['results']>['records']) {
+  return records?.flatMap((record) => {
+    const kind = timeSeriesArchiveKind(record)
+    return kind ? [{ kind, record }] : []
+  }) ?? []
 }
 
 export function mapCaseStatus(detail: ResourceDetail | null): CaseStatusView {
@@ -322,6 +341,7 @@ export default function CaseWorkspace({
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | 'slices' | null>(null)
+  const [activePlayerArchive, setActivePlayerArchive] = useState<{ kind: CaseTimeSeriesArchiveKind; record: CaseResultRecord } | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
@@ -338,6 +358,7 @@ export default function CaseWorkspace({
   const resultCount = detail?.results?.records?.length ?? 0
   const resultRecords = detail?.results?.records ?? []
   const sliceArchive = findSliceArchive(resultRecords)
+  const timeSeriesArchives = findTimeSeriesArchives(resultRecords)
   const hasErrors = Boolean(detail?.errors && Object.keys(detail.errors).length)
 
   const { result: convergence, loading: convergenceLoading, refetch: refetchConvergence } =
@@ -382,6 +403,13 @@ export default function CaseWorkspace({
       ...current,
       [groupId]: !(current[groupId] ?? group.visible),
     }))
+  }
+
+  const openTimeSeriesPlayer = (record: CaseResultRecord) => {
+    const kind = timeSeriesArchiveKind(record)
+    if (!kind) return
+    setActivePlayerArchive({ kind, record })
+    setActiveReviewDialog('slices')
   }
   const unit = findLengthUnit([
     detail?.simulation_params,
@@ -482,7 +510,7 @@ export default function CaseWorkspace({
                       <button
                         type="button"
                         className="case-result-row previewable"
-                        onClick={() => setActiveReviewDialog('slices')}
+                        onClick={() => openTimeSeriesPlayer(sliceArchive!)}
                         aria-label={t('Time-series Slice player')}
                       >
                         <Film size={11} />
@@ -533,20 +561,22 @@ export default function CaseWorkspace({
               const path = result.path
               const label = result.name ?? path ?? `Result ${index + 1}`
               const previewable = isTabularResult(path, result.file_type) && Boolean(path)
-              const slicePlayable = isSliceArchiveResult(result)
+              const archiveKind = timeSeriesArchiveKind(result)
+              const timeSeriesPlayable = Boolean(archiveKind)
+              const volumeSnapshot = isVolumeSnapshotArchive(result)
               const content = (
                 <>
-                  {slicePlayable ? <Film size={11} /> : <FileOutput size={11} />}
+                  {timeSeriesPlayable ? <Film size={11} /> : <FileOutput size={11} />}
                   <span title={path ?? result.name}>{label}</span>
-                  <small>{slicePlayable || previewable ? t('Open') : result.file_type ?? 'file'}</small>
+                  <small>{timeSeriesPlayable || previewable ? t('Open') : volumeSnapshot ? t('Final volume snapshot') : result.file_type ?? 'file'}</small>
                 </>
               )
-              return slicePlayable ? (
+              return timeSeriesPlayable ? (
                 <button
                   type="button"
                   className="case-result-row previewable"
-                  onClick={() => setActiveReviewDialog('slices')}
-                  aria-label={t('Time-series Slice player')}
+                  onClick={() => openTimeSeriesPlayer(result)}
+                  aria-label={t(caseTimeSeriesPlayerTitle(archiveKind!))}
                   key={path ?? label}
                 >
                   {content}
@@ -700,14 +730,15 @@ export default function CaseWorkspace({
                 onClick={() => setActiveReviewDialog('convergence')}
               />
             )}
-            {sliceArchive && (
+            {timeSeriesArchives.map(({ kind, record }) => (
               <ResourceReviewLauncher
+                key={kind}
                 icon={<Film size={14} />}
-                label={t('Time-series Slice player')}
+                label={t(caseTimeSeriesPlayerTitle(kind))}
                 summary={t('Prepare and inspect flow-field frames')}
-                onClick={() => setActiveReviewDialog('slices')}
+                onClick={() => openTimeSeriesPlayer(record)}
               />
-            )}
+            ))}
           </ResourceReviewLaunchers>
 
           {previewSource === 'fallback' && (
@@ -789,17 +820,18 @@ export default function CaseWorkspace({
               </div>
             </ResourceReviewDialog>
           )}
-          {activeReviewDialog === 'slices' && sliceArchive && (
+          {activeReviewDialog === 'slices' && activePlayerArchive && (
             <ResourceReviewDialog
-              title={t('Time-series Slice player')}
+              title={t(caseTimeSeriesPlayerTitle(activePlayerArchive.kind))}
               subtitle={t('Large-file preparation and frame index')}
               icon={<Film size={18} />}
               onClose={() => setActiveReviewDialog(null)}
             >
               <CaseSlicePlayerPanel
                 caseId={resourceId ?? detail?.id ?? ''}
-                resultPath={sliceArchive.path ?? 'results/slices.tar.gz'}
-                sizeBytes={sliceArchive.size_bytes}
+                resultPath={activePlayerArchive.record.path ?? `results/${activePlayerArchive.kind}.tar.gz`}
+                archiveKind={activePlayerArchive.kind}
+                sizeBytes={activePlayerArchive.record.size_bytes}
               />
             </ResourceReviewDialog>
           )}

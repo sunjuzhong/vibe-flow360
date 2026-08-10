@@ -34,7 +34,7 @@ func TestSlicePlayerRoutesKeepCaseDetailLeafReachable(t *testing.T) {
 	}
 }
 
-func TestSlicePlayerRejectsNonCanonicalArchivePath(t *testing.T) {
+func TestSlicePlayerRejectsUnsupportedArchivePath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store, err := sliceplayer.NewStore(t.TempDir())
 	if err != nil {
@@ -42,7 +42,7 @@ func TestSlicePlayerRejectsNonCanonicalArchivePath(t *testing.T) {
 	}
 	app := &Server{router: gin.New(), slicePlayerJobs: store, flow360: &flow360.Client{}}
 	app.router.POST("/api/flow360/resources/Case/:resource_id/slice-player/jobs", app.startSlicePlayerJob)
-	request := httptest.NewRequest(http.MethodPost, "/api/flow360/resources/Case/case-1/slice-player/jobs", bytes.NewBufferString(`{"result_path":"results/surfaces.tar.gz"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/flow360/resources/Case/case-1/slice-player/jobs", bytes.NewBufferString(`{"result_path":"results/volumes.tar.gz"}`))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	app.router.ServeHTTP(recorder, request)
@@ -51,12 +51,14 @@ func TestSlicePlayerRejectsNonCanonicalArchivePath(t *testing.T) {
 	}
 }
 
-func TestValidSliceArchivePath(t *testing.T) {
-	if !validSliceArchivePath("results/slices.tar.gz") || !validSliceArchivePath(`results\slices.tar.gz`) {
-		t.Fatal("canonical Slice archive was rejected")
+func TestValidTimeSeriesArchivePath(t *testing.T) {
+	for _, candidate := range []string{"results/slices.tar.gz", `results\slices.tar.gz`, "results/surfaces.tar.gz"} {
+		if !validTimeSeriesArchivePath(candidate) {
+			t.Fatalf("supported time-series archive %q was rejected", candidate)
+		}
 	}
-	for _, candidate := range []string{"slices.tar.gz", "results/../slices.tar.gz", "results/surfaces.tar.gz"} {
-		if validSliceArchivePath(candidate) {
+	for _, candidate := range []string{"slices.tar.gz", "results/../slices.tar.gz", "results/volumes.tar.gz"} {
+		if validTimeSeriesArchivePath(candidate) {
 			t.Fatalf("unsafe or unrelated path %q was accepted", candidate)
 		}
 	}

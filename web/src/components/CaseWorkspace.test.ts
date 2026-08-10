@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, groupCaseVisualizationMembers, isSliceArchiveResult, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -180,5 +180,18 @@ describe('findSliceArchive', () => {
     expect(isSliceArchiveResult({ name: 'slices.tar.gz' })).toBe(true)
     expect(isSliceArchiveResult({ path: 'results/surfaces.tar.gz' })).toBe(false)
     expect(isSliceArchiveResult({ path: 'downloads/slices.tar.gz' })).toBe(false)
+  })
+
+  it('makes Slice and Surface time-series archives playable without misclassifying Volume snapshots', () => {
+    expect(timeSeriesArchiveKind({ path: 'results/slices.tar.gz' })).toBe('slices')
+    expect(timeSeriesArchiveKind({ path: 'results/surfaces.tar.gz' })).toBe('surfaces')
+    expect(timeSeriesArchiveKind({ name: 'surfaces.tar.gz' })).toBe('surfaces')
+    expect(timeSeriesArchiveKind({ path: 'results/volumes.tar.gz' })).toBeNull()
+    expect(isVolumeSnapshotArchive({ path: 'results/volumes.tar.gz' })).toBe(true)
+    expect(findTimeSeriesArchives([
+      { path: 'results/surfaces.tar.gz' },
+      { path: 'results/volumes.tar.gz' },
+      { path: 'results/slices.tar.gz' },
+    ]).map(({ kind }) => kind)).toEqual(['surfaces', 'slices'])
   })
 })

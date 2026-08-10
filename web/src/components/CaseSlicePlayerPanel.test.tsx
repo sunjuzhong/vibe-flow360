@@ -1,17 +1,22 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider>
-        <CaseSlicePlayerPanel caseId="case-1" resultPath="results/slices.tar.gz" sizeBytes={1024} />
+        <CaseSlicePlayerPanel caseId="case-1" resultPath="results/slices.tar.gz" archiveKind="slices" sizeBytes={1024} />
       </I18nProvider>,
     )
-    expect(markup).toContain('Reading Slice player state')
+    expect(markup).toContain('Reading time-series player state')
     expect(markup).not.toContain('type="file"')
+  })
+
+  it('uses archive-specific player titles', () => {
+    expect(caseTimeSeriesPlayerTitle('slices')).toBe('Time-series Slice player')
+    expect(caseTimeSeriesPlayerTitle('surfaces')).toBe('Time-series Surface player')
   })
 
   it('uses the same full-resolution asset during playback and pause', () => {

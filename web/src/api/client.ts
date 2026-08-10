@@ -1104,9 +1104,9 @@ export const api = {
       `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs`,
       { result_path: resultPath, size_bytes: sizeBytes },
     ),
-  latestSlicePlayer: (caseId: string) =>
+  latestSlicePlayer: (caseId: string, resultPath?: string) =>
     json<SlicePlayerJob>(
-      `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/latest`,
+      `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/latest${resultPath ? `?result_path=${encodeURIComponent(resultPath)}` : ''}`,
     ),
   slicePlayerJob: (caseId: string, jobId: string) =>
     json<SlicePlayerJob>(

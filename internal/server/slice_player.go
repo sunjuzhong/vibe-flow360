@@ -27,17 +27,17 @@ func (s *Server) startSlicePlayerJob(c *gin.Context) {
 		return
 	}
 	if s.slicePlayerJobs == nil || s.flow360 == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Case slice preparation is not configured"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Case time-series preparation is not configured"})
 		return
 	}
 	var request slicePlayerRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "slice preparation request must be valid JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "time-series preparation request must be valid JSON"})
 		return
 	}
 	request.ResultPath = strings.TrimSpace(request.ResultPath)
-	if !validSliceArchivePath(request.ResultPath) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "result_path must identify results/slices.tar.gz"})
+	if !validTimeSeriesArchivePath(request.ResultPath) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "result_path must identify a supported Case time-series archive"})
 		return
 	}
 	if request.SizeBytes < 0 {
@@ -46,7 +46,7 @@ func (s *Server) startSlicePlayerJob(c *gin.Context) {
 	}
 	maxArchiveBytes := slicePlayerMaxArchiveBytes()
 	if request.SizeBytes > maxArchiveBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("Slice archive exceeds the configured %d byte local preparation limit", maxArchiveBytes)})
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("Time-series archive exceeds the configured %d byte local preparation limit", maxArchiveBytes)})
 		return
 	}
 	cacheKey := sliceplayer.CacheKey(caseID, request.ResultPath, request.SizeBytes)
@@ -70,12 +70,17 @@ func (s *Server) latestSlicePlayerJob(c *gin.Context) {
 		return
 	}
 	if s.slicePlayerJobs == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Case slice preparation is not configured"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Case time-series preparation is not configured"})
 		return
 	}
-	job, ok := s.slicePlayerJobs.Latest(caseID)
+	resultPath := strings.TrimSpace(c.Query("result_path"))
+	if resultPath != "" && !validTimeSeriesArchivePath(resultPath) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "result_path must identify a supported Case time-series archive"})
+		return
+	}
+	job, ok := s.slicePlayerJobs.LatestForResultPath(caseID, resultPath)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "No slice preparation exists for this Case"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "No time-series preparation exists for this Case archive"})
 		return
 	}
 	c.Header("Cache-Control", "no-store")
@@ -92,12 +97,12 @@ func (s *Server) writeSlicePlayerJob(c *gin.Context, cancel bool) {
 		return
 	}
 	if s.slicePlayerJobs == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Case slice preparation is not configured"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Case time-series preparation is not configured"})
 		return
 	}
 	job, ok := s.slicePlayerJobs.Get(c.Param("job_id"))
 	if !ok || job.CaseID != caseID {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Case slice preparation was not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Case time-series preparation was not found"})
 		return
 	}
 	if cancel {
@@ -239,9 +244,9 @@ func (s *Server) cancelSlicePlayerWork(jobID string) {
 	}
 }
 
-func validSliceArchivePath(resultPath string) bool {
+func validTimeSeriesArchivePath(resultPath string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(resultPath, "\\", "/"))
-	return normalized == "results/slices.tar.gz"
+	return normalized == "results/slices.tar.gz" || normalized == "results/surfaces.tar.gz"
 }
 
 func slicePlayerMaxArchiveBytes() int64 {
