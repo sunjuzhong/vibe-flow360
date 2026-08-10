@@ -823,6 +823,8 @@ Object.assign(messages, {
   'Δ faces': '面数差',
   'Δ bounds': '边界范围差',
   'Use in AI Create': '用于 AI 创建',
+  'STEP Library': 'STEP 文件库',
+  'STEP geometry library': 'STEP 几何文件库',
   'Geometry source': '几何来源',
   'AI CAD generation will be skipped.': '将跳过 AI CAD 生成。',
   'Change STEP geometry source': '更换 STEP 几何来源',
