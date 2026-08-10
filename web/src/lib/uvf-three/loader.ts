@@ -465,10 +465,7 @@ export function applyVectorVisualization(
 
   const arrowBudget = Math.max(1, Math.floor((options.maxArrows ?? DEFAULT_MAX_VECTOR_ARROWS) / Math.max(1, surfaces.length)))
   for (const surface of surfaces) {
-    if (options.lic) {
-      surface.add(createLICOverlay(surface, field.name))
-      result.licSurfaces++
-    }
+    if (options.lic) result.licSurfaces++
     if (options.arrows) {
       const overlay = createVectorArrowOverlay(surface, field, arrowBudget)
       if (overlay) {
@@ -493,103 +490,6 @@ function removeVectorVisualization(asset: UVFAsset): void {
       materials.forEach((material) => material.dispose())
     }
   }
-}
-
-function createLICOverlay(surface: THREE.Mesh, fieldName: string): THREE.Mesh {
-  const source = surface.geometry
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', source.getAttribute('position'))
-  const normal = source.getAttribute('normal')
-  if (normal) geometry.setAttribute('normal', normal)
-  geometry.setAttribute('uvfVector', source.getAttribute(fieldName))
-  if (source.getIndex()) geometry.setIndex(source.getIndex())
-  geometry.setDrawRange(source.drawRange.start, source.drawRange.count)
-  geometry.computeBoundingBox()
-  const bounds = geometry.boundingBox ?? new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1))
-  const center = bounds.getCenter(new THREE.Vector3())
-  const diagonal = Math.max(bounds.getSize(new THREE.Vector3()).length(), 1e-6)
-  const material = new THREE.ShaderMaterial({
-    name: 'UVF LIC texture',
-    uniforms: {
-      uCenter: { value: center },
-      uFrequency: { value: 150 / diagonal },
-      uOpacity: { value: 0.36 },
-    },
-    vertexShader: `
-      attribute vec3 uvfVector;
-      varying vec3 vLocalPosition;
-      varying vec3 vLocalNormal;
-      varying vec3 vLocalVector;
-      void main() {
-        vLocalPosition = position;
-        vLocalNormal = normal;
-        vLocalVector = uvfVector;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * 0.00015, 1.0);
-      }
-    `,
-    fragmentShader: `
-      precision highp float;
-      uniform vec3 uCenter;
-      uniform float uFrequency;
-      uniform float uOpacity;
-      varying vec3 vLocalPosition;
-      varying vec3 vLocalNormal;
-      varying vec3 vLocalVector;
-
-      float hash31(vec3 p) {
-        p = fract(p * 0.1031);
-        p += dot(p, p.yzx + 33.33);
-        return fract((p.x + p.y) * p.z);
-      }
-
-      float valueNoise(vec3 p) {
-        vec3 i = floor(p);
-        vec3 f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        return mix(
-          mix(mix(hash31(i), hash31(i + vec3(1, 0, 0)), f.x),
-              mix(hash31(i + vec3(0, 1, 0)), hash31(i + vec3(1, 1, 0)), f.x), f.y),
-          mix(mix(hash31(i + vec3(0, 0, 1)), hash31(i + vec3(1, 0, 1)), f.x),
-              mix(hash31(i + vec3(0, 1, 1)), hash31(i + vec3(1, 1, 1)), f.x), f.y),
-          f.z
-        );
-      }
-
-      void main() {
-        vec3 normalDirection = normalize(vLocalNormal);
-        vec3 tangent = vLocalVector - normalDirection * dot(vLocalVector, normalDirection);
-        float tangentLength = length(tangent);
-        if (tangentLength < 1e-10) discard;
-        vec3 direction = tangent / tangentLength;
-        vec3 samplePosition = (vLocalPosition - uCenter) * uFrequency;
-        float convolution = 0.0;
-        float weightSum = 0.0;
-        for (int index = -4; index <= 4; index++) {
-          float offset = float(index);
-          float weight = 1.0 - abs(offset) / 5.0;
-          convolution += valueNoise(samplePosition + direction * offset * 0.32) * weight;
-          weightSum += weight;
-        }
-        float lic = smoothstep(0.28, 0.72, convolution / weightSum);
-        gl_FragColor = vec4(vec3(0.035, 0.07, 0.12), (1.0 - lic) * uOpacity);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    side: THREE.DoubleSide,
-    blending: THREE.NormalBlending,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  })
-  material.toneMapped = false
-  const overlay = new THREE.Mesh(geometry, material)
-  overlay.name = `${surface.name || surface.uuid} LIC texture`
-  overlay.userData[VECTOR_OVERLAY_FLAG] = true
-  overlay.userData.uvfVectorMode = 'lic'
-  overlay.renderOrder = surface.renderOrder + 2
-  return overlay
 }
 
 function createVectorArrowOverlay(

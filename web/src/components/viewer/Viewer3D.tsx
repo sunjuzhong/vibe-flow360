@@ -4,8 +4,8 @@ import { Crosshair, Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, applyVectorVisualization, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
-import type { UVFAsset, UVFAssetLRU, UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
+import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, applyVectorVisualization, canUseLogFieldScale, createFieldHistogram, createScreenSpaceLIC, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
+import type { UVFAsset, UVFAssetLRU, UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale, UVFScreenSpaceLIC } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
   configurePerspectiveCameraForBounds,
@@ -340,6 +340,7 @@ export function Viewer3D({
   const loadedAssetURLRef = useRef<string | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
+  const licRendererRef = useRef<UVFScreenSpaceLIC | null>(null)
   const annotationOverlayRef = useRef<ViewerOverlayLayer | null>(null)
   const inputControllerRef = useRef<ViewerInputController | null>(null)
   const draggedControlPointRef = useRef<{ index: number; pointerId: number } | null>(null)
@@ -354,6 +355,7 @@ export function Viewer3D({
   const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
   const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
   const [cameraNavigating, setCameraNavigating] = useState(false)
+  const cameraNavigatingRef = useRef(false)
   const [pivotFeedback, setPivotFeedback] = useState<{ x: number; y: number; id: number } | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<ViewerAssetStats | null>(null)
@@ -375,6 +377,7 @@ export function Viewer3D({
   const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
   const [vectorLICEnabled, setVectorLICEnabled] = useState(false)
   const [vectorArrowsEnabled, setVectorArrowsEnabled] = useState(false)
+  const [vectorArrowDensity, setVectorArrowDensity] = useState<'sparse' | 'standard' | 'dense'>('standard')
   const [fieldRangeOverride, setFieldRangeOverride] = useState<{ key: string; range: [number, number] } | null>(null)
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
@@ -417,8 +420,9 @@ export function Viewer3D({
       : baseFieldRange
     : null, [activeField, baseFieldRange, fieldRangeKey, fieldRangeOverride])
   const effectiveWireframe = wireframe ?? wireframeOn
-  const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled })
-  framePresentationRef.current = { selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled }
+  const vectorArrowLimit = vectorArrowDensity === 'sparse' ? 120 : vectorArrowDensity === 'dense' ? 480 : 260
+  const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled, vectorArrowLimit })
+  framePresentationRef.current = { selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled, vectorArrowLimit }
   const precisionSelection = precision.assetURL === displayManifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const unavailablePrecisionLevels = new Set(
@@ -554,8 +558,14 @@ export function Viewer3D({
     container.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
     configureCFDNavigationControls(controls)
-    controls.addEventListener('start', () => setCameraNavigating(true))
-    controls.addEventListener('end', () => setCameraNavigating(false))
+    controls.addEventListener('start', () => {
+      cameraNavigatingRef.current = true
+      setCameraNavigating(true)
+    })
+    controls.addEventListener('end', () => {
+      cameraNavigatingRef.current = false
+      setCameraNavigating(false)
+    })
 
     scene.add(createEngineeringLightRig())
 
@@ -746,6 +756,7 @@ export function Viewer3D({
         lic: presentation.vectorLICEnabled,
         arrows: presentation.vectorArrowsEnabled,
         entityIds: presentation.fieldEntityIds,
+        maxArrows: presentation.vectorArrowLimit,
       })
       setWireframeOverlay(nextUVFAsset, presentation.wireframe)
     }
@@ -808,7 +819,15 @@ export function Viewer3D({
         updateWireframeOverlayForCamera(uvfAssetRef.current, camera, renderer.domElement.clientHeight)
       }
       if (camera) {
+        licRendererRef.current?.update(
+          renderer,
+          camera,
+          renderer.domElement.width,
+          renderer.domElement.height,
+          cameraNavigatingRef.current,
+        )
         renderer.render(scene, camera)
+        licRendererRef.current?.composite(renderer)
         navCube.update(camera, controls?.target ?? new THREE.Vector3())
         navCube.renderOverlay()
       }
@@ -827,6 +846,8 @@ export function Viewer3D({
       if (annotationOverlayRef.current === annotationOverlay) annotationOverlayRef.current = null
       inputControllerRef.current = null
       renderer.dispose()
+      licRendererRef.current?.dispose()
+      licRendererRef.current = null
       controlsRef.current?.dispose()
       assetDisposeRef.current?.()
       assetDisposeRef.current = null
@@ -985,6 +1006,7 @@ export function Viewer3D({
     asset.object.traverse((object) => {
       if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
       if (object.userData.uvfFieldFilterOverlay === true) return
+      if (object.userData.uvfVectorVisualizationOverlay === true) return
       if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = false
       const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
       const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
@@ -999,6 +1021,7 @@ export function Viewer3D({
     asset.getEntityObject(selection.groupId ?? '')?.traverse((object) => {
       if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
       if (object.userData.uvfFieldFilterOverlay === true) return
+      if (object.userData.uvfVectorVisualizationOverlay === true) return
       if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = true
       const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
       const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
@@ -1096,7 +1119,9 @@ export function Viewer3D({
     const scene = sceneRef.current
     const camera = cameraRef.current
     if (!renderer || !scene || !camera) return
+    licRendererRef.current?.update(renderer, camera, renderer.domElement.width, renderer.domElement.height)
     renderer.render(scene, camera)
+    licRendererRef.current?.composite(renderer)
     onCaptureRef.current?.(renderer.domElement.toDataURL('image/png'))
   }, [captureRequest])
 
@@ -1459,13 +1484,24 @@ export function Viewer3D({
   }, [assetState.status, selectedField, colormap, fieldEntityIds, activeColorRange, resolvedFieldScale])
 
   useEffect(() => {
-    if (!uvfAssetRef.current) return
-    applyVectorVisualization(uvfAssetRef.current, selectedField, {
+    licRendererRef.current?.dispose()
+    licRendererRef.current = null
+    const asset = uvfAssetRef.current
+    if (!asset) return
+    applyVectorVisualization(asset, selectedField, {
       lic: vectorLICEnabled,
       arrows: vectorArrowsEnabled,
       entityIds: fieldEntityIds,
+      maxArrows: vectorArrowLimit,
     })
-  }, [assetState.status, selectedField, fieldEntityIds, vectorLICEnabled, vectorArrowsEnabled])
+    licRendererRef.current = vectorLICEnabled
+      ? createScreenSpaceLIC(asset, selectedField, fieldEntityIds)
+      : null
+    return () => {
+      licRendererRef.current?.dispose()
+      licRendererRef.current = null
+    }
+  }, [assetState.status, selectedField, fieldEntityIds, vectorLICEnabled, vectorArrowsEnabled, vectorArrowLimit])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -1731,6 +1767,20 @@ export function Viewer3D({
               >
                 {t('Vector arrows')}
               </button>
+              {vectorArrowsEnabled && (
+                <label className="viewer-vector-density">
+                  <span>{t('Arrow density')}</span>
+                  <select
+                    aria-label={t('Arrow density')}
+                    value={vectorArrowDensity}
+                    onChange={(event) => setVectorArrowDensity(event.target.value as 'sparse' | 'standard' | 'dense')}
+                  >
+                    <option value="sparse">{t('Sparse')}</option>
+                    <option value="standard">{t('Standard')}</option>
+                    <option value="dense">{t('Dense')}</option>
+                  </select>
+                </label>
+              )}
             </div>
           )}
         </div>

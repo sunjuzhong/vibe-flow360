@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
-import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
@@ -530,7 +530,12 @@ describe('Flow360 UVF Three.js library', () => {
       maxArrows: 2,
     })
     expect(combined).toEqual({ licSurfaces: 1, arrows: 2 })
-    expect(face.children.map((child) => child.userData.uvfVectorMode).sort()).toEqual(['arrows', 'lic'])
+    expect(face.children.map((child) => child.userData.uvfVectorMode)).toEqual(['arrows'])
+    const screenSpaceLIC = createScreenSpaceLIC(asset, 'velocity', ['slice-face'])
+    expect(screenSpaceLIC?.sourceCount).toBe(1)
+    screenSpaceLIC?.dispose()
+    expect(createScreenSpaceLIC(asset, 'velocity', ['another-face'])).toBeNull()
+    expect(createScreenSpaceLIC(asset, 'pressure', ['slice-face'])).toBeNull()
 
     const arrowsOnly = applyVectorVisualization(asset, 'velocity', {
       lic: false,

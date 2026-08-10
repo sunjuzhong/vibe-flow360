@@ -24,6 +24,7 @@ export {
 export { DEFAULT_COLORMAP, sampleColormap, applyScalarField, createColormapTexture, listColormaps, type ColormapName } from './colormap'
 export { UVFAssetLRU, type UVFAssetLoadOptions } from './assetCache'
 export { canUseLogFieldScale, formatFieldRange, formatFieldValue, normalizeFieldValue, resolveFieldScale } from './fieldScale'
+export { createScreenSpaceLIC, UVFScreenSpaceLIC } from './lic'
 export { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 export type {
   UVFAsset,

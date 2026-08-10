@@ -2966,6 +2966,24 @@ button { color: inherit; }
   padding-top: 5px;
   border-top: 1px solid rgb(213 215 206 / 75%);
 }
+.viewer-vector-density {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: #6f7767;
+  font-weight: 600;
+}
+.viewer-vector-density select {
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid #ccd2c2;
+  border-radius: 4px;
+  color: #526044;
+  background: rgb(255 255 255 / 88%);
+  font: inherit;
+}
 .viewer-vector-controls > span {
   color: #6f7767;
   font-weight: 600;
