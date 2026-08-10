@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { createEngineeringLightRig, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube } from './Viewer3D'
+import { I18nProvider } from '../../i18n'
+
+function renderViewer(viewer: React.ReactNode) {
+  return renderToStaticMarkup(<I18nProvider>{viewer}</I18nProvider>)
+}
 
 describe('Viewer3D layout state', () => {
   it('keeps the previous frame visible during a seamless asset transition', () => {
@@ -12,7 +17,7 @@ describe('Viewer3D layout state', () => {
   })
 
   it('marks the container as loading without rendering the controls gutter content', () => {
-    const html = renderToStaticMarkup(
+    const html = renderViewer(
       <Viewer3D
         manifest={null}
         state={{ status: 'loading', message: 'Preparing 3D preview…' }}
@@ -35,10 +40,10 @@ describe('Viewer3D layout state', () => {
       elements: 0,
       warnings: ['Showing Geometry as spatial context.'],
     } satisfies import('./Viewer3D').ViewerManifest
-    const visible = renderToStaticMarkup(
+    const visible = renderViewer(
       <Viewer3D manifest={manifest} state={{ status: 'loading' }} />,
     )
-    const suppressed = renderToStaticMarkup(
+    const suppressed = renderViewer(
       <Viewer3D manifest={manifest} state={{ status: 'loading' }} showWarnings={false} />,
     )
 

@@ -6,6 +6,7 @@ import {
   interpolateCameraPivot,
   resizePerspectiveViewport,
   updatePerspectiveCameraClipping,
+  visibleObjectBounds,
 } from './viewerCamera'
 
 function createFixture(aspect: number) {
@@ -102,6 +103,32 @@ describe('responsive viewer camera framing', () => {
     const after = fixture.camera.position.clone().sub(fixture.controls.target).normalize()
 
     expect(after.distanceTo(before)).toBeLessThan(1e-8)
+  })
+
+  it('fits only geometry that is visible through the full scene hierarchy', () => {
+    const root = new THREE.Group()
+    const visible = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial())
+    visible.position.set(2, 0, 0)
+    const hidden = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100), new THREE.MeshBasicMaterial())
+    hidden.position.set(500, 0, 0)
+    hidden.visible = false
+    const hiddenParent = new THREE.Group()
+    hiddenParent.visible = false
+    const visibleChildOfHiddenParent = new THREE.Mesh(
+      new THREE.BoxGeometry(200, 200, 200),
+      new THREE.MeshBasicMaterial(),
+    )
+    hiddenParent.add(visibleChildOfHiddenParent)
+    root.add(visible, hidden, hiddenParent)
+
+    const bounds = visibleObjectBounds(root)
+    expect(bounds.getCenter(new THREE.Vector3()).toArray()).toEqual([2, 0, 0])
+    expect(bounds.getSize(new THREE.Vector3()).toArray()).toEqual([2, 2, 2])
+
+    const fixture = createFixture(1)
+    const fit = fitPerspectiveCameraToObject(fixture.camera, fixture.controls, root)
+    expect(fit?.center.toArray()).toEqual([2, 0, 0])
+    expect(fit?.radius).toBeCloseTo(Math.sqrt(3))
   })
 
   it('updates renderer dimensions and camera aspect while rejecting transient zero sizes', () => {

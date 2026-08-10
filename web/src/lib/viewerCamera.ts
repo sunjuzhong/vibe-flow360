@@ -34,6 +34,21 @@ export type CameraFit = {
   distance: number
 }
 
+/** Bounds rendered geometry while respecting visibility on every ancestor. */
+export function visibleObjectBounds(object: THREE.Object3D): THREE.Box3 {
+  object.updateMatrixWorld(true)
+  const bounds = new THREE.Box3()
+  object.traverseVisible((child) => {
+    const geometry = (child as THREE.Mesh | THREE.Line | THREE.Points).geometry
+    if (!(geometry instanceof THREE.BufferGeometry)) return
+    if (!geometry.boundingBox) geometry.computeBoundingBox()
+    if (geometry.boundingBox && !geometry.boundingBox.isEmpty()) {
+      bounds.union(geometry.boundingBox.clone().applyMatrix4(child.matrixWorld))
+    }
+  })
+  return bounds
+}
+
 const CLIP_MARGIN_RADII = 1.5
 const clippingDirection = new THREE.Vector3()
 const clippingOffset = new THREE.Vector3()
@@ -133,8 +148,7 @@ export function fitPerspectiveCameraToObject(
   object: THREE.Object3D,
   padding = 1.15,
 ): CameraFit | null {
-  object.updateMatrixWorld(true)
-  const bounds = new THREE.Box3().setFromObject(object)
+  const bounds = visibleObjectBounds(object)
   if (bounds.isEmpty()) return null
   const sphere = bounds.getBoundingSphere(new THREE.Sphere())
   if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) return null

@@ -2670,6 +2670,8 @@ button { color: inherit; }
 .viewer-3d:active { cursor: grabbing; }
 .viewer-3d.viewer-camera-navigating,
 .viewer-3d.viewer-camera-navigating canvas { cursor: grabbing; }
+.viewer-3d.viewer-probe-active,
+.viewer-3d.viewer-probe-active canvas { cursor: crosshair; }
 .viewer-pivot-feedback {
   position: absolute;
   z-index: 9;
@@ -2796,6 +2798,30 @@ button { color: inherit; }
   font-size: 8px;
   line-height: 1.4;
 }
+.viewer-probe-result {
+  position: absolute;
+  z-index: 21;
+  left: 10px;
+  bottom: 52px;
+  width: min(300px, calc(100% - 20px));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 9px 11px;
+  border: 1px solid #a9ba7a;
+  border-radius: 7px;
+  color: #4a5540;
+  background: rgb(250 252 245 / 96%);
+  box-shadow: 0 5px 16px rgb(39 46 31 / 13%);
+  font-size: 11px;
+  pointer-events: none;
+}
+.viewer-probe-result div { display: contents; }
+.viewer-probe-result span { color: #7a8272; }
+.viewer-probe-result strong { min-width: 0; overflow-wrap: anywhere; color: #34431f; }
+.viewer-probe-result small { grid-column: 2; color: #808878; font: 10px/1.35 'DM Mono', monospace; overflow-wrap: anywhere; }
+.viewer-probe-result .viewer-probe-position { color: #66705e; font: 10px/1.35 'DM Mono', monospace; font-weight: 400; }
 .viewer-field-panel {
   position: absolute;
   z-index: 3;

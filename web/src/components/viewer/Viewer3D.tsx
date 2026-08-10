@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import { Eye, EyeOff, Focus } from 'lucide-react'
+import { Crosshair, Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
@@ -46,6 +46,7 @@ import {
 } from '../../lib/viewer-tools'
 import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSelection } from './ViewerPrecisionControl'
 import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
+import { useI18n } from '../../i18n'
 
 export type MeshGroupData = {
   id: string
@@ -283,6 +284,7 @@ export function Viewer3D({
   uvfAssetCache,
   onAssetReady,
 }: Props) {
+  const { t } = useI18n()
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -330,6 +332,12 @@ export function Viewer3D({
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
   const [groupVisibility, setGroupVisibilityState] = useState<Record<string, boolean>>({})
+  const [probeToolActive, setProbeToolActive] = useState(false)
+  const [probeResult, setProbeResult] = useState<{
+    surfaceId: string
+    surfaceName: string
+    field: UVFFieldProbe | null
+  } | null>(null)
 
   const [wireframeOn, setWireframeOn] = useState(false)
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
@@ -404,6 +412,16 @@ export function Viewer3D({
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)
     onSelectedFieldChange?.(field)
+    if (!field) setProbeToolActive(false)
+    setProbeResult(null)
+    onFieldProbe?.(null)
+  }
+
+  const toggleProbeTool = () => {
+    const next = !probeToolActive
+    setProbeToolActive(next)
+    setProbeResult(null)
+    onFieldProbe?.(null)
   }
 
   const fitCameraToObject = useCallback((
@@ -1040,23 +1058,30 @@ export function Viewer3D({
       resolvePick: resolvePointerPick,
       activeTool: toolInput,
       fieldProbe: {
-        isActive: () => Boolean(selectedField && uvfAssetRef.current && onFieldProbe),
+        isActive: () => Boolean(probeToolActive && selectedField && uvfAssetRef.current),
         allowMiss: true,
         onPick: (pick) => {
           if (!pick) {
+            setProbeResult(null)
             onFieldProbe?.(null)
             return false
           }
           const mesh = meshForEntity(pick.entityId)
           const asset = uvfAssetRef.current
           if (!selectedField || !asset || !mesh) return false
-          onFieldProbe?.(probeFieldAtIntersection(
+          const field = probeFieldAtIntersection(
             asset,
             mesh,
             selectedField,
             pick.triangleIndex,
             new THREE.Vector3(...pick.worldPosition),
-          ))
+          )
+          setProbeResult({
+            surfaceId: String(mesh.userData.entityId ?? mesh.userData.groupId ?? pick.entityId),
+            surfaceName: mesh.name || String(mesh.userData.entityId ?? mesh.userData.groupId ?? pick.entityId),
+            field,
+          })
+          onFieldProbe?.(field)
           return true
         },
       },
@@ -1159,6 +1184,11 @@ export function Viewer3D({
     if (toolInput?.isActive?.() ?? false) return
     const key = event.key.toLowerCase()
     if (key === 'escape') {
+      if (probeToolActive) {
+        setProbeToolActive(false)
+        setProbeResult(null)
+        onFieldProbe?.(null)
+      }
       if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
       navCubeAnimationRef.current = null
       inputControllerRef.current?.cancelPointer()
@@ -1354,7 +1384,7 @@ export function Viewer3D({
     >
       <div
         ref={containerRef}
-        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''} ${cameraNavigating ? 'viewer-camera-navigating' : ''}`}
+        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''} ${cameraNavigating ? 'viewer-camera-navigating' : ''} ${probeToolActive ? 'viewer-probe-active' : ''}`}
         onPointerDownCapture={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
@@ -1432,13 +1462,28 @@ export function Viewer3D({
           <div className="viewer-toolbar-slot viewer-action-toolbar-slot" role="toolbar" aria-label="Common viewer actions">
             <button
               className="viewer-top-toolbar-fit viewer-icon-tooltip"
-              data-tooltip="Fit the complete model in the viewport"
+              data-tooltip={t('Fit visible surfaces in the viewport')}
               type="button"
               onClick={() => applyCameraCommand('fit')}
-              aria-label="Fit complete model"
+              aria-label={t('Fit visible surfaces')}
             >
-              <Focus size={14} /> <span>Fit</span>
+              <Focus size={14} /> <span>{t('Fit')}</span>
             </button>
+            {displayedFields.length > 0 && (
+              <button
+                className={`viewer-probe-toggle viewer-icon-tooltip ${probeToolActive ? 'active' : ''}`}
+                data-tooltip={selectedField
+                  ? t('Click a visible surface to inspect its surface and field value')
+                  : t('Select a field before using Probe')}
+                type="button"
+                onClick={toggleProbeTool}
+                disabled={!selectedField}
+                aria-label={t('Probe surface and field')}
+                aria-pressed={probeToolActive}
+              >
+                <Crosshair size={14} /> <span>{t('Probe')}</span>
+              </button>
+            )}
             {topToolbar}
           </div>
         </>
@@ -1449,6 +1494,15 @@ export function Viewer3D({
           {snapStatus.candidateCount > 1 && (
             <span>{snapStatus.candidateIndex + 1}/{snapStatus.candidateCount} · Tab cycles · Alt bypasses</span>
           )}
+        </div>
+      )}
+      {probeToolActive && probeResult && viewerReady && (
+        <div className="viewer-probe-result" role="status" aria-live="polite">
+          <div><span>{t('Surface')}</span><strong>{probeResult.surfaceName}</strong></div>
+          <small>{probeResult.surfaceId}</small>
+          <div><span>{t('Field')}</span><strong>{probeResult.field?.fieldName ?? selectedField ?? '—'}</strong></div>
+          <div><span>{t('Value')}</span><strong>{probeResult.field ? probeResult.field.value.toPrecision(7) : t('Unavailable at this point')}</strong></div>
+          <div><span>{t('Position')}</span><strong className="viewer-probe-position">{probeResult.field?.position.map((value) => value.toPrecision(5)).join(', ') ?? '—'}</strong></div>
         </div>
       )}
       {showFieldPanel && displayedFields.length > 0 && viewerReady && (
