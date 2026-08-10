@@ -623,6 +623,10 @@
 .case-review-workspace .case-review-heading { align-items: flex-start; }
 .case-review-heading .hero-status { flex: 0 0 auto; margin: 0; }
 
+.case-review-workspace .resource-review-launchers {
+  margin-top: 8px;
+}
+
 .case-review-workspace .convergence-banner.compact {
   margin-top: 8px;
   padding: 9px;
@@ -646,8 +650,6 @@
   margin-top: 8px;
   padding: 8px 9px;
 }
-
-.case-lifecycle-card dl { margin: 7px 0 0; }
 
 .case-review-details {
   margin-top: 8px;

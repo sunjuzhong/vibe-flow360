@@ -72,6 +72,14 @@ describe('language settings', () => {
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 
+  it('translates Case convergence trend values', () => {
+    expect(translate('stable', 'zh-CN')).toBe('稳定')
+    expect(translate('increasing', 'zh-CN')).toBe('上升')
+    expect(translate('decreasing', 'zh-CN')).toBe('下降')
+    expect(translate('Not Converged — Results show drift or instability', 'zh-CN')).toBe('未收敛 — 结果存在漂移或不稳定')
+    expect(translate('Residual Convergence', 'zh-CN')).toBe('残差收敛')
+  })
+
   it('covers the complete AI Create session chrome in Chinese', () => {
     const messages = [
       'AI CREATE',

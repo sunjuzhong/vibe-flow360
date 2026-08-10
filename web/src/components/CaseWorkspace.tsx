@@ -1,5 +1,4 @@
 import {
-  Activity,
   AlertCircle,
   CheckCircle2,
   CircleDashed,
@@ -8,7 +7,6 @@ import {
   Pause,
   RotateCw,
   Gauge,
-  Thermometer,
   Wind,
   FileOutput,
   BarChart3,
@@ -17,7 +15,6 @@ import {
   Eye,
   EyeOff,
   Info,
-  Settings2,
   Film,
 } from 'lucide-react'
 import { useState, useCallback, useEffect, useMemo } from 'react'
@@ -40,7 +37,6 @@ import {
 } from './ResourceReviewDialog'
 import { useI18n } from '../i18n'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
-import { StructuredDataView } from './StructuredDataView'
 import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, type CaseTimeSeriesArchiveKind } from './CaseSlicePlayerPanel'
 import {
   createViewerContext,
@@ -56,6 +52,18 @@ function formatConvergenceStatus(status: string): string {
     case 'not-converged': return 'Not Converged — Results show drift or instability'
     case 'insufficient-data': return 'Insufficient Data — Unable to assess convergence'
     default: return status
+  }
+}
+
+export function convergenceTrendLabel(metric: Pick<ConvergenceMetric, 'stable' | 'trend'>): string {
+  if (metric.stable) return 'stable'
+  switch (metric.trend.toLowerCase()) {
+    case 'stable':
+    case 'increasing':
+    case 'decreasing':
+      return metric.trend.toLowerCase()
+    default:
+      return metric.trend
   }
 }
 
@@ -340,57 +348,33 @@ function metricText(value: unknown) {
 type NormalizedCase = {
   status: CaseStatusView
   runTime: string
-  startTime: string
-  endTime: string
   operatingPoint: Record<string, unknown>
-  solverSettings: Record<string, unknown>
   turbulenceModel: string
-  referenceQuantities: Record<string, unknown>
   resultCount: number
 }
 
 export function normalizeCase(detail: ResourceDetail | null): NormalizedCase {
   const view = mapCaseStatus(detail)
   const summary = detail?.summary ?? {}
-  const info = detail?.info ?? {}
   const params = detail?.simulation_params ?? {}
 
-  const startRaw = findMetric(info, ['started_at', 'start_time', 'started'])
-  const endRaw = findMetric(info, ['completed_at', 'end_time', 'finished', 'completed'])
   const elapsed = findMetric(summary, ['elapsed_time', 'run_time', 'duration', 'wall_time'])
 
   const operatingCondition =
     findMetric(params, ['operating_condition']) ??
     findMetric(summary, ['operating_condition']) ??
     {}
-  const solver =
-    findMetric(params, ['solver']) ??
-    findMetric(summary, ['solver']) ??
-    {}
   const turbulence =
     findMetric(summary, ['turbulence_model', 'turbulence']) ??
     findMetric(params, ['turbulence_model']) ??
     'Not reported'
-  const references =
-    findMetric(params, ['reference_quantities']) ??
-    findMetric(summary, ['reference_quantities']) ??
-    {}
-
   return {
     status: view,
     runTime: metricText(elapsed),
-    startTime: metricText(startRaw),
-    endTime: metricText(endRaw),
     operatingPoint: (operatingCondition && typeof operatingCondition === 'object'
       ? (operatingCondition as Record<string, unknown>)
       : {}),
-    solverSettings: (solver && typeof solver === 'object'
-      ? (solver as Record<string, unknown>)
-      : {}),
     turbulenceModel: typeof turbulence === 'string' ? turbulence : metricText(turbulence),
-    referenceQuantities: (references && typeof references === 'object'
-      ? (references as Record<string, unknown>)
-      : {}),
     resultCount: detail?.results?.records?.length ?? 0,
   }
 }
@@ -431,7 +415,7 @@ export default function CaseWorkspace({
   onPlanCase: () => Promise<void>
 }) {
   const { t } = useI18n()
-  const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | 'slices' | null>(null)
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'convergence' | 'slices' | null>(null)
   const [activePlayerArchive, setActivePlayerArchive] = useState<{ kind: CaseTimeSeriesArchiveKind; record: CaseResultRecord } | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [selectedVisualizationId, setSelectedVisualizationId] = useState<string | null>(null)
@@ -447,7 +431,6 @@ export default function CaseWorkspace({
   } | null>(null)
   const viewModel = normalizeCase(detail)
   const terminal = isTerminal(viewModel.status)
-  const resultCount = detail?.results?.records?.length ?? 0
   const resultRecords = detail?.results?.records ?? []
   const sliceArchive = findSliceArchive(resultRecords)
   const timeSeriesArchives = findTimeSeriesArchives(resultRecords)
@@ -787,7 +770,7 @@ export default function CaseWorkspace({
             <div className={`convergence-banner compact convergence-${convResult.status}`}>
               {convResult.status === 'converged' ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
               <div>
-                <strong>{formatConvergenceStatus(convResult.status)}</strong>
+                <strong>{t(formatConvergenceStatus(convResult.status))}</strong>
                 <p>{convResult.reason}</p>
               </div>
             </div>
@@ -817,24 +800,6 @@ export default function CaseWorkspace({
           </section>
 
           <ResourceReviewLaunchers>
-            <ResourceReviewLauncher
-              icon={<Clock size={14} />}
-              label={t('Run details')}
-              summary={`${t(statusLabel(viewModel.status))} · ${t(viewModel.runTime)}`}
-              onClick={() => setActiveReviewDialog('run')}
-            />
-            <ResourceReviewLauncher
-              icon={<Gauge size={14} />}
-              label={t('Physical setup')}
-              summary={metricText(velocity)}
-              onClick={() => setActiveReviewDialog('physics')}
-            />
-            <ResourceReviewLauncher
-              icon={<Settings2 size={14} />}
-              label={t('Solver settings')}
-              summary={t(viewModel.turbulenceModel)}
-              onClick={() => setActiveReviewDialog('solver')}
-            />
             {convResult && (
               <ResourceReviewLauncher
                 icon={<BarChart3 size={14} />}
@@ -868,49 +833,6 @@ export default function CaseWorkspace({
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}
-          {activeReviewDialog === 'run' && (
-            <ResourceReviewDialog
-              title={t('Run details')}
-              subtitle={`${t(statusLabel(viewModel.status))} · ${t(viewModel.runTime)}`}
-              icon={<Clock size={18} />}
-              onClose={() => setActiveReviewDialog(null)}
-            >
-              <section className="geometry-selection-card case-lifecycle-card">
-                <div className="geometry-section-title"><Activity size={13} /> Solver lifecycle</div>
-                <dl>
-                  <div><dt>Started</dt><dd>{viewModel.startTime}</dd></div>
-                  <div><dt>Finished</dt><dd>{viewModel.endTime}</dd></div>
-                  <div><dt>Artifacts</dt><dd>{resultCount}</dd></div>
-                  <div><dt>Selected field</dt><dd>{activeField ?? 'Base mesh'}</dd></div>
-                </dl>
-              </section>
-            </ResourceReviewDialog>
-          )}
-          {activeReviewDialog === 'physics' && (
-            <ResourceReviewDialog
-              title={t('Physical setup')}
-              subtitle={t('Operating conditions')}
-              icon={<Gauge size={18} />}
-              onClose={() => setActiveReviewDialog(null)}
-            >
-              <div className="case-review-detail-block">
-                <strong>Operating conditions</strong>
-                <StructuredDataView value={viewModel.operatingPoint} empty="Not reported by Flow360 snapshot." />
-                <strong>Reference quantities</strong>
-                <StructuredDataView value={viewModel.referenceQuantities} empty="Not reported by Flow360 snapshot." />
-              </div>
-            </ResourceReviewDialog>
-          )}
-          {activeReviewDialog === 'solver' && (
-            <ResourceReviewDialog
-              title={t('Solver settings')}
-              subtitle={t(viewModel.turbulenceModel)}
-              icon={<Thermometer size={18} />}
-              onClose={() => setActiveReviewDialog(null)}
-            >
-              <StructuredDataView value={viewModel.solverSettings} empty="Not reported by Flow360 snapshot." />
-            </ResourceReviewDialog>
-          )}
           {activeReviewDialog === 'convergence' && convResult && (
             <ResourceReviewDialog
               title={t('Convergence evidence')}
@@ -921,11 +843,11 @@ export default function CaseWorkspace({
               <div className="case-review-detail-block">
                 {Object.entries(convResult.assessments).map(([key, assessment]: [string, ConvergenceAssessment]) => (
                   <div className="case-assessment-compact" key={key}>
-                    <strong>{formatAssessmentKey(key)}</strong>
+                    <strong>{t(formatAssessmentKey(key))}</strong>
                     {Object.entries(assessment.metrics).map(([name, metric]: [string, ConvergenceMetric]) => (
                       <div className={metric.stable ? 'stable' : 'unstable'} key={name}>
                         <span>{name}</span>
-                        <small>{formatNumber(metric.final)} · {metric.stable ? 'stable' : metric.trend}</small>
+                        <small>{formatNumber(metric.final)} · {t(convergenceTrendLabel(metric))}</small>
                       </div>
                     ))}
                   </div>

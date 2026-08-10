@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -71,6 +71,15 @@ describe('normalizeCase', () => {
     )
     const vm = normalizeCase(d)
     expect(vm.turbulenceModel).toBe('k-epsilon')
+  })
+})
+
+describe('convergenceTrendLabel', () => {
+  it('normalizes supported trend values and prioritizes metric stability', () => {
+    expect(convergenceTrendLabel({ stable: true, trend: 'increasing' })).toBe('stable')
+    expect(convergenceTrendLabel({ stable: false, trend: 'Increasing' })).toBe('increasing')
+    expect(convergenceTrendLabel({ stable: false, trend: 'decreasing' })).toBe('decreasing')
+    expect(convergenceTrendLabel({ stable: false, trend: 'custom-trend' })).toBe('custom-trend')
   })
 })
 
