@@ -1104,6 +1104,7 @@ Object.assign(messages, {
   'All compatible candidates selected': '已选择所有兼容候选项',
   'Select another result…': '选择另一个结果…',
   'No reliable x-axis was found, so row order is used as the progression axis.': '未找到可靠的横轴，因此使用行顺序作为进程轴。',
+  'Row index preserves CSV row order even when step columns repeat or reset, so it is used as the default progression axis.': '即使步数字段发生重复或重置，行索引仍能保留 CSV 的原始行序，因此默认使用行索引作为进程轴。',
   'Checking…': '正在检查…',
   'Add dataset': '添加数据集',
   'data rows': '行数据',

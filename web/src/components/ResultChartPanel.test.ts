@@ -3,32 +3,33 @@ import { parseResultTable } from './ResultTablePreview'
 import { datasetCompatibility, profileResultTable, recommendResultChart } from './ResultChartPanel'
 
 describe('result chart inference', () => {
-  it('recognizes a monotonic solver step and recommends line series', () => {
+  it('uses row index by default even for a monotonic solver step', () => {
     const table = parseResultTable('pseudo_step,residual,force\n1,1,0.2\n2,0.01,0.3\n3,0.0001,0.4', 'residual.csv')
     const recommendation = recommendResultChart(table)
 
-    expect(recommendation.xColumn).toBe('pseudo_step')
+    expect(recommendation.xColumn).toBeNull()
     expect(recommendation.kind).toBe('line')
     expect(recommendation.scale).toBe('log')
     expect(recommendation.yColumns).toContain('residual')
   })
 
-  it('skips constant semantic axes and deprioritizes iteration counters', () => {
+  it('uses row index when physical and pseudo steps repeat or reset', () => {
     const table = parseResultTable('physical_step,pseudo_step,linearIterations,0_cont,1_momx\n0,10,6,1,0.5\n0,20,7,0.1,0.05\n0,30,5,0.01,0.005', 'linear.csv')
     const recommendation = recommendResultChart(table)
 
-    expect(recommendation.xColumn).toBe('pseudo_step')
+    expect(recommendation.xColumn).toBeNull()
     expect(recommendation.yColumns.slice(0, 2)).toEqual(['0_cont', '1_momx'])
     expect(recommendation.scale).toBe('log')
   })
 
-  it('uses compact categorical columns for bar charts', () => {
+  it('keeps compact categorical columns available without selecting them by default', () => {
     const table = parseResultTable('surface,drag\nwing,10\ntail,3\nbody,6', 'forces.csv')
     const recommendation = recommendResultChart(table)
 
-    expect(recommendation.xColumn).toBe('surface')
-    expect(recommendation.kind).toBe('bar')
+    expect(recommendation.xColumn).toBeNull()
+    expect(recommendation.kind).toBe('line')
     expect(recommendation.yColumns).toEqual(['drag'])
+    expect(recommendation.profiles.some((profile) => profile.name === 'surface')).toBe(true)
   })
 
   it('profiles mixed columns without treating sparse text as numeric', () => {

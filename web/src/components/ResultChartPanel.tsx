@@ -64,12 +64,8 @@ export function profileResultTable(table: ParsedResultTable): ColumnProfile[] {
 export function recommendResultChart(table: ParsedResultTable): ChartRecommendation {
   const profiles = profileResultTable(table)
   const numeric = profiles.filter((profile) => profile.numeric)
-  const hintedX = numeric.find((profile) => X_AXIS_HINTS.test(profile.name) && profile.uniqueCount > 1)
-  const monotonicX = numeric.find((profile) => profile.monotonic && profile.uniqueCount >= Math.max(2, table.rows.length * 0.7))
-  const categoricalX = profiles.find((profile) => !profile.numeric && profile.uniqueCount > 1 && profile.uniqueCount <= 24)
-  const x = hintedX ?? monotonicX ?? categoricalX ?? null
   const candidates = numeric
-    .filter((profile) => profile.name !== x?.name && profile.min !== profile.max)
+    .filter((profile) => profile.min !== profile.max)
     .sort((left, right) => {
       const leftScore = Number(SERIES_HINTS.test(left.name)) * 2 - Number(SERIES_PENALTIES.test(left.name))
       const rightScore = Number(SERIES_HINTS.test(right.name)) * 2 - Number(SERIES_PENALTIES.test(right.name))
@@ -85,18 +81,10 @@ export function recommendResultChart(table: ParsedResultTable): ChartRecommendat
     && candidates.filter((profile) => yColumns.includes(profile.name)).every((profile) => (profile.min ?? 0) > 0)
     ? 'log'
     : 'linear'
-  const kind: ChartKind = categoricalX && x?.name === categoricalX.name
-    ? 'bar'
-    : x?.numeric === false
-      ? 'bar'
-      : x?.monotonic || x === null
-        ? 'line'
-        : 'scatter'
-  const reason = x
-    ? `${x.name} is ${x.numeric ? (x.monotonic ? 'numeric and monotonic' : 'numeric') : 'a compact category'}, so ${kind} view is the clearest default.`
-    : 'No reliable x-axis was found, so row order is used as the progression axis.'
+  const kind: ChartKind = 'line'
+  const reason = 'Row index preserves CSV row order even when step columns repeat or reset, so it is used as the default progression axis.'
 
-  return { xColumn: x?.name ?? null, yColumns, kind, scale, reason, profiles }
+  return { xColumn: null, yColumns, kind, scale, reason, profiles }
 }
 
 export function datasetCompatibility(base: ParsedResultTable, candidate: ParsedResultTable): { compatible: boolean; reason: string; commonNumeric: string[] } {
