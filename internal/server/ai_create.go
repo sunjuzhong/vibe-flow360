@@ -34,27 +34,31 @@ const aiCreateOperationTimeout = 45 * time.Minute
 var flow360ProjectIDPattern = regexp.MustCompile(`\bprj-[A-Za-z0-9][A-Za-z0-9-]{7,}\b`)
 
 type aiCreateRequest struct {
-	Intent     string         `json:"intent"`
-	FolderID   string         `json:"folder_id"`
-	SessionID  string         `json:"session_id,omitempty"`
-	ProgressID string         `json:"request_id,omitempty"`
-	Answers    map[string]any `json:"answers,omitempty"`
+	Intent        string         `json:"intent"`
+	FolderID      string         `json:"folder_id"`
+	SessionID     string         `json:"session_id,omitempty"`
+	ProgressID    string         `json:"request_id,omitempty"`
+	Answers       map[string]any `json:"answers,omitempty"`
+	STEPAssetID   string         `json:"step_asset_id,omitempty"`
+	STEPVersionID string         `json:"step_version_id,omitempty"`
 }
 
 type aiCreateSession struct {
-	ID          string                        `json:"id"`
-	Intent      string                        `json:"intent"`
-	FolderID    string                        `json:"folder_id"`
-	Rounds      []aicreate.ClarificationRound `json:"rounds"`
-	Pending     []aicreate.ClarificationField `json:"pending,omitempty"`
-	Phase       string                        `json:"phase"`
-	CAD         *aiCreateCADCheckpoint        `json:"cad,omitempty"`
-	Prepared    *aiCreatePrepared             `json:"prepared,omitempty"`
-	Parameters  *aiCreateParameterCheckpoint  `json:"parameters,omitempty"`
-	DraftID     string                        `json:"draft_id,omitempty"`
-	CreatedAt   time.Time                     `json:"created_at"`
-	UpdatedAt   time.Time                     `json:"updated_at"`
-	CompletedAt *time.Time                    `json:"completed_at,omitempty"`
+	ID            string                        `json:"id"`
+	Intent        string                        `json:"intent"`
+	FolderID      string                        `json:"folder_id"`
+	STEPAssetID   string                        `json:"step_asset_id,omitempty"`
+	STEPVersionID string                        `json:"step_version_id,omitempty"`
+	Rounds        []aicreate.ClarificationRound `json:"rounds"`
+	Pending       []aicreate.ClarificationField `json:"pending,omitempty"`
+	Phase         string                        `json:"phase"`
+	CAD           *aiCreateCADCheckpoint        `json:"cad,omitempty"`
+	Prepared      *aiCreatePrepared             `json:"prepared,omitempty"`
+	Parameters    *aiCreateParameterCheckpoint  `json:"parameters,omitempty"`
+	DraftID       string                        `json:"draft_id,omitempty"`
+	CreatedAt     time.Time                     `json:"created_at"`
+	UpdatedAt     time.Time                     `json:"updated_at"`
+	CompletedAt   *time.Time                    `json:"completed_at,omitempty"`
 }
 
 type aiCreateCADCheckpoint struct {
@@ -77,6 +81,8 @@ type aiCreatePrepared struct {
 	Blueprint      aicreate.Blueprint `json:"blueprint"`
 	Baseline       json.RawMessage    `json:"baseline"`
 	BoundaryPatch  json.RawMessage    `json:"boundary_patch"`
+	STEPAssetID    string             `json:"step_asset_id,omitempty"`
+	STEPVersionID  string             `json:"step_version_id,omitempty"`
 }
 
 type aiCreateImportedGeometry struct {
@@ -103,6 +109,8 @@ type aiCreateResponse struct {
 	Preflight        *flow360.PreflightResult `json:"preflight,omitempty"`
 	Stages           []string                 `json:"stages"`
 	Warnings         []string                 `json:"warnings,omitempty"`
+	STEPAssetID      string                   `json:"step_asset_id,omitempty"`
+	STEPVersionID    string                   `json:"step_version_id,omitempty"`
 }
 
 func (s *Server) aiCreateProject(c *gin.Context) {
@@ -128,6 +136,8 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 	request.FolderID = strings.TrimSpace(request.FolderID)
 	request.SessionID = strings.TrimSpace(request.SessionID)
 	request.ProgressID = strings.TrimSpace(request.ProgressID)
+	request.STEPAssetID = strings.TrimSpace(request.STEPAssetID)
+	request.STEPVersionID = strings.TrimSpace(request.STEPVersionID)
 	if intentCharacters > maxAICreateIntentCharacters {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
 			"code": "input_too_long", "field": "intent",
@@ -209,7 +219,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, payload)
 		return
 	}
-	for repairAttempt := 1; ; repairAttempt++ {
+	for repairAttempt := 1; session.STEPVersionID == ""; repairAttempt++ {
 		contractErr := aicreate.ValidateImportedGeometryContract(remote.Baseline, blueprint.Geometry)
 		if contractErr == nil {
 			break
@@ -282,6 +292,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		ProjectID: remote.ProjectID, RootResourceID: remote.RootResourceID,
 		GeometryName: geometryName, Blueprint: blueprint,
 		Baseline: append(json.RawMessage(nil), baseline...), BoundaryPatch: boundaryPatch,
+		STEPAssetID: session.STEPAssetID, STEPVersionID: session.STEPVersionID,
 	}
 	s.setAICreateSessionPrepared(session.ID, prepared)
 	s.finishAICreateParameters(c, session, prepared)
@@ -402,6 +413,7 @@ func (s *Server) finishAICreateDraft(c *gin.Context, session aiCreateSession, pr
 		RootResourceType: "Geometry", Blueprint: checkpoint.Blueprint,
 		SimulationParams: checkpoint.SimulationParams, Preflight: &checkpoint.Preflight,
 		Stages: stages, Warnings: warnings,
+		STEPAssetID: prepared.STEPAssetID, STEPVersionID: prepared.STEPVersionID,
 	}
 	s.storeAICreateProgressResponse(progressID, response)
 	c.JSON(http.StatusCreated, response)
@@ -576,6 +588,27 @@ func (e *aiCreateCADRepairExhaustedError) Error() string {
 }
 
 func (s *Server) prepareAICreateCAD(ctx context.Context, session aiCreateSession, progressID string) (aicreate.Blueprint, aicreate.GeometryValidation, string, string, error) {
+	if session.STEPVersionID != "" {
+		asset, ok := s.stepAssets.Get(session.STEPAssetID)
+		if !ok {
+			return aicreate.Blueprint{}, aicreate.GeometryValidation{}, "", "", errors.New("the selected STEP library asset no longer exists")
+		}
+		version, path, ok := s.stepAssets.Version(session.STEPAssetID, session.STEPVersionID)
+		if !ok {
+			return aicreate.Blueprint{}, aicreate.GeometryValidation{}, "", "", errors.New("the selected STEP library version no longer exists")
+		}
+		if version.Validation.Status != "ready" || version.Validation.Report == nil {
+			return aicreate.Blueprint{}, aicreate.GeometryValidation{}, "", "", errors.New("the selected STEP library version must pass exact validation before AI Create can use it")
+		}
+		geometry := aicreate.Geometry{Name: safeGeometryName(asset.Name), Unit: version.Unit, Format: "step", Representation: "exact-brep", Generator: "step-library", Validated: true, Validation: "Reused immutable STEP library version after exact OpenCascade validation."}
+		if version.Geometry != nil {
+			geometry = *version.Geometry
+			geometry.Unit, geometry.Validated = version.Unit, true
+		}
+		blueprint := aicreate.Blueprint{Version: aicreate.BlueprintVersion, Decision: "generate", ProjectName: asset.Name, Summary: fmt.Sprintf("Use validated STEP library version V%d as the Geometry source.", version.Number), Geometry: geometry, Target: "case", Assumptions: []string{"CAD generation was skipped because an immutable validated STEP version was selected."}}
+		s.updateAICreateProgress(progressID, 1, fmt.Sprintf("Using STEP library %s V%d; CAD generation is skipped.", asset.Name, version.Number))
+		return blueprint, *version.Validation.Report, path, version.FileName, nil
+	}
 	if session.CAD != nil {
 		checkpoint := *session.CAD
 		if err := validateAICreateAsset(checkpoint.GeometryPath, "geometry"); err == nil {
@@ -692,6 +725,9 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 		if request.FolderID == "" {
 			return aiCreateSession{}, errors.New("select a destination folder before creating a project")
 		}
+		if (request.STEPAssetID == "") != (request.STEPVersionID == "") {
+			return aiCreateSession{}, errors.New("select both a STEP asset and version")
+		}
 		identifier, err := newSubmissionID()
 		if err != nil {
 			return aiCreateSession{}, errors.New("could not start an AI Create session")
@@ -699,6 +735,7 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 		now := time.Now().UTC()
 		session := aiCreateSession{
 			ID: strings.Replace(identifier, "sub-", "aic-", 1), Intent: request.Intent, FolderID: request.FolderID,
+			STEPAssetID: request.STEPAssetID, STEPVersionID: request.STEPVersionID,
 			Phase: "understanding", CreatedAt: now, UpdatedAt: now,
 		}
 		s.aiCreateSessions[session.ID] = session

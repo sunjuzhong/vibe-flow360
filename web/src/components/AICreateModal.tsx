@@ -209,12 +209,14 @@ export default function AICreateModal({
   onClose,
   onCreated,
   onOpenSTEPLibrary,
+  stepSource,
 }: {
   folder: FolderNode | null
   environment?: string
   onClose: () => void
   onCreated: (result: AICreateResult) => void
   onOpenSTEPLibrary?: () => void
+  stepSource?: { asset_id: string; version_id: string; label: string }
 }) {
   const { t } = useI18n()
   const [intent, setIntent] = useState('')
@@ -279,7 +281,7 @@ export default function AICreateModal({
             resumed = true
             const resumedProgressID = newAICreateProgressID()
             progressID = resumedProgressID
-            const result = await api.aiCreate(intent.trim(), folder.id, current.session_id, undefined, resumedProgressID)
+            const result = await api.aiCreate(intent.trim(), folder.id, current.session_id, undefined, resumedProgressID, stepSource)
             return result
           }
           if (current.status === 'failed') throw new Error(current.detail || 'AI Create stopped before it could finish.')
@@ -308,7 +310,7 @@ export default function AICreateModal({
     }
     const timer = window.setInterval(() => { void refreshProgress() }, 800)
     try {
-      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers, progressID)
+      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers, progressID, stepSource)
       await refreshProgress()
       acceptResult(result)
     } catch (cause) {
@@ -432,7 +434,8 @@ export default function AICreateModal({
         )}
 
         {!busy && !intent && <p className="ai-create-example">{t('Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.')}</p>}
-        {!hasStarted && onOpenSTEPLibrary && <button className="ai-create-library-link" type="button" onClick={onOpenSTEPLibrary}><Database size={14} /> {t('Use a validated STEP from the geometry library')}</button>}
+        {!hasStarted && stepSource && <p className="ai-create-example"><Database size={14} /> {t('Geometry source')}: {stepSource.label}. {t('AI CAD generation will be skipped.')}</p>}
+        {!hasStarted && onOpenSTEPLibrary && <button className="ai-create-library-link" type="button" onClick={onOpenSTEPLibrary}><Database size={14} /> {t(stepSource ? 'Change STEP geometry source' : 'Use a validated STEP from the geometry library')}</button>}
         {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />{t('Connecting to the AI Create backend…')}</div>}
         {progress && <AICreateProgressView progress={progress} environment={environment} />}
         {error && <div className="ai-create-error" role="alert">{t(error)}</div>}

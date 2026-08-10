@@ -21,6 +21,9 @@ var cadGeneratorScript []byte
 //go:embed assets/validate_step.py
 var stepValidatorScript []byte
 
+//go:embed assets/preview_step.py
+var stepPreviewScript []byte
+
 type GeometryValidation struct {
 	SolidCount           int       `json:"solid_count"`
 	FaceCount            int       `json:"face_count"`
@@ -41,6 +44,16 @@ type Generator interface {
 
 type STEPValidator interface {
 	ValidateSTEP(context.Context, string) (GeometryValidation, error)
+}
+
+type STEPPreview struct {
+	Vertices  int       `json:"vertices"`
+	Triangles int       `json:"triangles"`
+	Bounds    []float64 `json:"bounds"`
+}
+
+type STEPPreviewer interface {
+	PreviewSTEP(context.Context, []string, string) (STEPPreview, error)
 }
 
 type GenerationFailureKind string
@@ -248,6 +261,52 @@ func (g *CadQueryGenerator) ValidateSTEP(ctx context.Context, inputPath string) 
 		return validation, &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("STEP topology validation failed: solids=%d faces=%d volume=%g", validation.SolidCount, validation.FaceCount, validation.Volume)}
 	}
 	return validation, nil
+}
+
+func (g *CadQueryGenerator) PreviewSTEP(ctx context.Context, inputPaths []string, outputPath string) (STEPPreview, error) {
+	var preview STEPPreview
+	if len(inputPaths) < 1 || len(inputPaths) > 2 {
+		return preview, errors.New("STEP preview requires one or two versions")
+	}
+	directory, err := os.MkdirTemp("", "vibesim-step-preview-")
+	if err != nil {
+		return preview, err
+	}
+	defer os.RemoveAll(directory)
+	scriptPath := filepath.Join(directory, "preview_step.py")
+	if err := os.WriteFile(scriptPath, stepPreviewScript, 0o500); err != nil {
+		return preview, err
+	}
+	uvBinary, err := resolveCADRuntimeBinary(g.UVBinary)
+	if err != nil {
+		return preview, err
+	}
+	args := []string{"run", "--no-project"}
+	if g.Offline {
+		args = append(args, "--offline")
+	}
+	args = append(args, "--python", firstConfigured(g.Python, "3.11"), "--with", "cadquery==2.6.1", "python", scriptPath, outputPath)
+	args = append(args, inputPaths...)
+	runCtx, cancel := context.WithTimeout(ctx, g.Timeout)
+	defer cancel()
+	command := exec.CommandContext(runCtx, uvBinary, args...)
+	command.Dir = directory
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + directory, "TMPDIR=" + directory, "UV_NO_PROGRESS=1"}
+	if g.CacheDir != "" {
+		command.Env = append(command.Env, "UV_CACHE_DIR="+g.CacheDir)
+	}
+	if g.PythonDir != "" {
+		command.Env = append(command.Env, "UV_PYTHON_INSTALL_DIR="+g.PythonDir)
+	}
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	if err := command.Run(); err != nil {
+		return preview, fmt.Errorf("STEP preview generation failed: %s", truncateOutput(stderr.Bytes(), 1200))
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &preview); err != nil {
+		return preview, fmt.Errorf("STEP preview returned invalid data: %w", err)
+	}
+	return preview, nil
 }
 
 func resolveCADRuntimeBinary(configured string) (string, error) {

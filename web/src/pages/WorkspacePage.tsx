@@ -115,6 +115,7 @@ export default function WorkspacePage() {
   const [importOpen, setImportOpen] = useState(false)
   const [aiCreateOpen, setAICreateOpen] = useState(false)
   const [stepLibraryOpen, setSTEPLibraryOpen] = useState(false)
+  const [aiCreateSTEPSource, setAICreateSTEPSource] = useState<{ asset_id: string; version_id: string; label: string } | undefined>()
   const [folderMutation, setFolderMutation] = useState<{ mode: FolderMutationMode; folder: FolderNode } | null>(null)
   const [projectMutation, setProjectMutation] = useState<{ mode: ProjectMutationMode; project: ProjectRecord } | null>(null)
 
@@ -462,12 +463,14 @@ export default function WorkspacePage() {
         environment={flowStatus?.environment}
         onClose={() => setAICreateOpen(false)}
         onOpenSTEPLibrary={() => { setAICreateOpen(false); setSTEPLibraryOpen(true) }}
+        stepSource={aiCreateSTEPSource}
         onCreated={(result) => navigate(aiCreateProjectPath(result))}
       />}
       {selectedFolder && stepLibraryOpen && <STEPLibraryModal
         folder={selectedFolder}
         onClose={() => setSTEPLibraryOpen(false)}
         onCreated={(result) => navigate(`/projects/${encodeURIComponent(result.project_id)}`)}
+        onUseInAICreate={(source) => { setAICreateSTEPSource(source); setSTEPLibraryOpen(false); setAICreateOpen(true) }}
       />}
       {folderRoot && folderMutation && (
         <FolderMutationDialog

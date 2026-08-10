@@ -53,3 +53,33 @@ func TestStoreRejectsEmptyAndNonSTEPFiles(t *testing.T) {
 		t.Fatal("empty STEP was accepted")
 	}
 }
+
+func TestStorePersistsAndRecoversAIJobs(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.CreateAIJob(AIJobRequest{Prompt: "Create a 10 mm bracket", Name: "Bracket"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateAIJob(job.ID, "running", "generating", 55, "Generating"); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := reopened.RecoverAIJobs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 1 || recovered[0].ID != job.ID || recovered[0].Status != "recovering" {
+		t.Fatalf("unexpected recovered jobs: %#v", recovered)
+	}
+	stored, ok := reopened.AIJob(job.ID)
+	if !ok || stored.Request.Prompt != "Create a 10 mm bracket" || stored.Progress != 55 {
+		t.Fatalf("unexpected persisted job: %#v", stored)
+	}
+}
