@@ -397,7 +397,10 @@ describe('Flow360 UVF Three.js library', () => {
     })
     expect((face as import('three').Mesh).geometry.getAttribute('pressure').count).toBe(3)
     // Apply field coloring
+    const baseColor = (face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material.color.getHex()
     applyFieldColoring(asset, 'pressure', 'grayscale')
+    expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshBasicMaterial)
+    expect(((face as THREE.Mesh).material as THREE.MeshBasicMaterial).toneMapped).toBe(false)
     const colorAttribute = (face as import('three').Mesh).geometry.getAttribute('color')
     expect(colorAttribute.count).toBe(3)
     expect(Array.from(collectFieldValues(asset, 'pressure'))).toEqual([0, 0.5, 1])
@@ -432,7 +435,7 @@ describe('Flow360 UVF Three.js library', () => {
     })
     setWireframeOverlay(asset, true)
     applyFieldColoring(asset, 'pressure', 'viridis')
-    const faceMesh = face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>
+    const faceMesh = face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
     expect(faceMesh.material.wireframe).toBe(false)
     expect(faceMesh.material.vertexColors).toBe(true)
     expect(faceMesh.material.polygonOffset).toBe(true)
@@ -453,6 +456,8 @@ describe('Flow360 UVF Three.js library', () => {
     expect(disposeWireMaterial).toHaveBeenCalledOnce()
     // Clear field coloring
     applyFieldColoring(asset, null, 'viridis')
+    expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshPhongMaterial)
+    expect(((face as THREE.Mesh).material as THREE.MeshPhongMaterial).color.getHex()).toBe(baseColor)
     asset.dispose()
   })
 

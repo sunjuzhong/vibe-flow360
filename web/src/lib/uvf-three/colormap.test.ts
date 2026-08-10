@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { sampleColormap, applyScalarField, listColormaps, createColormapTexture } from './colormap'
+import { DEFAULT_COLORMAP, sampleColormap, applyScalarField, listColormaps, createColormapTexture } from './colormap'
 import type { UVFFieldInfo } from './types'
 
 describe('colormap', () => {
+  it('uses turbo as the default scientific colormap', () => {
+    expect(DEFAULT_COLORMAP).toBe('turbo')
+    expect(sampleColormap(0.5).toArray()).toEqual(sampleColormap(0.5, 'turbo').toArray())
+  })
+
   it('lists available colormaps', () => {
     const maps = listColormaps()
     expect(maps).toContain('viridis')

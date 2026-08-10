@@ -3,6 +3,8 @@ import type { UVFFieldInfo } from './types'
 
 export type ColormapName = 'viridis' | 'turbo' | 'coolwarm' | 'plasma' | 'grayscale'
 
+export const DEFAULT_COLORMAP: ColormapName = 'turbo'
+
 const VIRIDIS_STOPS: [number, number, number][] = [
   [0.267, 0.005, 0.329],
   [0.283, 0.141, 0.458],
@@ -77,7 +79,7 @@ export function listColormaps(): ColormapName[] {
   return Object.keys(COLORMAPS) as ColormapName[]
 }
 
-export function sampleColormap(t: number, name: ColormapName = 'viridis'): THREE.Color {
+export function sampleColormap(t: number, name: ColormapName = DEFAULT_COLORMAP): THREE.Color {
   const stops = COLORMAPS[name] ?? VIRIDIS_STOPS
   const clamped = Math.max(0, Math.min(1, t))
   const scaled = clamped * (stops.length - 1)
@@ -96,7 +98,7 @@ export function sampleColormap(t: number, name: ColormapName = 'viridis'): THREE
 export function applyScalarField(
   values: Float32Array,
   field: UVFFieldInfo,
-  colormap: ColormapName = 'viridis',
+  colormap: ColormapName = DEFAULT_COLORMAP,
 ): Float32Array {
   const range = field.max - field.min || 1
   const colors = new Float32Array(values.length * 3)
@@ -111,7 +113,7 @@ export function applyScalarField(
 }
 
 export function createColormapTexture(
-  name: ColormapName = 'viridis',
+  name: ColormapName = DEFAULT_COLORMAP,
   resolution = 256,
 ): THREE.DataTexture {
   const data = new Uint8Array(resolution * 4)

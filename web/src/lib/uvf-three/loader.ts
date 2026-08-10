@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
-import { sampleColormap, type ColormapName } from './colormap'
+import { DEFAULT_COLORMAP, sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
 import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
 
@@ -316,6 +316,10 @@ export function buildUVFAsset(
           object.geometry.dispose()
           const materials = Array.isArray(object.material) ? object.material : [object.material]
           materials.forEach((material) => material.dispose())
+          const baseMaterial = object.userData.uvfBaseMaterial
+          if (baseMaterial instanceof THREE.Material && !materials.includes(baseMaterial)) {
+            baseMaterial.dispose()
+          }
         }
       })
     },
@@ -347,7 +351,7 @@ function deriveRenderNormals(
 export function applyFieldColoring(
   asset: UVFAsset,
   fieldName: string | null,
-  colormap: ColormapName = 'viridis',
+  colormap: ColormapName = DEFAULT_COLORMAP,
   options: UVFFieldColorOptions = {},
 ): void {
   const field = fieldName ? asset.fields.find((f) => f.name === fieldName) : null
@@ -355,7 +359,6 @@ export function applyFieldColoring(
     if (!(object instanceof THREE.Mesh)) return
     if (object.userData.uvfType !== 'Face') return
     const geometry = object.geometry
-    const material = object.material as THREE.MeshPhongMaterial
     const positionAttr = geometry.getAttribute('position')
     if (!positionAttr) return
     if (field) {
@@ -383,17 +386,54 @@ export function applyFieldColoring(
           }
         }
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-        material.vertexColors = true
+        const material = ensureFieldColorMaterial(object)
         material.needsUpdate = true
       }
     } else {
       if (geometry.getAttribute('color')) {
         geometry.deleteAttribute('color')
       }
-      material.vertexColors = false
-      material.needsUpdate = true
+      restoreBaseSurfaceMaterial(object)
     }
   })
+}
+
+function ensureFieldColorMaterial(object: THREE.Mesh): THREE.MeshBasicMaterial {
+  if (object.material instanceof THREE.MeshBasicMaterial && object.userData.uvfBaseMaterial) {
+    return object.material
+  }
+  const base = object.material as THREE.MeshPhongMaterial
+  object.userData.uvfBaseMaterial = base
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    side: base.side,
+    transparent: base.transparent,
+    opacity: base.opacity,
+    depthTest: base.depthTest,
+    depthWrite: base.depthWrite,
+    polygonOffset: base.polygonOffset,
+    polygonOffsetFactor: base.polygonOffsetFactor,
+    polygonOffsetUnits: base.polygonOffsetUnits,
+  })
+  material.toneMapped = false
+  object.material = material
+  return material
+}
+
+function restoreBaseSurfaceMaterial(object: THREE.Mesh): void {
+  const base = object.userData.uvfBaseMaterial
+  if (base instanceof THREE.Material) {
+    const fieldMaterials = Array.isArray(object.material) ? object.material : [object.material]
+    object.material = base
+    fieldMaterials.forEach((material) => {
+      if (material !== base) material.dispose()
+    })
+    delete object.userData.uvfBaseMaterial
+  }
+  const material = object.material as THREE.MeshPhongMaterial
+  material.vertexColors = false
+  material.needsUpdate = true
 }
 
 export function collectFieldValues(asset: UVFAsset, fieldName: string): Float32Array {

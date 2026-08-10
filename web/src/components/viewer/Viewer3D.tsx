@@ -4,7 +4,7 @@ import { Crosshair, Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
 import type { UVFAsset, UVFAssetLRU, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
@@ -327,7 +327,7 @@ export function Viewer3D({
     levels: [],
   })
   const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
-  const [colormap, setColormap] = useState<ColormapName>('viridis')
+  const [colormap, setColormap] = useState<ColormapName>(DEFAULT_COLORMAP)
   const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
@@ -830,7 +830,7 @@ export function Viewer3D({
     const selectedIds = new Set(selection.groupIds?.length ? selection.groupIds : [selection.groupId])
     for (const [, mesh] of meshesRef.current) {
       const groupId = String(mesh.userData.groupId ?? '')
-      const mat = mesh.material as THREE.MeshPhongMaterial
+      const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
       const appearance = entityAppearances[groupId]
       const defaultColor = manifest?.groups.find((group) => group.id === groupId)?.color ?? '#6f8790'
       const style = resolveViewerMaterialStyle(
@@ -839,12 +839,14 @@ export function Viewer3D({
         selectedIds.has(groupId),
         effectiveGroupVisibility[groupId] !== false,
       )
-      mat.color.set(style.color)
+      mat.color.set(mat.vertexColors ? 0xffffff : style.color)
       mat.opacity = style.opacity
       mat.transparent = style.opacity < 1
       mat.depthWrite = style.opacity >= 1
-      mat.emissive.set(style.emissive)
-      mat.emissiveIntensity = style.emissiveIntensity
+      if (mat instanceof THREE.MeshPhongMaterial) {
+        mat.emissive.set(style.emissive)
+        mat.emissiveIntensity = style.emissiveIntensity
+      }
       mat.needsUpdate = true
     }
     const asset = uvfAssetRef.current
