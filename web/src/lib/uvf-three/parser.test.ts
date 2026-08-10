@@ -458,6 +458,11 @@ describe('Flow360 UVF Three.js library', () => {
     applyFieldColoring(asset, null, 'viridis')
     expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshPhongMaterial)
     expect(((face as THREE.Mesh).material as THREE.MeshPhongMaterial).color.getHex()).toBe(baseColor)
+    applyFieldColoring(asset, 'pressure', 'viridis')
+    ;(face as THREE.Mesh).geometry.deleteAttribute('pressure')
+    applyFieldColoring(asset, 'pressure', 'viridis')
+    expect((face as THREE.Mesh).geometry.getAttribute('color')).toBeUndefined()
+    expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshPhongMaterial)
     asset.dispose()
   })
 

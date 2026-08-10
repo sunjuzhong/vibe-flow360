@@ -419,6 +419,9 @@ export function applyFieldColoring(
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
         const material = ensureFieldColorMaterial(object)
         material.needsUpdate = true
+      } else {
+        if (geometry.getAttribute('color')) geometry.deleteAttribute('color')
+        restoreBaseSurfaceMaterial(object)
       }
     } else {
       if (geometry.getAttribute('color')) {

@@ -81,4 +81,25 @@ describe('ManifestMemberGroup', () => {
     expect(hiddenMarkup).not.toContain('aria-label="Hide all surfaces"')
     expect(hiddenMarkup).not.toMatch(/aria-label="Show all surfaces"[^>]*disabled=""/)
   })
+
+  it('can render a count-only header collapsed by default', () => {
+    const markup = renderToStaticMarkup(
+      <ManifestMemberGroup
+        label="Result artifacts"
+        memberLabel="artifacts"
+        icon={<Box size={13} />}
+        total={4}
+        visibleCount={4}
+        defaultExpanded={false}
+        showVisibilityControl={false}
+      >
+        <p>Hidden until expanded</p>
+      </ManifestMemberGroup>,
+    )
+    expect(markup).toContain('aria-expanded="false"')
+    expect(markup).toContain('aria-label="Expand Result artifacts"')
+    expect(markup).toContain('<span>4</span>')
+    expect(markup).not.toContain('manifest-member-group__visibility')
+    expect(markup).toContain('hidden=""')
+  })
 })

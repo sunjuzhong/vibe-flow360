@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseSurfaceVisibilityMap, findSliceArchive, groupCaseVisualizationMembers, isSliceArchiveResult, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseSurfaceVisibilityMap, caseVisualizationSections, findSliceArchive, groupCaseVisualizationMembers, isSliceArchiveResult, mapCaseStatus, normalizeCase, isTerminal, visibleCaseSurfaceCount } from './CaseWorkspace'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
   return {
@@ -119,6 +119,27 @@ describe('groupCaseVisualizationMembers', () => {
     expect(groupCaseVisualizationMembers(groups)).toHaveLength(1)
     expect(groupCaseVisualizationMembers(groups)[0].category).toBe('surfaces')
     expect(groupCaseVisualizationMembers(groups)[0].members).toHaveLength(2)
+  })
+
+  it('adds a Slice player section when only the time-series archive exists', () => {
+    const groups = [
+      { id: 'wall', name: 'Wall', color: '#fff', visible: true, path: ['boundaries'] },
+      { id: 'qcriterion', name: 'Q', color: '#fff', visible: true, path: ['isosurfaces'] },
+    ]
+    expect(caseVisualizationSections(groups, true).map((section) => section.category)).toEqual([
+      'surfaces',
+      'slices',
+      'isosurfaces',
+    ])
+    expect(caseVisualizationSections(groups, true)[1].members).toEqual([])
+  })
+
+  it('does not duplicate Slices when the manifest already contains Slice geometry', () => {
+    const groups = [
+      { id: 'slice-y', name: 'Y plane', color: '#fff', visible: true, path: ['slices'] },
+    ]
+    expect(caseVisualizationSections(groups, true)).toHaveLength(1)
+    expect(caseVisualizationSections(groups, true)[0].members).toHaveLength(1)
   })
 })
 

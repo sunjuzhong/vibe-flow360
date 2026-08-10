@@ -159,6 +159,20 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
     .filter((group) => group.members.length > 0)
 }
 
+export function caseVisualizationSections(
+  groups: MeshGroupData[],
+  hasSliceArchive: boolean,
+): CaseVisualizationGroup[] {
+  const sections = groupCaseVisualizationMembers(groups)
+  if (!hasSliceArchive || sections.some((section) => section.category === 'slices')) return sections
+  const sliceSection: CaseVisualizationGroup = { category: 'slices', members: [] }
+  return [...sections, sliceSection]
+    .sort((left, right) => (
+      caseVisualizationCategoryOrder.indexOf(left.category)
+      - caseVisualizationCategoryOrder.indexOf(right.category)
+    ))
+}
+
 function caseVisualizationCategoryLabel(category: CaseVisualizationCategory): string {
   switch (category) {
     case 'surfaces': return 'Surfaces'
@@ -312,6 +326,8 @@ export default function CaseWorkspace({
   const viewModel = normalizeCase(detail)
   const terminal = isTerminal(viewModel.status)
   const resultCount = detail?.results?.records?.length ?? 0
+  const resultRecords = detail?.results?.records ?? []
+  const sliceArchive = findSliceArchive(resultRecords)
   const hasErrors = Boolean(detail?.errors && Object.keys(detail.errors).length)
 
   const { result: convergence, loading: convergenceLoading, refetch: refetchConvergence } =
@@ -325,7 +341,10 @@ export default function CaseWorkspace({
     geometryResourceId ?? null,
   )
   const surfaceGroups = manifest?.groups ?? []
-  const visualizationGroups = useMemo(() => groupCaseVisualizationMembers(surfaceGroups), [surfaceGroups])
+  const visualizationGroups = useMemo(
+    () => caseVisualizationSections(surfaceGroups, Boolean(sliceArchive)),
+    [sliceArchive, surfaceGroups],
+  )
   const selectedVisualizationObject = surfaceGroups.find((group) => group.id === viewerSelection.groupId) ?? null
 
   useEffect(() => {
@@ -376,8 +395,6 @@ export default function CaseWorkspace({
     }
   }, [detail?.id, resourceId])
 
-  const resultRecords = detail?.results?.records ?? []
-  const sliceArchive = findSliceArchive(resultRecords)
   const reviewLevel = viewModel.status === 'failed'
     ? 'blocked'
     : viewModel.status === 'completed' && convResult?.status === 'converged'
@@ -412,10 +429,11 @@ export default function CaseWorkspace({
           </div>
           <div className="case-surface-inventory">
             {visualizationGroups.map(({ category, members }) => {
-              const categoryLabel = previewSource === 'fallback'
+              const categoryLabel = previewSource === 'fallback' && category === 'surfaces'
                 ? t('Geometry surfaces')
                 : t(caseVisualizationCategoryLabel(category))
               const categoryVisibleCount = visibleCaseSurfaceCount(members, entityVisibility)
+              const archiveShortcut = category === 'slices' && members.length === 0 && Boolean(sliceArchive)
               const CategoryIcon = category === 'surfaces'
                 ? Layers
                 : category === 'slices'
@@ -429,12 +447,26 @@ export default function CaseWorkspace({
                   label={categoryLabel}
                   memberLabel={categoryLabel}
                   icon={<CategoryIcon size={13} aria-hidden="true" />}
-                  total={members.length}
+                  total={archiveShortcut ? 1 : members.length}
                   visibleCount={categoryVisibleCount}
                   onHideAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, false) }))}
                   onShowAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, true) }))}
+                  defaultExpanded={false}
+                  showVisibilityControl={!archiveShortcut}
                 >
                   <div className="case-surface-list">
+                    {archiveShortcut && (
+                      <button
+                        type="button"
+                        className="case-result-row previewable"
+                        onClick={() => setActiveReviewDialog('slices')}
+                        aria-label={t('Time-series Slice player')}
+                      >
+                        <Film size={11} />
+                        <span>{t('Time-series Slice archive')}</span>
+                        <small>{t('Open')}</small>
+                      </button>
+                    )}
                     {members.map((group) => {
                       const visible = entityVisibility[group.id] ?? group.visible
                       return (
@@ -465,12 +497,16 @@ export default function CaseWorkspace({
             )}
           </div>
           <div className="case-result-inventory">
-            <div className="geometry-tree-root">
-              <FileOutput size={13} />
-              <strong>Result artifacts</strong>
-              <span>{resultRecords.length}</span>
-            </div>
-            {resultRecords.map((result, index) => {
+            <ManifestMemberGroup
+              label={t('Result artifacts')}
+              memberLabel={t('Result artifacts')}
+              icon={<FileOutput size={13} aria-hidden="true" />}
+              total={resultRecords.length}
+              visibleCount={resultRecords.length}
+              defaultExpanded={false}
+              showVisibilityControl={false}
+            >
+              {resultRecords.map((result, index) => {
               const path = result.path
               const label = result.name ?? path ?? `Result ${index + 1}`
               const previewable = isTabularResult(path, result.file_type) && Boolean(path)
@@ -505,8 +541,9 @@ export default function CaseWorkspace({
               ) : (
                 <div className="case-result-row" key={path ?? label}>{content}</div>
               )
-            })}
-            {resultRecords.length === 0 && <div className="geometry-empty-list">No result artifacts reported.</div>}
+              })}
+              {resultRecords.length === 0 && <div className="geometry-empty-list">{t('No result artifacts reported.')}</div>}
+            </ManifestMemberGroup>
           </div>
         </>
       )}

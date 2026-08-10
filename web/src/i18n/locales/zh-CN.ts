@@ -355,6 +355,7 @@ Object.assign(messages, {
   'Last updated': '最后更新',
   'Last refresh': '最后刷新',
   'Time-series Slice player': '时序切片播放器',
+  'Time-series Slice archive': '时序切片归档',
   'Prepare and inspect flow-field frames': '准备并检查流场帧',
   'Large-file preparation and frame index': '大文件准备与帧索引',
   'Reading Slice player state…': '正在读取切片播放器状态…',
