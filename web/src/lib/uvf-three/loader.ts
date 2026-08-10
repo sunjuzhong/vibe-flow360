@@ -401,17 +401,19 @@ export function applyFieldColoring(
         const dimension = Math.max(1, field.dimension ?? fieldSection.length / vertexCount)
         const colors = new Float32Array(vertexCount * 3)
         const selectedRange = normalizeRange(options.range)
+        const colorMin = selectedRange?.[0] ?? field.min
+        const colorMax = selectedRange?.[1] ?? field.max
         for (let i = 0; i < vertexCount; i++) {
           const value = field.kind === 'vector'
             ? vectorMagnitude(fieldSection, i * dimension, dimension)
             : fieldSection[i * dimension] ?? 0
-          if (selectedRange && (value < selectedRange[0] || value > selectedRange[1])) {
-            const outside = options.outsideColor ?? [0.68, 0.7, 0.66]
+          if (selectedRange && options.outsideColor && (value < selectedRange[0] || value > selectedRange[1])) {
+            const outside = options.outsideColor
             colors[i * 3] = outside[0]
             colors[i * 3 + 1] = outside[1]
             colors[i * 3 + 2] = outside[2]
           } else {
-            const t = normalizeFieldValue(value, field.min, field.max, options.scale)
+            const t = Math.max(0, Math.min(1, normalizeFieldValue(value, colorMin, colorMax, options.scale)))
             const color = sampleColormap(t, colormap)
             colors[i * 3] = color.r
             colors[i * 3 + 1] = color.g

@@ -4,7 +4,7 @@ import { Crosshair, Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps, sampleColormap } from '../../lib/uvf-three'
+import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
 import type { UVFAsset, UVFAssetLRU, UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
@@ -45,6 +45,7 @@ import {
   type ViewerPointerEvent,
 } from '../../lib/viewer-tools'
 import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSelection } from './ViewerPrecisionControl'
+import { normalizeViewerFieldRange, ViewerFieldRangeControl } from './ViewerFieldRangeControl'
 import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
 import { useI18n } from '../../i18n'
 
@@ -370,6 +371,7 @@ export function Viewer3D({
   const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
   const [colormap, setColormap] = useState<ColormapName>(DEFAULT_COLORMAP)
   const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
+  const [fieldRangeOverride, setFieldRangeOverride] = useState<{ key: string; range: [number, number] } | null>(null)
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
   const [groupVisibility, setGroupVisibilityState] = useState<Record<string, boolean>>({})
@@ -395,13 +397,24 @@ export function Viewer3D({
     ? availableFields.filter((field) => fieldNames.includes(field.name))
     : availableFields
   const activeField = displayedFields.find((field) => field.name === selectedField)
-  const activeFieldRange = activeField ? formatFieldRange(activeField.min, activeField.max) : null
   const resolvedFieldScale = activeField
     ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
     : 'linear'
+  const baseFieldRange = useMemo(
+    () => activeField ? normalizeViewerFieldRange(fieldRange, activeField.min, activeField.max) : null,
+    [activeField, fieldRange],
+  )
+  const fieldRangeKey = activeField && baseFieldRange
+    ? `${manifest?.asset_url ?? ''}|${activeField.name}|${baseFieldRange[0]}|${baseFieldRange[1]}`
+    : ''
+  const activeColorRange = useMemo(() => activeField && baseFieldRange
+    ? fieldRangeOverride?.key === fieldRangeKey
+      ? normalizeViewerFieldRange(fieldRangeOverride.range, activeField.min, activeField.max)
+      : baseFieldRange
+    : null, [activeField, baseFieldRange, fieldRangeKey, fieldRangeOverride])
   const effectiveWireframe = wireframe ?? wireframeOn
-  const framePresentationRef = useRef({ selectedField, colormap, fieldRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe })
-  framePresentationRef.current = { selectedField, colormap, fieldRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe }
+  const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe })
+  framePresentationRef.current = { selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe }
   const precisionSelection = precision.assetURL === displayManifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const unavailablePrecisionLevels = new Set(
@@ -1425,12 +1438,12 @@ export function Viewer3D({
   useEffect(() => {
     if (uvfAssetRef.current) {
       applyFieldColoring(uvfAssetRef.current, selectedField, colormap, {
-        range: fieldRange,
+        range: activeColorRange,
         entityIds: fieldEntityIds,
         scale: resolvedFieldScale,
       })
     }
-  }, [assetState.status, selectedField, colormap, fieldEntityIds, fieldRange, resolvedFieldScale])
+  }, [assetState.status, selectedField, colormap, fieldEntityIds, activeColorRange, resolvedFieldScale])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -1666,19 +1679,16 @@ export function Viewer3D({
               </label>
             </div>
           )}
-          {selectedField && (
-            <div className="viewer-colormap-bar">
-              <span className="viewer-colormap-min">
-                {activeFieldRange?.[0] ?? '—'}
-              </span>
-              <div
-                className="viewer-colormap-gradient"
-                style={{ background: buildGradientCSS(colormap) }}
-              />
-              <span className="viewer-colormap-max">
-                {activeFieldRange?.[1] ?? '—'}
-              </span>
-            </div>
+          {selectedField && activeField && activeColorRange && (
+            <ViewerFieldRangeControl
+              fieldName={activeField.name}
+              min={activeField.min}
+              max={activeField.max}
+              range={activeColorRange}
+              scale={resolvedFieldScale}
+              colormap={colormap}
+              onChange={(range) => setFieldRangeOverride({ key: fieldRangeKey, range })}
+            />
           )}
         </div>
       )}
@@ -1764,15 +1774,6 @@ function disposeObject(root: THREE.Object3D) {
     const materials = Array.isArray(object.material) ? object.material : [object.material]
     materials.forEach((material) => material.dispose())
   })
-}
-
-function buildGradientCSS(name: ColormapName): string {
-  const stops = [0, 0.25, 0.5, 0.75, 1]
-  const colors = stops.map((t) => {
-    const c = sampleColormap(t, name)
-    return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`
-  })
-  return `linear-gradient(to right, ${stops.map((s, i) => `${colors[i]} ${s * 100}%`).join(', ')})`
 }
 
 function sameSnapStatus(left: SnapStatusModel | null, right: SnapStatusModel): boolean {

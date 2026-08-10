@@ -87,6 +87,13 @@ describe('language settings', () => {
     expect(translate('2_momy oscillating', 'zh-CN')).toBe('2_momy 振荡')
   })
 
+  it('translates the viewer color range control', () => {
+    expect(translate('Color range', 'zh-CN')).toBe('颜色范围')
+    expect(translate('Minimum color range', 'zh-CN')).toBe('颜色范围最小值')
+    expect(translate('Maximum color range', 'zh-CN')).toBe('颜色范围最大值')
+    expect(translate('Values outside this range use the endpoint colors', 'zh-CN')).toBe('范围外的数值使用色带两端颜色')
+  })
+
   it('covers the complete AI Create session chrome in Chinese', () => {
     const messages = [
       'AI CREATE',

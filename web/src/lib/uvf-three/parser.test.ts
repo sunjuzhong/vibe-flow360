@@ -421,6 +421,11 @@ describe('Flow360 UVF Three.js library', () => {
     expect(rangedColors.getX(0)).toBeCloseTo(0.25)
     expect(rangedColors.getX(1)).toBeCloseTo(0.5)
     expect(rangedColors.getX(2)).toBeCloseTo(0.25)
+    applyFieldColoring(asset, 'pressure', 'grayscale', { range: [0.25, 0.75] })
+    const clampedColors = (face as import('three').Mesh).geometry.getAttribute('color')
+    expect(clampedColors.getX(0)).toBeCloseTo(0)
+    expect(clampedColors.getX(1)).toBeCloseTo(0.5)
+    expect(clampedColors.getX(2)).toBeCloseTo(1)
     const probe = probeFieldAtIntersection(
       asset,
       face as THREE.Mesh,
