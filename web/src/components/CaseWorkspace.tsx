@@ -317,6 +317,16 @@ export function visibleCaseSurfaceCount(groups: CaseSurfaceGroup[], visibility: 
   }).length
 }
 
+export function caseVisualizationGroupCounts(
+  groups: CaseSurfaceGroup[],
+  visibility: Record<string, boolean>,
+): { total: number; visible: number } {
+  return {
+    total: groups.length,
+    visible: visibleCaseSurfaceCount(groups, visibility),
+  }
+}
+
 export function caseSurfaceVisibilityMap(groups: CaseSurfaceGroup[], visible: boolean): Record<string, boolean> {
   return Object.fromEntries(groups.flatMap((group) => (group.entityIds ?? [group.id]).map((id) => [id, visible])))
 }
@@ -583,9 +593,8 @@ export default function CaseWorkspace({
               const categoryLabel = previewSource === 'fallback' && category === 'surfaces'
                 ? t('Geometry surfaces')
                 : t(caseVisualizationCategoryLabel(category))
-              const categoryVisibleCount = visibleCaseSurfaceCount(members, entityVisibility)
+              const categoryCounts = caseVisualizationGroupCounts(members, entityVisibility)
               const hasRenderableMembers = members.some((member) => member.entityIds.length > 0)
-              const renderableMemberCount = members.filter((member) => member.entityIds.length > 0).length
               const CategoryIcon = category === 'surfaces'
                 ? Layers
                 : category === 'slices'
@@ -599,8 +608,8 @@ export default function CaseWorkspace({
                   label={categoryLabel}
                   memberLabel={categoryLabel}
                   icon={<CategoryIcon size={13} aria-hidden="true" />}
-                  total={hasRenderableMembers ? renderableMemberCount : members.length}
-                  visibleCount={categoryVisibleCount}
+                  total={categoryCounts.total}
+                  visibleCount={categoryCounts.visible}
                   onHideAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, false) }))}
                   onShowAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, true) }))}
                   defaultExpanded={false}
@@ -614,6 +623,13 @@ export default function CaseWorkspace({
                           <div className="case-result-row" key={group.id}>
                             {group.playbackKind ? <Film size={11} /> : <CircleDashed size={11} />}
                             <span>{group.source === 'archive' ? t(group.name) : group.name}</span>
+                            <span
+                              className="case-result-unavailable-visibility"
+                              title={t('Visualization output is not available in the 3D preview')}
+                              aria-label={t('Visualization output is not available in the 3D preview')}
+                            >
+                              <EyeOff size={13} aria-hidden="true" />
+                            </span>
                           </div>
                         )
                       }

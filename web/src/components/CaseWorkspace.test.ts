@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -107,6 +107,14 @@ describe('Case surface visibility', () => {
   it('builds complete Show all and Hide all maps', () => {
     expect(caseSurfaceVisibilityMap(groups, true)).toEqual({ wall: true, farfield: true })
     expect(caseSurfaceVisibilityMap(groups, false)).toEqual({ wall: false, farfield: false })
+  })
+
+  it('counts configured placeholders in the total without treating them as visible', () => {
+    const members = [
+      { id: 'cylinder_surface', visible: false, entityIds: [] },
+      { id: 'boundaries', visible: true, entityIds: ['wall'] },
+    ]
+    expect(caseVisualizationGroupCounts(members, {})).toEqual({ total: 2, visible: 1 })
   })
 })
 
