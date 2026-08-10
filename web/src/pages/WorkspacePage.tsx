@@ -8,6 +8,7 @@ import {
   Search,
   FileUp,
   GitCompare,
+  Database,
   LayoutGrid,
   List,
   Sparkles,
@@ -29,6 +30,7 @@ import ProjectMutationDialog from '../components/ProjectMutationDialog'
 import TopBar from '../components/TopBar'
 import Flow360IdLink from '../components/Flow360IdLink'
 import { useI18n } from '../i18n'
+import STEPLibraryModal from '../components/STEPLibraryModal'
 
 function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
@@ -112,6 +114,7 @@ export default function WorkspacePage() {
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
   const [importOpen, setImportOpen] = useState(false)
   const [aiCreateOpen, setAICreateOpen] = useState(false)
+  const [stepLibraryOpen, setSTEPLibraryOpen] = useState(false)
   const [folderMutation, setFolderMutation] = useState<{ mode: FolderMutationMode; folder: FolderNode } | null>(null)
   const [projectMutation, setProjectMutation] = useState<{ mode: ProjectMutationMode; project: ProjectRecord } | null>(null)
 
@@ -294,6 +297,7 @@ export default function WorkspacePage() {
           </div>
           {selectedFolder && <div className="workspace-home-actions">
             <button className="ai-action" onClick={() => setImportOpen(true)}><FileUp size={16}/> New project</button>
+            <button className="ai-action" onClick={() => setSTEPLibraryOpen(true)}><Database size={16}/> STEP Library</button>
             <button className="ai-action" onClick={() => setAICreateOpen(true)}><Sparkles size={16}/> AI Create</button>
           </div>}
         </div>
@@ -457,7 +461,13 @@ export default function WorkspacePage() {
         folder={selectedFolder}
         environment={flowStatus?.environment}
         onClose={() => setAICreateOpen(false)}
+        onOpenSTEPLibrary={() => { setAICreateOpen(false); setSTEPLibraryOpen(true) }}
         onCreated={(result) => navigate(aiCreateProjectPath(result))}
+      />}
+      {selectedFolder && stepLibraryOpen && <STEPLibraryModal
+        folder={selectedFolder}
+        onClose={() => setSTEPLibraryOpen(false)}
+        onCreated={(result) => navigate(`/projects/${encodeURIComponent(result.project_id)}`)}
       />}
       {folderRoot && folderMutation && (
         <FolderMutationDialog

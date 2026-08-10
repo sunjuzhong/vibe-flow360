@@ -39,6 +39,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 	"github.com/sunjuzhong/vibe-flow360/internal/sliceplayer"
+	"github.com/sunjuzhong/vibe-flow360/internal/stepassets"
 )
 
 //go:embed dist
@@ -52,6 +53,8 @@ type Server struct {
 	resultAI           *resultInterpretationStore
 	compareWorkspaces  *compareworkspace.Store
 	cadGenerator       aicreate.Generator
+	stepValidator      aicreate.STEPValidator
+	stepAssets         *stepassets.Store
 	plans              *plans.Store
 	imports            *importplans.Store
 	cache              *projectcache.Store
@@ -159,7 +162,12 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	stepAssetStore, err := stepassets.NewStore(filepath.Join(dataDir, "step-library"))
+	if err != nil {
+		panic(err)
+	}
 	interventionEngine := agent.NewEngine(interventionStore, planStore, aiService)
+	cadRuntime := aicreate.NewCadQueryGenerator()
 
 	app := &Server{
 		router:             router,
@@ -168,7 +176,9 @@ func New() *Server {
 		chatSessions:       chatStore,
 		resultAI:           resultAIStore,
 		compareWorkspaces:  compareWorkspaceStore,
-		cadGenerator:       aicreate.NewCadQueryGenerator(),
+		cadGenerator:       cadRuntime,
+		stepValidator:      cadRuntime,
+		stepAssets:         stepAssetStore,
 		plans:              planStore,
 		imports:            importStore,
 		cache:              cacheStore,
@@ -187,6 +197,7 @@ func New() *Server {
 		annotationHandlers: NewAnnotationHandlers(annotationStore),
 	}
 	app.loadAICreateState()
+	app.resumeSTEPValidations()
 	app.routes()
 
 	go app.startImportCleanupLoop()
@@ -370,6 +381,14 @@ func (s *Server) routes() {
 		api.POST("/imports/:import_id/approve", s.approveImport)
 		api.POST("/imports/:import_id/run", s.runImport)
 		api.DELETE("/imports/:import_id", s.abortImport)
+		api.GET("/step-assets", s.listSTEPAssets)
+		api.POST("/step-assets", s.createSTEPAsset)
+		api.POST("/step-assets/ai-design", s.aiDesignSTEPAsset)
+		api.GET("/step-assets/:asset_id", s.getSTEPAsset)
+		api.POST("/step-assets/:asset_id/versions", s.createSTEPAssetVersion)
+		api.POST("/step-assets/:asset_id/versions/:version_id/validate", s.validateSTEPAssetVersion)
+		api.GET("/step-assets/:asset_id/versions/:version_id/download", s.downloadSTEPAssetVersion)
+		api.POST("/step-assets/:asset_id/versions/:version_id/create-project", s.createProjectFromSTEPAsset)
 		api.POST("/ai-create", s.aiCreateProject)
 		api.GET("/ai-create/progress/:request_id", s.aiCreateProgressStatus)
 		api.GET("/agent/state", func(c *gin.Context) {

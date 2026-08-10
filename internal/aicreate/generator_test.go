@@ -140,3 +140,36 @@ printf '%s' '{"solid_count":1,"face_count":3,"volume":1,"kernel":"fake","face_co
 		t.Fatalf("incomplete Flow360 face coverage was not rejected: %v", err)
 	}
 }
+
+func TestCadQueryGeneratorValidatesExistingSTEPWithAbsolutePaths(t *testing.T) {
+	directory := t.TempDir()
+	fakeUV := filepath.Join(directory, "uv")
+	script := `#!/bin/sh
+script_path=""
+input_path=""
+for argument in "$@"; do
+  case "$argument" in
+    */validate_step.py) script_path="$argument" ;;
+    *.step) input_path="$argument" ;;
+  esac
+done
+test -f "$script_path" || exit 31
+test -f "$input_path" || exit 32
+case "$script_path:$input_path" in /*:/*) ;; *) exit 33 ;; esac
+printf '%s' '{"solid_count":2,"face_count":12,"volume":4.5,"bounds":[0,0,0,1,2,3],"kernel":"fake"}'
+`
+	if err := os.WriteFile(fakeUV, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stepPath := filepath.Join(directory, "assembly.step")
+	if err := os.WriteFile(stepPath, []byte("ISO-10303-21;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	validation, err := (&CadQueryGenerator{UVBinary: fakeUV, Timeout: time.Second}).ValidateSTEP(context.Background(), stepPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validation.SolidCount != 2 || validation.FaceCount != 12 || validation.Volume != 4.5 {
+		t.Fatalf("unexpected validation: %#v", validation)
+	}
+}
