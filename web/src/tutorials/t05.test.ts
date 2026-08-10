@@ -1,10 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createT05Environment, t05Params, t05Progress, validateT05Setup } from './t05'
+import { createT05Environment, t05ConfiguredPatch, t05Params, t05Progress, validateT05Setup } from './t05'
 
 describe('T05 wake volume refinement', () => {
   it('validates baseline and focused-wake strategies', () => {
     expect(validateT05Setup(t05Params(false)).every((check) => check.passed)).toBe(true)
     expect(validateT05Setup(t05Params(true)).every((check) => check.passed)).toBe(true)
+  })
+
+  it('registers every refinement and output entity in the Draft entity catalog', () => {
+    for (const focused of [false, true]) {
+      const params = t05Params(focused) as any
+      const registered = params.private_attribute_asset_cache.project_entity_info.draft_entities
+      expect(registered.map((entity: any) => entity.private_attribute_entity_type_name)).toEqual([
+        'Sphere', 'Box', 'Cylinder', 'Slice',
+      ])
+      expect(new Set(registered.map((entity: any) => entity.private_attribute_id)).size).toBe(4)
+    }
+
+    const dangling = structuredClone(t05Params(false)) as any
+    dangling.private_attribute_asset_cache.project_entity_info.draft_entities = []
+    expect(validateT05Setup(dangling).find((check) => check.id === 'entities')?.passed).toBe(false)
+  })
+
+  it('merges only Draft entities into the remote Geometry entity catalog', () => {
+    const patch = t05ConfiguredPatch(false) as any
+    expect(patch.private_attribute_asset_cache.project_entity_info.draft_entities).toHaveLength(4)
+    expect(patch.private_attribute_asset_cache.project_entity_info.grouped_faces).toBeUndefined()
+    expect(patch.private_attribute_asset_cache.project_length_unit).toBeUndefined()
   })
 
   it('extends the focused variant and tightens crossflow spacing', () => {
@@ -32,6 +54,7 @@ describe('T05 wake volume refinement', () => {
       vi.fn(async () => new Response('cylinder geometry')) as typeof fetch,
     )
     expect(createConfiguredDraft).toHaveBeenCalledTimes(2)
+    expect(createConfiguredDraft.mock.calls[0][1].patch.private_attribute_asset_cache.project_entity_info.draft_entities).toHaveLength(4)
     expect(result).toMatchObject({ projectId: 'project-5', rootResourceId: 'geometry-5' })
   })
 })

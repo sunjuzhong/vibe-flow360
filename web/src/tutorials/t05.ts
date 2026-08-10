@@ -33,6 +33,7 @@ export const t05ParameterCards = [
 ]
 
 export const t05Evidence = [
+  { title: 'Draft entities are registered', detail: 'Sphere, Box, Cylinder, and Slice IDs appear in project_entity_info.draft_entities and match every parameter reference.' },
   { title: 'Separation region is covered', detail: 'The near-body sphere encloses the cylinder and immediate separation zone.' },
   { title: 'Wake controls point downstream', detail: 'The box and cylindrical core align with positive x and do not waste equal resolution upstream.' },
   { title: 'Overlaps transition smoothly', detail: 'Sphere, box, and core spacing blend without abrupt cell-size jumps.' },
@@ -50,7 +51,7 @@ export const t05Pedagogy: TutorialPedagogy = {
     { id: 'anisotropy', title: 'Wake gradients are directional', explanation: 'Mean flow transports the deficit downstream, while velocity changes most strongly across the shear layers. Crossflow spacing can therefore be tighter than axial spacing.', misconception: 'A longer axial cell is not automatically low quality when it follows a weak-gradient direction and transitions smoothly.' },
   ],
   flow360Concepts: [
-    { id: 'entity-refinement', title: 'Entities say where; refinements say how', explanation: 'Sphere, Box, and Cylinder locate regions. UniformRefinement, StructuredBoxRefinement, and AxisymmetricRefinement define spacing inside them.', misconception: 'A Box entity alone does not refine anything until a compatible refinement references it through entities.' },
+    { id: 'entity-refinement', title: 'Registered entities say where; refinements say how', explanation: 'Sphere, Box, and Cylinder locate regions after their IDs are registered in project_entity_info.draft_entities. UniformRefinement, StructuredBoxRefinement, and AxisymmetricRefinement define spacing inside them.', misconception: 'An entity embedded only in stored_entities is a dangling reference when its ID is absent from the Draft entity registry.' },
     { id: 'slice-request', title: 'MeshSliceOutput requests later evidence', explanation: 'The Draft asks Flow360 to expose a center-plane mesh slice after meshing so coverage, overlap, and transitions can be reviewed.', misconception: 'A valid output request is not proof that a volume mesh exists or already passes the evidence rubric.' },
   ],
   derivations: [
@@ -60,11 +61,13 @@ export const t05Pedagogy: TutorialPedagogy = {
   ],
   experiments: [{ id: 'focus', prediction: 'What should change when only wake reach and crossflow resolution are increased?', options: ['More downstream fine cells and higher cost', 'A thinner first boundary-layer cell'], controlledVariable: 'Volume-region reach and spacing change; cylinder geometry and first-layer thickness do not.', observation: 'Compare downstream exit, cross-wake cell count, transition smoothness, and total cell cost in the same center-plane view.' }],
   failureModes: [
+    { id: 'unregistered', symptom: 'A refinement appears in SimulationParams but has no effective volume scope.', cause: 'Its Sphere, Box, Cylinder, or Slice ID is absent from project_entity_info.draft_entities.', correction: 'Create or register the Draft entity first, bind the refinement to the registered ID, save, and run preflight again.' },
     { id: 'misaligned', symptom: 'The fine corridor misses the velocity-deficit wake.', cause: 'The region follows global +x even though yaw or nearby geometry deflects the wake.', correction: 'Rotate or widen the Box and Cylinder using the expected feature path.' },
     { id: 'short', symptom: 'A strong wake exits abruptly into coarse background cells.', cause: 'Region length was copied without considering wake decay or downstream outputs.', correction: 'Extend only until requested evidence is resolved, then justify the added cell cost.' },
     { id: 'isotropic', symptom: 'Cell count rises without improving the cross-wake gradient.', cause: 'Equal spacing was used in all directions instead of flow-aligned anisotropy.', correction: 'Tighten spacing across strong gradients and keep axial spacing deliberately coarser.' },
   ],
   evidenceRubric: [
+    { id: 'registry', observation: 'Draft entity registration', pass: 'Every volume and slice reference resolves to the same ID and type in project_entity_info.draft_entities.', fail: 'A stored_entities reference has no matching Draft entity, or its ID/type differs.' },
     { id: 'coverage', observation: 'Near-body separation coverage', pass: 'Fine cells enclose the cylinder and overlap the start of both shear layers.', fail: 'A shear layer leaves the fine region before entering the downstream corridor.' },
     { id: 'alignment', observation: 'Directional wake alignment', pass: 'The box and core follow the wake with tighter crossflow than axial spacing.', fail: 'Fine cells miss the wake or use unjustified isotropic spacing.' },
     { id: 'transition', observation: 'Region overlap and transition', pass: 'Sphere, box, core, and background levels blend progressively.', fail: 'Abrupt jumps, disconnected pockets, or avoidable quality risks appear.' },
@@ -92,6 +95,33 @@ function refinementTypes(params: Record<string, unknown>) {
   return { meshing, refinements, types: refinements.map((item) => item.refinement_type) }
 }
 
+function draftEntities(params: Record<string, unknown>) {
+  const cache = record(params.private_attribute_asset_cache)
+  const entityInfo = record(cache.project_entity_info)
+  return Array.isArray(entityInfo.draft_entities) ? entityInfo.draft_entities.map(record) : []
+}
+
+function referencedDraftEntities(params: Record<string, unknown>) {
+  const { meshing, refinements } = refinementTypes(params)
+  const outputs = Array.isArray(meshing.outputs) ? meshing.outputs.map(record) : []
+  return [...refinements, ...outputs].flatMap((item) => {
+    const entities = record(item.entities)
+    return Array.isArray(entities.stored_entities) ? entities.stored_entities.map(record) : []
+  })
+}
+
+export function t05ConfiguredPatch(focused: boolean): Record<string, unknown> {
+  const params = t05Params(focused)
+  const cache = record(params.private_attribute_asset_cache)
+  return {
+    ...params,
+    private_attribute_asset_cache: {
+      use_inhouse_mesher: cache.use_inhouse_mesher,
+      project_entity_info: { draft_entities: draftEntities(params) },
+    },
+  }
+}
+
 export function validateT05Setup(params: Record<string, unknown>): SetupCheck[] {
   const { meshing, refinements, types } = refinementTypes(params)
   const box = refinements.find((item) => item.refinement_type === 'StructuredBoxRefinement')
@@ -101,7 +131,10 @@ export function validateT05Setup(params: Record<string, unknown>): SetupCheck[] 
   const boxCrossflow = Number(record(box?.spacing_axis2).value)
   const coreAxial = Number(record(core?.spacing_axial).value)
   const coreRadial = Number(record(core?.spacing_radial).value)
+  const registeredIds = new Set(draftEntities(params).map((entity) => String(entity.private_attribute_id || '')))
+  const referenced = referencedDraftEntities(params)
   return [
+    { id: 'entities', label: 'Draft volumes are registered', detail: 'Sphere, Box, Cylinder, and Slice references resolve through project_entity_info.draft_entities.', passed: referenced.length === 4 && referenced.every((entity) => registeredIds.has(String(entity.private_attribute_id || ''))) },
     { id: 'roles', label: 'Three region roles are explicit', detail: 'Uniform, structured-box, and axisymmetric refinements are all present.', passed: ['UniformRefinement', 'StructuredBoxRefinement', 'AxisymmetricRefinement'].every((type) => types.includes(type)) },
     { id: 'box-anisotropy', label: 'Wake box follows transport', detail: 'Crossflow spacing is tighter than axial spacing.', passed: boxCrossflow > 0 && boxCrossflow < boxAxial },
     { id: 'core-anisotropy', label: 'Wake core is direction-aware', detail: 'Radial spacing is tighter than axial spacing.', passed: coreRadial > 0 && coreRadial < coreAxial },
@@ -126,6 +159,11 @@ export async function createT05Environment(
   fetchAsset: typeof fetch = fetch,
 ): Promise<TutorialEnvironmentResult> {
   onStage('staging')
+  const baselineParams = t05Params(false)
+  const focusedParams = t05Params(true)
+  if (![baselineParams, focusedParams].every((params) => validateT05Setup(params).every((check) => check.passed))) {
+    throw new Error('The bundled T05 parameters contain an unregistered Draft entity or invalid refinement relationship.')
+  }
   const response = await fetchAsset(geometryUrl)
   if (!response.ok) throw new Error('The bundled T05 cylinder geometry could not be loaded.')
   const form = new FormData()
@@ -146,8 +184,8 @@ export async function createT05Environment(
   if (!projectId || !geometryId) throw new Error('Flow360 created the tutorial Project without returning its Geometry identifiers.')
   onStage('creating-drafts')
   const [baselineDraft, variantDraft] = await Promise.all([
-    client.createConfiguredDraft(projectId, { source_id: geometryId, name: 'T05 baseline · compact wake regions', patch: t05Params(false) }),
-    client.createConfiguredDraft(projectId, { source_id: geometryId, name: 'T05 variant · focused wake corridor', patch: t05Params(true) }),
+    client.createConfiguredDraft(projectId, { source_id: geometryId, name: 'T05 baseline · compact wake regions', patch: t05ConfiguredPatch(false) }),
+    client.createConfiguredDraft(projectId, { source_id: geometryId, name: 'T05 variant · focused wake corridor', patch: t05ConfiguredPatch(true) }),
   ])
   onStage('ready')
   return { projectId, rootResourceId: geometryId, baselineDraft, variantDraft }

@@ -1,6 +1,6 @@
 # T05 — Place volume refinement where the wake travels
 
-This Web-guided tutorial uses a bundled three-dimensional cylinder to teach region-based volume meshing. It compares a compact baseline with a longer, tighter wake-focused variant and finishes by creating one Flow360 Geometry Project plus two configured VolumeMesh Drafts.
+This Web-guided tutorial uses a bundled three-dimensional cylinder for region-based volume meshing. It registers the Sphere, Box, Cylinder, and Slice entities in each Draft, binds three refinement methods to those entities, and compares a compact baseline with a longer, tighter wake-focused variant.
 
 No user upload, remote meshing, or solver execution is required to complete the guided lesson.
 

@@ -382,7 +382,149 @@
     "project_entity_info": {
       "body_attribute_names": [],
       "body_ids": [],
-      "draft_entities": [],
+      "draft_entities": [
+        {
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "center": {
+            "units": "m",
+            "value": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "name": "Near-body separation region",
+          "private_attribute_entity_type_name": "Sphere",
+          "private_attribute_id": "50000000-0000-4000-8000-000000000501",
+          "private_attribute_zone_boundary_names": {
+            "items": []
+          },
+          "radius": {
+            "units": "m",
+            "value": 1.5
+          }
+        },
+        {
+          "angle_of_rotation": {
+            "units": "degree",
+            "value": 0.0
+          },
+          "axis_of_rotation": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "center": {
+            "units": "m",
+            "value": [
+              4.0,
+              0.0,
+              0.0
+            ]
+          },
+          "name": "Downstream wake corridor",
+          "private_attribute_constructor": "default",
+          "private_attribute_entity_type_name": "Box",
+          "private_attribute_id": "50000000-0000-4000-8000-000000000502",
+          "private_attribute_input_cache": {
+            "axes": [
+              [
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ]
+            ],
+            "center": {
+              "units": "m",
+              "value": [
+                4.0,
+                0.0,
+                0.0
+              ]
+            },
+            "size": {
+              "units": "m",
+              "value": [
+                8.0,
+                2.4,
+                2.4
+              ]
+            }
+          },
+          "private_attribute_zone_boundary_names": {
+            "items": []
+          },
+          "size": {
+            "units": "m",
+            "value": [
+              8.0,
+              2.4,
+              2.4
+            ]
+          },
+          "type_name": "Box"
+        },
+        {
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "center": {
+            "units": "m",
+            "value": [
+              4.0,
+              0.0,
+              0.0
+            ]
+          },
+          "height": {
+            "units": "m",
+            "value": 8.0
+          },
+          "inner_radius": {
+            "units": "m",
+            "value": 0.0
+          },
+          "name": "Wake core",
+          "outer_radius": {
+            "units": "m",
+            "value": 1.0
+          },
+          "private_attribute_entity_type_name": "Cylinder",
+          "private_attribute_id": "50000000-0000-4000-8000-000000000503",
+          "private_attribute_zone_boundary_names": {
+            "items": []
+          }
+        },
+        {
+          "name": "Wake center plane",
+          "normal": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "origin": {
+            "units": "m",
+            "value": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "private_attribute_entity_type_name": "Slice",
+          "private_attribute_id": "50000000-0000-4000-8000-000000000504"
+        }
+      ],
       "edge_attribute_names": [],
       "edge_ids": [],
       "face_attribute_names": [

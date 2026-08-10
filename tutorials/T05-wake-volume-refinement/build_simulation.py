@@ -43,14 +43,6 @@ def build(focused: bool) -> dict[str, Any]:
             "body0001_face0003",
         ],
     )
-    entity_info = GeometryEntityInfo(
-        faceIDs=cylinder_surface.private_attribute_sub_components,
-        faceAttributeNames=["groupName"],
-        groupedFaces=[[cylinder_surface]],
-        face_group_tag="groupName",
-        global_bounding_box=[[-0.5, -8.5, -0.5], [0.5, 8.5, 0.5]],
-    )
-
     with fl.SI_unit_system:
         near_body = tagged_entity(
             fl.Sphere,
@@ -81,6 +73,14 @@ def build(focused: bool) -> dict[str, Any]:
             name="Wake center plane",
             normal=(0, 1, 0),
             origin=(0, 0, 0) * fl.u.m,
+        )
+        entity_info = GeometryEntityInfo(
+            faceIDs=cylinder_surface.private_attribute_sub_components,
+            faceAttributeNames=["groupName"],
+            groupedFaces=[[cylinder_surface]],
+            face_group_tag="groupName",
+            global_bounding_box=[[-0.5, -8.5, -0.5], [0.5, 8.5, 0.5]],
+            draft_entities=[near_body, wake_box, wake_core, center_slice],
         )
         params = fl.SimulationParams(
             meshing=fl.MeshingParams(
