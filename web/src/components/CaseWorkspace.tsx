@@ -25,7 +25,7 @@ import { resourceStatus } from './ResourceDetailPanel'
 import { api, type ResourceDetail } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
-import { LazyViewer3D, type ViewerAssetStats, type ViewerSelection } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerSelection } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
@@ -47,7 +47,6 @@ import {
   findLengthUnit,
 } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
-import type { UVFFieldInfo } from '../lib/uvf-three'
 import {
   ManifestMemberGroup,
   manifestVisibilityMap,
@@ -124,6 +123,50 @@ export function isTerminal(view: CaseStatusView): boolean {
 }
 
 type CaseSurfaceGroup = { id: string; visible: boolean }
+
+export type CaseVisualizationCategory = 'surfaces' | 'slices' | 'isosurfaces' | 'streamlines'
+
+export type CaseVisualizationGroup = {
+  category: CaseVisualizationCategory
+  members: MeshGroupData[]
+}
+
+const caseVisualizationCategoryOrder: CaseVisualizationCategory[] = [
+  'surfaces',
+  'slices',
+  'isosurfaces',
+  'streamlines',
+]
+
+export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisualizationGroup[] {
+  const categorized = new Map<CaseVisualizationCategory, MeshGroupData[]>(
+    caseVisualizationCategoryOrder.map((category) => [category, []]),
+  )
+  for (const group of groups) {
+    const hints = [...(group.path ?? []), group.id, group.name]
+      .map((value) => value.trim().toLowerCase().replaceAll(/[^a-z]/g, ''))
+    const category = hints.some((hint) => hint.includes('streamline'))
+      ? 'streamlines'
+      : hints.some((hint) => hint.includes('isosurface'))
+        ? 'isosurfaces'
+        : hints.some((hint) => hint.includes('slice'))
+          ? 'slices'
+          : 'surfaces'
+    categorized.get(category)!.push(group)
+  }
+  return caseVisualizationCategoryOrder
+    .map((category) => ({ category, members: categorized.get(category)! }))
+    .filter((group) => group.members.length > 0)
+}
+
+function caseVisualizationCategoryLabel(category: CaseVisualizationCategory): string {
+  switch (category) {
+    case 'surfaces': return 'Surfaces'
+    case 'slices': return 'Slices'
+    case 'isosurfaces': return 'Isosurfaces'
+    case 'streamlines': return 'Streamlines'
+  }
+}
 
 export function visibleCaseSurfaceCount(groups: CaseSurfaceGroup[], visibility: Record<string, boolean>): number {
   return visibleManifestMemberCount(groups, visibility)
@@ -258,7 +301,6 @@ export default function CaseWorkspace({
   const [activeReviewDialog, setActiveReviewDialog] = useState<'run' | 'physics' | 'solver' | 'convergence' | 'slices' | null>(null)
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
-  const [caseFields, setCaseFields] = useState<string[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const [resultPreview, setResultPreview] = useState<{
@@ -283,8 +325,8 @@ export default function CaseWorkspace({
     geometryResourceId ?? null,
   )
   const surfaceGroups = manifest?.groups ?? []
-  const visibleSurfaceCount = visibleCaseSurfaceCount(surfaceGroups, entityVisibility)
-  const selectedSurface = surfaceGroups.find((group) => group.id === viewerSelection.groupId) ?? null
+  const visualizationGroups = useMemo(() => groupCaseVisualizationMembers(surfaceGroups), [surfaceGroups])
+  const selectedVisualizationObject = surfaceGroups.find((group) => group.id === viewerSelection.groupId) ?? null
 
   useEffect(() => {
     setEntityVisibility(Object.fromEntries(surfaceGroups.map((group) => [group.id, group.visible])))
@@ -323,10 +365,6 @@ export default function CaseWorkspace({
     unit: viewerContext.unit,
   })
   const velocity = findMetric(viewModel.operatingPoint, ['velocity_magnitude', 'velocity', 'mach'])
-
-  const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
-    setCaseFields(fields.map((f) => f.name))
-  }, [])
 
   const openResultPreview = useCallback(async (path: string) => {
     setResultPreview({ path, loading: true })
@@ -368,79 +406,62 @@ export default function CaseWorkspace({
           <div className="geometry-panel-heading">
             <div>
               <span>{previewSource === 'fallback' ? 'CONTEXT' : 'SOLUTION'}</span>
-              <strong>{previewSource === 'fallback' ? 'Geometry context' : 'Result fields'}</strong>
+              <strong>{previewSource === 'fallback' ? t('Geometry context') : t('Visualization objects')}</strong>
             </div>
-            <span className="geometry-count-badge">{caseFields.length}</span>
+            <span className="geometry-count-badge">{surfaceGroups.length}</span>
           </div>
           <div className="case-surface-inventory">
-            <ManifestMemberGroup
-              label={previewSource === 'fallback' ? 'Geometry surfaces' : 'Case surfaces'}
-              memberLabel="surfaces"
-              icon={<Layers size={13} aria-hidden="true" />}
-              total={surfaceGroups.length}
-              visibleCount={visibleSurfaceCount}
-              onHideAll={() => setEntityVisibility(caseSurfaceVisibilityMap(surfaceGroups, false))}
-              onShowAll={() => setEntityVisibility(caseSurfaceVisibilityMap(surfaceGroups, true))}
-            >
-              <div className="case-surface-list">
-                {surfaceGroups.map((group) => {
-                  const visible = entityVisibility[group.id] ?? group.visible
-                  return (
-                    <div className={`geometry-entity-row ${viewerSelection.groupId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
-                      <button type="button" className="geometry-entity-select" onClick={() => setViewerSelection({ groupId: group.id })} title="Select Case surface">
-                        <span className="viewer-color-swatch" style={{ background: group.color }} />
-                        <span>{group.name}</span>
-                        <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} tris` : 'surface'}</small>
-                      </button>
-                      <button
-                        type="button"
-                        className="geometry-entity-visibility"
-                        aria-label={`${visible ? 'Hide' : 'Show'} surface ${group.name}`}
-                        aria-pressed={visible}
-                        onClick={() => toggleSurfaceVisibility(group.id)}
-                      >
-                        {visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                      </button>
-                    </div>
-                  )
-                })}
-                {surfaceGroups.length === 0 && <div className="geometry-empty-list">No surfaces were reported by the visualization asset.</div>}
-              </div>
-            </ManifestMemberGroup>
-          </div>
-          <div className="case-field-inventory">
-            <div className="geometry-tree-root">
-              <ScanLine size={13} />
-              <strong>Field visualization</strong>
-              <span>{caseFields.length}</span>
-            </div>
-            <button
-              type="button"
-              className={`case-field-row ${activeField === null ? 'selected' : ''}`}
-              onClick={() => setActiveField(null)}
-            >
-              <Layers size={12} />
-              <span>Surface / mesh</span>
-              <small>base</small>
-            </button>
-            {caseFields.map((field) => (
-              <button
-                type="button"
-                className={`case-field-row ${activeField === field ? 'selected' : ''}`}
-                onClick={() => setActiveField(field)}
-                key={field}
-              >
-                <span className="case-field-swatch" />
-                <span>{field}</span>
-                <small>field</small>
-              </button>
-            ))}
-            {caseFields.length === 0 && (
-              <div className="geometry-empty-list">
-                {previewSource === 'fallback'
-                  ? 'No browser-ready Case fields; parent Geometry is shown for spatial context.'
-                  : 'No solution fields were reported by the visualization asset.'}
-              </div>
+            {visualizationGroups.map(({ category, members }) => {
+              const categoryLabel = previewSource === 'fallback'
+                ? t('Geometry surfaces')
+                : t(caseVisualizationCategoryLabel(category))
+              const categoryVisibleCount = visibleCaseSurfaceCount(members, entityVisibility)
+              const CategoryIcon = category === 'surfaces'
+                ? Layers
+                : category === 'slices'
+                  ? ScanLine
+                  : category === 'isosurfaces'
+                    ? CircleDashed
+                    : Wind
+              return (
+                <ManifestMemberGroup
+                  key={category}
+                  label={categoryLabel}
+                  memberLabel={categoryLabel}
+                  icon={<CategoryIcon size={13} aria-hidden="true" />}
+                  total={members.length}
+                  visibleCount={categoryVisibleCount}
+                  onHideAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, false) }))}
+                  onShowAll={() => setEntityVisibility((current) => ({ ...current, ...caseSurfaceVisibilityMap(members, true) }))}
+                >
+                  <div className="case-surface-list">
+                    {members.map((group) => {
+                      const visible = entityVisibility[group.id] ?? group.visible
+                      return (
+                        <div className={`geometry-entity-row ${viewerSelection.groupId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
+                          <button type="button" className="geometry-entity-select" onClick={() => setViewerSelection({ groupId: group.id })} title={t('Select visualization object')}>
+                            <span className="viewer-color-swatch" style={{ background: group.color }} />
+                            <span>{group.name}</span>
+                            <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} tris` : t('object')}</small>
+                          </button>
+                          <button
+                            type="button"
+                            className="geometry-entity-visibility"
+                            aria-label={t(visible ? 'Hide visualization object' : 'Show visualization object')}
+                            aria-pressed={visible}
+                            onClick={() => toggleSurfaceVisibility(group.id)}
+                          >
+                            {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </ManifestMemberGroup>
+              )
+            })}
+            {visualizationGroups.length === 0 && (
+              <div className="geometry-empty-list">{t('No visualization objects were reported by the asset.')}</div>
             )}
           </div>
           <div className="case-result-inventory">
@@ -499,8 +520,8 @@ export default function CaseWorkspace({
             entityVisibility={entityVisibility}
             onEntityVisibilityChange={setEntityVisibility}
             selectedField={activeField}
+            onSelectedFieldChange={setActiveField}
             showEntityLegend={false}
-            onFieldsDiscovered={handleFieldsDiscovered}
             onAssetStatsChange={setViewerAssetStats}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
@@ -580,9 +601,9 @@ export default function CaseWorkspace({
           <section className="geometry-selection-card case-selection-card">
             <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
             <dl>
-              <div><dt>Surface</dt><dd>{selectedSurface?.name ?? 'None selected'}</dd></div>
+              <div><dt>{t('Visualization object')}</dt><dd>{selectedVisualizationObject?.name ?? t('None selected')}</dd></div>
               <div><dt>Selected field</dt><dd>{activeField ?? 'Base mesh'}</dd></div>
-              {selectedSurface && <div><dt>Triangles</dt><dd>{selectedSurface.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>}
+              {selectedVisualizationObject && <div><dt>Triangles</dt><dd>{selectedVisualizationObject.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>}
             </dl>
           </section>
 

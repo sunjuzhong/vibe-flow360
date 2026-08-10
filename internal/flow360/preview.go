@@ -40,12 +40,14 @@ type BoundingBox struct {
 }
 
 type MeshGroup struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Color     string `json:"color"`
-	Visible   bool   `json:"visible"`
-	Triangles int    `json:"triangles,omitempty"`
-	Vertices  int    `json:"vertices,omitempty"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Color      string   `json:"color"`
+	Visible    bool     `json:"visible"`
+	Triangles  int      `json:"triangles,omitempty"`
+	Vertices   int      `json:"vertices,omitempty"`
+	EntityType string   `json:"entity_type,omitempty"`
+	Path       []string `json:"path,omitempty"`
 }
 
 type uvfEntry struct {
@@ -54,12 +56,17 @@ type uvfEntry struct {
 	Type         string `json:"type"`
 	Properties   uvfProperties
 	Resources    uvfResources
-	Attributions struct {
-		Faces []string `json:"faces"`
-	} `json:"attributions"`
+	Attributions uvfAttributions `json:"attributions"`
+}
+
+type uvfAttributions struct {
+	Faces          []string `json:"faces"`
+	Members        []string `json:"members"`
+	PackedParentID string   `json:"packedParentId"`
 }
 
 type uvfProperties struct {
+	Color           int        `json:"color"`
 	BoundsMin       [3]float64 `json:"boundsMin"`
 	BoundsMax       [3]float64 `json:"boundsMax"`
 	BufferLocations struct {
@@ -100,6 +107,20 @@ func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL st
 		Format:   "flow360-uvf",
 		Groups:   []MeshGroup{},
 	}
+	entryByID := make(map[string]uvfEntry, len(entries))
+	parentByID := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		entryByID[entry.ID] = entry
+		for _, memberID := range entry.Attributions.Members {
+			parentByID[memberID] = entry.ID
+		}
+		for _, faceID := range entry.Attributions.Faces {
+			parentByID[faceID] = entry.ID
+		}
+		if entry.Attributions.PackedParentID != "" {
+			parentByID[entry.ID] = entry.Attributions.PackedParentID
+		}
+	}
 	boundsSet := false
 	for _, entry := range entries {
 		switch entry.Type {
@@ -127,6 +148,24 @@ func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL st
 					preview.Vertices += section.Length / (4 * 3)
 				}
 			}
+			if len(entry.Attributions.Faces) == 0 && parentByID[entry.ID] != "" {
+				vertices, triangles := uvfSolidCounts(sections)
+				name := entry.Name
+				if strings.TrimSpace(name) == "" {
+					name = entry.ID
+				}
+				preview.Elements += triangles
+				preview.Groups = append(preview.Groups, MeshGroup{
+					ID:         entry.ID,
+					Name:       name,
+					Color:      uvfColor(entry.Properties.Color, "#6f8790"),
+					Visible:    true,
+					Triangles:  triangles,
+					Vertices:   vertices,
+					EntityType: entry.Type,
+					Path:       uvfEntityPath(entry.ID, parentByID, entryByID),
+				})
+			}
 		case "Face":
 			triangles := 0
 			for _, location := range entry.Properties.BufferLocations.Indices {
@@ -140,11 +179,13 @@ func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL st
 				name = entry.ID
 			}
 			preview.Groups = append(preview.Groups, MeshGroup{
-				ID:        entry.ID,
-				Name:      name,
-				Color:     "#6f8790",
-				Visible:   true,
-				Triangles: triangles,
+				ID:         entry.ID,
+				Name:       name,
+				Color:      uvfColor(entry.Properties.Color, "#6f8790"),
+				Visible:    true,
+				Triangles:  triangles,
+				EntityType: entry.Type,
+				Path:       uvfEntityPath(entry.ID, parentByID, entryByID),
 			})
 		case "Edge":
 			segments := 0
@@ -165,6 +206,49 @@ func GeometryUVFPreview(resourceID string, manifest json.RawMessage, assetURL st
 		return MeshPreview{}, errors.New("Geometry UVF manifest has no renderable faces")
 	}
 	return preview, nil
+}
+
+func uvfSolidCounts(sections []struct {
+	Name   string `json:"name"`
+	Length int    `json:"length"`
+}) (vertices, triangles int) {
+	for _, section := range sections {
+		switch section.Name {
+		case "position":
+			vertices = section.Length / (4 * 3)
+		case "indices":
+			triangles = section.Length / (4 * 3)
+		}
+	}
+	if triangles == 0 {
+		triangles = vertices / 3
+	}
+	return vertices, triangles
+}
+
+func uvfColor(color int, fallback string) string {
+	if color <= 0 || color > 0xffffff {
+		return fallback
+	}
+	return fmt.Sprintf("#%06x", color)
+}
+
+func uvfEntityPath(entityID string, parentByID map[string]string, entryByID map[string]uvfEntry) []string {
+	path := []string{}
+	seen := map[string]bool{entityID: true}
+	for parentID := parentByID[entityID]; parentID != "" && !seen[parentID]; parentID = parentByID[parentID] {
+		seen[parentID] = true
+		if parentID != "root_group" {
+			path = append(path, parentID)
+		}
+		if _, exists := entryByID[parentID]; !exists {
+			break
+		}
+	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+	return path
 }
 
 func minFloat(left, right float64) float64 {

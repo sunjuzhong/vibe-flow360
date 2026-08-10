@@ -561,7 +561,6 @@
   max-width: min(360px, calc(100% - 32px));
 }
 
-.case-field-inventory,
 .case-surface-inventory,
 .case-result-inventory {
   min-height: 0;
@@ -592,46 +591,10 @@
   padding-left: 7px;
 }
 
-.case-field-inventory {
-  flex: 0 0 auto;
-  border-top: 1px solid #e3e4dd;
-  padding-top: 7px;
-}
-
 .case-result-inventory {
   flex: 0 0 auto;
   border-top: 1px solid #e3e4dd;
   padding-top: 8px;
-}
-
-.case-field-row {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 5px;
-  color: #5f685d;
-  background: transparent;
-  font-size: 10px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.case-field-row:hover { background: #f0f2eb; }
-.case-field-row.selected { color: #315c68; background: #e3edef; }
-.case-field-row > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.case-field-row small { color: #92978e; font: 7px 'DM Mono'; text-transform: uppercase; }
-
-.case-field-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: linear-gradient(135deg, #3c81a0 0%, #7aa442 52%, #d49a44 100%);
 }
 
 .case-result-row {

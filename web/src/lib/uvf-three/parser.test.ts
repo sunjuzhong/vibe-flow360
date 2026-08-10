@@ -575,6 +575,41 @@ describe('Flow360 UVF Three.js library', () => {
     asset.dispose()
   })
 
+  it('renders an unpacked SolidGeometry used by Case isosurfaces', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'isosurfaces',
+        type: 'GeometryGroup',
+        attributions: { members: ['qcriterion'] },
+      },
+      {
+        id: 'qcriterion',
+        type: 'SolidGeometry',
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'qcriterion.bin',
+            sections: [
+              { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12 },
+              { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36 },
+            ],
+          },
+        },
+      },
+    ])
+    const data = new ArrayBuffer(48)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+
+    const asset = buildUVFAsset(manifest, new Map([['qcriterion.bin', data]]))
+    const object = asset.getEntityObject('qcriterion')
+    expect(asset.faces).toBe(1)
+    expect(asset.triangles).toBe(1)
+    expect(object?.children[0]).toBeInstanceOf(THREE.Mesh)
+    expect(object?.children[0].userData.uvfType).toBe('SolidGeometry')
+    asset.dispose()
+  })
+
   it('rejects missing, cyclic, and multiply-parented group members', () => {
     expect(() => buildUVFAsset(parseUVFManifest([
       { id: 'group-1', type: 'GeometryGroup', attributions: { members: ['missing'] } },

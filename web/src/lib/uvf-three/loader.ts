@@ -256,6 +256,32 @@ export function buildUVFAsset(
       triangles += faceTriangles
     }
 
+    if ((solid.attributions?.faces?.length ?? 0) === 0) {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      geometry.setAttribute('normal', renderNormals)
+      if (indices) geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+      for (const [name, attribute] of fieldAttributes) geometry.setAttribute(name, attribute)
+      if (elementGroupIds) geometry.setAttribute('elementGroupId', new THREE.BufferAttribute(elementGroupIds, 1))
+      const opacity = solid.properties?.alpha ?? 1
+      const material = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(faceColor(solid.properties?.color, faces)),
+        side: THREE.DoubleSide,
+        transparent: opacity < 1,
+        opacity,
+        shininess: 35,
+        vertexColors: false,
+      })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.name = solid.name || solid.id
+      mesh.userData.entityId = solid.id
+      mesh.userData.groupId = solid.id
+      mesh.userData.uvfType = 'SolidGeometry'
+      solidObject.add(mesh)
+      faces++
+      triangles += indices ? Math.floor(indices.length / 3) : Math.floor(positions.length / 9)
+    }
+
     if (edgePositions) {
       for (const edgeID of solid.attributions?.edges ?? []) {
         const edge = byID.get(edgeID)
@@ -348,6 +374,11 @@ function deriveRenderNormals(
   return derived
 }
 
+function isUVFSurfaceMesh(object: THREE.Object3D): object is THREE.Mesh {
+  return object instanceof THREE.Mesh
+    && (object.userData.uvfType === 'Face' || object.userData.uvfType === 'SolidGeometry')
+}
+
 export function applyFieldColoring(
   asset: UVFAsset,
   fieldName: string | null,
@@ -357,7 +388,7 @@ export function applyFieldColoring(
   const field = fieldName ? asset.fields.find((f) => f.name === fieldName) : null
   asset.object.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return
-    if (object.userData.uvfType !== 'Face') return
+    if (!isUVFSurfaceMesh(object)) return
     const geometry = object.geometry
     const positionAttr = geometry.getAttribute('position')
     if (!positionAttr) return
@@ -442,7 +473,7 @@ export function collectFieldValues(asset: UVFAsset, fieldName: string): Float32A
   const usedIndices = new Map<THREE.BufferAttribute, Set<number> | null>()
 
   asset.object.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) || object.userData.uvfType !== 'Face') return
+    if (!isUVFSurfaceMesh(object)) return
     const attribute = object.geometry.getAttribute(fieldName)
     if (!(attribute instanceof THREE.BufferAttribute)) return
     const index = object.geometry.getIndex()
@@ -561,7 +592,7 @@ export function findFieldExtrema(asset: UVFAsset, fieldName: string): UVFFieldEx
   const samples = new Map<THREE.BufferAttribute, Map<number, THREE.Mesh>>()
   asset.object.updateMatrixWorld(true)
   asset.object.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) || object.userData.uvfType !== 'Face') return
+    if (!isUVFSurfaceMesh(object)) return
     const attribute = object.geometry.getAttribute(fieldName)
     const positions = object.geometry.getAttribute('position')
     if (!(attribute instanceof THREE.BufferAttribute) || !positions) return
@@ -612,7 +643,7 @@ export function findFieldExtrema(asset: UVFAsset, fieldName: string): UVFFieldEx
 export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
   const faces: THREE.Mesh[] = []
   asset.object.traverse((object) => {
-    if (object instanceof THREE.Mesh && object.userData.uvfType === 'Face') faces.push(object)
+    if (isUVFSurfaceMesh(object)) faces.push(object)
   })
 
   for (const face of faces) {
@@ -684,7 +715,7 @@ export function setFieldFilterOverlay(asset: UVFAsset, filter: UVFFieldFilter | 
   let matchingTriangles = 0
 
   asset.object.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) || object.userData.uvfType !== 'Face') return
+    if (!isUVFSurfaceMesh(object)) return
     removeFieldFilterOverlay(object)
     if (!filter?.enabled || rules.length === 0) return
 

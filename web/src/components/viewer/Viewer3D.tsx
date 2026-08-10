@@ -55,6 +55,8 @@ export type MeshGroupData = {
   visible: boolean
   triangles?: number
   vertices?: number
+  entity_type?: string
+  path?: string[]
 }
 
 export type MeshEdgeData = {

@@ -217,3 +217,41 @@ func TestGeometryUVFPreviewBuildsFaceGroupsAndBounds(t *testing.T) {
 		t.Fatalf("unexpected edges %#v", preview.Edges)
 	}
 }
+
+func TestGeometryUVFPreviewPreservesCaseHierarchyAndUnpackedSolids(t *testing.T) {
+	manifest := json.RawMessage(`[
+		{"id":"root_group","type":"GeometryGroup","attributions":{"members":["boundaries","isosurfaces"]}},
+		{"id":"boundaries","type":"GeometryGroup","attributions":{"members":["Boundaries (Auto)"]}},
+		{"id":"Boundaries (Auto)","type":"SolidGeometry","attributions":{"faces":["fluid/wall"]},"resources":{"buffers":{"type":"buffers","sections":[{"name":"position","length":144},{"name":"indices","length":24}]}}},
+		{"id":"fluid/wall","type":"Face","attributions":{"packedParentId":"Boundaries (Auto)"},"properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":6}]}}},
+		{"id":"isosurfaces","type":"GeometryGroup","attributions":{"members":["Isosurfaces (Auto)"]}},
+		{"id":"Isosurfaces (Auto)","type":"GeometryGroup","attributions":{"members":["qcriterion"]}},
+		{"id":"qcriterion","type":"SolidGeometry","properties":{"color":3764652},"resources":{"buffers":{"type":"buffers","sections":[{"name":"position","length":360},{"name":"indices","length":120}]}}}
+	]`)
+
+	preview, err := GeometryUVFPreview(
+		"case-1",
+		manifest,
+		"/api/flow360/resources/Case/case-1/visualization/manifest.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Groups) != 2 {
+		t.Fatalf("expected a boundary Face and an unpacked isosurface, got %#v", preview.Groups)
+	}
+	groups := map[string]MeshGroup{}
+	for _, group := range preview.Groups {
+		groups[group.ID] = group
+	}
+	if got := groups["fluid/wall"].Path; len(got) != 2 || got[0] != "boundaries" || got[1] != "Boundaries (Auto)" {
+		t.Fatalf("unexpected boundary path %#v", got)
+	}
+	iso := groups["qcriterion"]
+	if iso.EntityType != "SolidGeometry" || iso.Color != "#3971ac" || iso.Triangles != 10 {
+		t.Fatalf("unexpected isosurface group %#v", iso)
+	}
+	if got := iso.Path; len(got) != 2 || got[0] != "isosurfaces" || got[1] != "Isosurfaces (Auto)" {
+		t.Fatalf("unexpected isosurface path %#v", got)
+	}
+}
