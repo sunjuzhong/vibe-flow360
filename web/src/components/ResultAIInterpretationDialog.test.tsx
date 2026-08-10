@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import { ResultAIInterpretationDialog, ResultMarkdown } from './ResultAIInterpretationDialog'
+import { ResultAIInterpretationDialog, ResultMarkdown, resultConversationMessages } from './ResultAIInterpretationDialog'
 
 describe('ResultAIInterpretationDialog', () => {
   it('renders an accessible conversation dialog while preparing the fingerprint', () => {
@@ -33,5 +33,17 @@ describe('ResultAIInterpretationDialog', () => {
     expect(markup).toContain('<code>0_cont</code>')
     expect(markup).toContain('target="_blank"')
     expect(markup).toContain('rel="noreferrer"')
+  })
+
+  it('shows a submitted question optimistically before the AI reply arrives', () => {
+    const messages = resultConversationMessages(
+      [{ role: 'assistant', content: 'Earlier answer' }],
+      'Why did continuity plateau?',
+    )
+
+    expect(messages).toEqual([
+      { role: 'assistant', content: 'Earlier answer' },
+      { role: 'user', content: 'Why did continuity plateau?' },
+    ])
   })
 })

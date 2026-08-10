@@ -2,7 +2,7 @@ import { Clock3, Database, Loader2, RefreshCw, Send, Sparkles, Trash2, X } from 
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { api, type ResultInterpretationRequest, type ResultInterpretationResponse } from '../api/client'
+import { api, type ChatMessage, type ResultInterpretationRequest, type ResultInterpretationResponse } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
@@ -14,6 +14,11 @@ export function ResultMarkdown({ children }: { children: string }) {
       }}>{children}</ReactMarkdown>
     </div>
   )
+}
+
+export function resultConversationMessages(messages: ChatMessage[], pendingQuestion: string): ChatMessage[] {
+  if (!pendingQuestion) return messages
+  return [...messages, { role: 'user', content: pendingQuestion }]
 }
 
 export function ResultAIInterpretationDialog({ open, input, onClose }: {
@@ -29,6 +34,7 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
   const lastRequestRef = useRef<{ mode: ResultInterpretationRequest['mode']; question: string }>({ mode: 'load', question: '' })
   const [response, setResponse] = useState<ResultInterpretationResponse | null>(null)
   const [question, setQuestion] = useState('')
+  const [pendingQuestion, setPendingQuestion] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -40,7 +46,7 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
     try {
       const result = await api.interpretResult({ ...input, mode, question: nextQuestion || undefined })
       setResponse(result)
-      if (mode === 'ask') setQuestion('')
+      if (mode === 'ask') setPendingQuestion('')
     } catch (failure) {
       setError(String(failure).replace('Error: ', ''))
     } finally {
@@ -55,6 +61,7 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
     loadedFingerprintRef.current = identity
     setResponse(null)
     setQuestion('')
+    setPendingQuestion('')
     setError('')
     void request('load')
     // input is immutable for a specific CSV fingerprint; request is intentionally started once per identity.
@@ -63,7 +70,7 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
 
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [busy, response?.messages.length])
+  }, [busy, pendingQuestion, response?.messages.length])
 
   if (!open) return null
 
@@ -71,18 +78,24 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
     event.preventDefault()
     const trimmed = question.trim()
     if (!trimmed) return
+    setPendingQuestion(trimmed)
+    setQuestion('')
     void request('ask', trimmed)
   }
 
   const regenerate = () => {
     if (!window.confirm(t('Regenerate the interpretation and clear this conversation?'))) return
+    setPendingQuestion('')
     void request('regenerate')
   }
 
   const clearConversation = () => {
     if (!window.confirm(t('Clear this AI conversation?'))) return
+    setPendingQuestion('')
     void request('clear')
   }
+
+  const conversationMessages = resultConversationMessages(response?.messages ?? [], pendingQuestion)
 
   return (
     <div className="result-ai-modal" role="presentation">
@@ -114,15 +127,15 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
                 <div className="result-ai-answer-label"><Sparkles size={13} />{t('CFD interpretation')}</div>
                 <ResultMarkdown>{response.interpretation}</ResultMarkdown>
               </article>
-              {response.messages.length > 0 && <div className="result-ai-conversation-divider"><span>{t('Follow-up conversation')}</span></div>}
+              {conversationMessages.length > 0 && <div className="result-ai-conversation-divider"><span>{t('Follow-up conversation')}</span></div>}
               <div className="result-ai-conversation" aria-live="polite">
-                {response.messages.map((message, index) => (
+                {conversationMessages.map((message, index) => (
                   <article className={`result-ai-message ${message.role}`} key={`${message.role}-${index}`}>
                     <strong>{t(message.role === 'user' ? 'You' : 'AI')}</strong>
                     {message.role === 'assistant' ? <ResultMarkdown>{message.content}</ResultMarkdown> : <p>{message.content}</p>}
                   </article>
                 ))}
-                {busy && response && <div className="result-ai-thinking"><Loader2 className="spin" size={14} />{t('Analyzing your question…')}</div>}
+                {busy && pendingQuestion && <div className="result-ai-thinking"><Loader2 className="spin" size={14} />{t('Analyzing your question…')}</div>}
                 <div ref={conversationEndRef} />
               </div>
             </>
@@ -130,8 +143,8 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
         </main>
 
         <form className="result-ai-question-form" onSubmit={submit}>
-          <textarea className="result-ai-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t('Ask about fields, convergence, anomalies, or next checks…')} maxLength={4000} rows={2} disabled={!response || busy} />
-          <button type="submit" disabled={!response || busy || !question.trim()} aria-label={t('Send follow-up question')}><Send size={16} /></button>
+          <textarea className="result-ai-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t('Ask about fields, convergence, anomalies, or next checks…')} maxLength={4000} rows={2} disabled={!response || busy || Boolean(pendingQuestion)} />
+          <button type="submit" disabled={!response || busy || Boolean(pendingQuestion) || !question.trim()} aria-label={t('Send follow-up question')}><Send size={16} /></button>
         </form>
       </section>
     </div>
