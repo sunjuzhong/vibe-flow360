@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
-import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
@@ -477,6 +477,76 @@ describe('Flow360 UVF Three.js library', () => {
     applyFieldColoring(asset, 'pressure', 'viridis')
     expect((face as THREE.Mesh).geometry.getAttribute('color')).toBeUndefined()
     expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshPhongMaterial)
+    asset.dispose()
+  })
+
+  it('adds independently configurable LIC and arrow overlays only for scoped vector fields', () => {
+    const manifest = parseUVFManifest([
+      {
+        id: 'slice',
+        type: 'SolidGeometry',
+        attributions: { faces: ['slice-face'] },
+        resources: {
+          buffers: {
+            type: 'buffers',
+            path: 'slice.bin',
+            sections: [
+              { name: 'indices', dType: 'uint32', dimension: 1, offset: 0, length: 12 },
+              { name: 'position', dType: 'float32', dimension: 3, offset: 12, length: 36 },
+              { name: 'normal', dType: 'float32', dimension: 3, offset: 48, length: 36 },
+              { name: 'velocity', dType: 'float32', dimension: 3, offset: 84, length: 36 },
+              { name: 'pressure', dType: 'float32', dimension: 1, offset: 120, length: 12 },
+            ],
+            bounds: { velocity: [1, 2], pressure: [0, 1] },
+          },
+        },
+      },
+      {
+        id: 'slice-face',
+        type: 'Face',
+        properties: { bufferLocations: { indices: [{ bufNum: 0, startIndex: 0, endIndex: 3 }] } },
+      },
+    ])
+    const data = new ArrayBuffer(132)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    new Float32Array(data, 48, 9).set([0, 0, 1, 0, 0, 1, 0, 0, 1])
+    new Float32Array(data, 84, 9).set([1, 0, 0, 1, 1, 0, 0, 1, 0])
+    new Float32Array(data, 120, 3).set([0, 0.5, 1])
+    const asset = buildUVFAsset(manifest, new Map([['slice.bin', data]]))
+    const face = asset.getEntityObject('slice-face')!
+
+    expect(applyVectorVisualization(asset, 'velocity', {
+      lic: true,
+      arrows: true,
+      entityIds: ['another-face'],
+    })).toEqual({ licSurfaces: 0, arrows: 0 })
+    expect(face.children).toHaveLength(0)
+
+    const combined = applyVectorVisualization(asset, 'velocity', {
+      lic: true,
+      arrows: true,
+      entityIds: ['slice-face'],
+      maxArrows: 2,
+    })
+    expect(combined).toEqual({ licSurfaces: 1, arrows: 2 })
+    expect(face.children.map((child) => child.userData.uvfVectorMode).sort()).toEqual(['arrows', 'lic'])
+
+    const arrowsOnly = applyVectorVisualization(asset, 'velocity', {
+      lic: false,
+      arrows: true,
+      entityIds: ['slice-face'],
+      maxArrows: 1,
+    })
+    expect(arrowsOnly).toEqual({ licSurfaces: 0, arrows: 1 })
+    expect(face.children.map((child) => child.userData.uvfVectorMode)).toEqual(['arrows'])
+
+    expect(applyVectorVisualization(asset, 'pressure', {
+      lic: true,
+      arrows: true,
+      entityIds: ['slice-face'],
+    })).toEqual({ licSurfaces: 0, arrows: 0 })
+    expect(face.children).toHaveLength(0)
     asset.dispose()
   })
 

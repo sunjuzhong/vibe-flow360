@@ -99,6 +99,18 @@ export type UVFFieldColorOptions = {
   entityIds?: string[] | null
 }
 
+export type UVFVectorVisualizationOptions = {
+  lic: boolean
+  arrows: boolean
+  entityIds?: string[] | null
+  maxArrows?: number
+}
+
+export type UVFVectorVisualizationResult = {
+  licSurfaces: number
+  arrows: number
+}
+
 export type UVFFieldProbe = {
   fieldName: string
   value: number

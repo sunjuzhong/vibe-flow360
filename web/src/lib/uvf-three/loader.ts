@@ -5,7 +5,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { DEFAULT_COLORMAP, sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD, UVFVectorVisualizationOptions, UVFVectorVisualizationResult } from './types'
 
 // Case manifests carry result-field and boundary metadata in addition to the
 // render objects, so they can legitimately exceed the old 2 MiB cap.
@@ -438,6 +438,256 @@ export function applyFieldColoring(
       restoreBaseSurfaceMaterial(object)
     }
   })
+}
+
+const VECTOR_OVERLAY_FLAG = 'uvfVectorVisualizationOverlay'
+const DEFAULT_MAX_VECTOR_ARROWS = 260
+
+export function applyVectorVisualization(
+  asset: UVFAsset,
+  fieldName: string | null,
+  options: UVFVectorVisualizationOptions,
+): UVFVectorVisualizationResult {
+  removeVectorVisualization(asset)
+  const result = { licSurfaces: 0, arrows: 0 }
+  const field = fieldName ? asset.fields.find((candidate) => candidate.name === fieldName) : null
+  if (!field || field.kind !== 'vector' || (!options.lic && !options.arrows)) return result
+
+  const surfaces: THREE.Mesh[] = []
+  asset.object.traverse((object) => {
+    if (!isUVFSurfaceMesh(object)) return
+    const entityId = String(object.userData.groupId ?? object.userData.entityId ?? '')
+    if (options.entityIds && !options.entityIds.includes(entityId)) return
+    const vector = object.geometry.getAttribute(field.name)
+    if (!(vector instanceof THREE.BufferAttribute) || vector.itemSize < 2) return
+    surfaces.push(object)
+  })
+
+  const arrowBudget = Math.max(1, Math.floor((options.maxArrows ?? DEFAULT_MAX_VECTOR_ARROWS) / Math.max(1, surfaces.length)))
+  for (const surface of surfaces) {
+    if (options.lic) {
+      surface.add(createLICOverlay(surface, field.name))
+      result.licSurfaces++
+    }
+    if (options.arrows) {
+      const overlay = createVectorArrowOverlay(surface, field, arrowBudget)
+      if (overlay) {
+        surface.add(overlay.object)
+        result.arrows += overlay.count
+      }
+    }
+  }
+  return result
+}
+
+function removeVectorVisualization(asset: UVFAsset): void {
+  const overlays: THREE.Object3D[] = []
+  asset.object.traverse((object) => {
+    if (object.userData[VECTOR_OVERLAY_FLAG] === true) overlays.push(object)
+  })
+  for (const overlay of overlays) {
+    overlay.parent?.remove(overlay)
+    if (overlay instanceof THREE.Mesh || overlay instanceof THREE.LineSegments) {
+      overlay.geometry.dispose()
+      const materials = Array.isArray(overlay.material) ? overlay.material : [overlay.material]
+      materials.forEach((material) => material.dispose())
+    }
+  }
+}
+
+function createLICOverlay(surface: THREE.Mesh, fieldName: string): THREE.Mesh {
+  const source = surface.geometry
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', source.getAttribute('position'))
+  const normal = source.getAttribute('normal')
+  if (normal) geometry.setAttribute('normal', normal)
+  geometry.setAttribute('uvfVector', source.getAttribute(fieldName))
+  if (source.getIndex()) geometry.setIndex(source.getIndex())
+  geometry.setDrawRange(source.drawRange.start, source.drawRange.count)
+  geometry.computeBoundingBox()
+  const bounds = geometry.boundingBox ?? new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1))
+  const center = bounds.getCenter(new THREE.Vector3())
+  const diagonal = Math.max(bounds.getSize(new THREE.Vector3()).length(), 1e-6)
+  const material = new THREE.ShaderMaterial({
+    name: 'UVF LIC texture',
+    uniforms: {
+      uCenter: { value: center },
+      uFrequency: { value: 150 / diagonal },
+      uOpacity: { value: 0.36 },
+    },
+    vertexShader: `
+      attribute vec3 uvfVector;
+      varying vec3 vLocalPosition;
+      varying vec3 vLocalNormal;
+      varying vec3 vLocalVector;
+      void main() {
+        vLocalPosition = position;
+        vLocalNormal = normal;
+        vLocalVector = uvfVector;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * 0.00015, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      uniform vec3 uCenter;
+      uniform float uFrequency;
+      uniform float uOpacity;
+      varying vec3 vLocalPosition;
+      varying vec3 vLocalNormal;
+      varying vec3 vLocalVector;
+
+      float hash31(vec3 p) {
+        p = fract(p * 0.1031);
+        p += dot(p, p.yzx + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+
+      float valueNoise(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(mix(hash31(i), hash31(i + vec3(1, 0, 0)), f.x),
+              mix(hash31(i + vec3(0, 1, 0)), hash31(i + vec3(1, 1, 0)), f.x), f.y),
+          mix(mix(hash31(i + vec3(0, 0, 1)), hash31(i + vec3(1, 0, 1)), f.x),
+              mix(hash31(i + vec3(0, 1, 1)), hash31(i + vec3(1, 1, 1)), f.x), f.y),
+          f.z
+        );
+      }
+
+      void main() {
+        vec3 normalDirection = normalize(vLocalNormal);
+        vec3 tangent = vLocalVector - normalDirection * dot(vLocalVector, normalDirection);
+        float tangentLength = length(tangent);
+        if (tangentLength < 1e-10) discard;
+        vec3 direction = tangent / tangentLength;
+        vec3 samplePosition = (vLocalPosition - uCenter) * uFrequency;
+        float convolution = 0.0;
+        float weightSum = 0.0;
+        for (int index = -4; index <= 4; index++) {
+          float offset = float(index);
+          float weight = 1.0 - abs(offset) / 5.0;
+          convolution += valueNoise(samplePosition + direction * offset * 0.32) * weight;
+          weightSum += weight;
+        }
+        float lic = smoothstep(0.28, 0.72, convolution / weightSum);
+        gl_FragColor = vec4(vec3(0.035, 0.07, 0.12), (1.0 - lic) * uOpacity);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  })
+  material.toneMapped = false
+  const overlay = new THREE.Mesh(geometry, material)
+  overlay.name = `${surface.name || surface.uuid} LIC texture`
+  overlay.userData[VECTOR_OVERLAY_FLAG] = true
+  overlay.userData.uvfVectorMode = 'lic'
+  overlay.renderOrder = surface.renderOrder + 2
+  return overlay
+}
+
+function createVectorArrowOverlay(
+  surface: THREE.Mesh,
+  field: UVFFieldInfo,
+  maxArrows: number,
+): { object: THREE.LineSegments; count: number } | null {
+  const geometry = surface.geometry
+  const positions = geometry.getAttribute('position')
+  const vectors = geometry.getAttribute(field.name)
+  if (!(positions instanceof THREE.BufferAttribute) || !(vectors instanceof THREE.BufferAttribute)) return null
+  const normals = geometry.getAttribute('normal')
+  const index = geometry.getIndex()
+  const candidateCount = index?.count ?? positions.count
+  if (candidateCount === 0) return null
+  geometry.computeBoundingBox()
+  const diagonal = Math.max(geometry.boundingBox?.getSize(new THREE.Vector3()).length() ?? 0, 1e-6)
+  const sampleCount = Math.min(maxArrows, candidateCount)
+  const bounds = geometry.boundingBox!
+  const sizes = bounds.getSize(new THREE.Vector3()).toArray()
+  const spatialAxes = [0, 1, 2]
+    .sort((left, right) => sizes[right] - sizes[left])
+    .slice(0, 2)
+  const gridResolution = Math.max(1, Math.ceil(Math.sqrt(sampleCount)))
+  const occupiedCells = new Set<string>()
+  const candidates: number[] = []
+  const inspectionStride = Math.max(1, Math.floor(candidateCount / Math.max(sampleCount * 32, 1)))
+  for (let offset = 0; offset < candidateCount && candidates.length < sampleCount; offset += inspectionStride) {
+    const vertex = index ? index.getX(offset) : offset
+    const coordinates = [positions.getX(vertex), positions.getY(vertex), positions.getZ(vertex)]
+    const cell = spatialAxes.map((axis) => {
+      const extent = Math.max(sizes[axis], 1e-12)
+      const normalized = THREE.MathUtils.clamp((coordinates[axis] - bounds.min.getComponent(axis)) / extent, 0, 0.999999)
+      return Math.floor(normalized * gridResolution)
+    }).join(':')
+    if (occupiedCells.has(cell)) continue
+    occupiedCells.add(cell)
+    candidates.push(vertex)
+  }
+  const segmentPositions: number[] = []
+  let arrowCount = 0
+  for (const vertex of candidates) {
+    const direction = new THREE.Vector3(
+      vectors.getX(vertex),
+      vectors.itemSize > 1 ? vectors.getY(vertex) : 0,
+      vectors.itemSize > 2 ? vectors.getZ(vertex) : 0,
+    )
+    const magnitude = direction.length()
+    if (!Number.isFinite(magnitude) || magnitude <= 1e-12) continue
+    direction.divideScalar(magnitude)
+    const normal = normals instanceof THREE.BufferAttribute
+      ? new THREE.Vector3(normals.getX(vertex), normals.getY(vertex), normals.getZ(vertex)).normalize()
+      : new THREE.Vector3(0, 0, 1)
+    const surfacePoint = new THREE.Vector3(positions.getX(vertex), positions.getY(vertex), positions.getZ(vertex))
+    const magnitudeRatio = field.max > field.min
+      ? THREE.MathUtils.clamp((magnitude - field.min) / (field.max - field.min), 0, 1)
+      : 1
+    const length = diagonal * 0.045 * (0.4 + 0.6 * magnitudeRatio)
+    let side = new THREE.Vector3().crossVectors(direction, normal)
+    if (side.lengthSq() < 1e-8) {
+      side = new THREE.Vector3().crossVectors(direction, Math.abs(direction.z) < 0.9
+        ? new THREE.Vector3(0, 0, 1)
+        : new THREE.Vector3(0, 1, 0))
+    }
+    side.normalize()
+    const wingOffset = length * 0.13
+    // A slice or surface can be viewed from either side. Emit the same arrow
+    // just above both sides so normal depth testing keeps the visible copy and
+    // hides the copy behind the surface instead of making every arrow vanish.
+    for (const normalSide of [-1, 1]) {
+      const origin = surfacePoint.clone().addScaledVector(normal, diagonal * 0.0015 * normalSide)
+      const tip = origin.clone().addScaledVector(direction, length)
+      const headBase = tip.clone().addScaledVector(direction, -length * 0.28)
+      const left = headBase.clone().addScaledVector(side, wingOffset)
+      const right = headBase.clone().addScaledVector(side, -wingOffset)
+      for (const [start, end] of [[origin, tip], [tip, left], [tip, right]] as const) {
+        segmentPositions.push(start.x, start.y, start.z, end.x, end.y, end.z)
+      }
+    }
+    arrowCount++
+  }
+  if (!arrowCount) return null
+  const arrowGeometry = new THREE.BufferGeometry()
+  arrowGeometry.setAttribute('position', new THREE.Float32BufferAttribute(segmentPositions, 3))
+  const material = new THREE.LineBasicMaterial({
+    color: 0x17320f,
+    transparent: true,
+    opacity: 0.92,
+    depthTest: true,
+    depthWrite: false,
+  })
+  material.toneMapped = false
+  const overlay = new THREE.LineSegments(arrowGeometry, material)
+  overlay.name = `${surface.name || surface.uuid} vector arrows`
+  overlay.userData[VECTOR_OVERLAY_FLAG] = true
+  overlay.userData.uvfVectorMode = 'arrows'
+  overlay.renderOrder = surface.renderOrder + 3
+  return { object: overlay, count: arrowCount }
 }
 
 function ensureFieldColorMaterial(object: THREE.Mesh): THREE.MeshBasicMaterial {

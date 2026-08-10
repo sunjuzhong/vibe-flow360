@@ -4,7 +4,7 @@ import { Crosshair, Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
+import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, applyVectorVisualization, canUseLogFieldScale, createFieldHistogram, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
 import type { UVFAsset, UVFAssetLRU, UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
@@ -261,6 +261,7 @@ type Props = {
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
+  showVectorControls?: boolean
   showEntityLegend?: boolean
   showWarnings?: boolean
   toolbar?: React.ReactNode
@@ -308,6 +309,7 @@ export function Viewer3D({
   captureRequest = 0,
   onCapture,
   showFieldPanel = true,
+  showVectorControls = false,
   showEntityLegend = true,
   showWarnings = true,
   toolbar,
@@ -371,6 +373,8 @@ export function Viewer3D({
   const [internalSelectedField, setInternalSelectedField] = useState<string | null>(null)
   const [colormap, setColormap] = useState<ColormapName>(DEFAULT_COLORMAP)
   const [fieldScale, setFieldScale] = useState<UVFFieldScale>('auto')
+  const [vectorLICEnabled, setVectorLICEnabled] = useState(false)
+  const [vectorArrowsEnabled, setVectorArrowsEnabled] = useState(false)
   const [fieldRangeOverride, setFieldRangeOverride] = useState<{ key: string; range: [number, number] } | null>(null)
   const [availableFields, setAvailableFields] = useState<UVFFieldInfo[]>([])
   const [colormaps] = useState<ColormapName[]>(listColormaps())
@@ -413,8 +417,8 @@ export function Viewer3D({
       : baseFieldRange
     : null, [activeField, baseFieldRange, fieldRangeKey, fieldRangeOverride])
   const effectiveWireframe = wireframe ?? wireframeOn
-  const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe })
-  framePresentationRef.current = { selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe }
+  const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled })
+  framePresentationRef.current = { selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled }
   const precisionSelection = precision.assetURL === displayManifest?.asset_url ? precision.selection : 'default'
   const requestedLODLevel = precisionSelection === 'default' ? undefined : precisionSelection
   const unavailablePrecisionLevels = new Set(
@@ -737,6 +741,11 @@ export function Viewer3D({
         scale: nextField
           ? resolveFieldScale(presentation.fieldScale, nextField.min, nextField.max)
           : 'linear',
+      })
+      applyVectorVisualization(nextUVFAsset, presentation.selectedField, {
+        lic: presentation.vectorLICEnabled,
+        arrows: presentation.vectorArrowsEnabled,
+        entityIds: presentation.fieldEntityIds,
       })
       setWireframeOverlay(nextUVFAsset, presentation.wireframe)
     }
@@ -1450,6 +1459,15 @@ export function Viewer3D({
   }, [assetState.status, selectedField, colormap, fieldEntityIds, activeColorRange, resolvedFieldScale])
 
   useEffect(() => {
+    if (!uvfAssetRef.current) return
+    applyVectorVisualization(uvfAssetRef.current, selectedField, {
+      lic: vectorLICEnabled,
+      arrows: vectorArrowsEnabled,
+      entityIds: fieldEntityIds,
+    })
+  }, [assetState.status, selectedField, fieldEntityIds, vectorLICEnabled, vectorArrowsEnabled])
+
+  useEffect(() => {
     const timeout = window.setTimeout(() => {
       const count = uvfAssetRef.current ? setFieldFilterOverlay(uvfAssetRef.current, fieldFilter ?? null) : 0
       onFieldFilterMatchCountRef.current?.(count)
@@ -1693,6 +1711,27 @@ export function Viewer3D({
               colormap={colormap}
               onChange={(range) => setFieldRangeOverride({ key: fieldRangeKey, range })}
             />
+          )}
+          {showVectorControls && activeField?.kind === 'vector' && (
+            <div className="viewer-vector-controls" role="group" aria-label={t('Vector display')}>
+              <span>{t('Vector display')}</span>
+              <button
+                type="button"
+                className={vectorLICEnabled ? 'active' : ''}
+                aria-pressed={vectorLICEnabled}
+                onClick={() => setVectorLICEnabled((enabled) => !enabled)}
+              >
+                {t('LIC texture')}
+              </button>
+              <button
+                type="button"
+                className={vectorArrowsEnabled ? 'active' : ''}
+                aria-pressed={vectorArrowsEnabled}
+                onClick={() => setVectorArrowsEnabled((enabled) => !enabled)}
+              >
+                {t('Vector arrows')}
+              </button>
+            </div>
           )}
         </div>
       )}

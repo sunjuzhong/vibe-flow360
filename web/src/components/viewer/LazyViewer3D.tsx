@@ -41,6 +41,7 @@ export type ViewerToolbarProps = {
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
+  showVectorControls?: boolean
   showEntityLegend?: boolean
   showWarnings?: boolean
   toolbar?: React.ReactNode

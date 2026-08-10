@@ -885,6 +885,7 @@ export default function CaseWorkspace({
             fieldNames={selectedFieldNames}
             fieldEntityIds={selectedFieldEntityIds}
             showFieldPanel={Boolean(selectedVisualizationObject && selectedFieldNames.length > 0)}
+            showVectorControls
             showEntityLegend={false}
             onEntitiesDiscovered={setViewerEntities}
             onAssetStatsChange={setViewerAssetStats}
