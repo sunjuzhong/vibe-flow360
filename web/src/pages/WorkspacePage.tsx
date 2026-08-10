@@ -33,6 +33,7 @@ function projectCount(project: ProjectRecord, key: string) {
 }
 
 export const workspaceSelectedFolderStorageKey = 'vibesim.workspace.selected-folder'
+export const workspaceDefaultSort = { by: 'created', direction: 'desc' } as const
 
 type FolderSelectionStorage = Pick<Storage, 'getItem' | 'setItem'>
 
@@ -200,8 +201,8 @@ export default function WorkspacePage() {
     if (folder) void loadProjects(folder)
   }, [folderRoot])
 
-  const [sortBy, setSortBy] = useState<'name' | 'created' | 'type' | 'solver'>('name')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortBy, setSortBy] = useState<'name' | 'created' | 'type' | 'solver'>(workspaceDefaultSort.by)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(workspaceDefaultSort.direction)
   const [filterType, setFilterType] = useState('all')
 
   const filteredProjects = useMemo(() => {

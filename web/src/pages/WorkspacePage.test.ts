@@ -4,9 +4,16 @@ import {
   findFolderById,
   formatProjectCreatedAt,
   readWorkspaceSelectedFolder,
+  workspaceDefaultSort,
   workspaceSelectedFolderStorageKey,
   writeWorkspaceSelectedFolder,
 } from './WorkspacePage'
+
+describe('workspace project sorting', () => {
+  it('defaults to newest projects first', () => {
+    expect(workspaceDefaultSort).toEqual({ by: 'created', direction: 'desc' })
+  })
+})
 
 describe('aiCreateProjectPath', () => {
   it('opens the Project with the configured Flow360 Draft selected', () => {
