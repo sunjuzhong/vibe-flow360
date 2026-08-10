@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { selectPlaybackAsset, sliceFrameAssetURL, slicePlaybackPrefetchIndices, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -33,6 +33,11 @@ describe('CaseSlicePlayerPanel', () => {
 
   it('offers smooth playback frame rates while retaining low-bandwidth choices', () => {
     expect(SLICE_PLAYBACK_FPS_OPTIONS).toEqual([1, 2, 5, 10, 15, 20, 24, 30])
+  })
+
+  it('shows Field controls only while playback is paused', () => {
+    expect(sliceFieldPanelVisible(false)).toBe(true)
+    expect(sliceFieldPanelVisible(true)).toBe(false)
   })
 
   it('prefetches two frames ahead and keeps one frame behind with wraparound', () => {

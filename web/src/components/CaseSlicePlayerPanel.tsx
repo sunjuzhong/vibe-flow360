@@ -51,6 +51,10 @@ export function selectPlaybackAsset(frame: SlicePlaybackFrame) {
   }
 }
 
+export function sliceFieldPanelVisible(playing: boolean) {
+  return !playing
+}
+
 function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob }) {
   const { t } = useI18n()
   const playback = job.report?.playback
@@ -114,6 +118,7 @@ function SlicePlayback({ caseId, job }: { caseId: string; job: SlicePlayerJob })
       <div className="slice-playback-viewer">
         <LazyViewer3D manifest={manifest} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
           fieldNames={playback.fields} fieldRange={selectedField ? playback.field_ranges[selectedField] ?? null : null}
+          showFieldPanel={sliceFieldPanelVisible(playing)}
           showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
           uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
       </div>
