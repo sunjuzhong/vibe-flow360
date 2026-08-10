@@ -1,0 +1,14 @@
+schema_version: 1
+engineering_question: Predict drag on a one-metre spherical sensor body without allowing the outer boundary to alter the pressure field or wake.
+decision: Use an automatically generated domain for an isolated clean body, or provide a reviewed asymmetric fluid domain when boundary placement must be controlled.
+inputs:
+  automatic_geometry: assets/sphere-body.csm
+  manual_geometry: assets/manual-domain.csm
+  length_unit: m
+  body_diameter: 1 m
+  freestream_direction: positive x
+deliverables:
+  - A 20D AutomatedFarfield baseline that encloses the body and registered rotor service volume
+  - An 8D automatic sensitivity Draft for detecting boundary proximity effects
+  - A UserDefinedFarfield Draft based on a closed fluid volume with 10D upstream and 25D downstream reach
+  - Explicit geometry, blockage, enclosure, and mesh evidence for selecting a domain

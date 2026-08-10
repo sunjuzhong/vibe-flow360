@@ -1,0 +1,23 @@
+schema_version: 1
+criteria:
+  - id: automatic-farfield-valid
+    category: provenance
+    description: The 20D AutomatedFarfield baseline deserializes and passes Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: simulation.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: enclosed-volume-registered
+    category: mesh
+    description: The rotor CustomVolume and bounding Cylinder resolve through project_entity_info.draft_entities with matching IDs and types.
+    artifact: simulation.json
+    required: true
+    check: {method: manual, metric: mesh.farfield.enclosed-entity}
+  - id: baseline-domain-reviewed
+    category: mesh
+    description: The generated outer boundary encloses the body and rotor service volume with smooth volume-cell growth.
+    artifact: volume mesh review
+    required: true
+    check: {method: manual, metric: mesh.farfield.distance}
+limitations:
+  - The package configures VolumeMesh Drafts but does not submit cloud meshing or solver Cases.
+  - Final farfield acceptance requires a result sensitivity comparison for the intended operating condition.

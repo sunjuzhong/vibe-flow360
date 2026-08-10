@@ -25,6 +25,7 @@ import { TutorialConceptBridge, TutorialDerivations, TutorialEvidenceRubric, Tut
 import T03TutorialPage from './T03TutorialPage'
 import T04TutorialPage from './T04TutorialPage'
 import T05TutorialPage from './T05TutorialPage'
+import T06TutorialPage from './T06TutorialPage'
 import {
   t01Evidence,
   t01ParameterCards,
@@ -77,6 +78,7 @@ export default function TutorialPage() {
   if (tutorialId.toUpperCase() === 'T03') return <T03TutorialPage />
   if (tutorialId.toUpperCase() === 'T04') return <T04TutorialPage />
   if (tutorialId.toUpperCase() === 'T05') return <T05TutorialPage />
+  if (tutorialId.toUpperCase() === 'T06') return <T06TutorialPage />
   if (tutorialId.toUpperCase() !== 'T01') return <Navigate to="/tutorials" replace />
   return <T01TutorialPage />
 }

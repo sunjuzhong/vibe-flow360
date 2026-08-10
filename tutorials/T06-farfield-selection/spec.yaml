@@ -1,0 +1,18 @@
+schema_version: 1
+scenario: spherical-sensor-external-domain
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_unit: {value: m, provenance: provided}
+  body_diameter: {value: 1, unit: m, provenance: provided}
+  automatic_baseline_relative_size: {value: 20, provenance: inferred}
+  automatic_compact_relative_size: {value: 8, provenance: inferred}
+  manual_upstream_distance: {value: 10, unit: m, provenance: derived}
+  manual_downstream_distance: {value: 25, unit: m, provenance: derived}
+  manual_lateral_distance: {value: 12, unit: m, provenance: derived}
+  manual_projected_blockage: {value: 0.136, unit: percent, provenance: derived}
+review_required:
+  - Confirm the imported asset is a body-only CAD for AutomatedFarfield or a watertight fluid volume for UserDefinedFarfield.
+  - Confirm the enclosed rotor CustomVolume and its bounding Cylinder are registered in project_entity_info.draft_entities.
+  - Compare the 20D and 8D meshes while keeping the rotor service volume fixed.
+  - Inspect downstream cell growth and outer-boundary distance before solving.

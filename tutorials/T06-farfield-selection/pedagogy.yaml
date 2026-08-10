@@ -1,0 +1,103 @@
+schema_version: 2
+audience: Beginners who can identify a solid body and need to choose a computational domain for an external aerodynamic calculation.
+prerequisites:
+  - Recognize the difference between the physical body and the fluid region surrounding it.
+  - Understand that the one-metre body diameter is the reference length in this lesson.
+learning_objectives:
+  - id: explain-boundary-interference
+    objective: Explain how an outer boundary that is too close can alter blockage, pressure recovery, and wake development around a body.
+    assessment: Predict which drag and wake evidence should change when the generated boundary moves from 20D to 8D.
+  - id: select-farfield-workflow
+    objective: Select AutomatedFarfield for body-only CAD and UserDefinedFarfield for a watertight CAD fluid volume with reviewed extents.
+    assessment: Classify an unfamiliar Geometry asset from its topology and state which Flow360 volume-zone object it requires.
+  - id: verify-domain-evidence
+    objective: Verify domain topology, enclosed-entity registration, boundary distances, blockage, and mesh growth before submitting a solver Case.
+    assessment: Apply the farfield evidence rubric to accept one Draft and reject a realistic invalid setup.
+concepts:
+  cfd:
+    - id: boundary-interference
+      title: Outer boundaries can change the solution
+      explanation: A nearby outer boundary constrains streamlines, changes pressure recovery, and can force a wake into coarse cells before its gradients have decayed.
+      misconception: A farfield boundary is not harmless merely because it is labeled freestream; its location remains part of the numerical model.
+    - id: blockage-and-asymmetry
+      title: Domain shape follows the flow problem
+      explanation: External-flow domains commonly need less upstream reach than downstream wake reach, while lateral area controls projected blockage and boundary interaction.
+      misconception: Equal distance in every direction is not mandatory when a reviewed asymmetric domain lowers cell cost without affecting the decision quantity.
+  flow360:
+    - id: automatic-versus-provided
+      title: AutomatedFarfield and UserDefinedFarfield expect different CAD
+      explanation: AutomatedFarfield generates an outer domain around body-only CAD; UserDefinedFarfield meshes inside a closed fluid volume already present in the uploaded geometry.
+      misconception: Switching only the volume-zone type cannot convert a solid-body CAD into a valid user-defined fluid domain.
+    - id: domain-type-version-boundary
+      title: Full-body detection follows the supported mesher workflow
+      explanation: In the standard mesher workflow, Flow360 infers a full or half domain from whether the Geometry bounding box crosses the y equals zero plane.
+      misconception: Setting domain_type explicitly is not valid here because Flow360 25.10 permits it only with both GAI surface meshing and the beta volume mesher.
+    - id: enclosed-entity-registration
+      title: Enclosed entities extend the automatic-domain requirement
+      explanation: AutomatedFarfield.enclosed_entities tells the mesher which registered CustomVolume, such as this rotor service zone, must remain inside the generated domain along with the imported geometry.
+      misconception: Flow360 25.10 accepts enclosed_entities only for CustomVolume objects, whose bounding Cylinder and volume IDs must both be registered in project_entity_info.draft_entities.
+parameter_derivations:
+  - id: normalized-distances
+    parameter: Manual-domain extents
+    basis: Distances are normalized by the body diameter D so the same placement logic transfers to another sensor size.
+    calculation: upstream = 10/1 = 10D; downstream = 25/1 = 25D; lateral = 12/1 = 12D
+    transfer: Multiply each nondimensional distance by the new characteristic length, then repeat boundary-sensitivity checks for the required output.
+  - id: projected-blockage
+    parameter: Projected blockage ratio
+    basis: The body projected area compared with the domain cross-section estimates how strongly lateral boundaries constrain the external flow.
+    calculation: beta = (pi D^2 / 4) / (24D x 24D) = 0.00136 = 0.136 percent
+    transfer: Recalculate projected area and domain cross-section for the new orientation; complex bodies require the maximum relevant projected area.
+  - id: automatic-size-sensitivity
+    parameter: Automated farfield relative size
+    basis: The 20D baseline is compared with an 8D compact domain while geometry, surface mesh defaults, and protected wake envelope remain fixed.
+    calculation: radius reduction = (20D - 8D) / 20D = 60 percent
+    transfer: Accept a smaller relative size only when mesh structure and final engineering outputs remain within the declared tolerance.
+experiments:
+  - id: boundary-distance
+    prediction: What result is most likely if the generated boundary moves from 20D to 8D while every other setting remains fixed?
+    options: [Cell count should fall but drag and wake evidence may become boundary-sensitive, The first boundary-layer cell must become thinner]
+    controlled_variable: Only AutomatedFarfield.relative_size changes; body geometry, enclosed rotor service volume, and surface meshing defaults remain fixed.
+    observation: Compare outer-boundary distance, downstream mesh growth, drag coefficient, surface pressure, and wake velocity deficit on matched meshes and review windows.
+failure_modes:
+  - id: wrong-cad-topology
+    symptom: UserDefinedFarfield is selected for a body-only CAD and no closed fluid region exists to mesh.
+    cause: The volume-zone object was changed without changing the Geometry asset from a solid body to a watertight external fluid domain.
+    correction: Upload the reviewed fluid-volume CAD or return to AutomatedFarfield for the body-only asset, then rerun Geometry checks and preflight.
+  - id: boundary-too-close
+    symptom: Drag or surface pressure changes materially when farfield distance is increased, or the wake meets the boundary with visible gradients.
+    cause: The domain is too compact for the disturbance and requested downstream evidence at this operating condition.
+    correction: Increase the relevant upstream, lateral, or downstream distance and repeat a controlled domain-sensitivity comparison.
+  - id: unregistered-enclosed-volume
+    symptom: Automatic farfield configuration references a rotor service volume but preflight reports a dangling Draft entity.
+    cause: The CustomVolume or its bounding Cylinder ID and type do not match project_entity_info.draft_entities.
+    correction: Register the CustomVolume and Cylinder in the Draft entity catalog, preserve both IDs and types, save, and rerun preflight before meshing.
+  - id: unintended-farfield-layers
+    symptom: Boundary layers grow from the supplied outer-domain faces and consume cells or distort the volume mesh.
+    cause: UserDefinedFarfield uses geometry surfaces, and boundary-layer behavior was not reviewed for those outer faces.
+    correction: Assign the intended outer-surface spacing treatment, verify the generated surface groups, and inspect the volume mesh before solving.
+evidence_rubric:
+  - id: topology
+    observation: Geometry topology matches the selected workflow
+    pass: Automatic uses body-only CAD; manual uses one watertight fluid volume with identifiable body and outer boundaries.
+    fail: The selected volume-zone type and imported Geometry topology describe different domains.
+  - id: registration
+    observation: Enclosed Draft entity registration
+    pass: The CustomVolume and its bounding Cylinder resolve to matching IDs and types in project_entity_info.draft_entities.
+    fail: Either rotor-zone entity is absent, duplicated, or registered with a different ID or entity type.
+  - id: distance-and-blockage
+    observation: Boundary distances and projected blockage
+    pass: Normalized distances cover the requested disturbance and projected blockage is documented for the governing orientation.
+    fail: A boundary is close to a strong gradient or the blockage calculation is missing or based on the wrong projection.
+  - id: domain-sensitivity
+    observation: Controlled domain-size comparison
+    pass: Drag, pressure, and wake evidence stay within the declared tolerance between accepted domain sizes.
+    fail: The engineering conclusion changes with boundary position or the comparison changes more than one variable.
+  - id: mesh-transition
+    observation: Volume mesh toward the outer boundary
+    pass: Cell growth is smooth and the requested wake region remains resolved before reaching the outer boundary.
+    fail: Abrupt growth, low-quality cells, or unresolved wake gradients appear near the domain edge.
+transfer_questions:
+  - prompt: How should the manual domain change when the required wake probe moves from 10D to 30D downstream?
+    expected: Extend downstream reach beyond the new probe and its remaining gradients, then repeat mesh-growth and boundary-sensitivity checks instead of enlarging every direction equally.
+  - prompt: Why can a 0.136 percent blockage calculation still be insufficient evidence for accepting the domain?
+    expected: Low geometric blockage does not prove adequate downstream reach, mesh transition, topology, boundary-condition assignment, or output sensitivity.

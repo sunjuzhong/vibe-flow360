@@ -1,0 +1,4 @@
+# One-metre spherical sensor body for the T06 automated-farfield path.
+sphere 0 0 0 0.5
+attribute groupName $body
+end

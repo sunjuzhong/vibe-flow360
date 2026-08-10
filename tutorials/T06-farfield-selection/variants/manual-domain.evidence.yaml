@@ -1,0 +1,22 @@
+schema_version: 1
+criteria:
+  - id: manual-domain-patch-valid
+    category: provenance
+    description: The UserDefinedFarfield merge patch passes Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: variants/manual-domain.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: fluid-volume-topology-reviewed
+    category: mesh
+    description: The uploaded manual-domain CAD contains one watertight fluid volume with body and outer boundary surfaces.
+    artifact: assets/manual-domain.csm
+    required: true
+    check: {method: manual, metric: geometry.fluid-volume.topology}
+  - id: manual-extents-reviewed
+    category: mesh
+    description: Upstream, downstream, and lateral distances plus projected blockage are confirmed before meshing.
+    artifact: domain dimension review
+    required: true
+    check: {method: manual, metric: mesh.farfield.manual-extents}
+limitations:
+  - A user-defined fluid domain cannot be produced by applying this parameter patch to the body-only Geometry Project.

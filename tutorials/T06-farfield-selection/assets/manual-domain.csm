@@ -1,0 +1,25 @@
+# Explicit external fluid domain for the same one-metre spherical sensor body.
+# Extents: 10D upstream, 25D downstream, and 12D laterally.
+box -10 -12 -12 35 24 24
+select face 1
+  attribute groupName $farfield
+select face 2
+  attribute groupName $farfield
+select face 3
+  attribute groupName $farfield
+select face 4
+  attribute groupName $farfield
+select face 5
+  attribute groupName $farfield
+select face 6
+  attribute groupName $farfield
+store $outerDomain
+
+sphere 0 0 0 0.5
+attribute groupName $body
+store $sensorBody
+
+restore $outerDomain
+restore $sensorBody
+subtract
+end
