@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { UVFLoader, accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
+import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, buildUVFAsset, collectFieldValues, createFieldHistogram, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
@@ -450,10 +452,12 @@ describe('Flow360 UVF Three.js library', () => {
     expect(faceMesh.material.vertexColors).toBe(true)
     expect(faceMesh.material.polygonOffset).toBe(true)
     expect(faceMesh.children.filter((child) => child.userData.uvfWireframeOverlay)).toHaveLength(1)
-    const wireOverlay = faceMesh.children.find((child) => child.userData.uvfWireframeOverlay) as THREE.LineSegments
-    expect(wireOverlay).toBeInstanceOf(THREE.LineSegments)
-    expect((wireOverlay.material as THREE.LineBasicMaterial).opacity).toBe(wireframeOpacityForTriangleCount(1))
-    expect(wireframeOverlayOpacity(wireOverlay)).toBe((wireOverlay.material as THREE.LineBasicMaterial).opacity)
+    const wireOverlay = faceMesh.children.find((child) => child.userData.uvfWireframeOverlay) as LineSegments2
+    expect(wireOverlay).toBeInstanceOf(LineSegments2)
+    expect(wireOverlay.material).toBeInstanceOf(LineMaterial)
+    expect(wireOverlay.material.linewidth).toBe(WIREFRAME_OVERLAY_WIDTH)
+    expect(wireOverlay.material.opacity).toBe(wireframeOpacityForTriangleCount(1))
+    expect(wireframeOverlayOpacity(wireOverlay)).toBe(wireOverlay.material.opacity)
     expect(wireframeOverlayOpacity(wireOverlay, true)).toBeGreaterThanOrEqual(0.48)
     const disposeWireGeometry = vi.spyOn(wireOverlay.geometry, 'dispose')
     const disposeWireMaterial = vi.spyOn(wireOverlay.material as THREE.Material, 'dispose')

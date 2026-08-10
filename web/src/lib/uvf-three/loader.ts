@@ -1,4 +1,7 @@
 import * as THREE from 'three'
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { DEFAULT_COLORMAP, sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
@@ -13,6 +16,7 @@ const maxConcurrentBufferLoads = 4
 const maxTotalBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_TOTAL_BUFFER_BYTES)
 
 const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
+export const WIREFRAME_OVERLAY_WIDTH = 1.6
 
 type LoadOptions = {
   signal?: AbortSignal
@@ -662,10 +666,14 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
         ?? face.geometry.getAttribute('position')?.count
         ?? 0
       const overlayOpacity = wireframeOpacityForTriangleCount(Math.floor(indexCount / 3))
-      const overlay = new THREE.LineSegments(
-        new THREE.WireframeGeometry(face.geometry),
-        new THREE.LineBasicMaterial({
+      const sourceGeometry = new THREE.WireframeGeometry(face.geometry)
+      const overlayGeometry = new LineSegmentsGeometry().fromWireframeGeometry(sourceGeometry)
+      sourceGeometry.dispose()
+      const overlay = new LineSegments2(
+        overlayGeometry,
+        new LineMaterial({
           color: 0x30352d,
+          linewidth: WIREFRAME_OVERLAY_WIDTH,
           transparent: true,
           opacity: overlayOpacity,
           depthWrite: false,
@@ -692,7 +700,7 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
       continue
     }
 
-    if (existing instanceof THREE.LineSegments) {
+    if (existing instanceof LineSegments2) {
       face.remove(existing)
       existing.geometry.dispose()
       const overlayMaterials = Array.isArray(existing.material) ? existing.material : [existing.material]
@@ -841,7 +849,7 @@ export function updateWireframeOverlayForCamera(
   const focalPixels = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
   asset.object.updateMatrixWorld(true)
   asset.object.traverse((object) => {
-    if (!(object instanceof THREE.LineSegments) || object.userData.uvfWireframeOverlay !== true) return
+    if (!(object instanceof LineSegments2) || object.userData.uvfWireframeOverlay !== true) return
     const triangleCount = Number(object.userData.uvfWireframeTriangleCount)
     if (!Number.isFinite(triangleCount) || triangleCount <= 0) return
     if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere()
@@ -857,7 +865,6 @@ export function updateWireframeOverlayForCamera(
     object.visible = opacity > 0.01
     const materials = Array.isArray(object.material) ? object.material : [object.material]
     materials.forEach((material) => {
-      if (!(material instanceof THREE.LineBasicMaterial)) return
       material.opacity = opacity
       material.needsUpdate = true
     })

@@ -974,25 +974,29 @@ export function Viewer3D({
     const asset = uvfAssetRef.current
     if (!asset) return
     asset.object.traverse((object) => {
-      if (!(object instanceof THREE.Line)) return
+      if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
       if (object.userData.uvfFieldFilterOverlay === true) return
       if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = false
-      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
+      const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
       materials.forEach((material) => {
-        if (!(material instanceof THREE.LineBasicMaterial)) return
-        material.color.set(0x30352d)
+        const lineMaterial = material as THREE.LineBasicMaterial
+        if (!(lineMaterial.color instanceof THREE.Color)) return
+        lineMaterial.color.set(0x30352d)
         material.opacity = wireframeOverlayOpacity(object) ?? 0.72
         material.needsUpdate = true
       })
     })
     asset.getEntityObject(selection.groupId ?? '')?.traverse((object) => {
-      if (!(object instanceof THREE.Line)) return
+      if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
       if (object.userData.uvfFieldFilterOverlay === true) return
       if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = true
-      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
+      const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
       materials.forEach((material) => {
-        if (!(material instanceof THREE.LineBasicMaterial)) return
-        material.color.set(0xd59a2d)
+        const lineMaterial = material as THREE.LineBasicMaterial
+        if (!(lineMaterial.color instanceof THREE.Color)) return
+        lineMaterial.color.set(0xd59a2d)
         material.opacity = wireframeOverlayOpacity(object, true) ?? 1
         material.needsUpdate = true
       })

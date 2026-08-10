@@ -10,6 +10,7 @@ export {
   findFieldExtrema,
   probeFieldAtIntersection,
   setWireframeOverlay,
+  WIREFRAME_OVERLAY_WIDTH,
   setFieldFilterOverlay,
   wireframeOpacityForTriangleCount,
   wireframeOverlayOpacity,
