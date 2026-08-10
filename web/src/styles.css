@@ -3076,7 +3076,7 @@ button { color: inherit; }
   max-width: calc(100% - 20px);
   box-sizing: border-box;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 4px;
   padding: 4px 8px;
@@ -3085,11 +3085,12 @@ button { color: inherit; }
   border-radius: 6px;
   box-shadow: 0 2px 8px rgb(39 46 31 / 8%);
   font-size: 8px;
+  white-space: nowrap;
 }
 .viewer-display-controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 4px;
   padding-right: 6px;
@@ -7103,11 +7104,6 @@ button { color: inherit; }
   .chat_visible .project-workbench { margin-right: 0; }
 }
 
-.viewer-toolbar-field-hint {
-  color: #545b4c;
-  font-style: italic;
-}
-
 @media (max-width: 390px) {
   .viewer-field-panel {
     top: auto;
@@ -7122,7 +7118,7 @@ button { color: inherit; }
     left: 5px;
     right: 5px;
     transform: none;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: center;
   }
   .cfd-stage-viewer .viewer-toolbar-slot {

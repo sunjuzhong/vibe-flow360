@@ -213,7 +213,7 @@
     left: 50%;
     max-width: calc(100% - 16px);
     transform: translateX(-50%);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: center;
   }
 

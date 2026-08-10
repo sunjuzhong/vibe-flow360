@@ -893,7 +893,6 @@ export default function CaseWorkspace({
             toolInput={tools.toolInput}
             overlays={tools.overlays}
             onDoubleClick={tools.onDoubleClick}
-            toolbar={activeField && <span className="viewer-toolbar-field-hint">Field · {activeField}</span>}
             topToolbar={<ViewerToolsDock model={tools} />}
             fitSelectionWhenSelected
           />
