@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
@@ -196,5 +198,21 @@ func TestResultInterpretationCacheKeyTracksDataLanguageAndModelButNotConversatio
 		if key == base {
 			t.Fatal("data, language, or model change did not invalidate the cache key")
 		}
+	}
+}
+
+func TestResultInterpretationContextAllowsConfiguredCodexTimeout(t *testing.T) {
+	service := &agent.Service{Provider: "codex", CodexTimeout: 3 * time.Minute}
+	started := time.Now()
+	ctx, cancel := resultInterpretationContext(context.Background(), service)
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("result interpretation context has no deadline")
+	}
+	remaining := deadline.Sub(started)
+	want := 3*time.Minute + resultInterpretationTimeoutGrace
+	if remaining < want-time.Second || remaining > want+time.Second {
+		t.Fatalf("result interpretation deadline = %s, want approximately %s", remaining, want)
 	}
 }

@@ -19,6 +19,7 @@ const (
 	maxResultInterpretationBody       = 256 << 10
 	maxResultInterpretationColumns    = 40
 	resultInterpretationPromptVersion = "cfd-v3-conversation"
+	resultInterpretationTimeoutGrace  = 10 * time.Second
 )
 
 type resultColumnSummary struct {
@@ -146,7 +147,7 @@ func (s *Server) interpretResult(c *gin.Context) {
 	if strings.EqualFold(request.Language, "zh-CN") || strings.HasPrefix(strings.ToLower(request.Language), "zh") {
 		language = "Simplified Chinese"
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 75*time.Second)
+	ctx, cancel := resultInterpretationContext(c.Request.Context(), s.agent)
 	defer cancel()
 	interpretation, err := s.agent.Complete(ctx,
 		resultInterpretationSystemPrompt,
@@ -155,6 +156,10 @@ func (s *Server) interpretResult(c *gin.Context) {
 	)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI interpretation timed out"})
+			return
+		}
+		if _, timedOut := agent.GenerationTimeout(err); timedOut {
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI interpretation timed out"})
 			return
 		}
@@ -206,11 +211,15 @@ func (s *Server) continueResultInterpretation(c *gin.Context, request resultInte
 		"Answer in %s.\n\nDataset summary:\n%s\n\nCached base interpretation:\n%s\n\nConversation history:\n%s\n\nUser question:\n%s",
 		language, boundedResultPrompt(string(payload), 96<<10), boundedResultPrompt(record.Interpretation, 48<<10), history, request.Question,
 	)
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 75*time.Second)
+	ctx, cancel := resultInterpretationContext(c.Request.Context(), s.agent)
 	defer cancel()
 	reply, err := s.agent.Complete(ctx, resultInterpretationFollowupSystemPrompt, userPrompt, "")
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI interpretation timed out"})
+			return
+		}
+		if _, timedOut := agent.GenerationTimeout(err); timedOut {
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI interpretation timed out"})
 			return
 		}
@@ -230,6 +239,14 @@ func (s *Server) continueResultInterpretation(c *gin.Context, request resultInte
 		return
 	}
 	c.JSON(http.StatusOK, resultInterpretationResponseFromRecord(record, true))
+}
+
+func resultInterpretationContext(parent context.Context, service *agent.Service) (context.Context, context.CancelFunc) {
+	timeout := 90 * time.Second
+	if service != nil {
+		timeout = service.GenerationTimeout()
+	}
+	return context.WithTimeout(parent, timeout+resultInterpretationTimeoutGrace)
 }
 
 func resultInterpretationCacheKey(request resultInterpretationRequest, state agent.State) (string, error) {

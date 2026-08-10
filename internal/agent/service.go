@@ -99,6 +99,26 @@ func (s *Service) SupportsGeneration() bool {
 	}
 }
 
+// GenerationTimeout reports how long a purpose-specific model generation may
+// take before the provider itself gives up. HTTP handlers should allow a small
+// grace period beyond this duration instead of imposing a shorter deadline.
+func (s *Service) GenerationTimeout() time.Duration {
+	switch s.effectiveProvider() {
+	case "codex":
+		if s.CodexTimeout > 0 {
+			return s.CodexTimeout
+		}
+		return defaultCodexTimeout
+	case "builtin":
+		if s.Client != nil && s.Client.Timeout > 0 {
+			return s.Client.Timeout
+		}
+		return 90 * time.Second
+	default:
+		return 90 * time.Second
+	}
+}
+
 func (s *Service) State() State {
 	provider := s.effectiveProvider()
 	if provider == "codex" {
