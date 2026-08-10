@@ -57,8 +57,31 @@ type Asset struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type AIJobRequest struct {
+	Prompt          string `json:"prompt"`
+	Name            string `json:"name,omitempty"`
+	AssetID         string `json:"asset_id,omitempty"`
+	ParentVersionID string `json:"parent_version_id,omitempty"`
+}
+
+type AIJob struct {
+	ID        string                        `json:"id"`
+	Status    string                        `json:"status"`
+	Stage     string                        `json:"stage"`
+	Progress  int                           `json:"progress"`
+	Detail    string                        `json:"detail,omitempty"`
+	Request   AIJobRequest                  `json:"request"`
+	AssetID   string                        `json:"asset_id,omitempty"`
+	VersionID string                        `json:"version_id,omitempty"`
+	Fields    []aicreate.ClarificationField `json:"fields,omitempty"`
+	Error     string                        `json:"error,omitempty"`
+	CreatedAt time.Time                     `json:"created_at"`
+	UpdatedAt time.Time                     `json:"updated_at"`
+}
+
 type index struct {
 	Assets map[string]Asset `json:"assets"`
+	Jobs   map[string]AIJob `json:"jobs,omitempty"`
 }
 
 type Store struct {
@@ -66,6 +89,7 @@ type Store struct {
 	indexPath string
 	mu        sync.RWMutex
 	assets    map[string]Asset
+	jobs      map[string]AIJob
 }
 
 func NewStore(root string) (*Store, error) {
@@ -75,7 +99,7 @@ func NewStore(root string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(root, "files"), 0o700); err != nil {
 		return nil, err
 	}
-	store := &Store{root: root, indexPath: filepath.Join(root, "index.json"), assets: map[string]Asset{}}
+	store := &Store{root: root, indexPath: filepath.Join(root, "index.json"), assets: map[string]Asset{}, jobs: map[string]AIJob{}}
 	payload, err := os.ReadFile(store.indexPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -90,7 +114,116 @@ func NewStore(root string) (*Store, error) {
 	if persisted.Assets != nil {
 		store.assets = persisted.Assets
 	}
+	if persisted.Jobs != nil {
+		store.jobs = persisted.Jobs
+	}
 	return store, nil
+}
+
+func (s *Store) CreateAIJob(request AIJobRequest) (AIJob, error) {
+	request.Prompt = strings.TrimSpace(request.Prompt)
+	if request.Prompt == "" {
+		return AIJob{}, errors.New("AI STEP prompt is required")
+	}
+	id, err := newID("stepjob")
+	if err != nil {
+		return AIJob{}, err
+	}
+	now := time.Now().UTC()
+	job := AIJob{ID: id, Status: "queued", Stage: "queued", Progress: 0, Detail: "Waiting for the geometry Agent.", Request: request, CreatedAt: now, UpdatedAt: now}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jobs[id] = job
+	if err := s.persistLocked(); err != nil {
+		return AIJob{}, err
+	}
+	return job, nil
+}
+
+func (s *Store) AIJob(id string) (AIJob, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.jobs[id]
+	return job, ok
+}
+
+func (s *Store) AIJobs() []AIJob {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]AIJob, 0, len(s.jobs))
+	for _, job := range s.jobs {
+		result = append(result, job)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].UpdatedAt.After(result[j].UpdatedAt) })
+	return result
+}
+
+func (s *Store) UpdateAIJob(id, status, stage string, progress int, detail string) (AIJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.jobs[id]
+	if !ok {
+		return AIJob{}, os.ErrNotExist
+	}
+	if status != "" {
+		job.Status = status
+	}
+	if stage != "" {
+		job.Stage = stage
+	}
+	if progress >= 0 {
+		job.Progress = min(progress, 100)
+	}
+	job.Detail = strings.TrimSpace(detail)
+	job.UpdatedAt = time.Now().UTC()
+	s.jobs[id] = job
+	if err := s.persistLocked(); err != nil {
+		return AIJob{}, err
+	}
+	return job, nil
+}
+
+func (s *Store) FinishAIJob(id, status, assetID, versionID, detail, errorMessage string, fields []aicreate.ClarificationField) (AIJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.jobs[id]
+	if !ok {
+		return AIJob{}, os.ErrNotExist
+	}
+	job.Status, job.Stage = status, status
+	if status == "completed" {
+		job.Progress = 100
+	}
+	job.AssetID, job.VersionID = assetID, versionID
+	job.Detail, job.Error, job.Fields = strings.TrimSpace(detail), strings.TrimSpace(errorMessage), fields
+	job.UpdatedAt = time.Now().UTC()
+	s.jobs[id] = job
+	if err := s.persistLocked(); err != nil {
+		return AIJob{}, err
+	}
+	return job, nil
+}
+
+func (s *Store) RecoverAIJobs() ([]AIJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := []AIJob{}
+	for id, job := range s.jobs {
+		if job.Status != "running" && job.Status != "recovering" && job.Status != "queued" {
+			continue
+		}
+		job.Status, job.Stage = "recovering", "recovering"
+		job.Detail = "The backend restarted; generation will resume from the durable request."
+		job.UpdatedAt = time.Now().UTC()
+		s.jobs[id] = job
+		result = append(result, job)
+	}
+	if len(result) > 0 {
+		if err := s.persistLocked(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) List() []Asset {
@@ -278,7 +411,7 @@ func (s *Store) versionPath(assetID, versionID string) string {
 }
 
 func (s *Store) persistLocked() error {
-	payload, err := json.MarshalIndent(index{Assets: s.assets}, "", "  ")
+	payload, err := json.MarshalIndent(index{Assets: s.assets, Jobs: s.jobs}, "", "  ")
 	if err != nil {
 		return err
 	}
