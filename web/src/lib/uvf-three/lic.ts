@@ -50,6 +50,7 @@ const LIC_FRAGMENT_SHADER = `
   uniform vec2 uResolution;
   uniform float uStepPixels;
   uniform float uContrast;
+  uniform float uPhase;
   varying vec2 vUv;
 
   vec2 pixelDirection(vec2 encoded) {
@@ -67,8 +68,9 @@ const LIC_FRAGMENT_SHADER = `
     vec4 centerVector = texture2D(uVectors, vUv);
     if (centerVector.a < 0.5) discard;
 
-    float convolution = noiseAt(vUv);
-    float weightSum = 1.0;
+    float centerKernel = 1.0 + 0.62 * cos(uPhase) + 0.18 * cos(uPhase * 2.0 + 0.7);
+    float convolution = noiseAt(vUv) * centerKernel;
+    float weightSum = centerKernel;
     vec2 forwardPosition = vUv;
     vec2 backwardPosition = vUv;
     vec2 forwardDirection = pixelDirection(centerVector.rg);
@@ -77,7 +79,16 @@ const LIC_FRAGMENT_SHADER = `
     float backwardActive = 1.0;
 
     for (int index = 1; index <= 14; index++) {
-      float weight = 1.0 - float(index) / 15.0;
+      float windowWeight = 1.0 - float(index) / 15.0;
+      float streamlineOffset = float(index) * 0.84;
+      float forwardKernel = windowWeight * (
+        1.0 + 0.62 * cos(streamlineOffset + uPhase)
+        + 0.18 * cos(streamlineOffset * 2.0 + uPhase * 2.0 + 0.7)
+      );
+      float backwardKernel = windowWeight * (
+        1.0 + 0.62 * cos(-streamlineOffset + uPhase)
+        + 0.18 * cos(-streamlineOffset * 2.0 + uPhase * 2.0 + 0.7)
+      );
 
       vec2 forwardStep = forwardDirection * uStepPixels / uResolution;
       forwardPosition += forwardStep;
@@ -88,8 +99,8 @@ const LIC_FRAGMENT_SHADER = `
       vec2 nextForward = pixelDirection(forwardSample.rg);
       if (dot(nextForward, forwardDirection) < 0.0) nextForward = -nextForward;
       if (length(nextForward) > 0.0) forwardDirection = nextForward;
-      convolution += noiseAt(forwardPosition) * weight * forwardActive;
-      weightSum += weight * forwardActive;
+      convolution += noiseAt(forwardPosition) * forwardKernel * forwardActive;
+      weightSum += forwardKernel * forwardActive;
 
       vec2 backwardStep = backwardDirection * uStepPixels / uResolution;
       backwardPosition += backwardStep;
@@ -100,8 +111,8 @@ const LIC_FRAGMENT_SHADER = `
       vec2 nextBackward = pixelDirection(backwardSample.rg);
       if (dot(nextBackward, backwardDirection) < 0.0) nextBackward = -nextBackward;
       if (length(nextBackward) > 0.0) backwardDirection = nextBackward;
-      convolution += noiseAt(backwardPosition) * weight * backwardActive;
-      weightSum += weight * backwardActive;
+      convolution += noiseAt(backwardPosition) * backwardKernel * backwardActive;
+      weightSum += backwardKernel * backwardActive;
     }
 
     float lic = convolution / max(weightSum, 1e-6);
@@ -165,7 +176,9 @@ export class UVFScreenSpaceLIC {
   private readonly compositeScene = new THREE.Scene()
   private readonly licMaterial: THREE.ShaderMaterial
   private readonly compositeMaterial: THREE.MeshBasicMaterial
-  private lastKey = ''
+  private lastVectorKey = ''
+  private lastLICRenderTime = Number.NEGATIVE_INFINITY
+  private readonly animationStartedAt = typeof performance === 'undefined' ? Date.now() : performance.now()
 
   constructor(sources: Array<{ mesh: THREE.Mesh; vector: THREE.BufferAttribute }>) {
     const captureMaterial = new THREE.ShaderMaterial({
@@ -197,6 +210,7 @@ export class UVFScreenSpaceLIC {
         uResolution: { value: new THREE.Vector2(1, 1) },
         uStepPixels: { value: 1.35 },
         uContrast: { value: 0.68 },
+        uPhase: { value: 0 },
       },
       vertexShader: FULLSCREEN_VERTEX_SHADER,
       fragmentShader: LIC_FRAGMENT_SHADER,
@@ -224,6 +238,7 @@ export class UVFScreenSpaceLIC {
   }
 
   update(renderer: THREE.WebGLRenderer, camera: THREE.Camera, canvasWidth: number, canvasHeight: number, navigating = false): void {
+    const now = typeof performance === 'undefined' ? Date.now() : performance.now()
     const scale = navigating ? 0.45 : 0.7
     const width = Math.max(1, Math.round(canvasWidth * scale))
     const height = Math.max(1, Math.round(canvasHeight * scale))
@@ -237,13 +252,18 @@ export class UVFScreenSpaceLIC {
       .map((value) => value.toFixed(7)).join(',')
     const sourceKey = this.captures.map(({ source }) => `${source.visible}:${source.matrixWorld.elements.map((value) => value.toFixed(6)).join(',')}`).join('|')
     const key = `${width}x${height}|${cameraKey}|${sourceKey}`
-    if (key === this.lastKey) return
-    this.lastKey = key
-    if (this.vectorTarget.width !== width || this.vectorTarget.height !== height) {
+    const vectorChanged = key !== this.lastVectorKey
+    const animationInterval = 1000 / (navigating ? 15 : 24)
+    if (!vectorChanged && now - this.lastLICRenderTime < animationInterval) return
+    this.lastVectorKey = key
+    this.lastLICRenderTime = now
+    const resized = this.vectorTarget.width !== width || this.vectorTarget.height !== height
+    if (resized) {
       this.vectorTarget.setSize(width, height)
       this.licTarget.setSize(width, height)
       this.licMaterial.uniforms.uResolution.value.set(width, height)
     }
+    this.licMaterial.uniforms.uPhase.value = ((now - this.animationStartedAt) / 1000) * 6.0
 
     const previousTarget = renderer.getRenderTarget()
     const previousClearColor = renderer.getClearColor(new THREE.Color())
@@ -251,9 +271,11 @@ export class UVFScreenSpaceLIC {
     const previousAutoClear = renderer.autoClear
     renderer.autoClear = true
     renderer.setClearColor(0x000000, 0)
-    renderer.setRenderTarget(this.vectorTarget)
-    renderer.clear(true, true, true)
-    renderer.render(this.vectorScene, camera)
+    if (vectorChanged || resized) {
+      renderer.setRenderTarget(this.vectorTarget)
+      renderer.clear(true, true, true)
+      renderer.render(this.vectorScene, camera)
+    }
     renderer.setRenderTarget(this.licTarget)
     renderer.clear(true, true, true)
     renderer.render(this.licScene, this.screenCamera)
