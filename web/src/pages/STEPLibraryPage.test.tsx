@@ -12,6 +12,7 @@ describe('STEPLibraryPage', () => {
     expect(markup).toContain('href="/step-library"')
     expect(markup).toContain('href="/tutorials"')
     expect(markup).toContain('step-library-embedded')
+    expect(markup).toContain('step-library-route')
     expect(markup).not.toContain('Close STEP library')
   })
 })
