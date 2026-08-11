@@ -173,8 +173,8 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
   const aiMode = creationMode === 'ai-new' || creationMode === 'ai-revise'
 
   return <div className={embedded ? 'step-library-embedded' : 'step-library-overlay'} role={embedded ? undefined : 'presentation'} onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget && !busy) onClose?.() }}>
-    <section className="step-library-modal" role="dialog" aria-modal="true" aria-labelledby="step-library-title">
-      <header><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div>{!embedded && <button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button>}</header>
+    <section className={embedded ? 'step-library-page-surface' : 'step-library-modal'} role={embedded ? 'region' : 'dialog'} aria-modal={embedded ? undefined : true} aria-labelledby="step-library-title">
+      <header className="step-library-surface-header"><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div>{!embedded && <button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button>}</header>
       <div className="step-library-layout">
         <aside>
           <div className="step-library-aside-title"><strong>Assets</strong><button type="button" onClick={() => setCreationMode('upload-new')}><Plus size={13} /> New</button></div>
