@@ -385,13 +385,14 @@
   flex-direction: column;
 }
 
-.volume-review-workspace .resource-review-inventory .volume-zone-inspector > .manifest-member-group,
-.volume-review-workspace .resource-review-inventory .volume-zone-inspector > .manifest-member-group > .manifest-member-group__content:not([hidden]) {
-  display: flex;
+.volume-review-workspace .resource-review-inventory .volume-zone-groups {
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+}
+
+.volume-review-workspace .resource-review-inventory .volume-zone-groups > .manifest-member-group {
+  border-top: 1px solid #eceee7;
 }
 
 .volume-review-workspace .resource-review-inventory .volume-zone-tools {
@@ -404,9 +405,6 @@
 }
 
 .volume-review-workspace .resource-review-inventory .volume-zone-list {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
   padding: 0 7px;
 }
 
@@ -480,13 +478,37 @@
   background: #f2f6e8;
 }
 
-.volume-mode-guidance {
+.volume-active-review-banner {
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 8px;
-  color: #7d8578;
+  padding: 8px;
+  border: 1px solid #dce4c7;
+  border-radius: 7px;
+  background: #f4f7eb;
+}
+
+.volume-active-review-banner span,
+.volume-active-review-banner strong { display: block; }
+.volume-active-review-banner span { color: #7b856e; font-size: 8px; text-transform: uppercase; }
+.volume-active-review-banner strong { margin-top: 2px; color: #4f6035; font-size: 11px; }
+.volume-active-review-banner button {
+  min-height: 26px;
+  padding: 4px 7px;
+  border: 1px solid #d4dcc2;
+  border-radius: 5px;
+  color: #66734f;
+  background: #fff;
   font-size: 9px;
+  cursor: pointer;
+}
+
+.volume-context-empty {
+  margin: 10px 0 0;
+  color: #7d8677;
+  font-size: 10px;
 }
 
 .volume-review-workspace .volume-mesh-checks {

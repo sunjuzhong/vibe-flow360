@@ -5887,20 +5887,9 @@ button { color: inherit; }
   gap: 4px;
 }
 
-.volume-combined-toolbar,
-.volume-view-modes {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.volume-view-modes button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
 .volume-zone-tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
   margin-bottom: 6px;
 }
@@ -5915,8 +5904,7 @@ button { color: inherit; }
   color: #7a8275;
   background: #fff;
 }
-.volume-zone-search input,
-.volume-zone-tools select {
+.volume-zone-search input {
   min-width: 0;
   height: 30px;
   border: 0;
@@ -5926,24 +5914,19 @@ button { color: inherit; }
   outline: 0;
 }
 .volume-zone-search input { width: 100%; }
-.volume-zone-tools select {
-  padding: 0 7px;
-  border: 1px solid #d9ddd3;
-  border-radius: 6px;
-  background: #fff;
-  text-transform: capitalize;
-}
 .volume-zone-tools > span {
   grid-column: 1 / -1;
   color: #7b8277;
   font: 10px 'DM Mono';
 }
 .volume-zone-list { display: grid; gap: 2px; }
+.volume-zone-groups { min-height: 0; }
+.volume-zone-empty { margin: 12px; color: #7b8277; font-size: 10px; }
 .volume-zone-list > p { margin: 8px; color: #7b8277; font-size: 10px; }
 .volume-zone-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   border-radius: 6px;
 }
@@ -5969,20 +5952,6 @@ button { color: inherit; }
 .volume-zone-select strong { font-size: 11px; }
 .volume-zone-select small { color: #827b70; font: 9px 'DM Mono'; }
 .volume-zone-select em { color: #a17d4e; font-size: 8px; font-style: normal; }
-.volume-zone-actions {
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-  border-left: 1px solid #e2ddd3;
-}
-.volume-zone-actions button {
-  display: grid;
-  place-items: center;
-  border: 0;
-  color: #776f62;
-  background: transparent;
-  cursor: pointer;
-}
-.volume-zone-actions button + button { border-top: 1px solid #e2ddd3; }
 .volume-quality-field,
 .volume-field-distribution,
 .volume-slice-inspector,

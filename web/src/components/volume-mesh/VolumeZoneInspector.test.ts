@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../../i18n'
-import { filterVolumeZones } from './VolumeZoneInspector'
+import { filterVolumeZones, groupVolumeZones } from './VolumeZoneInspector'
 import { VolumeZoneInspector } from './VolumeZoneInspector'
 import type { VolumeZoneRow } from '../../lib/volumeMeshReview'
 
@@ -23,6 +23,14 @@ describe('VolumeZoneInspector filters', () => {
     expect(filterVolumeZones(zones, '', 'unknown').map((zone) => zone.id)).toEqual(['zone-3'])
   })
 
+  it('creates real type groups instead of presenting a type filter', () => {
+    expect(groupVolumeZones(zones).map(({ type, zones }) => [type, zones.length])).toEqual([
+      ['fluid', 1],
+      ['rotation', 1],
+      ['unknown', 1],
+    ])
+  })
+
   it('keeps the full name available and exposes the selected row state', () => {
     const html = renderToStaticMarkup(createElement(
       I18nProvider,
@@ -32,16 +40,14 @@ describe('VolumeZoneInspector filters', () => {
         selectedId: 'fluid-1',
         visibility: { 'fluid-1': true, 'rotor-1': true, 'zone-3': true },
         onSelect: () => undefined,
-        onIsolate: () => undefined,
-        onToggleVisibility: () => undefined,
-        onShowAll: () => undefined,
-        onHideAll: () => undefined,
+        onSetVisibility: () => undefined,
       }),
     ))
 
     expect(html).toContain('title="Main Fluid"')
     expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('aria-label="Hide Main Fluid"')
-    expect(html).toContain('aria-label="Isolate Main Fluid"')
+    expect(html).toContain('Collapse fluid')
+    expect(html).not.toContain('aria-label="Isolate Main Fluid"')
+    expect(html).not.toContain('Filter VolumeMesh zones by type')
   })
 })

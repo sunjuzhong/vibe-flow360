@@ -3,7 +3,6 @@ import {
   AlertCircle,
   CheckCircle2,
   CircleDashed,
-  Eye,
   Layers,
   Ruler,
   ScanLine,
@@ -16,7 +15,7 @@ import {
 import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
@@ -41,13 +40,14 @@ import { VolumeCapabilityPanel } from './volume-mesh/VolumeCapabilityPanel'
 import { VolumeParameterSummary } from './volume-mesh/VolumeParameterSummary'
 import { VolumeQualityInspector } from './volume-mesh/VolumeQualityInspector'
 import { VolumeSliceInspector } from './volume-mesh/VolumeSliceInspector'
-import { VolumeViewModeToolbar } from './volume-mesh/VolumeViewModeToolbar'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
 import { VolumeZoneSelectionCard } from './volume-mesh/VolumeZoneSelectionCard'
 import { BoundaryLayerInspector } from './volume-mesh/BoundaryLayerInspector'
 import { VolumeQualityAssessmentPanel } from './volume-mesh/VolumeQualityAssessmentPanel'
 import { VolumeRefinementInspector } from './volume-mesh/VolumeRefinementInspector'
 import { volumeRefinementOverlays } from '../lib/volumeRefinementReview'
+
+const EMPTY_VOLUME_MESH_GROUPS: MeshGroupData[] = []
 
 function findMetric(value: unknown, aliases: string[]): unknown {
   if (!value || typeof value !== 'object') return undefined
@@ -112,7 +112,7 @@ export default function VolumeMeshWorkspace({
   onShowLogs?: () => void
 }) {
   const { t } = useI18n()
-  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | null>(null)
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'zone-actions' | 'preflight' | 'quality' | 'parameters' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
@@ -122,8 +122,9 @@ export default function VolumeMeshWorkspace({
     geometryResourceId ?? null,
   )
   const previewKind = previewSource ?? 'none'
+  const manifestGroups = manifest?.groups ?? EMPTY_VOLUME_MESH_GROUPS
   const review = useVolumeMeshReview({
-    groups: manifest?.groups ?? [],
+    groups: manifestGroups,
     detail,
     previewSource: previewKind,
     boundingBox: manifest?.bounding_box,
@@ -183,7 +184,7 @@ export default function VolumeMeshWorkspace({
   const checks = computeVolumeReadiness({
     detail,
     previewSource: previewKind,
-    groups: manifest?.groups ?? [],
+    groups: manifestGroups,
     fields: review.allFields,
   })
   const readyCount = checks.filter((check) => check.status === 'ready').length
@@ -196,6 +197,31 @@ export default function VolumeMeshWorkspace({
   const selectedZone = review.selectedZone
   const selectedZoneVisible = selectedZone ? review.visibility[selectedZone.id] !== false : false
   const entityNames = Object.fromEntries(review.zones.map((zone) => [zone.id, zone.name]))
+  const selectedZoneHasBoundaryLayer = Boolean(selectedZone && review.boundaryLayer.rules.some((rule) => (
+    rule.targets.some((target) => target.matchedGroupId === selectedZone.id)
+  )))
+  const selectedZoneHasRefinement = Boolean(selectedZone && review.refinements.rules.some((rule) => (
+    rule.matchedTargets.some((target) => target.id === selectedZone.id)
+  )))
+  const contextualReviewCount = (review.qualityFields.length > 0 ? 1 : 0)
+    + (selectedZoneHasBoundaryLayer ? 1 : 0)
+    + (selectedZoneHasRefinement ? 1 : 0)
+  const activeReviewLabel = review.mode === 'quality'
+    ? t('Cell quality')
+    : review.mode === 'boundary-layer'
+      ? t('Boundary layers')
+      : review.mode === 'refinements' ? t('Refinements') : t('Section diagnostic')
+  const selectZone = (groupId: string | null) => {
+    review.setSelection({ groupId })
+    if (groupId) {
+      review.setMode('overview')
+      setActiveReviewDialog('zone-actions')
+    }
+  }
+  const activateContextReview = (mode: 'quality' | 'boundary-layer' | 'refinements') => {
+    review.setMode(mode)
+    setActiveReviewDialog(null)
+  }
 
   return (
     <ResourceReviewLayout
@@ -215,11 +241,11 @@ export default function VolumeMeshWorkspace({
             inventory={review.zones}
             selectedId={review.selection.groupId}
             visibility={review.visibility}
-            onSelect={(groupId) => review.setSelection({ groupId })}
-            onIsolate={review.isolateZone}
-            onToggleVisibility={review.toggleZoneVisibility}
-            onShowAll={review.showAllZones}
-            onHideAll={review.hideAllZones}
+            onSelect={selectZone}
+            onSetVisibility={(groupIds, visible) => review.setVisibility({
+              ...review.visibility,
+              ...Object.fromEntries(groupIds.map((groupId) => [groupId, visible])),
+            })}
             contextOnly={previewSource === 'fallback'}
           />
         </>
@@ -230,7 +256,7 @@ export default function VolumeMeshWorkspace({
             manifest={manifest}
             state={viewerState}
             selection={review.selection}
-            onSelectionChange={review.setSelection}
+            onSelectionChange={(selection) => selectZone(selection.groupId)}
             entityVisibility={review.visibility}
             onEntityVisibilityChange={review.setVisibility}
             selectedField={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.selectedField : null}
@@ -255,7 +281,6 @@ export default function VolumeMeshWorkspace({
             toolInput={tools.toolInput}
             overlays={viewerOverlays}
             onDoubleClick={tools.onDoubleClick}
-            toolbar={<VolumeViewModeToolbar mode={review.mode} onChange={review.setMode} />}
             topToolbar={<ViewerToolsDock model={tools} />}
           />
           <ViewerToolPanel model={tools} />
@@ -290,16 +315,12 @@ export default function VolumeMeshWorkspace({
             </div>
           )}
 
-          <VolumeZoneSelectionCard
-            zone={selectedZone}
-            visible={selectedZoneVisible}
-            contextOnly={previewSource === 'fallback'}
-            onFocus={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
-            onIsolate={() => selectedZone && review.isolateZone(selectedZone.id)}
-            onToggleVisibility={() => selectedZone && review.toggleZoneVisibility(selectedZone.id)}
-            onShowAll={review.showAllZones}
-            onClear={() => review.setSelection({ groupId: null })}
-          />
+          {review.mode !== 'overview' && review.mode !== 'zones' && (
+            <div className="volume-active-review-banner" role="status">
+              <div><span>{t('Active item review')}</span><strong>{activeReviewLabel}</strong></div>
+              <button type="button" onClick={() => review.setMode('overview')}>{t('Close review')}</button>
+            </div>
+          )}
 
           {review.mode === 'quality' ? (
             <section className="geometry-selection-card volume-active-review">
@@ -353,8 +374,6 @@ export default function VolumeMeshWorkspace({
               onPosition={review.setClipPosition}
               onVariant={review.setSliceVariant}
             />
-          ) : review.mode === 'zones' ? (
-            <div className="volume-mode-guidance"><Eye size={12} /> {t('Select a region to review its properties and available actions above.')}</div>
           ) : (
             <VolumeCapabilityPanel capabilities={review.capabilities} />
           )}
@@ -416,6 +435,64 @@ export default function VolumeMeshWorkspace({
                   </div>
                 ))}
               </div>
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'zone-actions' && selectedZone && (
+            <ResourceReviewDialog
+              title={selectedZone.name}
+              subtitle={t('Available actions for this item')}
+              icon={<Layers size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <VolumeZoneSelectionCard
+                zone={selectedZone}
+                visible={selectedZoneVisible}
+                contextOnly={previewSource === 'fallback'}
+                onFocus={() => {
+                  setCameraCommand({ type: 'fit-selection', nonce: Date.now() })
+                  setActiveReviewDialog(null)
+                }}
+                onIsolate={() => {
+                  review.isolateZone(selectedZone.id)
+                  setActiveReviewDialog(null)
+                }}
+                onToggleVisibility={() => review.toggleZoneVisibility(selectedZone.id)}
+                onShowAll={review.showAllZones}
+                onClear={() => {
+                  review.setSelection({ groupId: null })
+                  setActiveReviewDialog(null)
+                }}
+              />
+              {contextualReviewCount > 0 ? (
+                <ResourceReviewLaunchers>
+                  {review.qualityFields.length > 0 && (
+                    <ResourceReviewLauncher
+                      icon={<SlidersHorizontal size={14} />}
+                      label={t('Cell quality')}
+                      summary={t('{count} fields available').replace('{count}', String(review.qualityFields.length))}
+                      onClick={() => activateContextReview('quality')}
+                    />
+                  )}
+                  {selectedZoneHasBoundaryLayer && (
+                    <ResourceReviewLauncher
+                      icon={<Layers size={14} />}
+                      label={t('Boundary layers')}
+                      summary={t('Configured for this item')}
+                      onClick={() => activateContextReview('boundary-layer')}
+                    />
+                  )}
+                  {selectedZoneHasRefinement && (
+                    <ResourceReviewLauncher
+                      icon={<Volume2 size={14} />}
+                      label={t('Refinements')}
+                      summary={t('Configured for this item')}
+                      onClick={() => activateContextReview('refinements')}
+                    />
+                  )}
+                </ResourceReviewLaunchers>
+              ) : (
+                <p className="volume-context-empty">{t('No additional review operations are available for this item.')}</p>
+              )}
             </ResourceReviewDialog>
           )}
           {activeReviewDialog === 'quality' && (
