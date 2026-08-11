@@ -42,9 +42,65 @@ func stepAssetTestRouter(app *Server) *gin.Engine {
 	router := gin.New()
 	router.GET("/api/step-assets", app.listSTEPAssets)
 	router.POST("/api/step-assets", app.createSTEPAsset)
+	router.POST("/api/step-assets/folders", app.createSTEPFolder)
+	router.PATCH("/api/step-assets/folders/:folder_id", app.updateSTEPFolder)
+	router.DELETE("/api/step-assets/folders/:folder_id", app.deleteSTEPFolder)
+	router.PATCH("/api/step-assets/:asset_id/folder", app.moveSTEPAsset)
 	router.POST("/api/step-assets/:asset_id/versions/:version_id/create-project", app.createProjectFromSTEPAsset)
 	router.GET("/api/step-assets/:asset_id/versions/:version_id/preview", app.previewSTEPAssetVersion)
 	return router
+}
+
+func TestSTEPLibraryFolderAPIsAndFolderUpload(t *testing.T) {
+	store, err := stepassets.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{stepAssets: store, stepValidator: fixedSTEPValidator{report: aicreate.GeometryValidation{SolidCount: 1, FaceCount: 1, Volume: 1, Kernel: "test"}}}
+	router := stepAssetTestRouter(app)
+
+	create := httptest.NewRequest(http.MethodPost, "/api/step-assets/folders", strings.NewReader(`{"name":"Designs","parent_id":"step-root"}`))
+	create.Header.Set("Content-Type", "application/json")
+	created := httptest.NewRecorder()
+	router.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create folder status=%d body=%s", created.Code, created.Body.String())
+	}
+	var folder stepassets.Folder
+	if err := json.Unmarshal(created.Body.Bytes(), &folder); err != nil {
+		t.Fatal(err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("name", "Bracket")
+	_ = writer.WriteField("folder_id", folder.ID)
+	part, _ := writer.CreateFormFile("file", "bracket.step")
+	_, _ = part.Write([]byte("ISO-10303-21; bracket"))
+	_ = writer.Close()
+	upload := httptest.NewRequest(http.MethodPost, "/api/step-assets", &body)
+	upload.Header.Set("Content-Type", writer.FormDataContentType())
+	uploaded := httptest.NewRecorder()
+	router.ServeHTTP(uploaded, upload)
+	if uploaded.Code != http.StatusCreated {
+		t.Fatalf("upload status=%d body=%s", uploaded.Code, uploaded.Body.String())
+	}
+	if assets := store.List(); len(assets) != 1 || assets[0].FolderID != folder.ID {
+		t.Fatalf("unexpected folder assignment: %#v", assets)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if store.List()[0].Versions[0].Validation.Status == stepassets.StatusReady {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	listed := httptest.NewRecorder()
+	router.ServeHTTP(listed, httptest.NewRequest(http.MethodGet, "/api/step-assets", nil))
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"folder_root"`) || !strings.Contains(listed.Body.String(), "Designs") {
+		t.Fatalf("list status=%d body=%s", listed.Code, listed.Body.String())
+	}
 }
 
 func TestSTEPLibraryUploadPersistsAndValidatesVersion(t *testing.T) {

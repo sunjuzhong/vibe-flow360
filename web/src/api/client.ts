@@ -192,6 +192,7 @@ export type STEPVersion = {
 
 export type STEPAsset = {
 	 id: string
+	 folder_id: string
 	 name: string
 	 description?: string
 	 versions: STEPVersion[]
@@ -213,7 +214,7 @@ export type STEPAIJob = {
   stage: string
   progress: number
   detail?: string
-  request: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string }
+  request: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string; folder_id?: string }
   asset_id?: string
   version_id?: string
   fields?: AICreateClarificationField[]
@@ -1368,7 +1369,17 @@ export const api = {
   },
   approveImport: (id: string) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/approve`),
   runImport: (id: string, sync = false) => mutate<ImportPlan>(`/api/imports/${encodeURIComponent(id)}/run${sync ? '?sync=true' : ''}`),
-  stepAssets: () => json<{ assets: STEPAsset[] }>('/api/step-assets'),
+  stepAssets: () => json<{ assets: STEPAsset[]; folder_root: FolderNode }>('/api/step-assets'),
+  createSTEPFolder: (name: string, parentId: string) => mutate<FolderMutationResult>('/api/step-assets/folders', { name, parent_id: parentId }),
+  renameSTEPFolder: (folderId: string, name: string) => partialUpdate<FolderMutationResult>(`/api/step-assets/folders/${encodeURIComponent(folderId)}`, { name }),
+  moveSTEPFolder: (folderId: string, parentId: string) => partialUpdate<FolderMutationResult>(`/api/step-assets/folders/${encodeURIComponent(folderId)}`, { parent_id: parentId }),
+  deleteSTEPFolder: async (folderId: string) => {
+    const response = await fetch(`/api/step-assets/folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || response.statusText)
+    return body as { deleted: boolean }
+  },
+  moveSTEPAsset: (assetId: string, folderId: string) => partialUpdate<STEPAsset>(`/api/step-assets/${encodeURIComponent(assetId)}/folder`, { folder_id: folderId }),
   uploadSTEPAsset: async (form: FormData, assetId?: string) => {
     const path = assetId
       ? `/api/step-assets/${encodeURIComponent(assetId)}/versions`
@@ -1378,7 +1389,7 @@ export const api = {
     if (!response.ok) throw new Error(body.error || response.statusText)
     return body as { asset: STEPAsset; version: STEPVersion }
   },
-  aiDesignSTEPAsset: (input: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string }) =>
+  aiDesignSTEPAsset: (input: { prompt: string; name?: string; asset_id?: string; parent_version_id?: string; folder_id?: string }) =>
     mutate<STEPAIJob>('/api/step-assets/ai-design', input),
   stepAIJob: (jobId: string) => json<STEPAIJob>(`/api/step-assets/ai-jobs/${encodeURIComponent(jobId)}`),
   cancelStepAIJob: async (jobId: string) => {
