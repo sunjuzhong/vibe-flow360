@@ -126,6 +126,10 @@ export function findTimeSeriesArchives(records: NonNullable<ResourceDetail['resu
   }) ?? []
 }
 
+export function caseResourceIdentity(resourceId?: string | null, detailId?: string | null): string {
+  return resourceId || detailId || ''
+}
+
 export function mapCaseStatus(detail: ResourceDetail | null): CaseStatusView {
   const raw = resourceStatus(detail).toLowerCase()
   if (['queued', 'pending', 'waiting'].includes(raw)) return 'queued'
@@ -164,6 +168,25 @@ export type CaseVisualizationMember = MeshGroupData & {
   entityIds: string[]
   playbackKind?: CaseTimeSeriesArchiveKind
   source: 'manifest' | 'output' | 'archive'
+}
+
+export function reconcileCaseVisualizationSelection(
+  selectedVisualizationId: string | null,
+  viewerSelection: ViewerSelection,
+  groups: CaseVisualizationGroup[],
+): { selectedVisualizationId: string | null; viewerSelection: ViewerSelection } {
+  if (!selectedVisualizationId) return { selectedVisualizationId: null, viewerSelection }
+  const member = groups.flatMap(({ members }) => members)
+    .find((candidate) => candidate.id === selectedVisualizationId)
+  if (!member) return { selectedVisualizationId: null, viewerSelection: { groupId: null } }
+  if (!member.entityIds.length) return { selectedVisualizationId, viewerSelection }
+  const groupId = viewerSelection.groupId && member.entityIds.includes(viewerSelection.groupId)
+    ? viewerSelection.groupId
+    : member.entityIds[0]
+  return {
+    selectedVisualizationId,
+    viewerSelection: { groupId, groupIds: member.entityIds },
+  }
 }
 
 export type CaseArchiveLayer = {
@@ -503,6 +526,7 @@ export default function CaseWorkspace({
   const timeSeriesArchives = findTimeSeriesArchives(resultRecords)
   const hasSurfaceArchive = timeSeriesArchives.some(({ kind }) => kind === 'surfaces')
   const hasErrors = Boolean(detail?.errors && Object.keys(detail.errors).length)
+  const resourceIdentity = caseResourceIdentity(resourceId, detail?.id)
 
   const { result: convergence, loading: convergenceLoading, refetch: refetchConvergence } =
     useConvergenceAssessment(detail?.id ?? null)
@@ -562,15 +586,37 @@ export default function CaseWorkspace({
 
   useEffect(() => {
     setEntityVisibility(Object.fromEntries(surfaceGroups.map((group) => [group.id, group.visible])))
-    setViewerSelection({ groupId: null })
-    setSelectedVisualizationId(null)
   }, [manifest?.asset_url])
+
+  useEffect(() => {
+    if (viewerState.status !== 'ready' || !selectedVisualizationId) return
+    const reconciled = reconcileCaseVisualizationSelection(
+      selectedVisualizationId,
+      viewerSelection,
+      visualizationGroups,
+    )
+    if (reconciled.selectedVisualizationId !== selectedVisualizationId) {
+      setSelectedVisualizationId(reconciled.selectedVisualizationId)
+    }
+    const currentGroupIds = viewerSelection.groupIds ?? []
+    const nextGroupIds = reconciled.viewerSelection.groupIds ?? []
+    if (
+      reconciled.viewerSelection.groupId !== viewerSelection.groupId
+      || currentGroupIds.length !== nextGroupIds.length
+      || currentGroupIds.some((id, index) => id !== nextGroupIds[index])
+    ) {
+      setViewerSelection(reconciled.viewerSelection)
+    }
+  }, [selectedVisualizationId, viewerSelection, viewerState.status, visualizationGroups])
 
   useEffect(() => {
     setArchiveLayers({})
     setArchiveLayerLoading(null)
     setArchiveLayerError('')
-  }, [resourceId, detail?.id])
+    setViewerSelection({ groupId: null })
+    setSelectedVisualizationId(null)
+    setActiveField(null)
+  }, [resourceIdentity])
 
   useEffect(() => {
     const compatibleField = caseFieldForSelection(activeField, selectedFieldNames)

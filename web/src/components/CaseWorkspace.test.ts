@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -146,6 +146,41 @@ describe('Case archive layers', () => {
         groups: [{ id: 'archive:case-output:cylinder:surface-face-0', name: 'Cylinder_surface', visible: true }],
       },
     })
+  })
+})
+
+describe('Case visualization selection refresh', () => {
+  const refreshedGroups = [{
+    category: 'slices' as const,
+    members: [{
+      id: 'case-output:wake', name: 'wake_animation', color: '#789521', visible: true,
+      entityIds: ['new-slice-face'], source: 'manifest' as const,
+    }],
+  }]
+
+  it('preserves the logical item and migrates selection when refreshed entity IDs change', () => {
+    expect(reconcileCaseVisualizationSelection(
+      'case-output:wake',
+      { groupId: 'old-slice-face', groupIds: ['old-slice-face'] },
+      refreshedGroups,
+    )).toEqual({
+      selectedVisualizationId: 'case-output:wake',
+      viewerSelection: { groupId: 'new-slice-face', groupIds: ['new-slice-face'] },
+    })
+  })
+
+  it('clears selection only when the logical visualization item no longer exists', () => {
+    expect(reconcileCaseVisualizationSelection(
+      'case-output:removed',
+      { groupId: 'old-slice-face' },
+      refreshedGroups,
+    )).toEqual({ selectedVisualizationId: null, viewerSelection: { groupId: null } })
+  })
+
+  it('keeps a stable resource identity while async detail data arrives', () => {
+    expect(caseResourceIdentity('case-route-id', null)).toBe('case-route-id')
+    expect(caseResourceIdentity('case-route-id', 'case-route-id')).toBe('case-route-id')
+    expect(caseResourceIdentity(null, 'case-detail-id')).toBe('case-detail-id')
   })
 })
 
