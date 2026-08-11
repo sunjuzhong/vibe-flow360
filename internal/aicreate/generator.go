@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +31,7 @@ type GeometryValidation struct {
 	Volume               float64   `json:"volume"`
 	Bounds               []float64 `json:"bounds"`
 	Kernel               string    `json:"kernel"`
+	LengthUnit           string    `json:"length_unit,omitempty"`
 	BodyNames            []string  `json:"body_names,omitempty"`
 	FaceNames            []string  `json:"face_names,omitempty"`
 	FaceCoverageChecked  bool      `json:"face_coverage_checked,omitempty"`
@@ -268,6 +270,11 @@ func (g *CadQueryGenerator) PreviewSTEP(ctx context.Context, inputPaths []string
 	if len(inputPaths) < 1 || len(inputPaths) > 2 {
 		return preview, errors.New("STEP preview requires one or two versions")
 	}
+	absoluteOutputPath, err := filepath.Abs(outputPath)
+	if err != nil {
+		return preview, fmt.Errorf("resolve STEP preview output: %w", err)
+	}
+	outputPath = filepath.Clean(absoluteOutputPath)
 	directory, err := os.MkdirTemp("", "vibesim-step-preview-")
 	if err != nil {
 		return preview, err
@@ -276,6 +283,14 @@ func (g *CadQueryGenerator) PreviewSTEP(ctx context.Context, inputPaths []string
 	scriptPath := filepath.Join(directory, "preview_step.py")
 	if err := os.WriteFile(scriptPath, stepPreviewScript, 0o500); err != nil {
 		return preview, err
+	}
+	stagedInputs := make([]string, 0, len(inputPaths))
+	for index, inputPath := range inputPaths {
+		stagedPath := filepath.Join(directory, fmt.Sprintf("input-%d.step", index+1))
+		if err := copySTEPInput(inputPath, stagedPath); err != nil {
+			return preview, fmt.Errorf("stage STEP preview input: %w", err)
+		}
+		stagedInputs = append(stagedInputs, stagedPath)
 	}
 	uvBinary, err := resolveCADRuntimeBinary(g.UVBinary)
 	if err != nil {
@@ -286,7 +301,7 @@ func (g *CadQueryGenerator) PreviewSTEP(ctx context.Context, inputPaths []string
 		args = append(args, "--offline")
 	}
 	args = append(args, "--python", firstConfigured(g.Python, "3.11"), "--with", "cadquery==2.6.1", "python", scriptPath, outputPath)
-	args = append(args, inputPaths...)
+	args = append(args, stagedInputs...)
 	runCtx, cancel := context.WithTimeout(ctx, g.Timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, uvBinary, args...)
@@ -307,6 +322,24 @@ func (g *CadQueryGenerator) PreviewSTEP(ctx context.Context, inputPaths []string
 		return preview, fmt.Errorf("STEP preview returned invalid data: %w", err)
 	}
 	return preview, nil
+}
+
+func copySTEPInput(sourcePath, destinationPath string) error {
+	source, err := os.Open(filepath.Clean(sourcePath))
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	destination, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(destination, source)
+	closeErr := destination.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
 
 func resolveCADRuntimeBinary(configured string) (string, error) {

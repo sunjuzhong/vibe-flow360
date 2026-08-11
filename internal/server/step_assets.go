@@ -29,7 +29,8 @@ type stepVersionComparison struct {
 func (s *Server) previewSTEPAssetVersion(c *gin.Context) {
 	preview, comparison, err := s.ensureSTEPPreview(c.Request.Context(), c.Param("asset_id"), c.Param("version_id"), strings.TrimSpace(c.Query("compare_version_id")))
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		log.Printf("STEP preview failed for asset %s version %s: %v", c.Param("asset_id"), c.Param("version_id"), err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeSTEPPreviewError(err), "code": "step_preview_failed"})
 		return
 	}
 	compare := strings.TrimSpace(c.Query("compare_version_id"))
@@ -52,10 +53,22 @@ func (s *Server) previewSTEPAssetVersion(c *gin.Context) {
 func (s *Server) previewSTEPAssetVersionFile(c *gin.Context) {
 	_, _, err := s.ensureSTEPPreview(c.Request.Context(), c.Param("asset_id"), c.Param("version_id"), strings.TrimSpace(c.Query("compare_version_id")))
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		log.Printf("STEP preview file failed for asset %s version %s: %v", c.Param("asset_id"), c.Param("version_id"), err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": humanizeSTEPPreviewError(err), "code": "step_preview_failed"})
 		return
 	}
 	c.File(s.stepPreviewPath(c.Param("version_id"), strings.TrimSpace(c.Query("compare_version_id"))))
+}
+
+func humanizeSTEPPreviewError(err error) string {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "must pass validation") || strings.Contains(message, "not ready") {
+		return "This STEP version must pass validation before preview."
+	}
+	if strings.Contains(message, "not found") {
+		return "The STEP version is no longer available."
+	}
+	return "The STEP preview could not be generated. Retry the preview or validate this version again."
 }
 
 func (s *Server) stepPreviewPath(versionID, compareVersionID string) string {
@@ -64,6 +77,10 @@ func (s *Server) stepPreviewPath(versionID, compareVersionID string) string {
 		name += "--" + compareVersionID
 	}
 	return filepath.Join(s.workDir, "step-previews", name+".glb")
+}
+
+func (s *Server) stepPreviewMetadataPath(versionID, compareVersionID string) string {
+	return strings.TrimSuffix(s.stepPreviewPath(versionID, compareVersionID), ".glb") + ".json"
 }
 
 func (s *Server) ensureSTEPPreview(ctx context.Context, assetID, versionID, compareVersionID string) (aicreate.STEPPreview, *stepVersionComparison, error) {
@@ -86,10 +103,16 @@ func (s *Server) ensureSTEPPreview(ctx context.Context, assetID, versionID, comp
 		reports = append(reports, compare.Validation.Report)
 	}
 	output := s.stepPreviewPath(versionID, compareVersionID)
+	metadataOutput := s.stepPreviewMetadataPath(versionID, compareVersionID)
 	if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
 		return result, nil, err
 	}
-	if info, err := os.Stat(output); err != nil || info.Size() == 0 {
+	metadata, metadataErr := os.ReadFile(metadataOutput)
+	if metadataErr == nil {
+		metadataErr = json.Unmarshal(metadata, &result)
+	}
+	info, outputErr := os.Stat(output)
+	if outputErr != nil || info.Size() == 0 || metadataErr != nil || len(result.Bounds) != 6 {
 		if s.stepPreviewer == nil {
 			return result, nil, errors.New("STEP preview runtime is unavailable")
 		}
@@ -98,17 +121,12 @@ func (s *Server) ensureSTEPPreview(ctx context.Context, assetID, versionID, comp
 			return result, nil, err
 		}
 		result = generated
-	} else {
-		for _, report := range reports {
-			result.Vertices += report.FaceCount * 4
-			result.Triangles += report.FaceCount * 2
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return result, nil, err
 		}
-		result.Bounds = append([]float64(nil), reports[0].Bounds...)
-		if len(reports) == 2 && len(result.Bounds) == 6 && len(reports[1].Bounds) == 6 {
-			for i := 0; i < 3; i++ {
-				result.Bounds[i] = min(result.Bounds[i], reports[1].Bounds[i])
-				result.Bounds[i+3] = max(result.Bounds[i+3], reports[1].Bounds[i+3])
-			}
+		if err := os.WriteFile(metadataOutput, encoded, 0o600); err != nil {
+			return result, nil, fmt.Errorf("cache STEP preview metadata: %w", err)
 		}
 	}
 	if len(result.Bounds) != 6 {

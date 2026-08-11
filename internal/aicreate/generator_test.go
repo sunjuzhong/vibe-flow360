@@ -173,3 +173,41 @@ printf '%s' '{"solid_count":2,"face_count":12,"volume":4.5,"bounds":[0,0,0,1,2,3
 		t.Fatalf("unexpected validation: %#v", validation)
 	}
 }
+
+func TestCadQueryGeneratorStagesSTEPPreviewInputsBesideScript(t *testing.T) {
+	directory := t.TempDir()
+	fakeUV := filepath.Join(directory, "uv")
+	script := `#!/bin/sh
+script_path=""
+input_path=""
+output_path=""
+for argument in "$@"; do
+  case "$argument" in
+    */preview_step.py) script_path="$argument" ;;
+    */input-1.step) input_path="$argument" ;;
+    *.glb) output_path="$argument" ;;
+  esac
+done
+test -f "$script_path" || exit 31
+test -f "$input_path" || exit 32
+test "${script_path%/*}" = "${input_path%/*}" || exit 33
+case "$output_path" in /*) ;; *) exit 34 ;; esac
+printf '%s' '{"vertices":24,"triangles":12,"bounds":[0,0,0,1,2,3]}'
+`
+	if err := os.WriteFile(fakeUV, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stepPath := filepath.Join(directory, "source.step")
+	if err := os.WriteFile(stepPath, []byte("ISO-10303-21;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := (&CadQueryGenerator{UVBinary: fakeUV, Timeout: time.Second}).PreviewSTEP(
+		context.Background(), []string{stepPath}, filepath.Join(directory, "preview.glb"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Vertices != 24 || preview.Triangles != 12 {
+		t.Fatalf("unexpected preview: %#v", preview)
+	}
+}
