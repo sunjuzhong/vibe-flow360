@@ -165,6 +165,7 @@ export type STEPValidationReport = {
 	 volume: number
 	 bounds?: number[]
 	 kernel: string
+	 length_unit?: 'mm' | 'cm' | 'm' | 'inch' | string
 	 body_names?: string[]
 	 face_names?: string[]
 	 face_coverage_checked?: boolean

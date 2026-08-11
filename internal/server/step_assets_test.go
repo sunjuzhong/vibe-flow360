@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -100,6 +101,14 @@ func TestSTEPLibraryFolderAPIsAndFolderUpload(t *testing.T) {
 	router.ServeHTTP(listed, httptest.NewRequest(http.MethodGet, "/api/step-assets", nil))
 	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"folder_root"`) || !strings.Contains(listed.Body.String(), "Designs") {
 		t.Fatalf("list status=%d body=%s", listed.Code, listed.Body.String())
+	}
+}
+
+func TestHumanizeSTEPPreviewErrorDoesNotExposeRuntimeDetails(t *testing.T) {
+	raw := errors.New(`STEP preview generation failed: Traceback /Users/person/.cache/uv preview_step.py`)
+	message := humanizeSTEPPreviewError(raw)
+	if strings.Contains(message, "Traceback") || strings.Contains(message, "/Users/") || !strings.Contains(message, "Retry") {
+		t.Fatalf("unsafe preview error: %q", message)
 	}
 }
 
@@ -232,7 +241,7 @@ func TestSTEPPreviewComparesReadyVersionsAndCachesAsset(t *testing.T) {
 	for attempt := 0; attempt < 2; attempt++ {
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
-		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"volume_delta":20`) || !strings.Contains(recorder.Body.String(), `"bounds_delta"`) {
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"volume_delta":20`) || !strings.Contains(recorder.Body.String(), `"bounds_delta"`) || !strings.Contains(recorder.Body.String(), `"vertices":24`) {
 			t.Fatalf("preview status=%d body=%s", recorder.Code, recorder.Body.String())
 		}
 	}

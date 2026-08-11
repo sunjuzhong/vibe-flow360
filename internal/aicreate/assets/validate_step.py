@@ -26,6 +26,7 @@ def main():
         "volume": volume,
         "bounds": [bounds.xmin, bounds.ymin, bounds.zmin, bounds.xmax, bounds.ymax, bounds.zmax],
         "kernel": "CadQuery 2.6.1 / OpenCascade",
+        "length_unit": "mm",
         "face_coverage_checked": False,
     }, separators=(",", ":")))
 

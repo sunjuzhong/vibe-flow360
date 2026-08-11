@@ -169,6 +169,7 @@ def main():
         "volume": float(imported.Volume()),
         "bounds": [bounds.xmin, bounds.ymin, bounds.zmin, bounds.xmax, bounds.ymax, bounds.zmax],
         "kernel": "CadQuery 2.6.1 / OpenCascade",
+        "length_unit": "mm",
         "body_names": body_names,
         "face_names": face_names,
         "face_coverage_checked": face_coverage_checked,
