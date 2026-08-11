@@ -30,6 +30,7 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [creationMode, setCreationMode] = useState<'upload-new' | 'upload-version' | 'ai-new' | 'ai-revise'>('upload-new')
+  const [creationDialogOpen, setCreationDialogOpen] = useState(false)
   const [assetName, setAssetName] = useState('')
   const [description, setDescription] = useState('')
   const [unit, setUnit] = useState<'m' | 'mm' | 'cm' | 'inch'>('m')
@@ -124,6 +125,7 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
       setFile(null); setAssetName(''); setDescription('')
       if (fileInput.current) fileInput.current.value = ''
       await load(true)
+      if (embedded) setCreationDialogOpen(false)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause))
     } finally { setBusy(false) }
   }
@@ -138,6 +140,7 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
         asset_id: revise ? selectedAsset.id : undefined, parent_version_id: revise ? selectedVersion.id : undefined,
       })
       setAIJob(job)
+      if (embedded) setCreationDialogOpen(false)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause))
     } finally { setBusy(false) }
   }
@@ -171,37 +174,48 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
 
   const uploadMode = creationMode === 'upload-new' || creationMode === 'upload-version'
   const aiMode = creationMode === 'ai-new' || creationMode === 'ai-revise'
+  const chooseCreationMode = (mode: typeof creationMode) => {
+    setCreationMode(mode)
+    if (embedded) setCreationDialogOpen(true)
+  }
+  const creationTitle = creationMode === 'upload-new' ? 'Upload STEP asset'
+    : creationMode === 'upload-version' ? `Upload version to ${selectedAsset?.name}`
+      : creationMode === 'ai-revise' ? `AI revise ${selectedAsset?.name}` : 'Create STEP with AI'
+  const creationForm = <>
+    {uploadMode && <form className="step-library-create" onSubmit={upload}>
+      <div><strong>{creationMode === 'upload-new' ? 'Add an existing STEP file' : `Add version to ${selectedAsset?.name}`}</strong><small>Stored independently; downloading it later is optional.</small></div>
+      {creationMode === 'upload-new' && <input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Asset name" aria-label="STEP asset name" />}
+      {creationMode === 'upload-new' && <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description (optional)" aria-label="STEP asset description" />}
+      <label className="step-library-file"><FileUp size={14} /><span>{file?.name || 'Choose .step or .stp'}</span><input ref={fileInput} type="file" accept=".step,.stp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
+      <select value={unit} onChange={(event) => setUnit(event.target.value as typeof unit)} aria-label="STEP length unit"><option value="m">metres</option><option value="mm">millimetres</option><option value="cm">centimetres</option><option value="inch">inches</option></select>
+      <button type="submit" disabled={busy || !file || (creationMode === 'upload-new' && !assetName.trim())}>{busy ? <Loader2 className="spin" size={13} /> : <FileUp size={13} />} Store and validate</button>
+    </form>}
+    {aiMode && <form className="step-library-ai" onSubmit={designWithAI}>
+      <div><strong>{creationMode === 'ai-revise' ? `Create a new version of ${selectedAsset?.name}` : 'Create exact STEP with AI'}</strong><small>OpenCascade must validate the exact CAD before it is ready.</small></div>
+      {creationMode === 'ai-new' && <input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Asset name (optional)" aria-label="STEP asset name" />}
+      <textarea value={aiPrompt} onChange={(event) => setAIPrompt(event.target.value)} placeholder={creationMode === 'ai-revise' ? 'Describe only the change, e.g. increase the chord by 10%…' : 'Describe the geometry and defining dimensions…'} rows={5} />
+      <button type="submit" disabled={busy || !aiPrompt.trim()}>{busy ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />} {creationMode === 'ai-revise' ? 'Generate new version' : 'Generate STEP asset'}</button>
+    </form>}
+  </>
 
   return <div className={embedded ? 'step-library-embedded' : 'step-library-overlay'} role={embedded ? undefined : 'presentation'} onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget && !busy) onClose?.() }}>
     <section className={embedded ? 'step-library-page-surface' : 'step-library-modal'} role={embedded ? 'region' : 'dialog'} aria-modal={embedded ? undefined : true} aria-labelledby="step-library-title">
       <header className="step-library-surface-header"><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div>{!embedded && <button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button>}</header>
       <div className="step-library-layout">
         <aside>
-          <div className="step-library-aside-title"><strong>Assets</strong><button type="button" onClick={() => setCreationMode('upload-new')}><Plus size={13} /> New</button></div>
+          <div className="step-library-aside-title"><strong>Assets</strong><button type="button" onClick={() => chooseCreationMode('upload-new')}><Plus size={13} /> New</button></div>
           {loading && <p className="step-library-state"><Loader2 className="spin" size={14} /> Loading library…</p>}
           {!loading && assets.length === 0 && <p className="step-library-state">No STEP assets yet. Upload one or describe a new design.</p>}
           {assets.map((asset) => { const latest = asset.versions.at(-1); return <button className={selectedAsset?.id === asset.id ? 'active' : ''} type="button" key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setSelectedVersionId(latest?.id ?? ''); setCreationMode(latest?.geometry ? 'ai-revise' : 'upload-version') }}><Box size={15} /><span><strong>{asset.name}</strong><small>{asset.versions.length} {asset.versions.length === 1 ? 'version' : 'versions'} · {latest?.validation.status}</small></span></button> })}
         </aside>
         <main>
           <div className="step-library-tabs" role="group" aria-label="STEP creation method">
-            <button className={creationMode === 'upload-new' ? 'active' : ''} type="button" onClick={() => setCreationMode('upload-new')}><FileUp size={13} /> Upload new asset</button>
-            <button className={creationMode === 'ai-new' ? 'active' : ''} type="button" onClick={() => setCreationMode('ai-new')}><Sparkles size={13} /> AI new design</button>
-            {selectedAsset && <button className={creationMode === 'upload-version' ? 'active' : ''} type="button" onClick={() => setCreationMode('upload-version')}><Plus size={13} /> Upload version</button>}
-            {selectedVersion?.geometry && <button className={creationMode === 'ai-revise' ? 'active' : ''} type="button" onClick={() => setCreationMode('ai-revise')}><Sparkles size={13} /> AI revise</button>}
+            <button className={!embedded && creationMode === 'upload-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-new')}><FileUp size={13} /> Upload new asset</button>
+            <button className={!embedded && creationMode === 'ai-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-new')}><Sparkles size={13} /> AI new design</button>
+            {selectedAsset && <button className={!embedded && creationMode === 'upload-version' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-version')}><Plus size={13} /> Upload version</button>}
+            {selectedVersion?.geometry && <button className={!embedded && creationMode === 'ai-revise' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-revise')}><Sparkles size={13} /> AI revise</button>}
           </div>
-          {uploadMode && <form className="step-library-create" onSubmit={upload}>
-            <div><strong>{creationMode === 'upload-new' ? 'Add an existing STEP file' : `Add version to ${selectedAsset?.name}`}</strong><small>Stored independently; downloading it later is optional.</small></div>
-            {creationMode === 'upload-new' && <input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Asset name" aria-label="STEP asset name" />}
-            {creationMode === 'upload-new' && <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description (optional)" aria-label="STEP asset description" />}
-            <label className="step-library-file"><FileUp size={14} /><span>{file?.name || 'Choose .step or .stp'}</span><input ref={fileInput} type="file" accept=".step,.stp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
-            <select value={unit} onChange={(event) => setUnit(event.target.value as typeof unit)} aria-label="STEP length unit"><option value="m">metres</option><option value="mm">millimetres</option><option value="cm">centimetres</option><option value="inch">inches</option></select>
-            <button type="submit" disabled={busy || !file || (creationMode === 'upload-new' && !assetName.trim())}>{busy ? <Loader2 className="spin" size={13} /> : <FileUp size={13} />} Store and validate</button>
-          </form>}
-          {aiMode && <form className="step-library-ai" onSubmit={designWithAI}>
-            <div><strong>{creationMode === 'ai-revise' ? `Create a new version of ${selectedAsset?.name}` : 'Create exact STEP with AI'}</strong><small>OpenCascade must validate the exact CAD before it is ready.</small></div>
-            <textarea value={aiPrompt} onChange={(event) => setAIPrompt(event.target.value)} placeholder={creationMode === 'ai-revise' ? 'Describe only the change, e.g. increase the chord by 10%…' : 'Describe the geometry and defining dimensions…'} rows={3} />
-            <button type="submit" disabled={busy || !aiPrompt.trim()}>{busy ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />} {creationMode === 'ai-revise' ? 'Generate new version' : 'Generate STEP asset'}</button>
-          </form>}
+          {!embedded && creationForm}
           {aiJob && <section className={`step-ai-job status-${aiJob.status}`} aria-live="polite"><div><strong>{aiJob.detail || aiJob.stage}</strong><small>{aiJob.stage.replaceAll('-', ' ')} · {aiJob.progress}%</small></div><progress max={100} value={aiJob.progress} />{['queued', 'running', 'recovering'].includes(aiJob.status) && <button type="button" onClick={() => void cancelAIDesign()}>Cancel generation</button>}{['failed', 'needs_input', 'cancelled'].includes(aiJob.status) && <button type="button" onClick={() => void startAIDesign()}>Retry as a new job</button>}</section>}
           {selectedAsset && selectedVersion && <section className="step-library-detail">
             <div className="step-library-detail-heading"><div><p className="eyebrow">SELECTED ASSET</p><h3>{selectedAsset.name}</h3><small>{selectedAsset.description || 'No description'}</small></div><span className={`step-status status-${selectedVersion.validation.status}`}><StatusIcon version={selectedVersion} /> {selectedVersion.validation.status}</span></div>
@@ -218,5 +232,6 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
         </main>
       </div>
     </section>
+    {embedded && creationDialogOpen && <div className="step-library-creation-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setCreationDialogOpen(false) }}><section className="step-library-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="step-creation-title"><header><div><p className="eyebrow">CREATE GEOMETRY</p><h2 id="step-creation-title">{creationTitle}</h2></div><button type="button" onClick={() => setCreationDialogOpen(false)} disabled={busy} aria-label="Close STEP creation"><X size={17} /></button></header>{creationForm}</section></div>}
   </div>
 }
