@@ -264,9 +264,10 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
 
   return <div className={embedded ? 'step-library-embedded' : 'step-library-overlay'} role={embedded ? undefined : 'presentation'} onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget && !busy) onClose?.() }}>
     <section className={embedded ? 'step-library-page-surface' : 'step-library-modal'} role={embedded ? 'region' : 'dialog'} aria-modal={embedded ? undefined : true} aria-labelledby="step-library-title">
-      <header className="step-library-surface-header"><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div>{!embedded && <button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button>}</header>
+      {!embedded && <header className="step-library-surface-header"><span><Box size={18} /></span><div><p className="eyebrow">GEOMETRY DESIGN</p><h2 id="step-library-title">STEP library</h2><small>Independent exact-CAD assets, versions, and validation.</small></div><button type="button" onClick={onClose} disabled={busy} aria-label="Close STEP library"><X size={17} /></button></header>}
       <div className="step-library-layout">
         <aside>
+          {embedded && <div className="step-library-sidebar-heading"><span><Box size={16} /></span><div><p className="eyebrow">{t('LOCAL CAD')}</p><h2 id="step-library-title">{t('STEP library')}</h2><small>{t('Stored on this server')}</small></div></div>}
           {folderRoot && <FolderTree
             root={folderRoot}
             selected={selectedFolderId}
@@ -283,14 +284,18 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
           {folderAssets.map((asset) => { const latest = asset.versions.at(-1); return <button className={selectedAsset?.id === asset.id ? 'active' : ''} type="button" key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setSelectedVersionId(latest?.id ?? ''); setCreationMode(latest?.geometry ? 'ai-revise' : 'upload-version') }}><Box size={15} /><span><strong>{asset.name}</strong><small>{asset.versions.length} {asset.versions.length === 1 ? 'version' : 'versions'} · {latest?.validation.status}</small></span></button> })}
         </aside>
         <main>
-          <div className="step-library-tabs" role="group" aria-label="STEP creation method">
-            <button className={!embedded && creationMode === 'upload-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-new')}><FileUp size={13} /> Upload new asset</button>
-            <button className={!embedded && creationMode === 'ai-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-new')}><Sparkles size={13} /> AI new design</button>
-            {selectedAsset && <button className={!embedded && creationMode === 'upload-version' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-version')}><Plus size={13} /> Upload version</button>}
-            {selectedVersion?.geometry && <button className={!embedded && creationMode === 'ai-revise' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-revise')}><Sparkles size={13} /> AI revise</button>}
+          <div className={embedded ? 'step-library-content-header' : 'step-library-modal-actions'}>
+            {embedded && <div><p className="eyebrow">{t('STEP ASSETS')}</p><h1>{selectedLocalFolder?.name ?? t('STEP library')}</h1><div className="step-library-folder-context"><span><strong>{folderAssets.length}</strong>{t('Local assets')}</span><span>{t('Versioned and validated on this server.')}</span></div></div>}
+            <div className="step-library-tabs" role="group" aria-label="STEP creation method">
+              <button className={!embedded && creationMode === 'upload-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-new')}><FileUp size={13} /> Upload new asset</button>
+              <button className={!embedded && creationMode === 'ai-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-new')}><Sparkles size={13} /> AI new design</button>
+              {selectedAsset && <button className={!embedded && creationMode === 'upload-version' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-version')}><Plus size={13} /> Upload version</button>}
+              {selectedVersion?.geometry && <button className={!embedded && creationMode === 'ai-revise' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-revise')}><Sparkles size={13} /> AI revise</button>}
+            </div>
           </div>
           {!embedded && creationForm}
           {aiJob && <section className={`step-ai-job status-${aiJob.status}`} aria-live="polite"><div><strong>{aiJob.detail || aiJob.stage}</strong><small>{aiJob.stage.replaceAll('-', ' ')} · {aiJob.progress}%</small></div><progress max={100} value={aiJob.progress} />{['queued', 'running', 'recovering'].includes(aiJob.status) && <button type="button" onClick={() => void cancelAIDesign()}>Cancel generation</button>}{['failed', 'needs_input', 'cancelled'].includes(aiJob.status) && <button type="button" onClick={() => void startAIDesign()}>Retry as a new job</button>}</section>}
+          {!loading && !selectedAsset && <section className="step-library-empty-panel"><Box size={22} /><strong>{t('No STEP assets in this folder.')}</strong><p>{t('Upload an existing STEP file or ask AI to create an exact CAD design.')}</p></section>}
           {selectedAsset && selectedVersion && <section className="step-library-detail">
             <div className="step-library-detail-heading"><div><p className="eyebrow">SELECTED ASSET</p><h3>{selectedAsset.name}</h3><small>{selectedAsset.description || 'No description'}</small></div><span className={`step-status status-${selectedVersion.validation.status}`}><StatusIcon version={selectedVersion} /> {selectedVersion.validation.status}</span></div>
             <div className="step-version-list">{selectedAsset.versions.map((version) => <button className={selectedVersion.id === version.id ? 'active' : ''} type="button" key={version.id} onClick={() => setSelectedVersionId(version.id)}>V{version.number}<small>{version.source}</small></button>)}</div>

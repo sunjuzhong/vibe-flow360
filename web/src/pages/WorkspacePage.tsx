@@ -8,6 +8,7 @@ import {
   Search,
   FileUp,
   GitCompare,
+  FolderOpen,
   LayoutGrid,
   List,
   Sparkles,
@@ -30,6 +31,7 @@ import TopBar from '../components/TopBar'
 import Flow360IdLink from '../components/Flow360IdLink'
 import { useI18n } from '../i18n'
 import STEPLibraryModal from '../components/STEPLibraryModal'
+import { useI18n } from '../i18n'
 
 function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
@@ -236,6 +238,11 @@ export default function WorkspacePage() {
     })
     return result
   }, [projects, query, filterType, sortBy, sortDir])
+  const totalResources = useMemo(() => projects.reduce((total, project) => total
+    + projectCount(project, 'geometry')
+    + projectCount(project, 'surface_mesh')
+    + projectCount(project, 'volume_mesh')
+    + projectCount(project, 'case'), 0), [projects])
 
   const toggleSort = (col: typeof sortBy) => {
     if (sortBy === col) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
@@ -247,7 +254,8 @@ export default function WorkspacePage() {
       <TopBar status={flowStatus} />
       <aside className="workspace-sidebar">
         <div className="sidebar-heading">
-          <div><span className="eyebrow">FLOW360</span><h2>Workspace</h2></div>
+          <span className="sidebar-heading-mark"><FolderOpen size={16} /></span>
+          <div><span className="eyebrow">FLOW360</span><h2>Workspace</h2><small>{t('Cloud project folders')}</small></div>
           <button className="icon-button" onClick={() => void loadFolders()} disabled={foldersLoading} aria-label="Refresh folders">
             <RefreshCw size={15} className={foldersLoading ? 'spin' : ''} />
           </button>
@@ -279,8 +287,8 @@ export default function WorkspacePage() {
           />
         )}
         <div className="workspace-sidebar-footer">
-          <span>{folderRoot?.name || 'My workspace'}</span>
-          <small>{folderRoot?.subfolders.length ?? 0} top-level folders</small>
+          <span>{selectedFolder?.name || folderRoot?.name || 'My workspace'}</span>
+          <small>{selectedFolder ? `${projects.length} ${t('projects in folder')}` : `${folderRoot?.subfolders.length ?? 0} ${t('top-level folders')}`}</small>
         </div>
       </aside>
 
@@ -294,6 +302,11 @@ export default function WorkspacePage() {
                 ? 'Select a project to enter its simulation workbench.'
                 : 'Flow360 projects are organized by workspace folder.'}
             </p>
+            {selectedFolder && <div className="workspace-folder-context">
+              <span><strong>{projects.length}</strong>{t('Projects')}</span>
+              <span><strong>{totalResources}</strong>{t('Resources')}</span>
+              <span className={`source-${projectsDataSource}`}>{t(projectsDataSource === 'cache' ? 'Cached snapshot' : 'Live Flow360 data')}</span>
+            </div>}
           </div>
           {selectedFolder && <div className="workspace-home-actions">
             <button className="ai-action" onClick={() => setImportOpen(true)}><FileUp size={16}/> New project</button>
