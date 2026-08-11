@@ -83,3 +83,65 @@ func TestStorePersistsAndRecoversAIJobs(t *testing.T) {
 		t.Fatalf("unexpected persisted job: %#v", stored)
 	}
 }
+
+func TestStorePersistsLocalFoldersAndAssetAssignments(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	designs, err := store.CreateFolder(RootFolderID, "Designs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := store.CreateFolder(RootFolderID, "Archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, _, err := store.CreateInFolder(designs.ID, "Bracket", "", "bracket.step", "mm", "upload", "", "", strings.NewReader("ISO-10303-21; bracket"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MoveAsset(asset.ID, archive.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RenameFolder(archive.ID, "Approved"); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok := reopened.Get(asset.ID)
+	if !ok || loaded.FolderID != archive.ID {
+		t.Fatalf("asset folder assignment was not persisted: %#v", loaded)
+	}
+	tree := reopened.FolderTree()
+	if tree.ID != RootFolderID || len(tree.Subfolders) != 2 || tree.Subfolders[0].Name != "Approved" {
+		t.Fatalf("unexpected persisted folder tree: %#v", tree)
+	}
+}
+
+func TestStoreProtectsFolderHierarchyAndOnlyDeletesEmptyFolders(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, _ := store.CreateFolder(RootFolderID, "Parent")
+	child, _ := store.CreateFolder(parent.ID, "Child")
+	if _, err := store.MoveFolder(parent.ID, child.ID); err == nil {
+		t.Fatal("folder cycle was accepted")
+	}
+	if err := store.DeleteFolder(parent.ID); err == nil {
+		t.Fatal("non-empty folder was deleted")
+	}
+	if err := store.DeleteFolder(child.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteFolder(parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteFolder(RootFolderID); err == nil {
+		t.Fatal("root folder was deleted")
+	}
+}
