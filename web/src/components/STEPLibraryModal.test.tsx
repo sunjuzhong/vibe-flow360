@@ -22,6 +22,7 @@ describe('STEPLibraryModal', () => {
     expect(markup).toContain('step-library-page-surface')
     expect(markup).toContain('role="region"')
     expect(markup).not.toContain('role="dialog"')
+    expect(markup).not.toContain('Add an existing STEP file')
     expect(markup).toContain('Upload new asset')
     expect(markup).not.toContain('Close STEP library')
   })
