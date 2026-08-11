@@ -17,6 +17,7 @@ export {
   wireframeOverlayOpacity,
   wireframeOpacityForScreenDensity,
   updateWireframeOverlayForCamera,
+  vectorArrowLengthFraction,
   setEntityVisibility,
   setGroupVisibility,
   validateUVFBufferFileCount,

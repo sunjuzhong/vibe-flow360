@@ -443,6 +443,10 @@ export function applyFieldColoring(
 const VECTOR_OVERLAY_FLAG = 'uvfVectorVisualizationOverlay'
 const DEFAULT_MAX_VECTOR_ARROWS = 260
 
+export function vectorArrowLengthFraction(gridResolution: number): number {
+  return Math.min(0.026, 0.44 / Math.max(1, gridResolution))
+}
+
 export function applyVectorVisualization(
   asset: UVFAsset,
   fieldName: string | null,
@@ -514,6 +518,7 @@ function createVectorArrowOverlay(
     .sort((left, right) => sizes[right] - sizes[left])
     .slice(0, 2)
   const gridResolution = Math.max(1, Math.ceil(Math.sqrt(sampleCount)))
+  const arrowLengthFraction = vectorArrowLengthFraction(gridResolution)
   const occupiedCells = new Set<string>()
   const candidates: number[] = []
   const inspectionStride = Math.max(1, Math.floor(candidateCount / Math.max(sampleCount * 32, 1)))
@@ -547,7 +552,7 @@ function createVectorArrowOverlay(
     const magnitudeRatio = field.max > field.min
       ? THREE.MathUtils.clamp((magnitude - field.min) / (field.max - field.min), 0, 1)
       : 1
-    const length = diagonal * 0.045 * (0.4 + 0.6 * magnitudeRatio)
+    const length = diagonal * arrowLengthFraction * (0.42 + 0.58 * magnitudeRatio)
     let side = new THREE.Vector3().crossVectors(direction, normal)
     if (side.lengthSq() < 1e-8) {
       side = new THREE.Vector3().crossVectors(direction, Math.abs(direction.z) < 0.9
@@ -555,14 +560,14 @@ function createVectorArrowOverlay(
         : new THREE.Vector3(0, 1, 0))
     }
     side.normalize()
-    const wingOffset = length * 0.13
+    const wingOffset = length * 0.11
     // A slice or surface can be viewed from either side. Emit the same arrow
     // just above both sides so normal depth testing keeps the visible copy and
     // hides the copy behind the surface instead of making every arrow vanish.
     for (const normalSide of [-1, 1]) {
       const origin = surfacePoint.clone().addScaledVector(normal, diagonal * 0.0015 * normalSide)
       const tip = origin.clone().addScaledVector(direction, length)
-      const headBase = tip.clone().addScaledVector(direction, -length * 0.28)
+      const headBase = tip.clone().addScaledVector(direction, -length * 0.24)
       const left = headBase.clone().addScaledVector(side, wingOffset)
       const right = headBase.clone().addScaledVector(side, -wingOffset)
       for (const [start, end] of [[origin, tip], [tip, left], [tip, right]] as const) {

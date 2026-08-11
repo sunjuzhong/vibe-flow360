@@ -2,9 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
-import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, vectorArrowLengthFraction, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
+  it('keeps vector arrows compact and reduces their size for dense sampling', () => {
+    expect(vectorArrowLengthFraction(1)).toBe(0.026)
+    expect(vectorArrowLengthFraction(16)).toBe(0.026)
+    expect(vectorArrowLengthFraction(22)).toBe(0.02)
+  })
+
   it('de-emphasizes dense wire overlays without hiding sparse topology', () => {
     expect(wireframeOpacityForTriangleCount(100)).toBeGreaterThan(0.35)
     expect(wireframeOpacityForTriangleCount(90_000)).toBeLessThan(0.2)
