@@ -7,6 +7,7 @@ import {
   valueAtPath,
 } from './planStages'
 import { buildVolumeRefinementReview } from './volumeRefinementReview'
+import { meshGroupManifestHints, meshGroupMatchesKey } from './manifestGroups'
 
 export type VolumeViewMode = 'overview' | 'zones' | 'quality' | 'boundary-layer' | 'refinements' | 'slices'
 
@@ -154,7 +155,9 @@ export function classifyBoundaryLayerEvidenceFields(fields: UVFFieldInfo[]): UVF
 export function buildVolumeSliceVariantReview(groups: MeshGroupData[]): VolumeSliceVariantReview {
   const families = new Map<string, VolumeSliceVariantFamily>()
   for (const group of groups) {
-    const match = group.name.match(sliceVariantSuffixPattern) ?? group.id.match(sliceVariantSuffixPattern)
+    const match = meshGroupManifestHints(group)
+      .map((hint) => hint.match(sliceVariantSuffixPattern))
+      .find((candidate): candidate is RegExpMatchArray => candidate !== null)
     if (!match) continue
     const name = match[1].trim()
     if (!name) continue
@@ -349,9 +352,13 @@ export function buildVolumeZoneInventory(
 ): VolumeZoneRow[] {
   const zoneTypes = collectProvidedZoneTypes(detail)
   return groups.map((group) => {
-    const provided = zoneTypes.get(normalizeKey(group.id)) ?? zoneTypes.get(normalizeKey(group.name))
+    const provided = meshGroupManifestHints(group)
+      .map((hint) => zoneTypes.get(normalizeKey(hint)))
+      .find((candidate): candidate is VolumeZoneType => candidate !== undefined)
     if (provided) return { ...group, zoneType: provided, typeProvenance: 'provided' }
-    const inferred = inferZoneType(group.name)
+    const inferred = meshGroupManifestHints(group)
+      .map(inferZoneType)
+      .find((candidate) => candidate !== 'unknown') ?? 'unknown'
     return {
       ...group,
       zoneType: inferred,
@@ -586,11 +593,11 @@ function matchBoundaryTargets(key: string, groups: MeshGroupData[]): BoundaryLay
   const normalized = normalizeKey(key)
   const idMatch = groups.find((group) => normalizeKey(group.id) === normalized)
   if (idMatch) return [{ key, name: idMatch.name, matchedGroupId: idMatch.id, match: 'id' }]
-  const nameMatch = groups.find((group) => normalizeKey(group.name) === normalized)
+  const nameMatch = key.includes('*') ? undefined : groups.find((group) => meshGroupMatchesKey(group, key))
   if (nameMatch) return [{ key, name: nameMatch.name, matchedGroupId: nameMatch.id, match: 'name' }]
   if (key.includes('*')) {
     const expression = new RegExp(`^${escapeRegExp(key).replaceAll('\\*', '.*')}$`, 'i')
-    const patternMatches = groups.filter((group) => expression.test(group.name) || expression.test(group.id))
+    const patternMatches = groups.filter((group) => meshGroupManifestHints(group).some((hint) => expression.test(hint)))
     if (patternMatches.length > 0) return patternMatches.map((group) => ({ key, name: group.name, matchedGroupId: group.id, match: 'pattern' as const }))
   }
   return [{ key, name: key, match: 'unmatched' }]

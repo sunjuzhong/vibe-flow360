@@ -77,6 +77,38 @@ describe('VolumeMesh review business adapter', () => {
     expect(inventory[1]).toMatchObject({ zoneType: 'porous', typeProvenance: 'provided' })
   })
 
+  it('uses the complete manifest path for nested VolumeMesh semantics', () => {
+    const nestedGroups = [
+      { id: 'face-1', name: 'mesh face', color: '#aaa', visible: true, path: ['root', 'rotating-domain'] },
+      { id: 'face-2', name: 'section face', color: '#bbb', visible: true, path: ['root', 'wake (Crinkled)'] },
+    ]
+    expect(buildVolumeZoneInventory(nestedGroups, detail())[0]).toMatchObject({
+      zoneType: 'rotation',
+      typeProvenance: 'name-inferred',
+    })
+    expect(buildVolumeSliceVariantReview(nestedGroups)).toMatchObject({
+      hasFlat: false,
+      hasCrinkled: true,
+      families: [{ name: 'wake', crinkledGroupIds: ['face-2'] }],
+    })
+  })
+
+  it('matches boundary-layer targets attached to parent manifest groups', () => {
+    const review = buildBoundaryLayerReview({
+      simulationParams: {
+        meshing: {
+          refinements: [{
+            refinement_type: 'BoundaryLayer',
+            entities: ['aircraft-wall'],
+          }],
+        },
+      },
+      groups: [{ id: 'face-1', name: 'wall face', color: '#aaa', visible: true, path: ['boundaries', 'aircraft-wall'] }],
+      fields: [],
+    })
+    expect(review.rules[0].targets[0]).toMatchObject({ matchedGroupId: 'face-1', match: 'name' })
+  })
+
   it('marks Geometry fallback and clipping-only sections as proxy evidence', () => {
     const capabilities = volumeMeshCapabilities({
       detail: detail(),

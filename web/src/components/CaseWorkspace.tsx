@@ -45,6 +45,7 @@ import {
 } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFEntityInfo } from '../lib/uvf-three'
+import { meshGroupManifestHints, normalizeManifestHint } from '../lib/manifestGroups'
 import { ManifestMemberGroup } from './ManifestMemberGroup'
 
 function formatConvergenceStatus(status: string): string {
@@ -249,8 +250,7 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
     caseVisualizationCategoryOrder.map((category) => [category, []]),
   )
   for (const group of groups) {
-    const hints = [...(group.path ?? []), group.id, group.name]
-      .map((value) => value.trim().toLowerCase().replaceAll(/[^a-z]/g, ''))
+    const hints = meshGroupManifestHints(group).map(normalizeManifestHint)
     const category = hints.some((hint) => hint.includes('streamline'))
       ? 'streamlines'
       : hints.some((hint) => hint.includes('isosurface'))

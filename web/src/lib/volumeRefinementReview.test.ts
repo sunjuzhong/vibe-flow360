@@ -6,6 +6,23 @@ const groups = [
 ]
 
 describe('VolumeMesh refinement review', () => {
+  it('matches entity refinements through their parent manifest path', () => {
+    const review = buildVolumeRefinementReview({
+      simulationParams: {
+        meshing: {
+          refinements: [{
+            refinement_type: 'SurfaceRefinement',
+            entities: ['aircraft-wall'],
+            max_edge_length: { value: 0.1, units: 'm' },
+          }],
+        },
+      },
+      groups: [{ id: 'face-1', name: 'wall face', color: '#aaa', visible: true, path: ['boundaries', 'aircraft-wall'] }],
+    })
+    expect(review.rules[0].matchedTargets).toEqual([{ id: 'face-1', name: 'wall face' }])
+    expect(review.rules[0].unresolvedTargets).toEqual([])
+  })
+
   it('parses public Uniform and Axisymmetric refinement shapes and spacings', () => {
     const review = buildVolumeRefinementReview({
       simulationParams: {

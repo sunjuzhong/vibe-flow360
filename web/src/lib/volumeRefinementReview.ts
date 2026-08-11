@@ -2,6 +2,7 @@ import type { BoundingBoxData, MeshGroupData } from '../components/viewer/LazyVi
 import type { OverlayAnnotation } from './viewer-tools/overlays'
 import type { ResourceRef, Vector3Tuple } from './viewer-tools/types'
 import { compactParameterValue, unwrapSimulationParams, valueAtPath } from './planStages'
+import { meshGroupMatchesKey } from './manifestGroups'
 
 export type VolumeRefinementKind = 'uniform' | 'axisymmetric' | 'structured-box' | 'surface' | 'geometry' | 'other'
 export type VolumeRefinementRegionKind = 'box' | 'cylinder' | 'sphere'
@@ -175,7 +176,7 @@ function parseRefinementRule(candidate: unknown, index: number, groups: MeshGrou
       unresolvedTargets.push(`target ${targetIndex + 1}`)
       continue
     }
-    const matched = groups.find((group) => normalize(group.id) === normalize(key) || normalize(group.name) === normalize(key))
+    const matched = groups.find((group) => meshGroupMatchesKey(group, key))
     if (matched) matchedTargets.push({ id: matched.id, name: matched.name })
     else unresolvedTargets.push(key)
   }

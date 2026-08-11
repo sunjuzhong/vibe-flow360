@@ -10,7 +10,7 @@ export function filterVolumeZones(inventory: VolumeZoneRow[], query: string, fil
   const normalized = query.trim().toLocaleLowerCase()
   return inventory.filter((row) => {
     if (filter !== 'all' && row.zoneType !== filter) return false
-    return !normalized || `${row.id} ${row.name} ${row.zoneType}`.toLocaleLowerCase().includes(normalized)
+    return !normalized || `${(row.path ?? []).join(' ')} ${row.id} ${row.name} ${row.zoneType}`.toLocaleLowerCase().includes(normalized)
   })
 }
 
