@@ -325,11 +325,13 @@ export function ResultChartPanel({ datasets, recommendation, onRemoveDataset }: 
   )
 }
 
-export function DatasetPicker({ candidates, selected, loadingPath, error, onAdd }: {
+export function DatasetPicker({ candidates, selected, scanning = false, checked = 0, total = 0, inspectionFailed = false, onAdd }: {
   candidates: { path: string; label?: string }[]
   selected: string[]
-  loadingPath?: string
-  error?: string
+  scanning?: boolean
+  checked?: number
+  total?: number
+  inspectionFailed?: boolean
   onAdd: (path: string) => void
 }) {
   const { t } = useI18n()
@@ -337,12 +339,14 @@ export function DatasetPicker({ candidates, selected, loadingPath, error, onAdd 
   const [choice, setChoice] = useState('')
   return (
     <div className="result-dataset-picker">
-      <label>{t('Compare compatible CSV')}<select value={choice} onChange={(event) => setChoice(event.target.value)} disabled={!available.length || Boolean(loadingPath)}>
-        <option value="">{t(available.length ? 'Select another result…' : 'All compatible candidates selected')}</option>
+      <label>{t('Compare compatible CSV')}<select value={choice} onChange={(event) => setChoice(event.target.value)} disabled={scanning || !available.length}>
+        <option value="">{scanning
+          ? `${t('Scanning CSV compatibility…')} ${checked}/${total}`
+          : t(available.length ? 'Select compatible CSV…' : 'No compatible CSV files found')}</option>
         {available.map((candidate) => <option value={candidate.path} key={candidate.path}>{candidate.label ?? fileLabel(candidate.path)}</option>)}
       </select></label>
-      <button disabled={!choice || Boolean(loadingPath)} onClick={() => { onAdd(choice); setChoice('') }}><Plus size={12} />{t(loadingPath ? 'Checking…' : 'Add dataset')}</button>
-      {error && <span role="alert">{error}</span>}
+      <button disabled={scanning || !choice} onClick={() => { onAdd(choice); setChoice('') }}><Plus size={12} />{t('Add dataset')}</button>
+      {inspectionFailed && !scanning && <span role="status">{t('Some CSV files could not be inspected.')}</span>}
     </div>
   )
 }

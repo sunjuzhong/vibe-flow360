@@ -1,5 +1,5 @@
 import { AlertCircle, BarChart3, FileSpreadsheet, Loader2, RefreshCw, Sparkles, Table2, X } from 'lucide-react'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ResultInterpretationRequest } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -9,6 +9,7 @@ import { ResultAIInterpretationDialog } from './ResultAIInterpretationDialog'
 const MAX_CHART_ROWS = 5000
 const MAX_TABLE_ROWS = 200
 const MAX_PREVIEW_COLUMNS = 40
+const CANDIDATE_PREFETCH_CONCURRENCY = 3
 
 export type ParsedResultTable = {
   headers: string[]
@@ -17,6 +18,12 @@ export type ParsedResultTable = {
   totalRows: number
   truncated: boolean
   delimiter: 'comma' | 'tab' | 'whitespace'
+}
+
+export type CompatibleResultCandidate = {
+  path: string
+  label?: string
+  table: ParsedResultTable
 }
 
 export async function fingerprintResultContent(content: string): Promise<string> {
@@ -163,6 +170,49 @@ function isNumericCell(value: string): boolean {
   return value.trim() !== '' && Number.isFinite(Number(value))
 }
 
+export async function preloadCompatibleResultCandidates(
+  base: ParsedResultTable,
+  candidates: { path: string; label?: string }[],
+  loadCandidate: (path: string) => Promise<string>,
+  onProgress?: (checked: number, total: number, failed: number) => void,
+): Promise<{ compatible: CompatibleResultCandidate[]; failed: number }> {
+  const unique = Array.from(new Map(candidates.map((candidate) => [candidate.path, candidate])).values())
+  const compatible: Array<CompatibleResultCandidate & { order: number }> = []
+  let cursor = 0
+  let checked = 0
+  let failed = 0
+  const worker = async () => {
+    while (cursor < unique.length) {
+      const order = cursor++
+      const candidate = unique[order]
+      try {
+        const content = await loadCandidate(candidate.path)
+        const parsed = parseResultTable(content, candidate.path)
+        if (datasetCompatibility(base, parsed).compatible) {
+          compatible.push({
+            ...candidate,
+            order,
+            table: { ...parsed, analysisRows: parsed.rows },
+          })
+        }
+      } catch {
+        failed += 1
+      } finally {
+        checked += 1
+        onProgress?.(checked, unique.length, failed)
+      }
+    }
+  }
+  await Promise.all(Array.from(
+    { length: Math.min(CANDIDATE_PREFETCH_CONCURRENCY, unique.length) },
+    () => worker(),
+  ))
+  return {
+    compatible: compatible.sort((left, right) => left.order - right.order).map(({ order: _order, ...candidate }) => candidate),
+    failed,
+  }
+}
+
 export function ResultTablePreview({
   path,
   content,
@@ -190,8 +240,19 @@ export function ResultTablePreview({
   const [view, setView] = useState<'chart' | 'table'>('chart')
   const [extraDatasets, setExtraDatasets] = useState<ChartDataset[]>([])
   const [tablePath, setTablePath] = useState(path)
-  const [candidateLoading, setCandidateLoading] = useState('')
-  const [candidateError, setCandidateError] = useState('')
+  const loadCandidateRef = useRef(loadCandidate)
+  loadCandidateRef.current = loadCandidate
+  const comparisonCandidates = useMemo(() => Array.from(new Map(
+    candidates.filter((candidate) => candidate.path !== path).map((candidate) => [candidate.path, candidate]),
+  ).values()), [candidates, path])
+  const candidateSignature = comparisonCandidates.map((candidate) => `${candidate.path}\u0000${candidate.label ?? ''}`).join('\u0001')
+  const [candidateScan, setCandidateScan] = useState<{
+    scanning: boolean
+    checked: number
+    total: number
+    failed: number
+    compatible: CompatibleResultCandidate[]
+  }>({ scanning: false, checked: 0, total: 0, failed: 0, compatible: [] })
   const [aiOpen, setAIOpen] = useState(false)
   const [aiInput, setAIInput] = useState<ResultInterpretationRequest | null>(null)
   const [preparingAI, setPreparingAI] = useState(false)
@@ -201,7 +262,6 @@ export function ResultTablePreview({
   useEffect(() => {
     setExtraDatasets([])
     setTablePath(path)
-    setCandidateError('')
     setAIOpen(false)
     setAIInput(null)
   }, [path])
@@ -210,24 +270,37 @@ export function ResultTablePreview({
     if (recommendation && recommendation.yColumns.length === 0) setView('table')
   }, [recommendation])
 
-  const addDataset = async (candidatePath: string) => {
-    if (!loadCandidate || !table || datasets.length >= 3) return
-    setCandidateLoading(candidatePath)
-    setCandidateError('')
-    try {
-      const candidateContent = await loadCandidate(candidatePath)
-      const candidateTable = parseResultTable(candidateContent, candidatePath)
-      const compatibility = datasetCompatibility(table, candidateTable)
-      if (!compatibility.compatible) {
-        setCandidateError(`${candidatePath.split('/').pop()}: ${compatibility.reason}`)
-        return
-      }
-      setExtraDatasets((current) => [...current, { path: candidatePath, table: candidateTable }])
-    } catch (candidateFailure) {
-      setCandidateError(String(candidateFailure).replace('Error: ', ''))
-    } finally {
-      setCandidateLoading('')
+  useEffect(() => {
+    const loader = loadCandidateRef.current
+    if (!table || !loader || comparisonCandidates.length === 0) {
+      setCandidateScan({ scanning: false, checked: 0, total: comparisonCandidates.length, failed: 0, compatible: [] })
+      return
     }
+    let active = true
+    setCandidateScan({ scanning: true, checked: 0, total: comparisonCandidates.length, failed: 0, compatible: [] })
+    void preloadCompatibleResultCandidates(table, comparisonCandidates, loader, (checked, total, failed) => {
+      if (active) setCandidateScan((current) => ({ ...current, checked, total, failed }))
+    }).then((result) => {
+      if (active) setCandidateScan({
+        scanning: false,
+        checked: comparisonCandidates.length,
+        total: comparisonCandidates.length,
+        failed: result.failed,
+        compatible: result.compatible,
+      })
+    })
+    return () => { active = false }
+    // candidateSignature tracks stable path/label content without restarting prefetches on caller re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateSignature, path, table])
+
+  const addDataset = (candidatePath: string) => {
+    if (datasets.length >= 3) return
+    const candidate = candidateScan.compatible.find((entry) => entry.path === candidatePath)
+    if (!candidate) return
+    setExtraDatasets((current) => current.some((dataset) => dataset.path === candidate.path)
+      ? current
+      : [...current, { path: candidate.path, table: candidate.table }])
   }
 
   const openInterpretation = async () => {
@@ -286,8 +359,16 @@ export function ResultTablePreview({
             </div>
             {view === 'chart' && recommendation && (
               <>
-                {loadCandidate && candidates.length > 0 && (
-                  <DatasetPicker candidates={datasets.length >= 3 ? [] : candidates} selected={datasets.map((dataset) => dataset.path)} loadingPath={candidateLoading} error={candidateError} onAdd={(candidatePath) => void addDataset(candidatePath)} />
+                {loadCandidate && comparisonCandidates.length > 0 && (
+                  <DatasetPicker
+                    candidates={datasets.length >= 3 ? [] : candidateScan.compatible}
+                    selected={datasets.map((dataset) => dataset.path)}
+                    scanning={candidateScan.scanning}
+                    checked={candidateScan.checked}
+                    total={candidateScan.total}
+                    inspectionFailed={candidateScan.failed > 0}
+                    onAdd={addDataset}
+                  />
                 )}
                 <ResultChartPanel
                   datasets={datasets}
