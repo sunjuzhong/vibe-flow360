@@ -50,6 +50,7 @@ type Version struct {
 
 type Asset struct {
 	ID          string    `json:"id"`
+	FolderID    string    `json:"folder_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	Versions    []Version `json:"versions"`
@@ -62,6 +63,23 @@ type AIJobRequest struct {
 	Name            string `json:"name,omitempty"`
 	AssetID         string `json:"asset_id,omitempty"`
 	ParentVersionID string `json:"parent_version_id,omitempty"`
+	FolderID        string `json:"folder_id,omitempty"`
+}
+
+const RootFolderID = "step-root"
+
+type Folder struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	ParentID  string    `json:"parent_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type FolderNode struct {
+	ID         string       `json:"id"`
+	Name       string       `json:"name"`
+	Subfolders []FolderNode `json:"subfolders"`
 }
 
 type AIJob struct {
@@ -80,8 +98,9 @@ type AIJob struct {
 }
 
 type index struct {
-	Assets map[string]Asset `json:"assets"`
-	Jobs   map[string]AIJob `json:"jobs,omitempty"`
+	Assets  map[string]Asset  `json:"assets"`
+	Jobs    map[string]AIJob  `json:"jobs,omitempty"`
+	Folders map[string]Folder `json:"folders,omitempty"`
 }
 
 type Store struct {
@@ -90,6 +109,7 @@ type Store struct {
 	mu        sync.RWMutex
 	assets    map[string]Asset
 	jobs      map[string]AIJob
+	folders   map[string]Folder
 }
 
 func NewStore(root string) (*Store, error) {
@@ -99,7 +119,10 @@ func NewStore(root string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(root, "files"), 0o700); err != nil {
 		return nil, err
 	}
-	store := &Store{root: root, indexPath: filepath.Join(root, "index.json"), assets: map[string]Asset{}, jobs: map[string]AIJob{}}
+	now := time.Now().UTC()
+	store := &Store{root: root, indexPath: filepath.Join(root, "index.json"), assets: map[string]Asset{}, jobs: map[string]AIJob{}, folders: map[string]Folder{
+		RootFolderID: {ID: RootFolderID, Name: "STEP Library", CreatedAt: now, UpdatedAt: now},
+	}}
 	payload, err := os.ReadFile(store.indexPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -117,7 +140,166 @@ func NewStore(root string) (*Store, error) {
 	if persisted.Jobs != nil {
 		store.jobs = persisted.Jobs
 	}
+	if persisted.Folders != nil {
+		store.folders = persisted.Folders
+	}
+	if _, ok := store.folders[RootFolderID]; !ok {
+		store.folders[RootFolderID] = Folder{ID: RootFolderID, Name: "STEP Library", CreatedAt: now, UpdatedAt: now}
+	}
+	for id, asset := range store.assets {
+		if asset.FolderID == "" || store.folders[asset.FolderID].ID == "" {
+			asset.FolderID = RootFolderID
+			store.assets[id] = asset
+		}
+	}
 	return store, nil
+}
+
+func (s *Store) FolderTree() FolderNode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var build func(string) FolderNode
+	build = func(id string) FolderNode {
+		folder := s.folders[id]
+		node := FolderNode{ID: folder.ID, Name: folder.Name, Subfolders: []FolderNode{}}
+		children := make([]Folder, 0)
+		for _, candidate := range s.folders {
+			if candidate.ParentID == id {
+				children = append(children, candidate)
+			}
+		}
+		sort.Slice(children, func(i, j int) bool { return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name) })
+		for _, child := range children {
+			node.Subfolders = append(node.Subfolders, build(child.ID))
+		}
+		return node
+	}
+	return build(RootFolderID)
+}
+
+func (s *Store) CreateFolder(parentID, name string) (Folder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	parentID, name = strings.TrimSpace(parentID), strings.TrimSpace(name)
+	if parentID == "" {
+		parentID = RootFolderID
+	}
+	if name == "" {
+		return Folder{}, errors.New("folder name is required")
+	}
+	if _, ok := s.folders[parentID]; !ok {
+		return Folder{}, os.ErrNotExist
+	}
+	if s.siblingNameExistsLocked(parentID, name, "") {
+		return Folder{}, errors.New("a folder with this name already exists")
+	}
+	id, err := newID("stepfolder")
+	if err != nil {
+		return Folder{}, err
+	}
+	now := time.Now().UTC()
+	folder := Folder{ID: id, Name: name, ParentID: parentID, CreatedAt: now, UpdatedAt: now}
+	s.folders[id] = folder
+	if err := s.persistLocked(); err != nil {
+		delete(s.folders, id)
+		return Folder{}, err
+	}
+	return folder, nil
+}
+
+func (s *Store) RenameFolder(id, name string) (Folder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id == RootFolderID {
+		return Folder{}, errors.New("the STEP library root cannot be renamed")
+	}
+	folder, ok := s.folders[id]
+	if !ok {
+		return Folder{}, os.ErrNotExist
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Folder{}, errors.New("folder name is required")
+	}
+	if s.siblingNameExistsLocked(folder.ParentID, name, id) {
+		return Folder{}, errors.New("a folder with this name already exists")
+	}
+	folder.Name, folder.UpdatedAt = name, time.Now().UTC()
+	s.folders[id] = folder
+	return folder, s.persistLocked()
+}
+
+func (s *Store) MoveFolder(id, parentID string) (Folder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id == RootFolderID {
+		return Folder{}, errors.New("the STEP library root cannot be moved")
+	}
+	folder, ok := s.folders[id]
+	if !ok {
+		return Folder{}, os.ErrNotExist
+	}
+	if _, ok := s.folders[parentID]; !ok {
+		return Folder{}, os.ErrNotExist
+	}
+	for cursor := parentID; cursor != ""; cursor = s.folders[cursor].ParentID {
+		if cursor == id {
+			return Folder{}, errors.New("a folder cannot be moved inside itself")
+		}
+	}
+	if s.siblingNameExistsLocked(parentID, folder.Name, id) {
+		return Folder{}, errors.New("a folder with this name already exists")
+	}
+	folder.ParentID, folder.UpdatedAt = parentID, time.Now().UTC()
+	s.folders[id] = folder
+	return folder, s.persistLocked()
+}
+
+func (s *Store) DeleteFolder(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id == RootFolderID {
+		return errors.New("the STEP library root cannot be deleted")
+	}
+	if _, ok := s.folders[id]; !ok {
+		return os.ErrNotExist
+	}
+	for _, folder := range s.folders {
+		if folder.ParentID == id {
+			return errors.New("folder must be empty before deletion")
+		}
+	}
+	for _, asset := range s.assets {
+		if asset.FolderID == id {
+			return errors.New("folder must be empty before deletion")
+		}
+	}
+	delete(s.folders, id)
+	return s.persistLocked()
+}
+
+func (s *Store) MoveAsset(assetID, folderID string) (Asset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	asset, ok := s.assets[assetID]
+	if !ok {
+		return Asset{}, os.ErrNotExist
+	}
+	if _, ok := s.folders[folderID]; !ok {
+		return Asset{}, os.ErrNotExist
+	}
+	asset.FolderID, asset.UpdatedAt = folderID, time.Now().UTC()
+	s.assets[assetID] = asset
+	return cloneAsset(asset), s.persistLocked()
+}
+
+func (s *Store) siblingNameExistsLocked(parentID, name, exceptID string) bool {
+	for _, folder := range s.folders {
+		if folder.ID != exceptID && folder.ParentID == parentID && strings.EqualFold(folder.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) CreateAIJob(request AIJobRequest) (AIJob, error) {
@@ -260,6 +442,10 @@ func (s *Store) Version(assetID, versionID string) (Version, string, bool) {
 }
 
 func (s *Store) Create(name, description, fileName, unit, source, prompt, parentVersionID string, input io.Reader) (Asset, Version, error) {
+	return s.CreateInFolder(RootFolderID, name, description, fileName, unit, source, prompt, parentVersionID, input)
+}
+
+func (s *Store) CreateInFolder(folderID, name, description, fileName, unit, source, prompt, parentVersionID string, input io.Reader) (Asset, Version, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Asset{}, Version{}, errors.New("STEP asset name is required")
@@ -269,7 +455,13 @@ func (s *Store) Create(name, description, fileName, unit, source, prompt, parent
 		return Asset{}, Version{}, err
 	}
 	now := time.Now().UTC()
-	asset := Asset{ID: assetID, Name: name, Description: strings.TrimSpace(description), CreatedAt: now, UpdatedAt: now}
+	s.mu.RLock()
+	_, folderExists := s.folders[folderID]
+	s.mu.RUnlock()
+	if !folderExists {
+		return Asset{}, Version{}, os.ErrNotExist
+	}
+	asset := Asset{ID: assetID, FolderID: folderID, Name: name, Description: strings.TrimSpace(description), CreatedAt: now, UpdatedAt: now}
 	version, err := s.writeVersion(assetID, 1, fileName, unit, source, prompt, parentVersionID, input)
 	if err != nil {
 		return Asset{}, Version{}, err
@@ -411,7 +603,7 @@ func (s *Store) versionPath(assetID, versionID string) string {
 }
 
 func (s *Store) persistLocked() error {
-	payload, err := json.MarshalIndent(index{Assets: s.assets, Jobs: s.jobs}, "", "  ")
+	payload, err := json.MarshalIndent(index{Assets: s.assets, Jobs: s.jobs, Folders: s.folders}, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -139,6 +139,12 @@ type aiDesignSTEPRequest struct {
 	Name            string `json:"name,omitempty"`
 	AssetID         string `json:"asset_id,omitempty"`
 	ParentVersionID string `json:"parent_version_id,omitempty"`
+	FolderID        string `json:"folder_id,omitempty"`
+}
+
+type stepFolderRequest struct {
+	Name     *string `json:"name,omitempty"`
+	ParentID *string `json:"parent_id,omitempty"`
 }
 
 func (s *Server) listSTEPAssets(c *gin.Context) {
@@ -147,7 +153,97 @@ func (s *Server) listSTEPAssets(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, gin.H{"assets": s.stepAssets.List()})
+	c.JSON(http.StatusOK, gin.H{"assets": s.stepAssets.List(), "folder_root": s.stepAssets.FolderTree()})
+}
+
+func (s *Server) createSTEPFolder(c *gin.Context) {
+	var request stepFolderRequest
+	if s.stepAssets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "STEP library is not configured"})
+		return
+	}
+	if err := c.ShouldBindJSON(&request); err != nil || request.Name == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder name is required"})
+		return
+	}
+	parentID := stepassets.RootFolderID
+	if request.ParentID != nil {
+		parentID = *request.ParentID
+	}
+	folder, err := s.stepAssets.CreateFolder(parentID, *request.Name)
+	if err != nil {
+		writeSTEPFolderError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, folder)
+}
+
+func (s *Server) updateSTEPFolder(c *gin.Context) {
+	var request stepFolderRequest
+	if s.stepAssets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "STEP library is not configured"})
+		return
+	}
+	if err := c.ShouldBindJSON(&request); err != nil || (request.Name == nil && request.ParentID == nil) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder name or parent_id is required"})
+		return
+	}
+	var folder stepassets.Folder
+	var err error
+	if request.Name != nil {
+		folder, err = s.stepAssets.RenameFolder(c.Param("folder_id"), *request.Name)
+	}
+	if err == nil && request.ParentID != nil {
+		folder, err = s.stepAssets.MoveFolder(c.Param("folder_id"), *request.ParentID)
+	}
+	if err != nil {
+		writeSTEPFolderError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, folder)
+}
+
+func (s *Server) deleteSTEPFolder(c *gin.Context) {
+	if s.stepAssets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "STEP library is not configured"})
+		return
+	}
+	if err := s.stepAssets.DeleteFolder(c.Param("folder_id")); err != nil {
+		writeSTEPFolderError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (s *Server) moveSTEPAsset(c *gin.Context) {
+	var request struct {
+		FolderID string `json:"folder_id"`
+	}
+	if s.stepAssets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "STEP library is not configured"})
+		return
+	}
+	if err := c.ShouldBindJSON(&request); err != nil || strings.TrimSpace(request.FolderID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder_id is required"})
+		return
+	}
+	asset, err := s.stepAssets.MoveAsset(c.Param("asset_id"), request.FolderID)
+	if err != nil {
+		writeSTEPFolderError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, asset)
+}
+
+func writeSTEPFolderError(c *gin.Context, err error) {
+	status := http.StatusConflict
+	if errors.Is(err, os.ErrNotExist) {
+		status = http.StatusNotFound
+	}
+	if strings.Contains(err.Error(), "required") {
+		status = http.StatusBadRequest
+	}
+	c.JSON(status, gin.H{"error": err.Error()})
 }
 
 func (s *Server) getSTEPAsset(c *gin.Context) {
@@ -184,7 +280,7 @@ func (s *Server) aiDesignSTEPAsset(c *gin.Context) {
 	}
 	job, err := s.stepAssets.CreateAIJob(stepassets.AIJobRequest{
 		Prompt: request.Prompt, Name: request.Name,
-		AssetID: request.AssetID, ParentVersionID: request.ParentVersionID,
+		AssetID: request.AssetID, ParentVersionID: request.ParentVersionID, FolderID: request.FolderID,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -341,7 +437,8 @@ func (s *Server) runAISTEPJob(jobID string) {
 	var version stepassets.Version
 	if strings.TrimSpace(request.AssetID) == "" {
 		name := firstSTEPValue(request.Name, blueprint.ProjectName, blueprint.Geometry.Name)
-		asset, version, err = s.stepAssets.Create(name, blueprint.Summary, fileName, "m", "ai", request.Prompt, "", file)
+		folderID := firstSTEPValue(request.FolderID, stepassets.RootFolderID)
+		asset, version, err = s.stepAssets.CreateInFolder(folderID, name, blueprint.Summary, fileName, "m", "ai", request.Prompt, "", file)
 	} else {
 		asset, version, err = s.stepAssets.AddVersion(request.AssetID, fileName, "m", "ai", request.Prompt, request.ParentVersionID, file)
 	}
@@ -397,8 +494,8 @@ func (s *Server) storeSTEPAssetUpload(c *gin.Context, assetID string) {
 	var asset stepassets.Asset
 	var version stepassets.Version
 	if assetID == "" {
-		asset, version, err = s.stepAssets.Create(
-			c.PostForm("name"), c.PostForm("description"), header.Filename, unit,
+		asset, version, err = s.stepAssets.CreateInFolder(
+			firstSTEPValue(c.PostForm("folder_id"), stepassets.RootFolderID), c.PostForm("name"), c.PostForm("description"), header.Filename, unit,
 			"upload", "", "", file,
 		)
 	} else {
