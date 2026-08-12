@@ -12,7 +12,7 @@ describe('STEPLibraryModal', () => {
     /></I18nProvider>)
     expect(markup).toContain('STEP library')
     expect(markup).toContain('Upload new asset')
-    expect(markup).toContain('AI new design')
+    expect(markup).toContain('AI Design')
     expect(markup).toContain('downloading it later is optional')
     expect(markup).toContain('role="dialog"')
   })
