@@ -72,11 +72,71 @@ export function sliceFieldPanelVisible(playing: boolean) {
   return !playing
 }
 
+export type SlicePlaybackTimelineEntry = {
+  step?: number
+  frames: SlicePlaybackFrame[]
+}
+
+export function slicePlaybackTrackNames(frames: SlicePlaybackFrame[], fallbackName = 'Slice') {
+  return [...new Set(frames.map((frame) => frame.slice || fallbackName))].sort((left, right) => left.localeCompare(right))
+}
+
+export function slicePlaybackTimeline(
+  frames: SlicePlaybackFrame[],
+  selectedTracks: string[],
+  fallbackName = 'Slice',
+): SlicePlaybackTimelineEntry[] {
+  const tracks = selectedTracks.map((name) => ({
+    name,
+    frames: frames
+      .filter((frame) => (frame.slice || fallbackName) === name)
+      .sort((left, right) => (left.step ?? Number.MAX_SAFE_INTEGER) - (right.step ?? Number.MAX_SAFE_INTEGER)
+        || left.manifest_path.localeCompare(right.manifest_path)),
+  })).filter((track) => track.frames.length > 0)
+  if (!tracks.length) return []
+
+  const steppedTracks = tracks.map((track) => new Map(track.frames
+    .filter((frame) => frame.step !== undefined)
+    .map((frame) => [frame.step!, frame])))
+  const commonSteps = [...steppedTracks[0].keys()]
+    .filter((step) => steppedTracks.every((track) => track.has(step)))
+    .sort((left, right) => left - right)
+  if (commonSteps.length > 0) {
+    return commonSteps.map((step) => ({ step, frames: steppedTracks.map((track) => track.get(step)!) }))
+  }
+
+  const sharedFrameCount = Math.min(...tracks.map((track) => track.frames.length))
+  return Array.from({ length: sharedFrameCount }, (_, index) => ({
+    step: tracks[0].frames[index].step,
+    frames: tracks.map((track) => track.frames[index]),
+  }))
+}
+
+function playbackFrameManifest(
+  caseId: string,
+  jobId: string,
+  frame: SlicePlaybackFrame,
+  archiveKind: CaseTimeSeriesArchiveKind,
+): ViewerManifest {
+  const { vertices, triangles } = selectPlaybackAsset(frame)
+  const name = frame.slice || (archiveKind === 'surfaces' ? 'Surface' : 'Slice')
+  const prefix = `playback:${name}:`
+  return {
+    asset_url: sliceFrameAssetURL(caseId, jobId, frame),
+    format: 'flow360-uvf',
+    entity_id_prefix: prefix,
+    bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
+    groups: [{ id: `${prefix}face-0`, name, color: '#789521', visible: true, triangles, vertices }],
+    vertices,
+    elements: triangles,
+  }
+}
+
 function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   caseId: string
   job: SlicePlayerJob
   archiveKind: CaseTimeSeriesArchiveKind
-  onFrameChange?: (job: SlicePlayerJob, frame: SlicePlaybackFrame) => void
+  onFrameChange?: (job: SlicePlayerJob, frame: SlicePlaybackFrame, frames: SlicePlaybackFrame[]) => void
 }) {
   const { t } = useI18n()
   const playback = job.report?.playback
@@ -84,48 +144,66 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   const [playing, setPlaying] = useState(false)
   const [fps, setFps] = useState(2)
   const [selectedField, setSelectedField] = useState<string | null>(playback?.fields[0] ?? null)
-  const assetCache = useMemo(() => new UVFAssetLRU(5), [])
+  const fallbackTrackName = archiveKind === 'surfaces' ? 'Surface' : 'Slice'
+  const trackNames = useMemo(
+    () => slicePlaybackTrackNames(playback?.frames ?? [], fallbackTrackName),
+    [fallbackTrackName, playback?.frames],
+  )
+  const [selectedTracks, setSelectedTracks] = useState<string[]>(() => trackNames.slice(0, 1))
+  const timeline = useMemo(
+    () => slicePlaybackTimeline(playback?.frames ?? [], selectedTracks, fallbackTrackName),
+    [fallbackTrackName, playback?.frames, selectedTracks],
+  )
+  const assetCache = useMemo(() => new UVFAssetLRU(24), [])
   const frameReadyRef = useRef(false)
-  const frame = playback?.frames[frameIndex]
+  const timelineFrame = timeline[frameIndex]
+  const frames = timelineFrame?.frames ?? []
+  const frame = frames[0]
 
   useEffect(() => {
-    if (frame && !playing) onFrameChange?.(job, frame)
-  }, [frame, job.id, onFrameChange, playing])
+    if (frame && !playing) onFrameChange?.(job, frame, frames)
+  }, [frame, frames, job.id, onFrameChange, playing])
 
   useEffect(() => () => assetCache.dispose(), [assetCache])
 
   useEffect(() => {
-    if (!playing || !playback || playback.frame_count < 2) return
+    if (!playing || timeline.length < 2) return
     const timer = window.setInterval(() => {
       if (!frameReadyRef.current) return
       frameReadyRef.current = false
-      setFrameIndex((value) => (value + 1) % playback.frame_count)
+      setFrameIndex((value) => (value + 1) % timeline.length)
     }, 1000 / fps)
     return () => window.clearInterval(timer)
-  }, [fps, playing, playback?.frame_count])
-
-  const frameAssetURLs = useMemo(() => playback?.frames.map((item) => (
-    sliceFrameAssetURL(caseId, job.id, item)
-  )) ?? [], [caseId, job.id, playback?.frames])
+  }, [fps, playing, timeline.length])
 
   useEffect(() => {
-    const targets = slicePlaybackPrefetchIndices(frameIndex, frameAssetURLs.length)
-      .map((index) => frameAssetURLs[index])
-    assetCache.prefetch(targets)
-  }, [assetCache, frameAssetURLs, frameIndex])
+    setFrameIndex(0)
+    setPlaying(false)
+    frameReadyRef.current = false
+  }, [selectedTracks])
 
-  const manifest = useMemo<ViewerManifest | null>(() => {
-    if (!frame || !playback) return null
-    const { vertices, triangles } = selectPlaybackAsset(frame)
-    return {
-      asset_url: sliceFrameAssetURL(caseId, job.id, frame),
-      format: 'flow360-uvf',
-      bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
-      groups: [{ id: archiveKind, name: archiveKind === 'surfaces' ? 'Surface' : 'Slice', color: '#789521', visible: true, triangles, vertices }],
-      vertices,
-      elements: triangles,
-    }
-  }, [archiveKind, caseId, frame, job.id, playback])
+  const timelineAssetURLs = useMemo(() => timeline.map((entry) => entry.frames.map((item) => (
+    sliceFrameAssetURL(caseId, job.id, item)
+  ))), [caseId, job.id, timeline])
+
+  useEffect(() => {
+    const targets = slicePlaybackPrefetchIndices(frameIndex, timelineAssetURLs.length)
+      .flatMap((index) => timelineAssetURLs[index])
+    assetCache.prefetch(targets)
+  }, [assetCache, frameIndex, timelineAssetURLs])
+
+  const manifests = useMemo(() => frames.map((item) => (
+    playbackFrameManifest(caseId, job.id, item, archiveKind)
+  )), [archiveKind, caseId, frames, job.id])
+  const manifest = manifests[0] ?? null
+  const selectedFields = useMemo(() => {
+    const names = [...new Set(frames.flatMap((item) => item.fields ?? []))]
+    return names.length ? names.sort((left, right) => left.localeCompare(right)) : playback?.fields ?? []
+  }, [frames, playback?.fields])
+
+  useEffect(() => {
+    if (selectedField && !selectedFields.includes(selectedField)) setSelectedField(selectedFields[0] ?? null)
+  }, [selectedField, selectedFields])
 
   const handleAssetReady = useCallback((assetURL: string) => {
     if (assetURL === manifest?.asset_url) frameReadyRef.current = true
@@ -133,7 +211,7 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
 
   if (!playback?.ready || !frame || !manifest) return null
   const move = (next: number) => {
-    const target = Math.max(0, Math.min(playback.frame_count - 1, next))
+    const target = Math.max(0, Math.min(timeline.length - 1, next))
     setFrameIndex((current) => {
       if (current !== target) frameReadyRef.current = false
       return target
@@ -141,23 +219,47 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   }
   return (
     <section className="slice-playback">
+      {trackNames.length > 1 && (
+        <fieldset className="slice-playback-tracks">
+          <legend>{t(archiveKind === 'surfaces' ? 'Surface sequences' : 'Slices to play')}</legend>
+          <div>
+            {trackNames.map((name) => {
+              const checked = selectedTracks.includes(name)
+              return (
+                <label key={name}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={checked && selectedTracks.length === 1}
+                    onChange={() => setSelectedTracks((current) => checked
+                      ? current.filter((item) => item !== name)
+                      : [...current, name])}
+                  />
+                  <span>{name}</span>
+                </label>
+              )
+            })}
+          </div>
+          <small>{t('{count} sequences selected and synchronized by shared step').replace('{count}', String(selectedTracks.length))}</small>
+        </fieldset>
+      )}
       <div className="slice-playback-viewer">
-        <LazyViewer3D manifest={manifest} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
-          fieldNames={playback.fields} fieldRange={selectedField ? playback.field_ranges[selectedField] ?? null : null}
+        <LazyViewer3D manifest={manifest} additionalManifests={manifests.slice(1)} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
+          fieldNames={selectedFields} fieldRange={selectedField ? playback.field_ranges[selectedField] ?? null : null}
           showFieldPanel={sliceFieldPanelVisible(playing)}
           showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
           uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
       </div>
       <div className="slice-playback-controls">
         <button aria-label={t('First frame')} onClick={() => { setPlaying(false); move(0) }}><SkipBack size={15} /></button>
-        <button className="slice-playback-primary" aria-label={playing ? t('Pause') : t('Play')} onClick={() => setPlaying((value) => !value)} disabled={playback.frame_count < 2}>
+        <button className="slice-playback-primary" aria-label={playing ? t('Pause') : t('Play')} onClick={() => setPlaying((value) => !value)} disabled={timeline.length < 2}>
           {playing ? <Pause size={16} /> : <Play size={16} />}
         </button>
         <button aria-label={t('Next frame')} onClick={() => { setPlaying(false); move(frameIndex + 1) }}><SkipForward size={15} /></button>
-        <input aria-label={t('Frame')} type="range" min={0} max={Math.max(0, playback.frame_count - 1)} value={frameIndex}
+        <input aria-label={t('Frame')} type="range" min={0} max={Math.max(0, timeline.length - 1)} value={frameIndex}
           onPointerDown={() => setPlaying(false)}
           onChange={(event) => { setPlaying(false); move(Number(event.target.value)) }} />
-        <span>{frameIndex + 1} / {playback.frame_count}<small>{t('step')} {frame.step ?? '—'}</small></span>
+        <span>{frameIndex + 1} / {timeline.length}<small>{t('step')} {timelineFrame?.step ?? '—'}</small></span>
         <small className="slice-playback-quality full">{t('Full resolution')}</small>
         <select aria-label={t('Playback speed')} value={fps} onChange={(event) => setFps(Number(event.target.value))}>
           {SLICE_PLAYBACK_FPS_OPTIONS.map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
@@ -192,7 +294,7 @@ export default function CaseSlicePlayerPanel({
       .then((latest) => {
         const sameSource = latest.result_path === resultPath
           && (!sizeBytes || !latest.source_size || latest.source_size === sizeBytes)
-        const currentPlayer = !latest.report || latest.report.index_version >= 4
+        const currentPlayer = !latest.report || latest.report.index_version >= 5
         if (active && sameSource && currentPlayer) setJob(latest)
       })
       .catch(() => undefined)

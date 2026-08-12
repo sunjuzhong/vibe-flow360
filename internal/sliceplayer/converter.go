@@ -37,7 +37,9 @@ type Playback struct {
 }
 
 type PlaybackFrame struct {
+	Slice               string        `json:"slice"`
 	Step                *int64        `json:"step,omitempty"`
+	Fields              []string      `json:"fields"`
 	ManifestPath        string        `json:"manifest_path"`
 	Vertices            int           `json:"vertices"`
 	Triangles           int           `json:"triangles"`
@@ -67,6 +69,7 @@ type convertedPiece struct {
 type frameBuild struct {
 	Key           string
 	AssetKey      string
+	Slice         string
 	Step          *int64
 	Pieces        []convertedPiece
 	PreviewPieces []convertedPiece
@@ -80,8 +83,9 @@ type pvtuDocument struct {
 }
 
 type referencedFrame struct {
-	Key  string
-	Step *int64
+	Key   string
+	Slice string
+	Step  *int64
 }
 
 // ConvertTarGz converts VTU pieces sequentially. Only one archive entry is held
@@ -143,6 +147,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 				return Playback{}, fmt.Errorf("parse %s: %w", clean, err)
 			}
 			key, step := frameKey(clean)
+			sliceName, _ := inferSliceAndStep(clean)
 			for _, piece := range manifest.Pieces {
 				source := strings.ReplaceAll(strings.TrimSpace(piece.Source), "\\", "/")
 				sourceClean := path.Clean(source)
@@ -156,7 +161,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 				if existing, duplicate := pieceFrames[joined]; duplicate && existing.Key != key {
 					return Playback{}, fmt.Errorf("VTU piece %q is referenced by multiple PVTU frames", joined)
 				}
-				pieceFrames[joined] = referencedFrame{Key: key, Step: step}
+				pieceFrames[joined] = referencedFrame{Key: key, Slice: sliceName, Step: step}
 			}
 			continue
 		}
@@ -167,8 +172,10 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 			return Playback{}, fmt.Errorf("VTU entry %q exceeds the %d byte conversion limit", clean, MaxConvertibleVTUBytes)
 		}
 		key, step := frameKey(clean)
+		sliceName, _ := inferSliceAndStep(clean)
 		if referenced, ok := pieceFrames[clean]; ok {
 			key, step = referenced.Key, referenced.Step
+			sliceName = referenced.Slice
 		}
 		frame := frames[key]
 		if frame == nil {
@@ -177,7 +184,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 				return Playback{}, fmt.Errorf("time-series frame names %q and %q map to the same safe asset name", existing, key)
 			}
 			assetKeys[assetKey] = key
-			frame = &frameBuild{Key: key, AssetKey: assetKey, Step: step}
+			frame = &frameBuild{Key: key, AssetKey: assetKey, Slice: sliceName, Step: step}
 			frames[key] = frame
 		}
 		frameDir := filepath.Join(outputDir, frame.AssetKey)
@@ -267,7 +274,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		}
 		summary.ManifestPath = manifestName
 		if frame.HasPreview {
-			previewManifest, previewSummary, previewErr := buildFrameManifest(&frameBuild{Key: frame.Key, AssetKey: frame.AssetKey, Step: frame.Step, Pieces: frame.PreviewPieces})
+			previewManifest, previewSummary, previewErr := buildFrameManifest(&frameBuild{Key: frame.Key, AssetKey: frame.AssetKey, Slice: frame.Slice, Step: frame.Step, Pieces: frame.PreviewPieces})
 			if previewErr != nil {
 				return Playback{}, previewErr
 			}
@@ -463,7 +470,8 @@ func mergeBounds(a, b [2][3]float64, set bool) [2][3]float64 {
 
 func buildFrameManifest(frame *frameBuild) ([]map[string]any, PlaybackFrame, error) {
 	entries := []map[string]any{}
-	summary := PlaybackFrame{Step: frame.Step}
+	summary := PlaybackFrame{Slice: frame.Slice, Step: frame.Step, Fields: []string{}}
+	fieldSet := map[string]struct{}{}
 	boundsSet := false
 	for i, piece := range frame.Pieces {
 		solidID := "piece-" + strconv.Itoa(i)
@@ -472,7 +480,11 @@ func buildFrameManifest(frame *frameBuild) ([]map[string]any, PlaybackFrame, err
 		summary.Vertices += piece.Vertices
 		summary.Triangles += piece.Triangles
 		summary.Bounds = mergeBounds(summary.Bounds, piece.Bounds, boundsSet)
+		for field := range piece.Fields {
+			fieldSet[field] = struct{}{}
+		}
 		boundsSet = true
 	}
+	summary.Fields = sortedKeys(fieldSet)
 	return entries, summary, nil
 }

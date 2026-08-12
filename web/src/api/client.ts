@@ -439,7 +439,9 @@ export type SlicePlayerJob = {
       field_ranges: Record<string, [number, number]>
       bounds: [[number, number, number], [number, number, number]]
       frames: Array<{
+        slice: string
         step?: number
+        fields: string[]
         manifest_path: string
         preview_manifest_path?: string
         vertices: number

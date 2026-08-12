@@ -138,6 +138,7 @@ describe('Case archive layers', () => {
       entityIds: [], playbackKind: 'surfaces' as const, source: 'output' as const, path: ['surfaces'],
     }
     const frame = {
+      slice: 'Cylinder_surface', fields: ['Cp'],
       manifest_path: 'surface.manifest.json', preview_manifest_path: 'surface.preview.manifest.json',
       vertices: 100, triangles: 80, preview_vertices: 50, preview_triangles: 40,
       bounds: [[-1, -2, 0], [3, 2, 1]] as [[number, number, number], [number, number, number]],

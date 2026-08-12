@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -21,6 +21,8 @@ describe('CaseSlicePlayerPanel', () => {
 
   it('uses the same full-resolution asset during playback and pause', () => {
     const frame = {
+      slice: 'slice_Wake',
+      fields: ['Mach'],
       manifest_path: 'frame.manifest.json',
       preview_manifest_path: 'frame.preview.manifest.json',
       vertices: 100_000,
@@ -53,6 +55,8 @@ describe('CaseSlicePlayerPanel', () => {
 
   it('builds an encoded immutable frame asset URL', () => {
     expect(sliceFrameAssetURL('case/1', 'job 1', {
+      slice: 'slice_Wake',
+      fields: [],
       manifest_path: 'slice frame/1.manifest.json',
       vertices: 1,
       triangles: 1,
@@ -60,5 +64,30 @@ describe('CaseSlicePlayerPanel', () => {
     })).toBe('/api/flow360/resources/Case/case%2F1/slice-player/jobs/job%201/assets/slice%20frame/1.manifest.json')
     expect(slicePlayerAssetURL('case/1', 'job 1', 'surface frame/1.preview.manifest.json'))
       .toBe('/api/flow360/resources/Case/case%2F1/slice-player/jobs/job%201/assets/surface%20frame/1.preview.manifest.json')
+  })
+
+  it('groups named slices and synchronizes multiple selections by common steps', () => {
+    const bounds = [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]]
+    const frames = [
+      { slice: 'wake-y', step: 100, fields: ['Mach'], manifest_path: 'y-100.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'wake-z', step: 100, fields: ['Mach'], manifest_path: 'z-100.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'wake-y', step: 200, fields: ['Mach'], manifest_path: 'y-200.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'wake-z', step: 300, fields: ['Mach'], manifest_path: 'z-300.json', vertices: 1, triangles: 1, bounds },
+    ]
+    expect(slicePlaybackTrackNames(frames)).toEqual(['wake-y', 'wake-z'])
+    expect(slicePlaybackTimeline(frames, ['wake-y', 'wake-z'])).toEqual([{
+      step: 100,
+      frames: [frames[0], frames[1]],
+    }])
+  })
+
+  it('aligns tracks by ordinal frame when global steps are unavailable', () => {
+    const bounds = [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]]
+    const frames = [
+      { slice: 'a', fields: [], manifest_path: 'a-0.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'a', fields: [], manifest_path: 'a-1.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'b', fields: [], manifest_path: 'b-0.json', vertices: 1, triangles: 1, bounds },
+    ]
+    expect(slicePlaybackTimeline(frames, ['a', 'b'])).toEqual([{ step: undefined, frames: [frames[0], frames[2]] }])
   })
 })

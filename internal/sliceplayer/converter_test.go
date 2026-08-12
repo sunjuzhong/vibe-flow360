@@ -171,6 +171,32 @@ func TestConvertTarGzGroupsProcessorPiecesIntoOneFrame(t *testing.T) {
 	if playback.FrameCount != 1 || playback.Frames[0].Vertices != 8 || playback.Frames[0].Triangles != 4 {
 		t.Fatalf("processor pieces were not grouped: %#v", playback)
 	}
+	if playback.Frames[0].Slice != "slice_Wake" || strings.Join(playback.Frames[0].Fields, ",") != "Mach" {
+		t.Fatalf("frame identity or fields were not preserved: %#v", playback.Frames[0])
+	}
+}
+
+func TestConvertTarGzPreservesMultipleNamedSliceTracks(t *testing.T) {
+	archive := writeArchive(t, []archiveEntry{
+		{name: "slice_Wake_100.vtu", body: testVTU()},
+		{name: "slice_Wake_200.vtu", body: testVTU()},
+		{name: "slice_Centerline_100.vtu", body: testVTU()},
+		{name: "slice_Centerline_200.vtu", body: testVTU()},
+	})
+	playback, err := ConvertTarGz(archive, t.TempDir(), 1<<20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := map[string][]int64{}
+	for _, frame := range playback.Frames {
+		if frame.Step == nil {
+			t.Fatalf("frame has no step: %#v", frame)
+		}
+		tracks[frame.Slice] = append(tracks[frame.Slice], *frame.Step)
+	}
+	if fmt.Sprint(tracks["slice_Wake"]) != "[100 200]" || fmt.Sprint(tracks["slice_Centerline"]) != "[100 200]" {
+		t.Fatalf("named slice tracks were flattened: %#v", tracks)
+	}
 }
 
 func TestConvertTarGzUsesPVTUPieceReferencesForFrameGrouping(t *testing.T) {

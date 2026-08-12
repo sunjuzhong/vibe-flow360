@@ -828,6 +828,14 @@
 .slice-player-slices article small { margin-top: 2px; color: #8a9186; font-size: 11px; }
 .slice-player-next { margin: 0; padding: 9px 10px; border-radius: 7px; color: #70796b; background: #f1f2ed; font-size: 11px; line-height: 1.5; }
 .slice-playback { overflow: hidden; border: 1px solid #d9ddd0; border-radius: 10px; background: #fff; }
+.slice-playback-tracks { margin: 0; padding: 9px 11px; border: 0; border-bottom: 1px solid #e0e3da; background: #f8f9f5; }
+.slice-playback-tracks legend { padding: 0; color: #596452; font-size: 10px; font-weight: 750; }
+.slice-playback-tracks > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.slice-playback-tracks label { display: inline-flex; min-width: 0; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #d9ded0; border-radius: 6px; color: #566050; background: #fff; font-size: 9px; cursor: pointer; }
+.slice-playback-tracks label:has(input:checked) { border-color: #b6cd73; background: #f0f6dc; }
+.slice-playback-tracks input { margin: 0; accent-color: #789521; }
+.slice-playback-tracks label span { overflow: hidden; max-width: 190px; text-overflow: ellipsis; white-space: nowrap; }
+.slice-playback-tracks > small { display: block; margin-top: 6px; color: #8a9282; font-size: 8px; }
 .slice-playback-viewer { height: clamp(320px, 54vh, 620px); background: #eef0e9; }
 .slice-playback-viewer .viewer-3d-container,
 .slice-playback-viewer .viewer-3d { height: 100%; min-height: 0; }
