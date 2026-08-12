@@ -35,7 +35,7 @@ import {
 import { useI18n } from '../i18n'
 import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
-import { assessVolumeMeshQuality, computeVolumeReadiness, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
+import { assessVolumeMeshQuality, computeVolumeReadiness, selectedVolumeSliceVariantReview, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { VolumeCapabilityPanel } from './volume-mesh/VolumeCapabilityPanel'
 import { VolumeParameterSummary } from './volume-mesh/VolumeParameterSummary'
@@ -197,6 +197,10 @@ export default function VolumeMeshWorkspace({
     : reviewLevel === 'blocked' ? 'Resolve volume mesh blockers' : 'Engineering review required'
   const selectedZones = review.selectedZones
   const selectedZoneIds = selectedZones.map((zone) => zone.id)
+  const selectedSliceVariants = useMemo(
+    () => selectedVolumeSliceVariantReview(review.sliceVariants, selectedZoneIds),
+    [review.sliceVariants, selectedZoneIds],
+  )
   const selectedZoneVisible = selectedZones.some((zone) => review.visibility[zone.id] !== false)
   const entityNames = Object.fromEntries(review.zones.map((zone) => [zone.id, zone.name]))
   const selectedZoneHasBoundaryLayer = Boolean(selectedZones.length && review.boundaryLayer.rules.some((rule) => (
@@ -285,7 +289,7 @@ export default function VolumeMeshWorkspace({
             showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}
             fieldPanelExtra={review.mode === 'quality' ? (
               <VolumeSliceVariantControl
-                variants={review.sliceVariants}
+                variants={selectedSliceVariants}
                 variant={review.sliceVariant}
                 onVariant={review.setSliceVariant}
               />

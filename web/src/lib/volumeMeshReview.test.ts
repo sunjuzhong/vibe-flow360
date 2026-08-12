@@ -10,6 +10,7 @@ import {
   classifyBoundaryLayerEvidenceFields,
   classifyVolumeMeshQualityFields,
   computeVolumeReadiness,
+  selectedVolumeSliceVariantReview,
   volumeMeshCapabilities,
   volumeMeshParameterSummary,
   volumeQualityRiskFilter,
@@ -271,6 +272,18 @@ describe('VolumeMesh review business adapter', () => {
       flatGroupIds: ['slice-flat'],
       crinkledGroupIds: ['slice-crinkled'],
     })
+  })
+
+  it('exposes slice representations only for families included in the selection', () => {
+    const review = buildVolumeSliceVariantReview([
+      { id: 'wake-flat', name: 'Wake (flat)', color: '#aaa', visible: true },
+      { id: 'wake-crinkled', name: 'Wake (crinkled)', color: '#bbb', visible: true },
+      { id: 'shock-flat', name: 'Shock (flat)', color: '#ccc', visible: true },
+      { id: 'shock-crinkled', name: 'Shock (crinkled)', color: '#ddd', visible: true },
+    ])
+    expect(selectedVolumeSliceVariantReview(review, ['fluid'])).toMatchObject({ families: [], hasFlat: false, hasCrinkled: false })
+    expect(selectedVolumeSliceVariantReview(review, ['wake-flat']).families.map((family) => family.name)).toEqual(['Wake'])
+    expect(selectedVolumeSliceVariantReview(review, ['wake-flat', 'shock-crinkled']).families.map((family) => family.name)).toEqual(['Shock', 'Wake'])
   })
 
   it('switches only slice variants and preserves non-slice visibility', () => {

@@ -176,6 +176,22 @@ export function buildVolumeSliceVariantReview(groups: MeshGroupData[]): VolumeSl
   }
 }
 
+export function selectedVolumeSliceVariantReview(
+  review: VolumeSliceVariantReview,
+  selectedGroupIds: string[],
+): VolumeSliceVariantReview {
+  const selected = new Set(selectedGroupIds)
+  const families = review.families.filter((family) => (
+    [...family.flatGroupIds, ...family.crinkledGroupIds].some((id) => selected.has(id))
+  ))
+  return {
+    families,
+    hasFlat: families.some((family) => family.flatGroupIds.length > 0),
+    hasCrinkled: families.some((family) => family.crinkledGroupIds.length > 0),
+    pairedCount: families.filter((family) => family.flatGroupIds.length > 0 && family.crinkledGroupIds.length > 0).length,
+  }
+}
+
 export function applyVolumeSliceVariantVisibility(
   visibility: Record<string, boolean>,
   review: VolumeSliceVariantReview,

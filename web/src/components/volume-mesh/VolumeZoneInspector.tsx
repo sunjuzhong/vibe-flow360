@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Search, Volume2 } from 'lucide-react'
+import { Check, Eye, EyeOff, Search, Volume2 } from 'lucide-react'
 import type { VolumeZoneRow, VolumeZoneType } from '../../lib/volumeMeshReview'
 import { useI18n } from '../../i18n'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
@@ -95,21 +95,42 @@ export function VolumeZoneInspector({
               <div className="volume-zone-list">
                 {zones.map((zone) => {
                   const visible = visibility[zone.id] !== false
+                  const selected = selectedIds.includes(zone.id)
                   return (
                     <div
-                      className={`volume-zone-row ${selectedIds.includes(zone.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+                      className={`volume-zone-row ${selected ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
                       key={zone.id}
                     >
                       <button
                         type="button"
+                        className="volume-zone-selection-toggle"
+                        aria-pressed={selected}
+                        aria-label={t(selected ? 'Remove {name} from selection' : 'Add {name} to selection').replace('{name}', zone.name)}
+                        title={t(selected ? 'Remove from selection' : 'Add to selection')}
+                        onClick={() => onSelect(zone.id, true)}
+                      >
+                        {selected && <Check size={11} aria-hidden="true" />}
+                      </button>
+                      <button
+                        type="button"
                         className="volume-zone-select"
-                        aria-pressed={selectedIds.includes(zone.id)}
+                        aria-pressed={selected}
                         title={zone.name}
-                        onClick={(event) => onSelect(zone.id, event.metaKey || event.ctrlKey)}
+                        onClick={() => onSelect(zone.id, false)}
                       >
                         <span className="viewer-color-swatch" style={{ background: zone.color }} />
                         <strong>{zone.name}</strong>
                         <small>{zone.triangles?.toLocaleString() ?? '—'} {t('rendered elements')}</small>
+                      </button>
+                      <button
+                        type="button"
+                        className="volume-zone-visibility-toggle"
+                        aria-pressed={visible}
+                        aria-label={t(visible ? 'Hide {name}' : 'Show {name}').replace('{name}', zone.name)}
+                        title={t(visible ? 'Hide' : 'Show')}
+                        onClick={() => onSetVisibility([zone.id], !visible)}
+                      >
+                        {visible ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
                       </button>
                     </div>
                   )
