@@ -5,7 +5,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { DEFAULT_COLORMAP, sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD, UVFVectorVisualizationOptions, UVFVectorVisualizationResult } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldColorResult, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD, UVFVectorVisualizationOptions, UVFVectorVisualizationResult } from './types'
 
 // Case manifests carry result-field and boundary metadata in addition to the
 // render objects, so they can legitimately exceed the old 2 MiB cap.
@@ -388,16 +388,17 @@ export function applyFieldColoring(
   fieldName: string | null,
   colormap: ColormapName = DEFAULT_COLORMAP,
   options: UVFFieldColorOptions = {},
-): void {
+): UVFFieldColorResult {
   const field = fieldName ? asset.fields.find((f) => f.name === fieldName) : null
+  const result = { scopedMeshes: 0, coloredMeshes: 0 }
   asset.object.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return
     if (!isUVFSurfaceMesh(object)) return
     const geometry = object.geometry
     const positionAttr = geometry.getAttribute('position')
     if (!positionAttr) return
-    const entityId = String(object.userData.groupId ?? object.userData.entityId ?? '')
-    const inScope = !options.entityIds || options.entityIds.includes(entityId)
+    const inScope = entityScopeMatches(asset, object, options.entityIds)
+    if (inScope) result.scopedMeshes++
     if (field && inScope) {
       const fieldSection = findSectionByName(geometry, field.name)
       if (fieldSection) {
@@ -427,6 +428,7 @@ export function applyFieldColoring(
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
         const material = ensureFieldColorMaterial(object)
         material.needsUpdate = true
+        result.coloredMeshes++
       } else {
         if (geometry.getAttribute('color')) geometry.deleteAttribute('color')
         restoreBaseSurfaceMaterial(object)
@@ -438,6 +440,7 @@ export function applyFieldColoring(
       restoreBaseSurfaceMaterial(object)
     }
   })
+  return result
 }
 
 const VECTOR_OVERLAY_FLAG = 'uvfVectorVisualizationOverlay'
@@ -633,13 +636,18 @@ function restoreBaseSurfaceMaterial(object: THREE.Mesh): void {
   material.needsUpdate = true
 }
 
-export function collectFieldValues(asset: UVFAsset, fieldName: string): Float32Array {
+export function collectFieldValues(
+  asset: UVFAsset,
+  fieldName: string,
+  entityIds?: string[] | null,
+): Float32Array {
   const field = asset.fields.find((candidate) => candidate.name === fieldName)
   if (!field) return new Float32Array()
   const usedIndices = new Map<THREE.BufferAttribute, Set<number> | null>()
 
   asset.object.traverse((object) => {
     if (!isUVFSurfaceMesh(object)) return
+    if (!entityScopeMatches(asset, object, entityIds)) return
     const attribute = object.geometry.getAttribute(fieldName)
     if (!(attribute instanceof THREE.BufferAttribute)) return
     const index = object.geometry.getIndex()
@@ -672,6 +680,24 @@ export function collectFieldValues(asset: UVFAsset, fieldName: string): Float32A
     }
   }
   return Float32Array.from(values)
+}
+
+export function fieldCatalogForEntities(
+  asset: UVFAsset,
+  entityIds?: string[] | null,
+): UVFFieldInfo[] {
+  if (!entityIds?.length) return asset.fields
+  return asset.fields.flatMap((field) => {
+    const values = collectFieldValues(asset, field.name, entityIds)
+    if (!values.length) return []
+    let min = Number.POSITIVE_INFINITY
+    let max = Number.NEGATIVE_INFINITY
+    for (const value of values) {
+      min = Math.min(min, value)
+      max = Math.max(max, value)
+    }
+    return [{ ...field, min, max }]
+  })
 }
 
 export function createFieldHistogram(
@@ -1044,6 +1070,26 @@ function findSectionByName(geometry: THREE.BufferGeometry, fieldName: string): F
     return attr.array as Float32Array
   }
   return null
+}
+
+function entityScopeMatches(
+  asset: UVFAsset,
+  object: THREE.Object3D,
+  entityIds?: string[] | null,
+): boolean {
+  if (!entityIds?.length) return true
+  const directId = String(object.userData.groupId ?? object.userData.entityId ?? '')
+  if (entityIds.includes(directId)) return true
+  for (const entityId of entityIds) {
+    const scopeRoot = asset.getEntityObject(entityId)
+    if (!scopeRoot) continue
+    let current: THREE.Object3D | null = object
+    while (current) {
+      if (current === scopeRoot) return true
+      current = current.parent
+    }
+  }
+  return false
 }
 
 function findSection(sections: UVFBufferSection[], name: string) {

@@ -99,6 +99,11 @@ export type UVFFieldColorOptions = {
   entityIds?: string[] | null
 }
 
+export type UVFFieldColorResult = {
+  scopedMeshes: number
+  coloredMeshes: number
+}
+
 export type UVFVectorVisualizationOptions = {
   lic: boolean
   arrows: boolean

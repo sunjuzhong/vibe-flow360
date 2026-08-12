@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
-import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, vectorArrowLengthFraction, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, fieldCatalogForEntities, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, vectorArrowLengthFraction, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('keeps vector arrows compact and reduces their size for dense sampling', () => {
@@ -399,6 +399,10 @@ describe('Flow360 UVF Three.js library', () => {
     expect(asset.fields[0]).toMatchObject({ name: 'pressure', min: 0, max: 1, dimension: 1 })
     expect(asset.entities.find((entity) => entity.id === 'face-1')?.fields).toEqual(['pressure'])
     expect(asset.entities.find((entity) => entity.id === 'body-1')?.fields).toEqual(['pressure'])
+    expect(fieldCatalogForEntities(asset, ['body-1'])).toEqual([
+      expect.objectContaining({ name: 'pressure', min: 0, max: 1 }),
+    ])
+    expect(fieldCatalogForEntities(asset, ['missing'])).toEqual([])
     const face = asset.getEntityObject('face-1')!
     expect(face).toHaveProperty('geometry')
     expect((face as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>).material).toMatchObject({
@@ -411,7 +415,10 @@ describe('Flow360 UVF Three.js library', () => {
     applyFieldColoring(asset, 'pressure', 'grayscale', { entityIds: ['another-face'] })
     expect((face as THREE.Mesh).geometry.getAttribute('color')).toBeUndefined()
     expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshPhongMaterial)
-    applyFieldColoring(asset, 'pressure', 'grayscale', { entityIds: ['face-1'] })
+    expect(applyFieldColoring(asset, 'pressure', 'grayscale', { entityIds: ['body-1'] })).toEqual({
+      scopedMeshes: 1,
+      coloredMeshes: 1,
+    })
     expect((face as THREE.Mesh).material).toBeInstanceOf(THREE.MeshBasicMaterial)
     expect(((face as THREE.Mesh).material as THREE.MeshBasicMaterial).toneMapped).toBe(false)
     const colorAttribute = (face as import('three').Mesh).geometry.getAttribute('color')

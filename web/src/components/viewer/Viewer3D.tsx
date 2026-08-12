@@ -4,7 +4,7 @@ import { Crosshair, Eye, EyeOff, Focus } from 'lucide-react'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js'
-import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, applyVectorVisualization, canUseLogFieldScale, createFieldHistogram, createScreenSpaceLIC, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
+import { DEFAULT_COLORMAP, UVFLoader, applyFieldColoring, applyVectorVisualization, canUseLogFieldScale, createFieldHistogram, createScreenSpaceLIC, fieldCatalogForEntities, findFieldExtrema, formatFieldRange, probeFieldAtIntersection, resolveFieldScale, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, updateWireframeOverlayForCamera, wireframeOverlayOpacity, type ColormapName, listColormaps } from '../../lib/uvf-three'
 import type { UVFAsset, UVFAssetLRU, UVFEntityInfo, UVFFieldExtrema, UVFFieldFilter, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFFieldScale, UVFScreenSpaceLIC } from '../../lib/uvf-three'
 import {
   configureCFDNavigationControls,
@@ -402,9 +402,16 @@ export function Viewer3D({
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
     : controlledSelectedField
+  const fieldEntityScopeKey = fieldEntityIds?.join('\u0000') ?? ''
+  const scopedFields = useMemo(() => {
+    const asset = uvfAssetRef.current
+    return asset ? fieldCatalogForEntities(asset, fieldEntityIds) : availableFields
+  // The stable key prevents a parent-created array from recalculating field data on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetState.status, availableFields, fieldEntityScopeKey])
   const displayedFields = fieldNames
-    ? availableFields.filter((field) => fieldNames.includes(field.name))
-    : availableFields
+    ? scopedFields.filter((field) => fieldNames.includes(field.name))
+    : scopedFields
   const activeField = displayedFields.find((field) => field.name === selectedField)
   const resolvedFieldScale = activeField
     ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
@@ -483,6 +490,15 @@ export function Viewer3D({
     setProbeResult(null)
     onFieldProbe?.(null)
   }
+
+  useEffect(() => {
+    if (!selectedField || activeField || assetState.status !== 'ready') return
+    if (controlledSelectedField === undefined) setInternalSelectedField(null)
+    onSelectedFieldChange?.(null)
+    setProbeToolActive(false)
+    setProbeResult(null)
+    onFieldProbe?.(null)
+  }, [activeField, assetState.status, controlledSelectedField, onFieldProbe, onSelectedFieldChange, selectedField])
 
   const toggleProbeTool = () => {
     const next = !probeToolActive
