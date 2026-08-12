@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { api } from '../api/client'
 import { I18nProvider } from '../i18n'
 import STEPLibraryModal, { conciseSTEPError } from './STEPLibraryModal'
 
@@ -31,5 +32,9 @@ describe('STEPLibraryModal', () => {
   it('reduces backend preview tracebacks to actionable validation evidence', () => {
     expect(conciseSTEPError('Traceback (most recent call last):\n  File "/tmp/preview.py", line 18\nValueError: STEP File could not be loaded')).toBe('ValueError: STEP File could not be loaded')
     expect(conciseSTEPError('preview process stopped')).toBe('preview process stopped')
+  })
+
+  it('requests the current shaded technical thumbnail style', () => {
+    expect(api.stepVersionThumbnailURL('asset 1', 'version 1')).toBe('/api/step-assets/asset%201/versions/version%201/thumbnail.svg?style=v2')
   })
 })

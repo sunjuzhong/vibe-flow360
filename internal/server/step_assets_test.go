@@ -285,4 +285,7 @@ func TestSTEPThumbnailRendersAndCachesReadyVersion(t *testing.T) {
 	if thumbnailer.calls != 1 {
 		t.Fatalf("thumbnail cache missed: calls=%d", thumbnailer.calls)
 	}
+	if _, err := os.Stat(filepath.Join(root, "step-thumbnails", version.ID+"-v2.svg")); err != nil {
+		t.Fatalf("versioned thumbnail cache was not created: %v", err)
+	}
 }
