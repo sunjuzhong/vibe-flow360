@@ -30,7 +30,6 @@ export function VolumeZoneSelectionCard({
         <>
           <dl>
             <div className="volume-selection-name"><dt>{t('Name')}</dt><dd title={zone.name}>{zone.name}</dd></div>
-            <div><dt>{t('ID')}</dt><dd title={zone.id}>{zone.id}</dd></div>
             <div><dt>{t('Type')}</dt><dd>{contextOnly ? t('Context surface') : t(zone.zoneType)}</dd></div>
             <div><dt>{t('Type evidence')}</dt><dd>{t(zone.typeProvenance)}</dd></div>
             <div><dt>{t('Rendered elements')}</dt><dd>{zone.triangles?.toLocaleString() ?? t('Not reported')}</dd></div>

@@ -33,6 +33,7 @@ describe('VolumeZoneSelectionCard', () => {
     )
 
     expect(html).toContain(selectedZone.name)
+    expect(html).not.toContain(selectedZone.id)
     expect(html).toContain('120,398')
     expect(html).toContain('40,210')
     expect(html).toContain('Selection actions')
