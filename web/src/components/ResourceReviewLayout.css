@@ -534,6 +534,10 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.volume-review-workspace .volume-capability-panel + .resource-review-launchers {
+  margin-top: 8px;
+}
+
 .volume-source-warning {
   display: flex;
   align-items: flex-start;
