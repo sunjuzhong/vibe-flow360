@@ -66,7 +66,7 @@ func (s *Server) thumbnailSTEPAssetVersion(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	output := filepath.Join(s.workDir, "step-thumbnails", version.ID+".svg")
+	output := filepath.Join(s.workDir, "step-thumbnails", version.ID+"-v2.svg")
 	if info, err := os.Stat(output); err != nil || info.Size() == 0 {
 		if s.stepThumbnailer == nil {
 			c.Status(http.StatusServiceUnavailable)
@@ -82,7 +82,7 @@ func (s *Server) thumbnailSTEPAssetVersion(c *gin.Context) {
 			return
 		}
 	}
-	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("Cache-Control", "private, max-age=3600, immutable")
 	c.File(output)
 }
 
