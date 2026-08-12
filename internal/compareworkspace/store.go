@@ -31,10 +31,11 @@ type Participant struct {
 }
 
 type EvidenceRevision struct {
-	ID        string                   `json:"id"`
-	Number    int                      `json:"number"`
-	Snapshot  comparison.CompareResult `json:"snapshot"`
-	CreatedAt time.Time                `json:"created_at"`
+	ID           string                   `json:"id"`
+	Number       int                      `json:"number"`
+	Snapshot     comparison.CompareResult `json:"snapshot"`
+	Participants []Participant            `json:"participants,omitempty"`
+	CreatedAt    time.Time                `json:"created_at"`
 }
 
 type AISession struct {
@@ -91,23 +92,8 @@ func (s *Store) Create(input CreateInput) (Workspace, error) {
 	if name == "" || len(name) > 120 {
 		return Workspace{}, errors.New("compare workspace name must be between 1 and 120 characters")
 	}
-	if len(input.Participants) < 2 {
-		return Workspace{}, errors.New("at least two participants are required")
-	}
-	for index := range input.Participants {
-		participant := &input.Participants[index]
-		participant.ProjectID = strings.TrimSpace(participant.ProjectID)
-		participant.CaseID = strings.TrimSpace(participant.CaseID)
-		participant.CaseNameSnapshot = strings.TrimSpace(participant.CaseNameSnapshot)
-		participant.Position = index
-		participant.Role = "candidate"
-		if index == 0 {
-			participant.Role = "baseline"
-		}
-		participant.Availability = "available"
-		if participant.CaseID == "" {
-			return Workspace{}, errors.New("participant Case ID is required")
-		}
+	if err := normalizeParticipants(input.Participants); err != nil {
+		return Workspace{}, err
 	}
 	if len(input.ViewState) > 512<<10 {
 		return Workspace{}, errors.New("compare view state exceeds 512 KB")
@@ -129,7 +115,7 @@ func (s *Store) Create(input CreateInput) (Workspace, error) {
 		Participants:     append([]Participant(nil), input.Participants...),
 		ActiveRevisionID: revisionID,
 		Revisions: []EvidenceRevision{{
-			ID: revisionID, Number: 1, Snapshot: input.Snapshot, CreatedAt: now,
+			ID: revisionID, Number: 1, Snapshot: input.Snapshot, Participants: append([]Participant(nil), input.Participants...), CreatedAt: now,
 		}},
 		ViewState: append(json.RawMessage(nil), input.ViewState...),
 		CreatedAt: now,
@@ -186,17 +172,59 @@ func (s *Store) UpdateViewState(id string, viewState json.RawMessage) (Workspace
 
 func (s *Store) AddRevision(id string, snapshot comparison.CompareResult) (Workspace, error) {
 	return s.update(id, func(workspace *Workspace) error {
-		revisionID, err := newID("rev")
-		if err != nil {
-			return err
-		}
-		revision := EvidenceRevision{
-			ID: revisionID, Number: len(workspace.Revisions) + 1, Snapshot: snapshot, CreatedAt: time.Now().UTC(),
-		}
-		workspace.Revisions = append(workspace.Revisions, revision)
-		workspace.ActiveRevisionID = revisionID
-		return nil
+		return appendRevision(workspace, snapshot, workspace.Participants)
 	})
+}
+
+func (s *Store) ReplaceParticipants(id string, participants []Participant, snapshot comparison.CompareResult) (Workspace, error) {
+	if err := normalizeParticipants(participants); err != nil {
+		return Workspace{}, err
+	}
+	return s.update(id, func(workspace *Workspace) error {
+		for index := range workspace.Revisions {
+			if len(workspace.Revisions[index].Participants) == 0 {
+				workspace.Revisions[index].Participants = append([]Participant(nil), workspace.Participants...)
+			}
+		}
+		workspace.Participants = append([]Participant(nil), participants...)
+		return appendRevision(workspace, snapshot, participants)
+	})
+}
+
+func appendRevision(workspace *Workspace, snapshot comparison.CompareResult, participants []Participant) error {
+	revisionID, err := newID("rev")
+	if err != nil {
+		return err
+	}
+	workspace.Revisions = append(workspace.Revisions, EvidenceRevision{
+		ID: revisionID, Number: len(workspace.Revisions) + 1, Snapshot: snapshot,
+		Participants: append([]Participant(nil), participants...), CreatedAt: time.Now().UTC(),
+	})
+	workspace.ActiveRevisionID = revisionID
+	return nil
+}
+
+func normalizeParticipants(participants []Participant) error {
+	if len(participants) < 2 || len(participants) > 6 {
+		return errors.New("between two and six participants are required")
+	}
+	seen := map[string]bool{}
+	for index := range participants {
+		participant := &participants[index]
+		participant.ProjectID = strings.TrimSpace(participant.ProjectID)
+		participant.CaseID = strings.TrimSpace(participant.CaseID)
+		if participant.CaseID == "" || seen[participant.CaseID] {
+			return errors.New("participant Case IDs must be unique and non-empty")
+		}
+		seen[participant.CaseID] = true
+		participant.Position = index
+		participant.Role = "candidate"
+		if index == 0 {
+			participant.Role = "baseline"
+		}
+		participant.Availability = "available"
+	}
+	return nil
 }
 
 func (s *Store) AppendAISession(id string, session AISession) (Workspace, error) {

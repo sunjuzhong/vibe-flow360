@@ -368,6 +368,7 @@ func (s *Server) routes() {
 		api.POST("/compare-workspaces/:compare_id/ai-sessions", s.appendCompareWorkspaceAISession)
 		api.POST("/compare-workspaces/:compare_id/analyze", s.analyzeCompareWorkspaceRevision)
 		api.POST("/compare-workspaces/:compare_id/refresh", s.refreshCompareWorkspaceEvidence)
+		api.PUT("/compare-workspaces/:compare_id/participants", s.replaceCompareWorkspaceParticipants)
 		api.PUT("/compare-workspaces/:compare_id/status", s.updateCompareWorkspaceStatus)
 		api.POST("/compare-workspaces/:compare_id/duplicate", s.duplicateCompareWorkspace)
 		api.DELETE("/compare-workspaces/:compare_id", s.deleteCompareWorkspace)

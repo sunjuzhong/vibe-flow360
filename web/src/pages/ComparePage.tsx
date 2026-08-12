@@ -4,12 +4,14 @@ import {
   BarChart3,
   Box,
   BookmarkPlus,
+  FileDown,
   CheckCircle2,
   Download,
   FileOutput,
   GitCompare,
   GitPullRequestDraft,
   LibraryBig,
+  Pencil,
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
@@ -107,6 +109,46 @@ export function buildCompareParticipants(result: CompareResult, options: Compare
       case_name_snapshot: item.name,
     }
   })
+}
+
+export function compareEvidenceRevisions(previous: CompareResult | undefined, current: CompareResult) {
+  if (!previous) return null
+  const previousCases = new Map(previous.cases.map((item) => [item.id, item]))
+  let statusChanges = 0
+  let kpiChanges = 0
+  let artifactChanges = 0
+  for (const item of current.cases) {
+    const before = previousCases.get(item.id)
+    if (!before) { statusChanges++; artifactChanges += item.artifacts?.length ?? 0; continue }
+    if (before.status !== item.status || before.convergence?.status !== item.convergence?.status) statusChanges++
+    const priorKPIs = new Map((before.kpis ?? []).map((kpi) => [kpi.name, kpi.value]))
+    kpiChanges += (item.kpis ?? []).filter((kpi) => priorKPIs.get(kpi.name) !== kpi.value).length
+    const priorArtifacts = new Set((before.artifacts ?? []).map((artifact) => artifact.path))
+    const currentArtifacts = new Set((item.artifacts ?? []).map((artifact) => artifact.path))
+    artifactChanges += [...priorArtifacts].filter((path) => !currentArtifacts.has(path)).length + [...currentArtifacts].filter((path) => !priorArtifacts.has(path)).length
+  }
+  return { statusChanges, kpiChanges, artifactChanges, parameterDiffChange: current.diffs.length - previous.diffs.length }
+}
+
+function markdownText(value: string) { return value.replaceAll('|', '\\|').replaceAll('\n', ' ') }
+
+export function buildCompareWorkspaceReport(workspace: CompareWorkspace, revisionId?: string) {
+  const revision = workspace.revisions?.find((item) => item.id === revisionId) ?? workspace.revisions?.at(-1)
+  if (!revision) return ''
+  const participants = revision.participants?.length ? revision.participants : workspace.participants
+  const sessions = workspace.ai_sessions?.filter((session) => session.evidence_revision_id === revision.id) ?? []
+  const lines = [`# ${workspace.name}`, '', `Evidence revision: ${revision.number} (${revision.created_at})`, '', '## Participants', '', '| Role | Project | Case |', '| --- | --- | --- |']
+  participants.forEach((item) => lines.push(`| ${item.role} | ${markdownText(item.project_name_snapshot || item.project_id)} | ${markdownText(item.case_name_snapshot)} |`))
+  lines.push('', '## Revision history', '')
+  workspace.revisions?.forEach((item) => lines.push(`- Revision ${item.number} — ${item.created_at}; Cases: ${item.snapshot.cases.map((entry) => markdownText(entry.name)).join(', ')}`))
+  lines.push('', '## Evidence summary', '')
+  revision.snapshot.cases.forEach((item) => lines.push(`- **${markdownText(item.name)}** — status: ${item.status}; convergence: ${item.convergence?.status ?? 'unknown'}; KPIs: ${(item.kpis ?? []).map((kpi) => `${kpi.name}=${kpi.value}`).join(', ') || 'none'}; artifacts: ${item.artifacts?.length ?? 0}`))
+  lines.push('', `## Parameter differences (${revision.snapshot.diffs.length})`, '')
+  revision.snapshot.diffs.forEach((diff) => lines.push(`- \`${diff.path}\` (${diff.compared_to ?? 'candidate'})`))
+  lines.push('', '## AI analysis history', '')
+  if (!sessions.length) lines.push('No AI analysis was saved for this evidence revision.')
+  sessions.forEach((session, index) => lines.push(`### Analysis ${index + 1}`, '', session.question ? `Question: ${session.question}` : 'General comparison analysis', '', session.analysis, ''))
+  return lines.join('\n')
 }
 
 export function parseSweepValues(input: string) {
@@ -346,6 +388,11 @@ export default function ComparePage() {
   const [selectedRevisionId, setSelectedRevisionId] = useState('')
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [analysisSessionId, setAnalysisSessionId] = useState('')
+  const [editParticipantsOpen, setEditParticipantsOpen] = useState(false)
+  const [participantDraft, setParticipantDraft] = useState<CompareWorkspaceParticipant[]>([])
+  const [newParticipantProjectId, setNewParticipantProjectId] = useState('')
+  const [newParticipantCaseId, setNewParticipantCaseId] = useState('')
+  const [participantUpdateLoading, setParticipantUpdateLoading] = useState(false)
 
   useEffect(() => {
     api.flow360Status().then(setStatus).catch(() => setStatus({ available: false }))
@@ -545,6 +592,38 @@ export default function ComparePage() {
     }
   }
 
+  const saveParticipants = async () => {
+    if (!compareId || participantDraft.length < 2) return
+    setParticipantUpdateLoading(true)
+    setError('')
+    try {
+      const updated = await api.replaceCompareWorkspaceParticipants(compareId, participantDraft)
+      setWorkspace(updated)
+      const revision = updated.revisions?.find((item) => item.id === updated.active_revision_id) ?? updated.revisions?.at(-1)
+      if (revision) {
+        setSelectedRevisionId(revision.id)
+        setResult(revision.snapshot)
+        setVisualCandidateId(revision.snapshot.cases[1]?.id ?? '')
+      }
+      setAnalysis('')
+      setAnalysisSessionId('')
+      setEditParticipantsOpen(false)
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally { setParticipantUpdateLoading(false) }
+  }
+
+  const exportReport = () => {
+    if (!workspace) return
+    const report = buildCompareWorkspaceReport(workspace, selectedRevisionId)
+    const url = URL.createObjectURL(new Blob([report], { type: 'text/markdown;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${workspace.name.replaceAll(/[^a-zA-Z0-9_-]+/g, '-') || 'case-comparison'}-revision.md`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const previewCommonFile = async (path: string, compareCases: CaseComparison[]) => {
     setSelectedResultPath(path)
     const caseIds = compareCases.map((item) => item.id)
@@ -615,6 +694,9 @@ export default function ComparePage() {
       return option ? { project_id: option.projectId, project_name_snapshot: option.projectName, case_id: option.id, case_name_snapshot: option.name, role: 'candidate' as const, position: 0, availability: 'available' as const } : undefined
     })()
   const revisionSessions = workspace?.ai_sessions?.filter((session) => session.evidence_revision_id === selectedRevisionId) ?? []
+  const selectedRevision = workspace?.revisions?.find((revision) => revision.id === selectedRevisionId)
+  const previousRevision = workspace?.revisions?.find((revision) => revision.number === (selectedRevision?.number ?? 0) - 1)
+  const revisionDelta = selectedRevision ? compareEvidenceRevisions(previousRevision?.snapshot, selectedRevision.snapshot) : null
 
   return (
     <div className="compare-page">
@@ -634,6 +716,8 @@ export default function ComparePage() {
               setSaveOpen(true)
             }}><BookmarkPlus size={14} />{t('Save comparison')}</button>}
             {workspace && <button type="button" disabled={refreshLoading} onClick={() => void refreshEvidence()}>{refreshLoading ? <RefreshCw className="spin" size={14} /> : <RefreshCw size={14} />}{t('Refresh evidence')}</button>}
+            {workspace && <button type="button" onClick={() => { setParticipantDraft(workspace.participants); setEditParticipantsOpen(true) }}><Pencil size={14} />{t('Edit comparison set')}</button>}
+            {workspace && <button type="button" onClick={exportReport}><FileDown size={14} />{t('Export report')}</button>}
             {workspace && <span className={`compare-save-state ${workspaceSaveState}`}>{workspaceSaveState === 'saving' ? t('Saving…') : workspaceSaveState === 'error' ? t('Save failed') : t('Saved')}</span>}
           </div>
         </div>
@@ -683,6 +767,7 @@ export default function ComparePage() {
               <span>{selectedRevisionId === workspace.active_revision_id ? t('Latest evidence') : t('Historical evidence · AI analysis uses this revision')}</span>
             </section>
           )}
+          {revisionDelta && <section className="compare-revision-delta"><strong>{t('Changes since previous revision')}</strong><span>{t('{count} status changes').replace('{count}', String(revisionDelta.statusChanges))}</span><span>{t('{count} KPI changes').replace('{count}', String(revisionDelta.kpiChanges))}</span><span>{t('{count} artifact changes').replace('{count}', String(revisionDelta.artifactChanges))}</span><span>{t('{count} parameter-difference change').replace('{count}', String(revisionDelta.parameterDiffChange))}</span></section>}
 
           {!result && (
             <section className="compare-empty">
@@ -861,6 +946,17 @@ export default function ComparePage() {
                 <p>{t('Saves a lightweight evidence snapshot, view settings, and future AI analyses. Large result and visualization files remain referenced from their Cases.')}</p>
                 <label>{t('Workspace name')}<input autoFocus value={saveName} maxLength={120} onChange={(event) => setSaveName(event.target.value)} /></label>
                 <div className="compare-save-dialog-actions"><button type="button" onClick={() => setSaveOpen(false)}>{t('Cancel')}</button><button type="button" className="geometry-plan-action" disabled={!saveName.trim() || saveLoading} onClick={() => void saveCompareWorkspace()}>{saveLoading ? <RefreshCw className="spin" size={14} /> : <BookmarkPlus size={14} />}{t('Save workspace')}</button></div>
+              </section>
+            </div>
+          )}
+          {editParticipantsOpen && workspace && (
+            <div className="compare-save-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditParticipantsOpen(false) }}>
+              <section className="compare-save-dialog compare-participant-dialog" role="dialog" aria-modal="true" aria-labelledby="compare-participants-title">
+                <div><p className="eyebrow">{t('IMMUTABLE COMPARISON HISTORY')}</p><h2 id="compare-participants-title">{t('Edit comparison set')}</h2></div>
+                <p>{t('Changing the baseline or Cases creates a new evidence revision. Existing revisions remain unchanged.')}</p>
+                <div className="compare-participant-editor">{participantDraft.map((participant, index) => <div key={participant.case_id}><button type="button" disabled={index === 0} onClick={() => setParticipantDraft([participant, ...participantDraft.filter((item) => item.case_id !== participant.case_id)])}>{index === 0 ? t('Baseline') : t('Make baseline')}</button><span><strong>{participant.case_name_snapshot || participant.case_id}</strong><small>{participant.project_name_snapshot || participant.project_id}</small></span><button type="button" disabled={participantDraft.length <= 2} onClick={() => setParticipantDraft(participantDraft.filter((item) => item.case_id !== participant.case_id))}>{t('Remove')}</button></div>)}</div>
+                <div className="compare-participant-add"><label>{t('Project ID')}<input value={newParticipantProjectId} onChange={(event) => setNewParticipantProjectId(event.target.value)} /></label><label>{t('Case ID')}<input value={newParticipantCaseId} onChange={(event) => setNewParticipantCaseId(event.target.value)} /></label><button type="button" disabled={!newParticipantProjectId.trim() || !newParticipantCaseId.trim() || participantDraft.length >= 6 || participantDraft.some((item) => item.case_id === newParticipantCaseId.trim())} onClick={() => { setParticipantDraft([...participantDraft, { project_id: newParticipantProjectId.trim(), case_id: newParticipantCaseId.trim(), case_name_snapshot: newParticipantCaseId.trim(), role: 'candidate', position: participantDraft.length, availability: 'available' }]); setNewParticipantCaseId('') }}>{t('Add Case')}</button></div>
+                <div className="compare-save-dialog-actions"><button type="button" onClick={() => setEditParticipantsOpen(false)}>{t('Cancel')}</button><button type="button" className="geometry-plan-action" disabled={participantDraft.length < 2 || participantUpdateLoading} onClick={() => void saveParticipants()}>{participantUpdateLoading ? <RefreshCw className="spin" size={14} /> : <CheckCircle2 size={14} />}{t('Save as new revision')}</button></div>
               </section>
             </div>
           )}

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { CompareResult } from '../api/client'
-import { buildArtifactMatrix, buildCompareParticipants, CompareParameterValue, matchCompareManifestItem, mergeCompareCaseOptions, parseSweepValues, toggleCaseSelection } from './ComparePage'
+import { buildArtifactMatrix, buildCompareParticipants, buildCompareWorkspaceReport, compareEvidenceRevisions, CompareParameterValue, matchCompareManifestItem, mergeCompareCaseOptions, parseSweepValues, toggleCaseSelection } from './ComparePage'
 
 describe('ComparePage URL and sweep helpers', () => {
   it('keeps Case selection order stable for URL restoration', () => {
@@ -72,5 +72,16 @@ describe('ComparePage URL and sweep helpers', () => {
       { project_id: 'prj-a', project_name_snapshot: 'Project A', case_id: 'case-a' },
       { project_id: 'prj-b', project_name_snapshot: 'Project B', case_id: 'case-b' },
     ])
+  })
+
+  it('summarizes evidence revision changes and exports a revision-bound report', () => {
+    const before: CompareResult = { cases: [{ id: 'case-a', name: 'A', status: 'running', params: {}, convergence: { status: 'insufficient-data', reason: '' }, kpis: [], artifacts: [], visualization: { available: false } }], diffs: [], ranking: [] }
+    const after: CompareResult = { cases: [{ id: 'case-a', name: 'A', status: 'completed', params: {}, convergence: { status: 'converged', reason: '' }, kpis: [{ name: 'Cd', value: 1, converged: true, source: 'forces' }], artifacts: [{ path: 'forces.csv', category: 'forces', previewable: true, visualization: false }], visualization: { available: false } }], diffs: [{ path: 'time_step', baseline: 1, other: 2 }], ranking: [] }
+    expect(compareEvidenceRevisions(before, after)).toEqual({ statusChanges: 1, kpiChanges: 1, artifactChanges: 1, parameterDiffChange: 1 })
+    const report = buildCompareWorkspaceReport({ id: 'cmp-a', name: 'Decision', status: 'active', participants: [{ project_id: 'p', case_id: 'case-a', case_name_snapshot: 'A', role: 'baseline', position: 0, availability: 'available' }], active_revision_id: 'rev-2', revisions: [{ id: 'rev-2', number: 2, snapshot: after, created_at: '2026-08-12T00:00:00Z' }], ai_sessions: [{ id: 'ai-1', evidence_revision_id: 'rev-2', question: 'Why?', analysis: 'Because evidence changed.', created_at: '2026-08-12T00:00:01Z' }], updated_at: '2026-08-12T00:00:01Z' }, 'rev-2')
+    expect(report).toContain('# Decision')
+    expect(report).toContain('## Revision history')
+    expect(report).toContain('`time_step`')
+    expect(report).toContain('Because evidence changed.')
   })
 })

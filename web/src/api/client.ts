@@ -925,7 +925,7 @@ export type CompareWorkspace = {
   status: string
   participants: CompareWorkspaceParticipant[]
   active_revision_id?: string
-  revisions?: Array<{ id: string; number: number; snapshot: CompareResult; created_at: string }>
+  revisions?: Array<{ id: string; number: number; snapshot: CompareResult; participants?: CompareWorkspaceParticipant[]; created_at: string }>
   view_state?: CompareWorkspaceViewState
   ai_sessions?: CompareWorkspaceAISession[]
   created_at?: string
@@ -1286,6 +1286,8 @@ export const api = {
     mutate<ComparisonAnalysis & { session: CompareWorkspaceAISession }>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/analyze`, input),
   refreshCompareWorkspaceEvidence: (compareId: string) =>
     mutate<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/refresh`, {}),
+  replaceCompareWorkspaceParticipants: (compareId: string, participants: Array<Pick<CompareWorkspaceParticipant, 'project_id' | 'project_name_snapshot' | 'case_id' | 'case_name_snapshot'>>) =>
+    replace<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/participants`, { participants }),
   updateCompareWorkspaceStatus: (compareId: string, status: 'active' | 'archived') =>
     replace<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/status`, { status }),
   duplicateCompareWorkspace: (compareId: string, name?: string) =>

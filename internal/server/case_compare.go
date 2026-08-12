@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
+	"github.com/sunjuzhong/vibe-flow360/internal/compareworkspace"
 	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 )
@@ -268,7 +269,7 @@ func (s *Server) analyzeCaseComparison(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	response, status, err := s.generateComparisonAnalysis(c.Request.Context(), result, request.Language, request.Question)
+	response, status, err := s.generateComparisonAnalysis(c.Request.Context(), result, request.Language, request.Question, nil)
 	if err != nil {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
@@ -276,7 +277,7 @@ func (s *Server) analyzeCaseComparison(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func (s *Server) generateComparisonAnalysis(ctx context.Context, result comparison.CompareResult, requestedLanguage, requestedQuestion string) (comparisonAnalysisResponse, int, error) {
+func (s *Server) generateComparisonAnalysis(ctx context.Context, result comparison.CompareResult, requestedLanguage, requestedQuestion string, history []compareworkspace.AISession) (comparisonAnalysisResponse, int, error) {
 	if s.agent == nil || !s.agent.SupportsGeneration() {
 		return comparisonAnalysisResponse{}, http.StatusServiceUnavailable, errors.New("AI comparison requires a configured model provider")
 	}
@@ -293,10 +294,17 @@ func (s *Server) generateComparisonAnalysis(ctx context.Context, result comparis
 	if question == "" {
 		question = "Which differences are decision-relevant, what evidence supports them, and what should be checked next?"
 	}
+	conversation := ""
+	if len(history) > 8 {
+		history = history[len(history)-8:]
+	}
+	for _, turn := range history {
+		conversation += fmt.Sprintf("\nPrior user question: %s\nPrior assistant analysis: %s\n", turn.Question, turn.Analysis)
+	}
 	ctx, cancel := resultInterpretationContext(ctx, s.agent)
 	defer cancel()
 	analysis, err := s.agent.Complete(ctx, comparisonAnalysisSystemPrompt,
-		fmt.Sprintf("Analyze this Case comparison in %s. User question: %s\n\nStructured evidence:\n%s", language, question, payload), "")
+		fmt.Sprintf("Analyze this Case comparison in %s. Continue the conversation consistently, but correct prior claims when the evidence does not support them.%s\nCurrent user question: %s\n\nStructured evidence:\n%s", language, conversation, question, payload), "")
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return comparisonAnalysisResponse{}, http.StatusGatewayTimeout, errors.New("AI comparison timed out")
