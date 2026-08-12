@@ -75,7 +75,7 @@ func TestDesignUsesAgentAuthoredGeometryInsteadOfTemplate(t *testing.T) {
 }
 
 func TestDesignReturnsAgentQuestionsForUnsupportedShape(t *testing.T) {
-	raw := `{"version":"v1","decision":"request-input","project_name":"Wing","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":["Please attach the airfoil coordinates or an exact CAD model."]}`
+	raw := `{"version":"v1","decision":"request-input","project_name":"Wing","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"airfoil_source","label":"Please attach the airfoil coordinates or an exact CAD model.","description":"NACA 0012 is the recommended symmetric baseline when no profile is prescribed.","type":"text","required":true,"default":"NACA 0012"}]}`
 	_, err := Design(context.Background(), staticCompleter(raw), "simulate my proprietary wing")
 	missing, ok := err.(*MissingInputError)
 	if !ok || len(missing.Questions) != 1 || !strings.Contains(missing.Questions[0], "airfoil") {
@@ -84,7 +84,7 @@ func TestDesignReturnsAgentQuestionsForUnsupportedShape(t *testing.T) {
 }
 
 func TestDesignReturnsStructuredClarificationFields(t *testing.T) {
-	raw := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"圆柱直径","description":"用于定义几何和雷诺数","type":"number","required":true,"unit":"m","min":0.001,"max":100},{"id":"domain_model","label":"计算域类型","type":"select","required":true,"options":[{"value":"symmetry","label":"展向对称面"},{"value":"finite","label":"有限跨度"}]}]}`
+	raw := `{"version":"v1","decision":"request-input","project_name":"Cylinder Flow","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[],"result":""},"simulation":{},"assumptions":[],"questions":[{"id":"diameter_m","label":"圆柱直径","description":"推荐 0.1 m，适合作为基础外流验证尺度","type":"number","required":true,"unit":"m","default":0.1,"min":0.001,"max":100},{"id":"domain_model","label":"计算域类型","description":"推荐展向对称面，避免未经验证的周期网格假设","type":"select","required":true,"default":"symmetry","options":[{"value":"symmetry","label":"展向对称面"},{"value":"finite","label":"有限跨度"}]}]}`
 	_, err := Design(context.Background(), staticCompleter(raw), "创建圆柱绕流")
 	missing, ok := err.(*MissingInputError)
 	if !ok {
@@ -95,6 +95,20 @@ func TestDesignReturnsStructuredClarificationFields(t *testing.T) {
 	}
 	if len(missing.Fields[1].Options) != 2 {
 		t.Fatalf("select options were not preserved: %#v", missing.Fields[1])
+	}
+	if missing.Fields[0].Default != float64(0.1) || missing.Fields[1].Default != "symmetry" {
+		t.Fatalf("recommended defaults were not preserved: %#v", missing.Fields)
+	}
+}
+
+func TestDesignRepairsClarificationFieldsWithoutRecommendedDefaults(t *testing.T) {
+	invalid := `{"version":"v1","decision":"request-input","project_name":"Cylinder","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[]},"simulation":{},"assumptions":[],"questions":[{"id":"diameter","label":"Diameter","type":"number","required":true,"unit":"m","min":0.01,"max":10}]}`
+	corrected := `{"version":"v1","decision":"request-input","project_name":"Cylinder","summary":"","geometry":{"name":"","unit":"m","representation":"analytic-brep","format":"step","generator":"cadquery-dsl-v1","operations":[]},"simulation":{},"assumptions":[],"questions":[{"id":"diameter","label":"Diameter","description":"A 0.1 m baseline is practical for an external-flow study.","type":"number","required":true,"unit":"m","default":0.1,"min":0.01,"max":10}]}`
+	model := &sequenceCompleter{responses: []string{invalid, corrected}}
+	_, err := Design(context.Background(), model, "Create cylinder flow")
+	missing, ok := err.(*MissingInputError)
+	if !ok || model.calls != 2 || missing.Fields[0].Default != float64(0.1) {
+		t.Fatalf("expected repaired recommended clarification, got calls=%d error=%T %v", model.calls, err, err)
 	}
 }
 
@@ -214,7 +228,7 @@ func TestValidateFlow360GeometryContractRejectsPeriodicGeometryToCase(t *testing
 }
 
 func TestClarificationRejectsPeriodicGeometryToCaseChoice(t *testing.T) {
-	raw := json.RawMessage(`[{"id":"domain","label":"Domain","type":"select","required":true,"options":[{"value":"periodic","label":"Thin periodic"},{"value":"finite","label":"Finite span"}]}]`)
+	raw := json.RawMessage(`[{"id":"domain","label":"Domain","type":"select","required":true,"default":"finite","options":[{"value":"periodic","label":"Thin periodic"},{"value":"finite","label":"Finite span"}]}]`)
 	if _, err := parseClarificationFields(raw); err == nil || !strings.Contains(err.Error(), "unsupported periodic") {
 		t.Fatalf("periodic option should be repaired before reaching the user: %v", err)
 	}

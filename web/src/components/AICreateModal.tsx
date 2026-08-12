@@ -99,7 +99,7 @@ export function appendSubmittedAICreateTurn(
   return [...current, { role: 'user', text }]
 }
 
-function initialAnswers(fields: AICreateClarificationField[]) {
+export function initialAICreateAnswers(fields: AICreateClarificationField[]) {
   return Object.fromEntries(fields.map((field) => {
     if (field.default !== undefined) return [field.id, field.default]
     if (field.type === 'boolean') return [field.id, false]
@@ -107,7 +107,7 @@ function initialAnswers(fields: AICreateClarificationField[]) {
   }))
 }
 
-function serializedAnswers(fields: AICreateClarificationField[], values: Record<string, unknown>) {
+export function serializedAICreateAnswers(fields: AICreateClarificationField[], values: Record<string, unknown>) {
   return Object.fromEntries(fields.map((field) => {
     const value = values[field.id]
     if (field.type === 'number' && value !== '') return [field.id, Number(value)]
@@ -131,16 +131,29 @@ export function AICreateClarificationForm({
   onSubmit: (event: FormEvent) => void
 }) {
   const { t } = useI18n()
+  const recommendedCount = fields.filter((field) => field.default !== undefined).length
+  const normalized = serializedAICreateAnswers(fields, values)
+  const allRequiredAnswered = fields.filter((field) => field.required).every((field) => {
+    const value = normalized[field.id]
+    return value !== undefined && value !== null && (typeof value !== 'string' || value.trim() !== '')
+  })
+  const confirmOnly = recommendedCount > 0 && allRequiredAnswered
   return (
     <form className="ai-create-clarification" onSubmit={onSubmit}>
       <div className="ai-create-clarification-heading">
         <span><CircleHelp size={16} /></span>
         <div><strong>{t('Engineering details')}</strong><small>{t(`Clarification round ${round}`)}</small></div>
       </div>
+      {recommendedCount > 0 && (
+        <div className="ai-create-recommendation-summary">
+          <strong>{t(`${recommendedCount} Agent ${recommendedCount === 1 ? 'recommendation' : 'recommendations'} prefilled`)}</strong>
+          <span>{t('Review the highlighted values, then confirm or change only what is necessary.')}</span>
+        </div>
+      )}
       <div className="ai-create-fields">
         {fields.map((field) => (
-          <label className={`ai-create-field field-${field.type}`} key={field.id}>
-            <span>{t(field.label)}{field.required && <em>*</em>}</span>
+          <label className={`ai-create-field field-${field.type}${field.default !== undefined ? ' recommended' : ''}`} key={field.id}>
+            <span>{t(field.label)}{field.required && <em>*</em>}{field.default !== undefined && <b className="ai-create-recommendation-badge">{t('Agent recommendation')}</b>}</span>
             {field.description && <small>{t(field.description)}</small>}
             {field.type === 'select' && (
               <select
@@ -195,7 +208,7 @@ export function AICreateClarificationForm({
         <span>{t('The Agent will continue from these answers.')}</span>
         <button type="submit" disabled={busy}>
           {busy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
-          {t(busy ? 'Continuing…' : 'Continue with answers')}
+          {t(busy ? 'Continuing…' : confirmOnly ? 'Confirm recommended values & continue' : 'Continue with answers')}
           {!busy && <ArrowRight size={14} />}
         </button>
       </div>
@@ -298,7 +311,7 @@ export default function AICreateModal({
         setSessionId(result.session_id)
         setRound(result.round)
         setFields(result.fields)
-        setAnswers(initialAnswers(result.fields))
+        setAnswers(initialAICreateAnswers(result.fields))
         setTranscript((current) => [
           ...current,
           { role: 'agent', text: result.message },
@@ -341,7 +354,7 @@ export default function AICreateModal({
 
   const submitClarification = (event: FormEvent) => {
     event.preventDefault()
-    void runCreate(serializedAnswers(fields, answers))
+    void runCreate(serializedAICreateAnswers(fields, answers))
   }
 
   if (minimized) {
