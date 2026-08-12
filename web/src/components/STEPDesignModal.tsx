@@ -9,20 +9,11 @@ import {
   aiCreateIntentLimit,
   appendSubmittedAICreateTurn,
   errorMessage,
+  initialAICreateAnswers,
+  serializedAICreateAnswers,
 } from './AICreateModal'
 
 type TranscriptItem = { role: 'user' | 'agent'; text: string }
-
-function initialAnswers(fields: AICreateClarificationField[]) {
-  return Object.fromEntries(fields.map((field) => [field.id, field.default ?? (field.type === 'boolean' ? false : '')]))
-}
-
-function serializedAnswers(fields: AICreateClarificationField[], values: Record<string, unknown>) {
-  return Object.fromEntries(fields.map((field) => {
-    const value = values[field.id]
-    return [field.id, field.type === 'number' && value !== '' ? Number(value) : value]
-  }))
-}
 
 export function stepJobProgress(job: STEPAIJob): AICreateProgress {
   const stages = ['Understanding geometry', 'Designing exact CAD', 'Generating and validating STEP', 'Saving version']
@@ -87,7 +78,7 @@ export default function STEPDesignModal({ mode, assetName, assetId, parentVersio
         setJob(current)
         if (current.status === 'needs_input') {
           setFields(current.fields || [])
-          setAnswers(initialAnswers(current.fields || []))
+          setAnswers(initialAICreateAnswers(current.fields || []))
           setTranscript((items) => [...items, { role: 'agent', text: current.error || current.detail || 'The geometry Agent needs more defining information.' }])
         }
         if (current.status === 'completed') onCompleted(current)
@@ -98,7 +89,7 @@ export default function STEPDesignModal({ mode, assetName, assetId, parentVersio
   }, [active, job?.id, onCompleted])
 
   const submit = (event: FormEvent) => { event.preventDefault(); void start() }
-  const submitClarification = (event: FormEvent) => { event.preventDefault(); void start(serializedAnswers(fields, answers)) }
+  const submitClarification = (event: FormEvent) => { event.preventDefault(); void start(serializedAICreateAnswers(fields, answers)) }
   const cancel = async () => { if (job) setJob(await api.cancelStepAIJob(job.id)) }
 
   if (minimized) return <aside className={`ai-create-session-dock${completed ? ' ready' : ''}`} aria-live="polite"><span className="ai-create-session-dock-icon">{completed ? <CheckCircle2 size={16} /> : <Sparkles size={16} />}</span><span><strong>{t(completed ? 'AI Design is ready' : 'AI Design session')}</strong><small>{t(completed ? 'A validated STEP version is ready to review.' : job?.detail || 'Working in the background…')}</small></span><button type="button" onClick={() => setMinimized(false)}>{t(completed ? 'Review' : 'Open')}</button></aside>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
@@ -126,7 +127,7 @@ Return ONLY one JSON object matching AI_CREATE_GEOMETRY_V1.
 - results: one or more {source, name, faces}. source references an operation, name is a stable STEP body name, and faces is a required array of {name, selector} for AI Create.
 - simulation: {velocity_m_s, alpha_deg, surface_edge_length_m, first_layer_thickness_m, max_steps}
 - assumptions: string array in the user's language
-- questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}. Always choose the most specific control type. Whenever project evidence supports a safe engineering recommendation, set default and explain the recommendation in description so the user can confirm it rather than type it manually.
+- questions: for request-input, an array of dynamic fields: {id, label, description, type, required, unit, options, default, min, max}. type is "text", "number", "select", or "boolean". options is required only for select and contains {value,label}. Always choose the most specific control type. Every field MUST include default with your best defensible engineering recommendation. The default must match the field type, bounds, and select options. Explain why that baseline is recommended, including material uncertainty or tradeoffs, in description so the user can confirm it rather than type it manually.
 
 The simulation object records engineering-scale hints only. It is NOT a Flow360 SimulationParams patch: do not invent Flow360 field paths, model discriminators, enum values, or nested parameter objects here. After the exact Geometry exists, a separate parameter Agent will read the installed Flow360 schemas and map the user's intent into canonical SimulationParams.
 
@@ -241,6 +242,15 @@ func designFromAgentResponse(ctx context.Context, model Completer, userPrompt, r
 	if response.Decision == "request-input" {
 		fields, fieldErr := parseClarificationFields(response.Questions)
 		if fieldErr != nil {
+			if allowRepair {
+				repairPrompt := userPrompt + "\n\nThe previous clarification form failed validation: " + fieldErr.Error() +
+					"\nReturn a corrected complete AI_CREATE_GEOMETRY_V1 JSON object. Every question must include a valid recommended default and a description explaining it. Do not explain the correction outside JSON.\nPrevious response:\n" + raw
+				repaired, repairErr := model.Complete(ctx, geometryAgentSystemPrompt(), repairPrompt, "")
+				if repairErr != nil {
+					return Blueprint{}, fmt.Errorf("geometry clarification repair failed: %w", repairErr)
+				}
+				return designFromAgentResponse(ctx, model, userPrompt, repaired, false)
+			}
 			return Blueprint{}, fmt.Errorf("geometry agent returned invalid clarification fields: %w", fieldErr)
 		}
 		questions := make([]string, 0, len(fields))
@@ -366,23 +376,11 @@ func normalizedIdentifier(value, fallback string, used map[string]bool) string {
 
 func parseClarificationFields(raw json.RawMessage) ([]ClarificationField, error) {
 	if len(raw) == 0 || string(raw) == "null" || string(raw) == "[]" {
-		return []ClarificationField{{
-			ID: "geometry_details", Label: "Please provide the defining geometry dimensions or attach an exact CAD model.",
-			Type: "text", Required: true,
-		}}, nil
+		return nil, errors.New("request-input must contain recommended clarification fields")
 	}
 	var fields []ClarificationField
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		var questions []string
-		if stringErr := json.Unmarshal(raw, &questions); stringErr != nil {
-			return nil, err
-		}
-		fields = make([]ClarificationField, 0, len(questions))
-		for index, question := range questions {
-			fields = append(fields, ClarificationField{
-				ID: fmt.Sprintf("clarification_%d", index+1), Label: strings.TrimSpace(question), Type: "text", Required: true,
-			})
-		}
+		return nil, err
 	}
 	if len(fields) == 0 || len(fields) > 6 {
 		return nil, errors.New("clarification must contain between 1 and 6 fields")
@@ -420,8 +418,48 @@ func parseClarificationFields(raw json.RawMessage) ([]ClarificationField, error)
 		if field.Min != nil && field.Max != nil && *field.Min > *field.Max {
 			return nil, fmt.Errorf("clarification field %s has invalid bounds", field.ID)
 		}
+		if err := validateClarificationDefault(*field); err != nil {
+			return nil, err
+		}
 	}
 	return fields, nil
+}
+
+func validateClarificationDefault(field ClarificationField) error {
+	if field.Default == nil {
+		return fmt.Errorf("clarification field %s must include a recommended default", field.ID)
+	}
+	switch field.Type {
+	case "text":
+		value, ok := field.Default.(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("clarification field %s must include a non-empty text default", field.ID)
+		}
+	case "number":
+		value, ok := field.Default.(float64)
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("clarification field %s must include a finite numeric default", field.ID)
+		}
+		if field.Min != nil && value < *field.Min || field.Max != nil && value > *field.Max {
+			return fmt.Errorf("clarification field %s default is outside its bounds", field.ID)
+		}
+	case "select":
+		value, ok := field.Default.(string)
+		if !ok {
+			return fmt.Errorf("clarification field %s must include a select option as its default", field.ID)
+		}
+		for _, option := range field.Options {
+			if option.Value == value {
+				return nil
+			}
+		}
+		return fmt.Errorf("clarification field %s default does not match an option", field.ID)
+	case "boolean":
+		if _, ok := field.Default.(bool); !ok {
+			return fmt.Errorf("clarification field %s must include a boolean default", field.ID)
+		}
+	}
+	return nil
 }
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)

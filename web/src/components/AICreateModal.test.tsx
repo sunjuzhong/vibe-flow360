@@ -11,6 +11,8 @@ import AICreateModal, {
   aiCreateProgressStageState,
   appendSubmittedAICreateTurn,
   errorMessage,
+  initialAICreateAnswers,
+  serializedAICreateAnswers,
 } from './AICreateModal'
 
 function renderWithI18n(node: ReactNode) {
@@ -76,12 +78,12 @@ describe('AICreateModal', () => {
         round={2}
         busy={false}
         fields={[
-          { id: 'diameter', label: 'Cylinder diameter', description: 'Reference diameter', type: 'number', required: true, unit: 'm', min: 0.001, max: 100 },
-          { id: 'domain', label: 'Domain model', type: 'select', required: true, options: [{ value: 'periodic', label: 'Thin periodic' }, { value: 'finite', label: 'Finite span' }] },
-          { id: 'wind_tunnel', label: 'Use a wind tunnel?', type: 'boolean', required: false },
-          { id: 'objective', label: 'Study objective', type: 'text', required: true },
+          { id: 'diameter', label: 'Cylinder diameter', description: 'A practical external-flow baseline.', type: 'number', required: true, unit: 'm', default: 0.1, min: 0.001, max: 100 },
+          { id: 'domain', label: 'Domain model', type: 'select', required: true, default: 'finite', options: [{ value: 'symmetry', label: 'Spanwise symmetry' }, { value: 'finite', label: 'Finite span' }] },
+          { id: 'wind_tunnel', label: 'Use a wind tunnel?', type: 'boolean', required: false, default: false },
+          { id: 'objective', label: 'Study objective', type: 'text', required: true, default: 'Vortex shedding' },
         ]}
-        values={{ diameter: 1, domain: 'periodic', wind_tunnel: false, objective: 'Vortex shedding' }}
+        values={{ diameter: 0.1, domain: 'finite', wind_tunnel: false, objective: 'Vortex shedding' }}
         onChange={() => undefined}
         onSubmit={() => undefined}
       />,
@@ -89,9 +91,21 @@ describe('AICreateModal', () => {
     expect(markup).toContain('Clarification round 2')
     expect(markup).toContain('Cylinder diameter')
     expect(markup).toContain('m</b>')
-    expect(markup).toContain('Thin periodic')
+    expect(markup).toContain('Spanwise symmetry')
     expect(markup).toContain('Use a wind tunnel?')
-    expect(markup).toContain('Continue with answers')
+    expect(markup).toContain('4 Agent recommendations prefilled')
+    expect(markup).toContain('Agent recommendation')
+    expect(markup).toContain('class="ai-create-field field-number recommended"')
+    expect(markup).toContain('Confirm recommended values &amp; continue')
+  })
+
+  it('initializes and serializes shared Project and STEP clarification defaults', () => {
+    const fields = [
+      { id: 'diameter', label: 'Diameter', type: 'number' as const, required: true, default: 0.1 },
+      { id: 'finite_span', label: 'Finite span', type: 'boolean' as const, required: true, default: false },
+    ]
+    expect(initialAICreateAnswers(fields)).toEqual({ diameter: 0.1, finite_span: false })
+    expect(serializedAICreateAnswers(fields, { diameter: '0.25', finite_span: false })).toEqual({ diameter: 0.25, finite_span: false })
   })
 
   it('renders backend-reported stages without synthesizing progress', () => {

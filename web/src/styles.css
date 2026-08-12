@@ -1598,11 +1598,16 @@ button { color: inherit; }
 .ai-create-clarification-heading > div { display: grid; gap: 1px; }
 .ai-create-clarification-heading strong { color: #333a2b; font-size: 13px; }
 .ai-create-clarification-heading small { color: #89907d; font-size: 10px; }
+.ai-create-recommendation-summary { display: grid; gap: 3px; margin-bottom: 12px; padding: 9px 11px; border: 1px solid #b9ce78; border-radius: 8px; color: #4d5f22; background: #f1f7df; }
+.ai-create-recommendation-summary strong { font-size: 10px; }
+.ai-create-recommendation-summary span { color: #6f7959; font-size: 9px; }
 .ai-create-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.ai-create-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.ai-create-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid transparent; border-radius: 9px; }
+.ai-create-field.recommended { border-color: #c4d591; background: #fcfff5; box-shadow: inset 3px 0 #b7d74f; }
 .ai-create-field.field-text { grid-column: 1 / -1; }
 .ai-create-field > span:first-child { color: #3e4438; font-size: 11px; font-weight: 650; line-height: 1.35; }
 .ai-create-field > span:first-child em { margin-left: 3px; color: #ad4e35; font-style: normal; }
+.ai-create-recommendation-badge { display: inline-flex; margin-left: 7px; padding: 2px 6px; border-radius: 999px; color: #526a17; background: #e9f4c8; font-size: 7px; font-weight: 700; vertical-align: middle; }
 .ai-create-field > small { min-height: 25px; color: #7e8576; font-size: 9px; line-height: 1.4; }
 .ai-create-field input[type='number'],
 .ai-create-field select,
