@@ -19,4 +19,9 @@ describe('STEPLibraryPage', () => {
     expect(markup).not.toContain('aria-modal="true"')
     expect(markup).not.toContain('Close STEP library')
   })
+
+  it('accepts a routed STEP asset detail path', () => {
+    const markup = renderToStaticMarkup(<I18nProvider><MemoryRouter initialEntries={['/step-library/step-asset-1']}><STEPLibraryPage /></MemoryRouter></I18nProvider>)
+    expect(markup).toContain('step-library-page-surface')
+  })
 })
