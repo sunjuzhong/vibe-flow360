@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import ProjectPage from './pages/ProjectPage'
 import WorkspacePage from './pages/WorkspacePage'
 import ComparePage from './pages/ComparePage'
+import CompareWorkspaceListPage from './pages/CompareWorkspaceListPage'
 import { useI18n } from './i18n'
 import { clearLazyRouteRecovery, importLazyRoute } from './lib/lazyRoute'
 import './route.css'
@@ -57,6 +58,8 @@ function AppRoutes() {
           <Route path="/tutorials" element={<TutorialLibraryPage />} />
           <Route path="/tutorials/:tutorialId" element={<TutorialPage />} />
           <Route path="/projects/:projectId/compare" element={<ComparePage />} />
+          <Route path="/compares" element={<CompareWorkspaceListPage />} />
+          <Route path="/compares/:compareId" element={<ComparePage />} />
           <Route path="/projects/:projectId/*" element={<ProjectPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -29,6 +29,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
 	"github.com/sunjuzhong/vibe-flow360/internal/annotations"
+	"github.com/sunjuzhong/vibe-flow360/internal/compareworkspace"
 	"github.com/sunjuzhong/vibe-flow360/internal/comparison"
 	"github.com/sunjuzhong/vibe-flow360/internal/convergence"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
@@ -49,6 +50,7 @@ type Server struct {
 	agent              *agent.Service
 	chatSessions       *agent.ChatStore
 	resultAI           *resultInterpretationStore
+	compareWorkspaces  *compareworkspace.Store
 	cadGenerator       aicreate.Generator
 	plans              *plans.Store
 	imports            *importplans.Store
@@ -153,6 +155,10 @@ func New() *Server {
 	if err != nil {
 		panic(err)
 	}
+	compareWorkspaceStore, err := compareworkspace.NewStore(filepath.Join(dataDir, "compare-workspaces"))
+	if err != nil {
+		panic(err)
+	}
 	interventionEngine := agent.NewEngine(interventionStore, planStore, aiService)
 
 	app := &Server{
@@ -161,6 +167,7 @@ func New() *Server {
 		agent:              aiService,
 		chatSessions:       chatStore,
 		resultAI:           resultAIStore,
+		compareWorkspaces:  compareWorkspaceStore,
 		cadGenerator:       aicreate.NewCadQueryGenerator(),
 		plans:              planStore,
 		imports:            importStore,
@@ -333,6 +340,14 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
 		api.POST("/flow360/compare", s.compareCases)
 		api.POST("/flow360/compare/analyze", s.analyzeCaseComparison)
+		api.GET("/compare-workspaces", s.listCompareWorkspaces)
+		api.POST("/compare-workspaces", s.createCompareWorkspace)
+		api.GET("/compare-workspaces/:compare_id", s.getCompareWorkspace)
+		api.PUT("/compare-workspaces/:compare_id/view-state", s.updateCompareWorkspaceViewState)
+		api.POST("/compare-workspaces/:compare_id/ai-sessions", s.appendCompareWorkspaceAISession)
+		api.PUT("/compare-workspaces/:compare_id/status", s.updateCompareWorkspaceStatus)
+		api.POST("/compare-workspaces/:compare_id/duplicate", s.duplicateCompareWorkspace)
+		api.DELETE("/compare-workspaces/:compare_id", s.deleteCompareWorkspace)
 		api.POST("/flow360/sweep", s.generateSweepPlan)
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)

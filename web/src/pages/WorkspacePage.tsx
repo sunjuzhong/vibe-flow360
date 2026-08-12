@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Search,
   FileUp,
+  GitCompare,
   LayoutGrid,
   List,
   Sparkles,
@@ -27,6 +28,7 @@ import ProjectActions, { type ProjectMutationMode } from '../components/ProjectA
 import ProjectMutationDialog from '../components/ProjectMutationDialog'
 import TopBar from '../components/TopBar'
 import Flow360IdLink from '../components/Flow360IdLink'
+import { useI18n } from '../i18n'
 
 function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
@@ -91,6 +93,7 @@ export function aiCreateProjectPath(result: { project_id: string; draft_id?: str
 }
 
 export default function WorkspacePage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const restoredFolderSelection = useRef(false)
   const [flowStatus, setFlowStatus] = useState<Flow360Status | null>(null)
@@ -246,6 +249,7 @@ export default function WorkspacePage() {
             <RefreshCw size={15} className={foldersLoading ? 'spin' : ''} />
           </button>
         </div>
+        <Link className="workspace-compare-library-link" to="/compares"><GitCompare size={14} /><span><strong>{t('Saved comparisons')}</strong><small>{t('Resume comparison workspaces')}</small></span></Link>
         {foldersLoading && <div className="panel-state compact">Loading folders…</div>}
         {foldersError && (
           <div className="panel-state compact error">

@@ -3,23 +3,28 @@ import {
   ArrowLeft,
   BarChart3,
   Box,
+  BookmarkPlus,
   CheckCircle2,
   Download,
   FileOutput,
   GitCompare,
   GitPullRequestDraft,
+  LibraryBig,
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
   TableProperties,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import remarkGfm from 'remark-gfm'
 import {
   api,
   type CaseComparison,
+  type CompareWorkspace,
+  type CompareWorkspaceParticipant,
+  type CompareWorkspaceViewState,
   type CompareResult,
   type Flow360Status,
   type ProjectInfo,
@@ -58,16 +63,16 @@ export function CompareParameterValue({ value, expansion, onExpansionChange }: {
   return <span className="compare-scalar-value">{valueText(value)}</span>
 }
 
-function CompareParameterDiffRow({ diff }: { diff: CompareResult['diffs'][number] }) {
-  const [expansion, setExpansion] = useState<JsonExpansionState>({})
-  const setPathExpansion = (path: string, open: boolean) => {
-    setExpansion((current) => ({ ...current, [path]: open }))
-  }
+function CompareParameterDiffRow({ diff, expansion, onExpansionChange }: {
+  diff: CompareResult['diffs'][number]
+  expansion: JsonExpansionState
+  onExpansionChange: (path: string, open: boolean) => void
+}) {
   return (
     <div className="compare-diff-row">
       <code>{diff.path}<small>{diff.compared_to}</small></code>
-      <div className="compare-diff-value"><CompareParameterValue value={diff.baseline} expansion={expansion} onExpansionChange={setPathExpansion} /></div>
-      <div className="compare-diff-value"><CompareParameterValue value={diff.other} expansion={expansion} onExpansionChange={setPathExpansion} /></div>
+      <div className="compare-diff-value"><CompareParameterValue value={diff.baseline} expansion={expansion} onExpansionChange={onExpansionChange} /></div>
+      <div className="compare-diff-value"><CompareParameterValue value={diff.other} expansion={expansion} onExpansionChange={onExpansionChange} /></div>
     </div>
   )
 }
@@ -131,9 +136,10 @@ function fieldsForCompareItem(entities: UVFEntityInfo[], item: MeshGroupData | n
   return entities.find((entity) => entity.id === item.id)?.fields ?? []
 }
 
-function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange, fieldVisualizationEnabled, onFieldVisualizationChange, wireframe, onWireframeChange, cameraCommand, onCameraCommand, cameraState, onCameraStateChange, linkedSelection, onLinkedSelectionChange, manifestAction, onManifestAction }: {
+function CompareViewport({ item, projectId, availability = 'available', selectedField, onSelectedFieldChange, fieldVisualizationEnabled, onFieldVisualizationChange, wireframe, onWireframeChange, cameraCommand, onCameraCommand, cameraState, onCameraStateChange, linkedSelection, onLinkedSelectionChange, manifestAction, onManifestAction, savedVisibility, onVisibilityStateChange }: {
   item: CaseComparison
   projectId: string
+  availability?: CompareWorkspaceParticipant['availability']
   selectedField: string | null
   onSelectedFieldChange: (field: string | null) => void
   fieldVisualizationEnabled: boolean
@@ -148,9 +154,11 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
   onLinkedSelectionChange: (sourceId: string, item: CompareManifestItemKey | null) => void
   manifestAction: CompareManifestAction | null
   onManifestAction: (action: CompareManifestAction) => void
+  savedVisibility?: Record<string, boolean>
+  onVisibilityStateChange: (caseId: string, visibility: Record<string, boolean>) => void
 }) {
   const { t } = useI18n()
-  const { manifest, state, source } = useResourcePreview('Case', item.id)
+  const { manifest, state, source } = useResourcePreview(availability === 'available' ? 'Case' : null, availability === 'available' ? item.id : null)
   const groups = useMemo(() => manifest?.groups ?? [], [manifest])
   const [selection, setSelection] = useState<ViewerSelection>({ groupId: null })
   const [entities, setEntities] = useState<UVFEntityInfo[]>([])
@@ -161,9 +169,14 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
   const linkedMatchMissing = Boolean(linkedSelection?.item && linkedSelection.sourceId !== item.id && !selectedItem)
 
   useEffect(() => {
-    setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, group.visible])))
+    setEntityVisibility({ ...Object.fromEntries(groups.map((group) => [group.id, group.visible])), ...savedVisibility })
     setSelection({ groupId: null })
   }, [manifest?.asset_url])
+
+  const updateVisibility = (next: Record<string, boolean>) => {
+    setEntityVisibility(next)
+    onVisibilityStateChange(item.id, next)
+  }
 
   useEffect(() => {
     if (!linkedSelection) return
@@ -174,16 +187,16 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
   useEffect(() => {
     if (!manifestAction) return
     if (manifestAction.type === 'show-all') {
-      setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, true])))
+      updateVisibility(Object.fromEntries(groups.map((group) => [group.id, true])))
       return
     }
     if (!manifestAction.item) return
     const matched = matchCompareManifestItem(groups, manifestAction.item)
     if (!matched) return
     if (manifestAction.type === 'isolate') {
-      setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, group.id === matched.id])))
+      updateVisibility(Object.fromEntries(groups.map((group) => [group.id, group.id === matched.id])))
     } else if (manifestAction.type === 'visibility') {
-      setEntityVisibility((current) => ({ ...current, [matched.id]: Boolean(manifestAction.visible) }))
+      updateVisibility({ ...entityVisibility, [matched.id]: Boolean(manifestAction.visible) })
     }
   }, [groups, manifestAction])
 
@@ -212,13 +225,13 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
         </select>
       </label>
       <div className="compare-viewport">
-        <LazyViewer3D
+        {availability === 'available' ? <LazyViewer3D
           manifest={manifest}
           state={state}
           selection={selection}
           onSelectionChange={handleViewerSelection}
           entityVisibility={entityVisibility}
-          onEntityVisibilityChange={setEntityVisibility}
+          onEntityVisibilityChange={updateVisibility}
           onEntitiesDiscovered={setEntities}
           selectedField={fieldVisualizationEnabled ? selectedField : null}
           onSelectedFieldChange={onSelectedFieldChange}
@@ -233,7 +246,7 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
           projectId={projectId}
           showWarnings={false}
           showEntityLegend={false}
-        />
+        /> : <div className="compare-snapshot-only"><AlertCircle size={18} /><strong>{t('Saved evidence only')}</strong><span>{t('The original Case is unavailable. Parameters, KPIs, artifact metadata, and AI history remain available from the saved snapshot.')}</span></div>}
       </div>
       {linkedMatchMissing && (
         <div className="compare-manifest-missing" role="status"><AlertCircle size={13} />{t('No matching manifest item in this Case.')}</div>
@@ -261,12 +274,20 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
 
 export default function ComparePage() {
   const { t, language } = useI18n()
-  const { projectId = '' } = useParams()
+  const navigate = useNavigate()
+  const { projectId: routeProjectId = '', compareId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
-  const selectedIds = useMemo(
+  const querySelectedIds = useMemo(
     () => (searchParams.get('cases') ?? '').split(',').filter(Boolean),
     [searchParams],
   )
+  const [workspace, setWorkspace] = useState<CompareWorkspace | null>(null)
+  const selectedIds = useMemo(() => workspace
+    ? [...workspace.participants].sort((left, right) => left.position - right.position).map((participant) => participant.case_id)
+    : querySelectedIds,
+  [querySelectedIds, workspace])
+  const projectId = routeProjectId || workspace?.participants[0]?.project_id || ''
+  const workspaceHydrated = useRef(false)
   const [status, setStatus] = useState<Flow360Status | null>(null)
   const [project, setProject] = useState<ProjectInfo | null>(null)
   const [cases, setCases] = useState<ProjectItem[]>([])
@@ -293,17 +314,90 @@ export default function ComparePage() {
   const [sweep, setSweep] = useState<SweepResult | null>(null)
   const [sweepLoading, setSweepLoading] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
+  const [parameterExpansions, setParameterExpansions] = useState<Record<string, JsonExpansionState>>({})
+  const [selectedResultPath, setSelectedResultPath] = useState<string | null>(null)
+  const [visualVisibility, setVisualVisibility] = useState<Record<string, Record<string, boolean>>>({})
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [saveLoading, setSaveLoading] = useState(false)
+  const [workspaceSaveState, setWorkspaceSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     api.flow360Status().then(setStatus).catch(() => setStatus({ available: false }))
-    Promise.all([api.projectInfo(projectId), api.projectItems(projectId)])
+    if (compareId) {
+      api.compareWorkspace(compareId)
+        .then((saved) => {
+          setWorkspace(saved)
+          const snapshot = saved.revisions?.find((revision) => revision.id === saved.active_revision_id)?.snapshot ?? saved.revisions?.at(-1)?.snapshot
+          if (!snapshot) throw new Error(t('Saved comparison evidence is unavailable.'))
+          setResult(snapshot)
+          const view = saved.view_state ?? {}
+          setActiveView(view.active_view ?? 'evidence')
+          setVisualCandidateId(view.visual_candidate_id ?? snapshot.cases[1]?.id ?? '')
+          setSelectedField(view.selected_field ?? null)
+          setFieldVisualizationEnabled(Boolean(view.field_visualization_enabled))
+          setWireframe(Boolean(view.wireframe))
+          setCameraSync(view.camera_sync as typeof cameraSync)
+          setLinkedManifestSelection(view.manifest_selection ?? null)
+          setParameterExpansions(view.parameter_expansions ?? {})
+          setSelectedResultPath(view.selected_result_path ?? null)
+          setVisualVisibility(view.visual_visibility ?? {})
+          const latestAI = saved.ai_sessions?.at(-1)
+          if (latestAI) {
+            setAnalysis(latestAI.analysis)
+            setAnalysisQuestion(latestAI.question ?? '')
+          }
+          const primaryProjectId = saved.participants[0]?.project_id
+          if (primaryProjectId) {
+            void Promise.all([api.projectInfo(primaryProjectId), api.projectItems(primaryProjectId)])
+              .then(([info, items]) => {
+                setProject(info.data)
+                setCases(items.data.items.filter((item) => item.type === 'Case'))
+              })
+              .catch(() => undefined)
+          }
+          window.setTimeout(() => { workspaceHydrated.current = true }, 0)
+        })
+        .catch((cause) => setError(String(cause).replace('Error: ', '')))
+        .finally(() => setLoading(false))
+      return
+    }
+    workspaceHydrated.current = false
+    Promise.all([api.projectInfo(routeProjectId), api.projectItems(routeProjectId)])
       .then(([info, items]) => {
         setProject(info.data)
         setCases(items.data.items.filter((item) => item.type === 'Case'))
       })
       .catch((cause) => setError(String(cause).replace('Error: ', '')))
       .finally(() => setLoading(false))
-  }, [projectId])
+  }, [compareId, routeProjectId, t])
+
+  const persistedViewState = useMemo<CompareWorkspaceViewState>(() => ({
+    active_view: activeView,
+    visual_candidate_id: visualCandidateId,
+    selected_field: selectedField,
+    field_visualization_enabled: fieldVisualizationEnabled,
+    wireframe,
+    camera_sync: cameraSync,
+    manifest_selection: linkedManifestSelection,
+    parameter_expansions: parameterExpansions,
+    selected_result_path: selectedResultPath,
+    visual_visibility: visualVisibility,
+  }), [activeView, cameraSync, fieldVisualizationEnabled, linkedManifestSelection, parameterExpansions, selectedField, selectedResultPath, visualCandidateId, visualVisibility, wireframe])
+
+  useEffect(() => {
+    if (!compareId || !workspaceHydrated.current) return
+    setWorkspaceSaveState('saving')
+    const timer = window.setTimeout(() => {
+      void api.updateCompareWorkspaceViewState(compareId, persistedViewState)
+        .then((saved) => {
+          setWorkspace((current) => current ? { ...current, updated_at: saved.updated_at, view_state: saved.view_state } : current)
+          setWorkspaceSaveState('saved')
+        })
+        .catch(() => setWorkspaceSaveState('error'))
+    }, 800)
+    return () => window.clearTimeout(timer)
+  }, [compareId, persistedViewState])
 
   const toggleCase = (id: string) => {
     const next = toggleCaseSelection(selectedIds, id)
@@ -341,6 +435,16 @@ export default function ComparePage() {
     try {
       const response = await api.analyzeCaseComparison(selectedIds, language, analysisQuestion.trim() || undefined)
       setAnalysis(response.analysis)
+      if (compareId && workspace?.active_revision_id) {
+        const session = await api.appendCompareWorkspaceAISession(compareId, {
+          evidence_revision_id: workspace.active_revision_id,
+          question: analysisQuestion.trim() || undefined,
+          analysis: response.analysis,
+          provider: response.provider,
+          model: response.model,
+        })
+        setWorkspace((current) => current ? { ...current, ai_sessions: [...(current.ai_sessions ?? []), session] } : current)
+      }
     } catch (cause) {
       setAnalysisError(String(cause).replace('Error: ', ''))
     } finally {
@@ -349,6 +453,7 @@ export default function ComparePage() {
   }
 
   const previewCommonFile = async (path: string, compareCases: CaseComparison[]) => {
+    setSelectedResultPath(path)
     const caseIds = compareCases.map((item) => item.id)
     setFilePreview({ path, caseIds, contents: {}, loading: true })
     try {
@@ -356,6 +461,30 @@ export default function ComparePage() {
       setFilePreview({ path, caseIds, contents: Object.fromEntries(entries), loading: false })
     } catch (cause) {
       setFilePreview({ path, caseIds, contents: {}, loading: false, error: String(cause).replace('Error: ', '') })
+    }
+  }
+
+  const saveCompareWorkspace = async () => {
+    if (!result || !saveName.trim()) return
+    setSaveLoading(true)
+    setError('')
+    try {
+      const saved = await api.createCompareWorkspace({
+        name: saveName.trim(),
+        participants: result.cases.map((item) => ({
+          project_id: projectId,
+          project_name_snapshot: project?.name,
+          case_id: item.id,
+          case_name_snapshot: item.name,
+        })),
+        view_state: persistedViewState,
+      })
+      setSaveOpen(false)
+      navigate(`/compares/${encodeURIComponent(saved.id)}`)
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setSaveLoading(false)
     }
   }
 
@@ -392,17 +521,26 @@ export default function ComparePage() {
     { id: 'parameters', label: t('Parameters'), icon: TableProperties, count: result?.diffs.length },
     { id: 'sweep', label: t('Parameter Sweep'), icon: SlidersHorizontal },
   ]
+  const participantForCase = (caseId: string) => workspace?.participants.find((participant) => participant.case_id === caseId)
 
   return (
     <div className="compare-page">
       <TopBar status={status} />
       <header className="compare-header">
         <div className="compare-header-inner">
-          <Link to={`/projects/${encodeURIComponent(projectId)}`}><ArrowLeft size={15} /> {t('Project')}</Link>
+          <Link to={workspace ? '/compares' : `/projects/${encodeURIComponent(projectId)}`}><ArrowLeft size={15} /> {workspace ? t('Saved comparisons') : t('Project')}</Link>
           <div>
             <p className="eyebrow">{t('CASE DECISION WORKSPACE')}</p>
-            <h1><GitCompare size={24} /> {t('Compare Cases')}</h1>
-            <p>{project?.name ?? projectId} · {t('Compare setup, evidence, fields, and result artifacts before making a decision.')}</p>
+            <h1><GitCompare size={24} /> {workspace?.name ?? t('Compare Cases')}</h1>
+            <p>{workspace ? t('Saved comparison workspace') : project?.name ?? projectId} · {t('Compare setup, evidence, fields, and result artifacts before making a decision.')}</p>
+          </div>
+          <div className="compare-header-actions">
+            <Link to="/compares"><LibraryBig size={14} />{t('Saved comparisons')}</Link>
+            {result && !workspace && <button type="button" onClick={() => {
+              setSaveName(`${result.cases[0]?.name ?? t('Baseline')} vs ${result.cases[1]?.name ?? t('Candidate')}`)
+              setSaveOpen(true)
+            }}><BookmarkPlus size={14} />{t('Save comparison')}</button>}
+            {workspace && <span className={`compare-save-state ${workspaceSaveState}`}>{workspaceSaveState === 'saving' ? t('Saving…') : workspaceSaveState === 'error' ? t('Save failed') : t('Saved')}</span>}
           </div>
         </div>
       </header>
@@ -412,7 +550,7 @@ export default function ComparePage() {
 
       {!loading && (
         <main className="compare-workbench">
-          <section className="compare-picker">
+          {!workspace && <section className="compare-picker">
             <div className="compare-picker-heading">
               <div><strong>{t('Select Cases')}</strong><span>{t('First selection is the baseline.')}</span></div>
               <span>{t('{count} selected').replace('{count}', String(selectedIds.length))}</span>
@@ -431,7 +569,14 @@ export default function ComparePage() {
               {compareLoading ? <RefreshCw size={15} className="spin" /> : <GitCompare size={15} />}
               {t('Compare selected Cases')}
             </button>
-          </section>
+          </section>}
+
+          {workspace && workspace.participants.some((participant) => participant.availability !== 'available') && (
+            <section className="compare-availability-banner" role="status">
+              <AlertCircle size={16} />
+              <div><strong>{t('Some original Cases are unavailable')}</strong><span>{t('Saved parameter, KPI, artifact, and AI evidence remains available. Live files and 3D assets are disabled for unavailable Cases.')}</span></div>
+            </section>
+          )}
 
           {!result && (
             <section className="compare-empty">
@@ -470,7 +615,10 @@ export default function ComparePage() {
                             <div><dt>{t('Result artifacts')}</dt><dd>{item.artifacts?.length ?? 0}</dd><small>{[...new Set((item.artifacts ?? []).map((artifact) => artifact.category))].join(' · ') || t('None')}</small></div>
                             <div><dt>{t('Visualization evidence')}</dt><dd>{item.visualization?.available ? t('Available') : t('Unavailable')}</dd><small>{t('{count} configured outputs').replace('{count}', String(item.visualization?.output_count ?? 0))}</small></div>
                           </dl>
-                          <Link to={`/projects/${projectId}/resources/${item.id}`}><GitPullRequestDraft size={13} /> {t('Open Case')}</Link>
+                          {participantForCase(item.id)?.availability === 'deleted' ? <span className="compare-case-unavailable">{t('Case deleted · saved evidence')}</span>
+                            : participantForCase(item.id)?.availability === 'inaccessible' ? <span className="compare-case-unavailable">{t('Case inaccessible · saved evidence')}</span>
+                              : participantForCase(item.id)?.availability === 'unavailable' ? <span className="compare-case-unavailable">{t('Case unavailable · saved evidence')}</span>
+                              : <Link to={`/projects/${participantForCase(item.id)?.project_id ?? projectId}/resources/${item.id}`}><GitPullRequestDraft size={13} /> {t('Open Case')}</Link>}
                         </article>
                       ))}
                     </div>
@@ -504,7 +652,8 @@ export default function ComparePage() {
                     {[baselineResult, visualCandidate].map((item) => <CompareViewport
                       key={item.id}
                       item={item}
-                      projectId={projectId}
+                      projectId={participantForCase(item.id)?.project_id ?? projectId}
+                      availability={participantForCase(item.id)?.availability}
                       selectedField={selectedField}
                       onSelectedFieldChange={setSelectedField}
                       fieldVisualizationEnabled={fieldVisualizationEnabled}
@@ -522,6 +671,8 @@ export default function ComparePage() {
                       onLinkedSelectionChange={(sourceId, selectedItem) => setLinkedManifestSelection({ sourceId, item: selectedItem })}
                       manifestAction={manifestAction}
                       onManifestAction={setManifestAction}
+                      savedVisibility={visualVisibility[item.id]}
+                      onVisibilityStateChange={(caseId, visibility) => setVisualVisibility((current) => ({ ...current, [caseId]: visibility }))}
                     />)}
                   </div>
                   <div className="compare-compatibility-note"><AlertCircle size={14} /><span><strong>{t('Numerical difference fields require compatibility checks.')}</strong>{t('Topology, coordinates, field definitions, normalization, and time alignment must match before subtraction. Until then, this view is an evidence-aligned side-by-side comparison.')}</span></div>
@@ -535,7 +686,7 @@ export default function ComparePage() {
                     <div className="compare-file-head"><strong>{t('Artifact')}</strong>{result.cases.map((item) => <strong key={item.id}>{item.name}</strong>)}</div>
                     {artifactMatrix.map((row) => {
                       const comparableCases = result.cases.filter((item) => row.byCase[item.id]?.previewable)
-                      return <div className="compare-file-row" key={row.path}>
+                      return <div className={`compare-file-row ${selectedResultPath === row.path ? 'is-selected' : ''}`} key={row.path}>
                         <div><strong title={row.path}>{row.path.split('/').pop()}</strong><small>{row.category}</small>{comparableCases.length >= 2 && <button type="button" onClick={() => void previewCommonFile(row.path, comparableCases)}>{t('Compare file')}</button>}</div>
                         {result.cases.map((item) => {
                           const artifact = row.byCase[item.id]
@@ -552,7 +703,18 @@ export default function ComparePage() {
                 <section className="compare-diffs">
                   <div className="compare-section-heading"><div><p className="eyebrow">{t('SETUP DELTA')}</p><h2>{t('SimulationParams differences')}</h2></div><span>{t('{count} semantic differences').replace('{count}', String(result.diffs.length))}</span></div>
                   <div className="compare-diff-head"><span>{t('Path')}</span><span>{t('Baseline value')}</span><span>{t('Candidate value')}</span></div>
-                  {result.diffs.map((diff) => <CompareParameterDiffRow diff={diff} key={`${diff.compared_to ?? 'candidate'}-${diff.path}`} />)}
+                  {result.diffs.map((diff) => {
+                    const key = `${diff.compared_to ?? 'candidate'}-${diff.path}`
+                    return <CompareParameterDiffRow
+                      diff={diff}
+                      expansion={parameterExpansions[key] ?? {}}
+                      onExpansionChange={(path, open) => setParameterExpansions((current) => ({
+                        ...current,
+                        [key]: { ...(current[key] ?? {}), [path]: open },
+                      }))}
+                      key={key}
+                    />
+                  })}
                   {!result.diffs.length && <p>{t('No semantic parameter differences found.')}</p>}
                 </section>
               )}
@@ -578,6 +740,18 @@ export default function ComparePage() {
             })}
             onClose={() => setFilePreview(null)}
           />}
+          {saveOpen && (
+            <div className="compare-save-overlay" role="presentation" onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setSaveOpen(false)
+            }}>
+              <section className="compare-save-dialog" role="dialog" aria-modal="true" aria-labelledby="compare-save-title">
+                <div><p className="eyebrow">{t('PERSISTED DECISION CONTEXT')}</p><h2 id="compare-save-title">{t('Save comparison workspace')}</h2></div>
+                <p>{t('Saves a lightweight evidence snapshot, view settings, and future AI analyses. Large result and visualization files remain referenced from their Cases.')}</p>
+                <label>{t('Workspace name')}<input autoFocus value={saveName} maxLength={120} onChange={(event) => setSaveName(event.target.value)} /></label>
+                <div className="compare-save-dialog-actions"><button type="button" onClick={() => setSaveOpen(false)}>{t('Cancel')}</button><button type="button" className="geometry-plan-action" disabled={!saveName.trim() || saveLoading} onClick={() => void saveCompareWorkspace()}>{saveLoading ? <RefreshCw className="spin" size={14} /> : <BookmarkPlus size={14} />}{t('Save workspace')}</button></div>
+              </section>
+            </div>
+          )}
         </main>
       )}
     </div>

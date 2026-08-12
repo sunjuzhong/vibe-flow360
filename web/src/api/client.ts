@@ -806,6 +806,60 @@ export type ComparisonAnalysis = {
   model: string
 }
 
+export type CompareWorkspaceParticipant = {
+  project_id: string
+  project_name_snapshot?: string
+  case_id: string
+  case_name_snapshot: string
+  role: 'baseline' | 'candidate'
+  position: number
+  availability: 'available' | 'deleted' | 'inaccessible' | 'unavailable'
+}
+
+export type CompareWorkspaceAISession = {
+  id: string
+  evidence_revision_id: string
+  question?: string
+  analysis: string
+  provider?: string
+  model?: string
+  created_at: string
+}
+
+export type CompareWorkspaceViewState = {
+  active_view?: 'evidence' | 'visual' | 'files' | 'parameters' | 'sweep'
+  visual_candidate_id?: string
+  selected_field?: string | null
+  field_visualization_enabled?: boolean
+  wireframe?: boolean
+  camera_sync?: { sourceId: string; state: ViewerCameraStateJSON } | null
+  manifest_selection?: { sourceId: string; item: { id: string; name: string; path?: string[] } | null } | null
+  parameter_expansions?: Record<string, Record<string, boolean>>
+  selected_result_path?: string | null
+  visual_visibility?: Record<string, Record<string, boolean>>
+}
+
+export type ViewerCameraStateJSON = {
+  position: [number, number, number]
+  target: [number, number, number]
+  up: [number, number, number]
+  zoom: number
+}
+
+export type CompareWorkspace = {
+  schema_version?: number
+  id: string
+  name: string
+  status: string
+  participants: CompareWorkspaceParticipant[]
+  active_revision_id?: string
+  revisions?: Array<{ id: string; number: number; snapshot: CompareResult; created_at: string }>
+  view_state?: CompareWorkspaceViewState
+  ai_sessions?: CompareWorkspaceAISession[]
+  created_at?: string
+  updated_at: string
+}
+
 export type SweepParameter = {
   name: string
   values: number[]
@@ -1145,6 +1199,23 @@ export const api = {
       language,
       question,
     }),
+  compareWorkspaces: () => json<{ workspaces: CompareWorkspace[] }>('/api/compare-workspaces'),
+  compareWorkspace: (compareId: string) => json<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}`),
+  createCompareWorkspace: (input: {
+    name: string
+    participants: Array<Pick<CompareWorkspaceParticipant, 'project_id' | 'project_name_snapshot' | 'case_id' | 'case_name_snapshot'>>
+    view_state?: CompareWorkspaceViewState
+  }) => mutate<CompareWorkspace>('/api/compare-workspaces', input),
+  updateCompareWorkspaceViewState: (compareId: string, viewState: CompareWorkspaceViewState) =>
+    replace<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/view-state`, { view_state: viewState }),
+  appendCompareWorkspaceAISession: (compareId: string, input: Omit<CompareWorkspaceAISession, 'id' | 'created_at'>) =>
+    mutate<CompareWorkspaceAISession>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/ai-sessions`, input),
+  updateCompareWorkspaceStatus: (compareId: string, status: 'active' | 'archived') =>
+    replace<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/status`, { status }),
+  duplicateCompareWorkspace: (compareId: string, name?: string) =>
+    mutate<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/duplicate`, { name: name ?? '' }),
+  deleteCompareWorkspace: (compareId: string) =>
+    remove<void>(`/api/compare-workspaces/${encodeURIComponent(compareId)}`),
   sweep: (input: {
     baseline_case_id: string
     project_id: string
