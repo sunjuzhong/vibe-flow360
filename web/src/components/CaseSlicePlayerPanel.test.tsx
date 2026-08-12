@@ -81,6 +81,16 @@ describe('CaseSlicePlayerPanel', () => {
     }])
   })
 
+  it('excludes single-frame static snapshots from playback tracks', () => {
+    const bounds = [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]]
+    const frames = [
+      { slice: 'slice_wake', fields: [], manifest_path: 'wake.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'slice_wake_time', step: 100, fields: [], manifest_path: 'wake-100.json', vertices: 1, triangles: 1, bounds },
+      { slice: 'slice_wake_time', step: 200, fields: [], manifest_path: 'wake-200.json', vertices: 1, triangles: 1, bounds },
+    ]
+    expect(slicePlaybackTrackNames(frames)).toEqual(['slice_wake_time'])
+  })
+
   it('aligns tracks by ordinal frame when global steps are unavailable', () => {
     const bounds = [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]]
     const frames = [

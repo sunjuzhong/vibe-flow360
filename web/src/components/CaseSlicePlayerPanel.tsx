@@ -78,7 +78,15 @@ export type SlicePlaybackTimelineEntry = {
 }
 
 export function slicePlaybackTrackNames(frames: SlicePlaybackFrame[], fallbackName = 'Slice') {
-  return [...new Set(frames.map((frame) => frame.slice || fallbackName))].sort((left, right) => left.localeCompare(right))
+  const counts = new Map<string, number>()
+  for (const frame of frames) {
+    const name = frame.slice || fallbackName
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .filter(([, frameCount]) => frameCount > 1)
+    .map(([name]) => name)
+    .sort((left, right) => left.localeCompare(right))
 }
 
 export function slicePlaybackTimeline(
@@ -339,6 +347,7 @@ export default function CaseSlicePlayerPanel({
 
   const running = job?.status === 'queued' || job?.status === 'running'
   const completed = job?.status === 'completed' && job.report?.index_ready
+  const playableSlices = job?.report?.slices.filter((slice) => slice.frame_count > 1) ?? []
 
   if (loading) {
     return <div className="slice-player-state" role="status"><LoaderCircle className="spin" size={18} />{t('Reading time-series player state…')}</div>
@@ -380,20 +389,20 @@ export default function CaseSlicePlayerPanel({
             <span><strong>{t(indexedTitle(archiveKind))}</strong><small>{t('The frame index is cached and can be reused without downloading the archive again.')}</small></span>
           </section>
           <dl className="slice-player-facts">
-            <div><dt>{t('Sequences')}</dt><dd>{job.report.slices.length}</dd></div>
+            <div><dt>{t('Sequences')}</dt><dd>{playableSlices.length}</dd></div>
             <div><dt>{t('Archive entries')}</dt><dd>{job.report.entry_count.toLocaleString()}</dd></div>
             <div><dt>{t('Compressed')}</dt><dd>{formatBytes(job.report.compressed_bytes)}</dd></div>
             <div><dt>{t('Expanded stream')}</dt><dd>{formatBytes(job.report.uncompressed_bytes)}</dd></div>
           </dl>
           <section className="slice-player-slices">
-            {job.report.slices.map((slice) => (
+            {playableSlices.map((slice) => (
               <article key={slice.name}>
                 <span><strong>{slice.name}</strong><small>{slice.fields?.join(', ') || slice.formats.join(', ') || t('Unknown format')}</small></span>
                 <span><strong>{slice.frame_count.toLocaleString()}</strong><small>{t('frames')}</small></span>
                 <span><strong>{slice.first_step ?? '—'} → {slice.last_step ?? '—'}</strong><small>{t('global steps')}</small></span>
               </article>
             ))}
-            {!job.report.slices.length && <div className="slice-player-state">{t('No named time sequence was found in the archive.')}</div>}
+            {!playableSlices.length && <div className="slice-player-state">{t('No named time sequence was found in the archive.')}</div>}
           </section>
           <p className="slice-player-next">{t('Frames are loaded on demand. Global field ranges stay fixed during playback so colors remain comparable over time.')}</p>
         </>
