@@ -960,15 +960,14 @@ export default function ProjectPage() {
               </dl>
             </InspectorDisclosure>
             {draftMode && activeDraft && (
-              <div className="inspector-section">
-                <p className="eyebrow">ACTIVE DRAFT</p>
+              <InspectorDisclosure label="ACTIVE DRAFT">
                 <dl>
                   <div><dt>Name</dt><dd>{activeDraft.name || 'Untitled Draft'}</dd></div>
                   <div><dt>ID</dt><dd className="mono-value"><Flow360IdLink environment={flowStatus?.environment} projectId={projectId} resourceId={activeDraft.id} resourceType="Draft" /></dd></div>
                   <div><dt>Source</dt><dd>{String(activeDraft.source_type || draftDetail?.info?.source_type || 'Project resource')}</dd></div>
                   <div><dt>Status</dt><dd><span className={`status-pill status-${resourceStatus(draftDetail).toLowerCase()}`}>{resourceStatus(draftDetail)}</span></dd></div>
                 </dl>
-              </div>
+              </InspectorDisclosure>
             )}
             <ResourceDetailPanel
               detail={detail}
