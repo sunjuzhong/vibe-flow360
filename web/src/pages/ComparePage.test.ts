@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildArtifactMatrix, CompareParameterValue, parseSweepValues, toggleCaseSelection } from './ComparePage'
+import { buildArtifactMatrix, CompareParameterValue, matchCompareManifestItem, parseSweepValues, toggleCaseSelection } from './ComparePage'
 
 describe('ComparePage URL and sweep helpers', () => {
   it('keeps Case selection order stable for URL restoration', () => {
@@ -40,5 +40,17 @@ describe('ComparePage URL and sweep helpers', () => {
     expect(objectMarkup).toContain('outputs')
     expect(scalarMarkup).toContain('compare-scalar-value')
     expect(scalarMarkup).not.toContain('JSON Preview')
+  })
+
+  it('matches linked manifest items by id, path and normalized name', () => {
+    const groups = [
+      { id: 'candidate-wall', name: 'Cylinder Wall', path: ['Surfaces'], color: '#fff', visible: true },
+      { id: 'candidate-slice', name: 'Mid Span', path: ['Slices'], color: '#fff', visible: true },
+    ]
+
+    expect(matchCompareManifestItem(groups, { id: 'candidate-wall', name: 'renamed' })?.id).toBe('candidate-wall')
+    expect(matchCompareManifestItem(groups, { id: 'baseline-wall', name: 'Cylinder Wall', path: ['Surfaces'] })?.id).toBe('candidate-wall')
+    expect(matchCompareManifestItem(groups, { id: 'baseline-slice', name: 'mid-span' })?.id).toBe('candidate-slice')
+    expect(matchCompareManifestItem(groups, { id: 'missing', name: 'Inlet' })).toBeNull()
   })
 })

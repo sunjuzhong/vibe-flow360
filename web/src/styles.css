@@ -540,9 +540,15 @@ button { color: inherit; }
 .compare-viewport-card header span,.compare-viewport-card header small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compare-viewport-card header span { font-size: 11px; font-weight: 700; }.compare-viewport-card header small { color: #8c9288; font: 8px var(--font-mono); }
 .compare-viewport-card header > strong { color: #69794b; font-size: 8px; text-transform: uppercase; }
+.compare-manifest-picker { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #dfe1da; color: #737a70; background: #fff; font-size: 9px; font-weight: 700; }
+.compare-manifest-picker select { width: 100%; min-width: 0; height: 32px; padding: 0 28px 0 9px; overflow: hidden; border: 1px solid #d8dbd1; border-radius: 7px; color: #343a31; background: #fafbf8; text-overflow: ellipsis; }
 .compare-viewport { position: relative; height: min(440px, 42vw); min-height: 300px; background: #e9ece5; }
 .compare-viewport .viewer-3d-container { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; }
 .compare-viewport .viewer-3d { width: 100%; height: 100%; min-height: 0; }
+.compare-selection-card-wrap { padding: 10px; border-top: 1px solid #dfe1da; background: #f4f6f0; }
+.compare-selection-card-wrap .case-selection-context { margin: 0; }
+.compare-selection-card-wrap .geometry-selection-card { box-shadow: none; }
+.compare-manifest-missing { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border-top: 1px solid #ead8bf; color: #825e2d; background: #fff8eb; font-size: 9px; }
 .compare-compatibility-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid #e3d9b8; border-radius: 8px; color: #76612b; background: #fbf6e8; font-size: 10px; line-height: 1.5; }
 .compare-compatibility-note strong { display: block; }
 .compare-file-matrix { min-width: 0; overflow-x: auto; border: 1px solid #e1e3dc; border-radius: 8px; }

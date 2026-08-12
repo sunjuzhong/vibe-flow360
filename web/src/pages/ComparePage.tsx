@@ -30,9 +30,11 @@ import Flow360IdLink from '../components/Flow360IdLink'
 import JsonPreview from '../components/JsonPreview'
 import { ResultFileComparisonDialog } from '../components/ResultFileComparisonDialog'
 import TopBar from '../components/TopBar'
-import { LazyViewer3D, type ViewerCameraCommand, type ViewerCameraState } from '../components/viewer/LazyViewer3D'
+import { CaseVisualizationSelectionCard } from '../components/CaseVisualizationSelectionCard'
+import { LazyViewer3D, type MeshGroupData, type ViewerCameraCommand, type ViewerCameraState, type ViewerSelection } from '../components/viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useI18n } from '../i18n'
+import type { UVFEntityInfo } from '../lib/uvf-three'
 
 type CompareView = 'evidence' | 'visual' | 'files' | 'parameters' | 'sweep'
 
@@ -80,31 +82,129 @@ export function buildArtifactMatrix(cases: CaseComparison[]) {
   }))
 }
 
-function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange, wireframe, onWireframeChange, cameraCommand, cameraState, onCameraStateChange }: {
+export type CompareManifestItemKey = Pick<MeshGroupData, 'id' | 'name' | 'path'>
+type CompareManifestAction = {
+  nonce: number
+  type: 'isolate' | 'visibility' | 'show-all'
+  item?: CompareManifestItemKey
+  visible?: boolean
+}
+
+function normalizedManifestItemText(value: string) {
+  return value.trim().toLowerCase().replaceAll(/[^a-z0-9]+/g, '')
+}
+
+export function matchCompareManifestItem(groups: MeshGroupData[], selected: CompareManifestItemKey): MeshGroupData | null {
+  const exact = groups.find((group) => group.id === selected.id)
+  if (exact) return exact
+  const selectedPath = [...(selected.path ?? []), selected.name].map(normalizedManifestItemText).join('/')
+  const byPath = groups.find((group) => (
+    [...(group.path ?? []), group.name].map(normalizedManifestItemText).join('/') === selectedPath
+  ))
+  if (byPath) return byPath
+  const normalizedName = normalizedManifestItemText(selected.name)
+  return groups.find((group) => normalizedManifestItemText(group.name) === normalizedName) ?? null
+}
+
+function fieldsForCompareItem(entities: UVFEntityInfo[], item: MeshGroupData | null) {
+  if (!item) return []
+  return entities.find((entity) => entity.id === item.id)?.fields ?? []
+}
+
+function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange, fieldVisualizationEnabled, onFieldVisualizationChange, wireframe, onWireframeChange, cameraCommand, onCameraCommand, cameraState, onCameraStateChange, linkedSelection, onLinkedSelectionChange, manifestAction, onManifestAction }: {
   item: CaseComparison
   projectId: string
   selectedField: string | null
   onSelectedFieldChange: (field: string | null) => void
+  fieldVisualizationEnabled: boolean
+  onFieldVisualizationChange: (enabled: boolean) => void
   wireframe: boolean
   onWireframeChange: (wireframe: boolean) => void
   cameraCommand: ViewerCameraCommand | null
+  onCameraCommand: (command: ViewerCameraCommand) => void
   cameraState: ViewerCameraState | null
   onCameraStateChange: (state: ViewerCameraState) => void
+  linkedSelection: { sourceId: string; item: CompareManifestItemKey | null } | null
+  onLinkedSelectionChange: (sourceId: string, item: CompareManifestItemKey | null) => void
+  manifestAction: CompareManifestAction | null
+  onManifestAction: (action: CompareManifestAction) => void
 }) {
   const { t } = useI18n()
   const { manifest, state, source } = useResourcePreview('Case', item.id)
+  const groups = useMemo(() => manifest?.groups ?? [], [manifest])
+  const [selection, setSelection] = useState<ViewerSelection>({ groupId: null })
+  const [entities, setEntities] = useState<UVFEntityInfo[]>([])
+  const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
+  const selectedItem = groups.find((group) => group.id === selection.groupId) ?? null
+  const selectedFieldNames = fieldsForCompareItem(entities, selectedItem)
+  const selectedVisible = selectedItem ? entityVisibility[selectedItem.id] ?? selectedItem.visible : false
+  const linkedMatchMissing = Boolean(linkedSelection?.item && linkedSelection.sourceId !== item.id && !selectedItem)
+
+  useEffect(() => {
+    setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, group.visible])))
+    setSelection({ groupId: null })
+  }, [manifest?.asset_url])
+
+  useEffect(() => {
+    if (!linkedSelection) return
+    const matched = linkedSelection.item ? matchCompareManifestItem(groups, linkedSelection.item) : null
+    setSelection({ groupId: matched?.id ?? null })
+  }, [groups, linkedSelection])
+
+  useEffect(() => {
+    if (!manifestAction) return
+    if (manifestAction.type === 'show-all') {
+      setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, true])))
+      return
+    }
+    if (!manifestAction.item) return
+    const matched = matchCompareManifestItem(groups, manifestAction.item)
+    if (!matched) return
+    if (manifestAction.type === 'isolate') {
+      setEntityVisibility(Object.fromEntries(groups.map((group) => [group.id, group.id === matched.id])))
+    } else if (manifestAction.type === 'visibility') {
+      setEntityVisibility((current) => ({ ...current, [matched.id]: Boolean(manifestAction.visible) }))
+    }
+  }, [groups, manifestAction])
+
+  const selectItem = (next: MeshGroupData | null) => {
+    setSelection({ groupId: next?.id ?? null })
+    onLinkedSelectionChange(item.id, next)
+  }
+
+  const handleViewerSelection = (next: ViewerSelection) => {
+    const selected = groups.find((group) => group.id === next.groupId) ?? null
+    setSelection(next)
+    onLinkedSelectionChange(item.id, selected)
+  }
+
   return (
     <article className="compare-viewport-card">
       <header>
         <div><span>{item.name}</span><small>{item.id}</small></div>
         <strong>{source === 'fallback' ? t('Context only') : source === 'primary' ? t('Case result asset') : t('Loading')}</strong>
       </header>
+      <label className="compare-manifest-picker">
+        <span>{t('Manifest item')}</span>
+        <select value={selectedItem?.id ?? ''} onChange={(event) => selectItem(groups.find((group) => group.id === event.target.value) ?? null)}>
+          <option value="">{t('Select an item')}</option>
+          {groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}
+        </select>
+      </label>
       <div className="compare-viewport">
         <LazyViewer3D
           manifest={manifest}
           state={state}
-          selectedField={selectedField}
+          selection={selection}
+          onSelectionChange={handleViewerSelection}
+          entityVisibility={entityVisibility}
+          onEntityVisibilityChange={setEntityVisibility}
+          onEntitiesDiscovered={setEntities}
+          selectedField={fieldVisualizationEnabled ? selectedField : null}
           onSelectedFieldChange={onSelectedFieldChange}
+          fieldNames={selectedFieldNames}
+          fieldEntityIds={selectedItem ? [selectedItem.id] : []}
+          showFieldPanel={fieldVisualizationEnabled && selectedFieldNames.length > 0}
           wireframe={wireframe}
           onWireframeChange={onWireframeChange}
           cameraCommand={cameraCommand}
@@ -115,6 +215,26 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
           showEntityLegend={false}
         />
       </div>
+      {linkedMatchMissing && (
+        <div className="compare-manifest-missing" role="status"><AlertCircle size={13} />{t('No matching manifest item in this Case.')}</div>
+      )}
+      {selectedItem && (
+        <div className="compare-selection-card-wrap">
+          <CaseVisualizationSelectionCard
+            item={{ ...selectedItem, typeLabel: selectedItem.entity_type || t('Visualization object'), entityIds: [selectedItem.id] }}
+            visible={selectedVisible}
+            fieldNames={selectedFieldNames}
+            fieldVisualizationEnabled={fieldVisualizationEnabled}
+            activeField={selectedFieldNames.includes(selectedField ?? '') ? selectedField : null}
+            onFocus={() => onCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
+            onIsolate={() => onManifestAction({ type: 'isolate', item: selectedItem, nonce: Date.now() })}
+            onToggleVisibility={() => onManifestAction({ type: 'visibility', item: selectedItem, visible: !selectedVisible, nonce: Date.now() })}
+            onShowAll={() => onManifestAction({ type: 'show-all', nonce: Date.now() })}
+            onClear={() => selectItem(null)}
+            onFieldVisualizationChange={onFieldVisualizationChange}
+          />
+        </div>
+      )}
     </article>
   )
 }
@@ -137,9 +257,12 @@ export default function ComparePage() {
   const [activeView, setActiveView] = useState<CompareView>('evidence')
   const [visualCandidateId, setVisualCandidateId] = useState('')
   const [selectedField, setSelectedField] = useState<string | null>(null)
+  const [fieldVisualizationEnabled, setFieldVisualizationEnabled] = useState(false)
   const [wireframe, setWireframe] = useState(false)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [cameraSync, setCameraSync] = useState<{ sourceId: string; state: ViewerCameraState } | null>(null)
+  const [linkedManifestSelection, setLinkedManifestSelection] = useState<{ sourceId: string; item: CompareManifestItemKey | null } | null>(null)
+  const [manifestAction, setManifestAction] = useState<CompareManifestAction | null>(null)
   const [analysis, setAnalysis] = useState('')
   const [analysisQuestion, setAnalysisQuestion] = useState('')
   const [analysisLoading, setAnalysisLoading] = useState(false)
@@ -182,6 +305,8 @@ export default function ComparePage() {
       setResult(next)
       setVisualCandidateId(next.cases[1]?.id ?? '')
       setCameraSync(null)
+      setLinkedManifestSelection(null)
+      setManifestAction(null)
       setActiveView('evidence')
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
@@ -362,11 +487,21 @@ export default function ComparePage() {
                       projectId={projectId}
                       selectedField={selectedField}
                       onSelectedFieldChange={setSelectedField}
+                      fieldVisualizationEnabled={fieldVisualizationEnabled}
+                      onFieldVisualizationChange={(enabled) => {
+                        setFieldVisualizationEnabled(enabled)
+                        if (!enabled) setSelectedField(null)
+                      }}
                       wireframe={wireframe}
                       onWireframeChange={setWireframe}
                       cameraCommand={cameraCommand}
+                      onCameraCommand={setCameraCommand}
                       cameraState={cameraSync?.sourceId === item.id ? null : cameraSync?.state ?? null}
                       onCameraStateChange={(state) => setCameraSync({ sourceId: item.id, state })}
+                      linkedSelection={linkedManifestSelection}
+                      onLinkedSelectionChange={(sourceId, selectedItem) => setLinkedManifestSelection({ sourceId, item: selectedItem })}
+                      manifestAction={manifestAction}
+                      onManifestAction={setManifestAction}
                     />)}
                   </div>
                   <div className="compare-compatibility-note"><AlertCircle size={14} /><span><strong>{t('Numerical difference fields require compatibility checks.')}</strong>{t('Topology, coordinates, field definitions, normalization, and time alignment must match before subtraction. Until then, this view is an evidence-aligned side-by-side comparison.')}</span></div>

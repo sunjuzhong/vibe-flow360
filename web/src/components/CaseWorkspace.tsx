@@ -14,11 +14,8 @@ import {
   Layers,
   Eye,
   EyeOff,
-  Info,
   Film,
   LoaderCircle,
-  LocateFixed,
-  X,
 } from 'lucide-react'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
@@ -27,6 +24,7 @@ import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
 import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerManifest, type ViewerSelection } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
+import { CaseVisualizationSelectionCard } from './CaseVisualizationSelectionCard'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
@@ -37,7 +35,6 @@ import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
   ResourceReviewLaunchers,
-  ResourceReviewToggle,
 } from './ResourceReviewDialog'
 import { useI18n } from '../i18n'
 import { ResultTablePreview, isTabularResult } from './ResultTablePreview'
@@ -1036,57 +1033,37 @@ export default function CaseWorkspace({
           )}
 
           {selectedVisualizationObject && (
-            <section className="volume-context-panel case-selection-context" aria-label={t('Available actions for this item')}>
-              <section className="geometry-selection-card case-selection-card volume-selection-card">
-                <div className="geometry-section-title"><Info size={13} /> {t('Selection properties')}</div>
-                <dl>
-                  <div><dt>{t('Name')}</dt><dd title={selectedVisualizationObject.name}>{selectedVisualizationObject.name}</dd></div>
-                  <div><dt>{t('Type')}</dt><dd>{selectedVisualizationCategory ? t(caseVisualizationCategoryLabel(selectedVisualizationCategory)) : t('Visualization object')}</dd></div>
-                  <div><dt>{t('Rendered elements')}</dt><dd>{selectedVisualizationObject.triangles?.toLocaleString() ?? t('Not reported')}</dd></div>
-                  <div><dt>{t('Vertices')}</dt><dd>{selectedVisualizationObject.vertices?.toLocaleString() ?? t('Not reported')}</dd></div>
-                  {selectedFieldNames.length > 0 && (
-                    <div><dt>{t('Selected field')}</dt><dd>{fieldVisualizationEnabled ? activeField ?? t('None selected') : t('Disabled')}</dd></div>
-                  )}
-                </dl>
-                {selectedVisualizationObject.entityIds.length > 0 && (
-                  <div className="volume-selection-actions" aria-label={t('Selection actions')}>
-                    <button type="button" onClick={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}><LocateFixed size={12} /> {t('Focus')}</button>
-                    <button type="button" onClick={() => setEntityVisibility((current) => ({
-                      ...current,
-                      ...isolateCaseVisualizationMap(allVisualizationMembers, selectedVisualizationObject.entityIds),
-                    }))}><ScanLine size={12} /> {t('Isolate')}</button>
-                    <button type="button" onClick={() => setEntityVisibility((current) => ({
-                      ...current,
-                      ...Object.fromEntries(selectedVisualizationObject.entityIds.map((id) => [id, !selectedVisualizationVisible])),
-                    }))}>
-                      {selectedVisualizationVisible ? <EyeOff size={12} /> : <Eye size={12} />}
-                      {selectedVisualizationVisible ? t('Hide') : t('Show')}
-                    </button>
-                    <button type="button" onClick={() => setEntityVisibility((current) => ({
-                      ...current,
-                      ...caseSurfaceVisibilityMap(allVisualizationMembers, true),
-                    }))}><Eye size={12} /> {t('Show all')}</button>
-                    <button type="button" onClick={() => {
-                      setSelectedVisualizationId(null)
-                      setViewerSelection({ groupId: null })
-                    }}><X size={12} /> {t('Clear selection')}</button>
-                  </div>
-                )}
-              </section>
-              {selectedFieldNames.length > 0 && (
-                <ResourceReviewLaunchers>
-                  <ResourceReviewToggle
-                    label={t('Field visualization')}
-                    summary={t('{count} fields available').replace('{count}', String(selectedFieldNames.length))}
-                    checked={fieldVisualizationEnabled}
-                    onChange={(checked) => {
-                      setFieldVisualizationEnabled(checked)
-                      if (!checked) setActiveField(null)
-                    }}
-                  />
-                </ResourceReviewLaunchers>
-              )}
-            </section>
+            <CaseVisualizationSelectionCard
+              item={{
+                ...selectedVisualizationObject,
+                typeLabel: selectedVisualizationCategory ? t(caseVisualizationCategoryLabel(selectedVisualizationCategory)) : t('Visualization object'),
+              }}
+              visible={selectedVisualizationVisible}
+              fieldNames={selectedFieldNames}
+              fieldVisualizationEnabled={fieldVisualizationEnabled}
+              activeField={activeField}
+              onFocus={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
+              onIsolate={() => setEntityVisibility((current) => ({
+                ...current,
+                ...isolateCaseVisualizationMap(allVisualizationMembers, selectedVisualizationObject.entityIds),
+              }))}
+              onToggleVisibility={() => setEntityVisibility((current) => ({
+                ...current,
+                ...Object.fromEntries(selectedVisualizationObject.entityIds.map((id) => [id, !selectedVisualizationVisible])),
+              }))}
+              onShowAll={() => setEntityVisibility((current) => ({
+                ...current,
+                ...caseSurfaceVisibilityMap(allVisualizationMembers, true),
+              }))}
+              onClear={() => {
+                setSelectedVisualizationId(null)
+                setViewerSelection({ groupId: null })
+              }}
+              onFieldVisualizationChange={(checked) => {
+                setFieldVisualizationEnabled(checked)
+                if (!checked) setActiveField(null)
+              }}
+            />
           )}
 
           <ResourceReviewLaunchers>
