@@ -193,6 +193,48 @@ func (s *Server) refreshCompareWorkspaceEvidence(c *gin.Context) {
 	c.JSON(http.StatusCreated, workspace)
 }
 
+func (s *Server) replaceCompareWorkspaceParticipants(c *gin.Context) {
+	if s.compareWorkspaces == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "compare workspace storage is unavailable"})
+		return
+	}
+	var req struct {
+		Participants []compareworkspace.Participant `json:"participants"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	caseIDs := make([]string, len(req.Participants))
+	for index, participant := range req.Participants {
+		caseIDs[index] = participant.CaseID
+	}
+	if len(caseIDs) < 2 || len(caseIDs) > 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "select between 2 and 6 Cases"})
+		return
+	}
+	snapshot, err := s.buildCaseComparison(c.Request.Context(), compareRequest{CaseIDs: caseIDs, Baseline: caseIDs[0]})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "comparison membership could not be updated; existing evidence was preserved: " + err.Error()})
+		return
+	}
+	for index := range req.Participants {
+		if index < len(snapshot.Cases) {
+			req.Participants[index].CaseNameSnapshot = snapshot.Cases[index].Name
+		}
+	}
+	workspace, err := s.compareWorkspaces.ReplaceParticipants(c.Param("compare_id"), req.Participants, snapshot)
+	if errors.Is(err, compareworkspace.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, workspace)
+}
+
 func (s *Server) analyzeCompareWorkspaceRevision(c *gin.Context) {
 	if s.compareWorkspaces == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "compare workspace storage is unavailable"})
@@ -232,7 +274,13 @@ func (s *Server) analyzeCompareWorkspaceRevision(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "comparison evidence revision does not exist"})
 		return
 	}
-	response, status, err := s.generateComparisonAnalysis(c.Request.Context(), snapshotRevision.Snapshot, req.Language, req.Question)
+	history := make([]compareworkspace.AISession, 0)
+	for _, session := range workspace.AISessions {
+		if session.EvidenceRevisionID == revisionID {
+			history = append(history, session)
+		}
+	}
+	response, status, err := s.generateComparisonAnalysis(c.Request.Context(), snapshotRevision.Snapshot, req.Language, req.Question, history)
 	if err != nil {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return

@@ -124,3 +124,18 @@ func TestWorkspaceAddsImmutableEvidenceRevision(t *testing.T) {
 		t.Fatalf("prior evidence was overwritten: %+v", updated.Revisions)
 	}
 }
+
+func TestWorkspaceReplacesParticipantsWithoutChangingOldRevision(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	created, err := store.Create(CreateInput{Name: "Members", Participants: []Participant{{ProjectID: "p1", CaseID: "a"}, {ProjectID: "p1", CaseID: "b"}}, Snapshot: comparison.CompareResult{Cases: []comparison.CaseComparison{{ID: "a"}, {ID: "b"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.ReplaceParticipants(created.ID, []Participant{{ProjectID: "p2", CaseID: "c"}, {ProjectID: "p1", CaseID: "a"}}, comparison.CompareResult{Cases: []comparison.CaseComparison{{ID: "c"}, {ID: "a"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Participants[0].CaseID != "c" || updated.Revisions[0].Participants[0].CaseID != "a" || updated.Revisions[1].Participants[0].CaseID != "c" {
+		t.Fatalf("participant history was not preserved: %+v", updated.Revisions)
+	}
+}
