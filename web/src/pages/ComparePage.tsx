@@ -390,7 +390,7 @@ export default function ComparePage() {
     { id: 'visual', label: t('Visual compare'), icon: Box },
     { id: 'files', label: t('Result files'), icon: FileOutput, count: artifactMatrix.length },
     { id: 'parameters', label: t('Parameters'), icon: TableProperties, count: result?.diffs.length },
-    { id: 'sweep', label: t('Sweep'), icon: SlidersHorizontal },
+    { id: 'sweep', label: t('Parameter Sweep'), icon: SlidersHorizontal },
   ]
 
   return (
@@ -559,11 +559,11 @@ export default function ComparePage() {
 
               {activeView === 'sweep' && baseline && (
                 <section className="sweep-builder">
-                  <div><p className="eyebrow">{t('REVIEWED VARIATIONS')}</p><h2>{t('Parameter Sweep')}</h2><p>{t('Creates review revisions for each Draft. Every revision still requires individual approval before Flow360 execution.')}</p></div>
+                  <div><p className="eyebrow">{t('SWEEP VARIATIONS')}</p><h2>{t('Parameter Sweep')}</h2><p>{t('Builds one reviewable Draft for each parameter combination. No Case is executed until its Draft is individually approved.')}</p></div>
                   <label>{t('SimulationParams path')}<input value={parameterName} onChange={(event) => setParameterName(event.target.value)} /></label>
                   <label>{t('Values, comma separated')}<input value={parameterValues} onChange={(event) => setParameterValues(event.target.value)} /></label>
                   <button onClick={() => previewSweep(false)} disabled={!parameterName.trim() || !values.length || sweepLoading}>{sweepLoading ? <RefreshCw size={14} className="spin" /> : <BarChart3 size={14} />} {t('Preview sweep')}</button>
-                  {sweep && <div className={`sweep-review ${sweep.plan.over_budget ? 'blocked' : ''}`}><strong>{t('{count} Draft reviews').replace('{count}', String(sweep.plan.total_cases))}</strong><span>{t('Recommended maximum: {count}').replace('{count}', String(sweep.plan.max_recommended))}</span>{(sweep.warnings ?? []).map((warning) => <p key={warning}><AlertCircle size={13} />{warning}</p>)}{(sweep.plans ?? []).length > 0 && <p><CheckCircle2 size={14} /> {t('{count} idempotent Draft reviews created.').replace('{count}', String((sweep.plans ?? []).length))}</p>}{!sweep.plan.over_budget && (sweep.plans ?? []).length === 0 && <><label className="sweep-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />{t('I confirm the combination count and want to create Draft reviews.')}</label><button className="geometry-plan-action" disabled={!confirmed || sweepLoading} onClick={() => previewSweep(true)}><GitPullRequestDraft size={14} /> {t('Create Draft reviews')}</button></>}</div>}
+                  {sweep && <div className={`sweep-review ${sweep.plan.over_budget ? 'blocked' : ''}`}><strong>{t('{count} Sweep Drafts').replace('{count}', String(sweep.plan.total_cases))}</strong><span>{t('Recommended maximum: {count}').replace('{count}', String(sweep.plan.max_recommended))}</span>{(sweep.warnings ?? []).map((warning) => <p key={warning}><AlertCircle size={13} />{warning}</p>)}{(sweep.plans ?? []).length > 0 && <p><CheckCircle2 size={14} /> {t('{count} idempotent Sweep Drafts created.').replace('{count}', String((sweep.plans ?? []).length))}</p>}{!sweep.plan.over_budget && (sweep.plans ?? []).length === 0 && <><label className="sweep-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />{t('I confirm the combination count and want to create Sweep Drafts.')}</label><button className="geometry-plan-action" disabled={!confirmed || sweepLoading} onClick={() => previewSweep(true)}><GitPullRequestDraft size={14} /> {t('Create Sweep Drafts')}</button></>}</div>}
                 </section>
               )}
             </>
