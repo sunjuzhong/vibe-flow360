@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DynamicFormSchema } from '../api/client'
-import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAutoSyncReady, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
+import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAutoSyncReady, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -88,6 +88,14 @@ describe('Draft parameter editor', () => {
     const candidate = null
 
     expect(draftAIAssistPatch(baseline, candidate)).toEqual({})
+  })
+
+  it('applies an AI proposal on top of the current unsaved candidate', () => {
+    expect(applyDraftAIProposal(
+      { operating_condition: { alpha: 0, beta: 0 } },
+      { operating_condition: { alpha: 5, beta: 0 } },
+      { operating_condition: { beta: 2 } },
+    )).toEqual({ operating_condition: { alpha: 5, beta: 2 } })
   })
 
   it('auto-syncs only the latest validated candidate and stops retrying a failed revision', () => {

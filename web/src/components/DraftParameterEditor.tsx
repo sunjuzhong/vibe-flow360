@@ -1,9 +1,10 @@
-import { AlertCircle, ArrowRight, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRight, Code2, Eye, ListTree, Play, RefreshCw, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
 import JsonPreview from './JsonPreview'
+import DraftAISession, { type DraftAISessionMessage } from './DraftAISession'
 import { applyJSONMergePatch, diffParameterValues } from './PlanParameterReview'
 import { hydrateSchemaValue, SchemaFormFields, serializeValue, type ExpressionValidator } from './SchemaForm'
 
@@ -39,7 +40,9 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [validatedFingerprint, setValidatedFingerprint] = useState('')
   const [aiPrompt, setAIPrompt] = useState('')
   const [aiLoading, setAILoading] = useState(false)
-  const [aiMessage, setAIMessage] = useState('')
+  const [aiOpen, setAIOpen] = useState(false)
+  const [aiMessages, setAIMessages] = useState<DraftAISessionMessage[]>([])
+  const aiMessageIDRef = useRef(0)
   const latestFingerprintRef = useRef('')
   const currentDraftIdRef = useRef(draftId)
   const onSavedRef = useRef(onSaved)
@@ -52,8 +55,10 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setFailedSyncFingerprint('')
     setSaving(false)
     setAILoading(false)
+    setAIOpen(false)
     setAIPrompt('')
-    setAIMessage('')
+    setAIMessages([])
+    aiMessageIDRef.current = 0
   }, [draftId])
 
   useEffect(() => {
@@ -174,6 +179,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setJSONValue(JSON.stringify(next, null, 2))
     setPreviewValue(next)
     if (schema) setFormValue(hydrateSchemaValue(schema, next, true))
+    setError('')
     setDirty(true)
     setSyncError('')
     setFailedSyncFingerprint('')
@@ -184,9 +190,12 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const fillWithAI = async () => {
     if (!project || !resource || !aiPrompt.trim() || aiLoading) return
     const requestDraftId = draftId
+    const prompt = aiPrompt.trim()
+    const candidate = candidateResult.value ?? baseline
+    const userMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
+    setAIMessages((current) => [...current, { id: userMessageID, role: 'user', content: prompt }])
+    setAIPrompt('')
     setAILoading(true)
-    setAIMessage('')
-    setError('')
     try {
       const response = await api.assistPlanForm({
         project_id: project.id,
@@ -196,18 +205,27 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         source_name: resource.name,
         draft_id: draftId,
         target: 'case',
-        intent: aiPrompt.trim(),
-        prompt: aiPrompt.trim(),
-        patch: draftAIAssistPatch(baseline, candidateResult.value),
+        intent: prompt,
+        prompt,
+        patch: draftAIAssistPatch(baseline, candidate),
         autonomous: true,
       })
       if (currentDraftIdRef.current !== requestDraftId) return
       if (!response.proposal) throw new Error(response.action.message || t('AI did not return parameter changes.'))
-      applyCandidate(applyJSONMergePatch(baseline, response.proposal.patch))
-      setAIMessage(response.action.message)
+      const next = applyDraftAIProposal(baseline, candidate, response.proposal.patch)
+      const aiChanges = diffParameterValues(candidate, next)
+      const assistantMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
+      applyCandidate(next)
+      setAIMessages((current) => [...current, {
+        id: assistantMessageID,
+        role: 'assistant',
+        content: response.action.message,
+        changes: aiChanges,
+      }])
     } catch (cause) {
       if (currentDraftIdRef.current !== requestDraftId) return
-      setError(cleanError(cause))
+      const errorMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
+      setAIMessages((current) => [...current, { id: errorMessageID, role: 'error', content: cleanError(cause) }])
     } finally {
       if (currentDraftIdRef.current === requestDraftId) setAILoading(false)
     }
@@ -307,21 +325,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   }
 
   return (
-    <div className="draft-parameter-editor">
-      {project && resource && (
-        <section className="draft-ai-config">
-          <div><Sparkles size={15} /><span><strong>{t('Change this Draft with AI')}</strong><small>{t('Describe the engineering change. AI updates the same unsaved candidate shown in the form and JSON editor.')}</small></span></div>
-          <div>
-            <textarea value={aiPrompt} onChange={(event) => setAIPrompt(event.target.value)} placeholder={t('For example: change angle of attack to 5° and keep the current solver settings.')} />
-            <button type="button" onClick={() => void fillWithAI()} disabled={aiLoading || !aiPrompt.trim()}>
-              {aiLoading ? <RefreshCw size={13} className="spin" /> : <Sparkles size={13} />}
-              {aiLoading ? t('Preparing changes…') : t('Apply AI changes')}
-            </button>
-          </div>
-          {aiMessage && <small className="draft-ai-config-result"><CheckCircle2 size={13} />{aiMessage}</small>}
-        </section>
-      )}
-
+    <div className={`draft-config-workspace${aiOpen ? ' ai-open' : ''}`}>
+      <div className="draft-parameter-editor">
       <div className="draft-parameter-toolbar">
         <div className="draft-editor-modes" role="tablist" aria-label={t('Draft parameter editor mode')}>
           <button type="button" role="tab" aria-selected={mode === 'form'} className={mode === 'form' ? 'active' : ''} disabled={!schema} onClick={() => selectMode('form')}>
@@ -334,9 +339,17 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             <Eye size={13} /> {t('Preview')}
           </button>
         </div>
-        <span className={`draft-unsaved-state ${syncError ? 'error' : saving ? 'syncing' : dirty ? 'dirty' : 'saved'}`}>
-          {syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}
-        </span>
+        <div className="draft-parameter-toolbar-actions">
+          <span className={`draft-unsaved-state ${syncError ? 'error' : saving ? 'syncing' : dirty ? 'dirty' : 'saved'}`}>
+            {syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}
+          </span>
+          {project && resource && <label className={`draft-ai-toggle${aiOpen ? ' active' : ''}`}>
+            <input type="checkbox" checked={aiOpen} onChange={(event) => setAIOpen(event.target.checked)} aria-label={t(aiOpen ? 'Close AI Draft session' : 'Open AI Draft session')} />
+            <span aria-hidden="true"><i /></span>
+            <Sparkles size={13} />
+            {t('AI modification')}
+          </label>}
+        </div>
       </div>
 
       {error && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{error}</div>}
@@ -423,6 +436,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           <button type="button" className="draft-review-run" disabled={!reviewRunReady} title={reviewRunStatus} onClick={onReviewRun}><Play size={13} />{t('Run this Draft')}</button>
         )}
       </footer>
+      </div>
+      {project && resource && aiOpen && <DraftAISession
+        messages={aiMessages}
+        prompt={aiPrompt}
+        loading={aiLoading}
+        onPromptChange={setAIPrompt}
+        onSubmit={() => void fillWithAI()}
+        onClose={() => setAIOpen(false)}
+      />}
     </div>
   )
 }
@@ -581,6 +603,14 @@ export function draftAIAssistPatch(
   candidate: Record<string, unknown> | null,
 ) {
   return createJSONMergePatch(baseline, candidate ?? baseline)
+}
+
+export function applyDraftAIProposal(
+  baseline: Record<string, unknown>,
+  candidate: Record<string, unknown> | null,
+  proposalPatch: Record<string, unknown>,
+) {
+  return applyJSONMergePatch(candidate ?? baseline, proposalPatch)
 }
 
 function compactValue(value: unknown) {
