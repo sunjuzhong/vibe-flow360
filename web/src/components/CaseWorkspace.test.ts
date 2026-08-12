@@ -139,6 +139,7 @@ describe('Case archive layers', () => {
     }
     const frame = {
       slice: 'Cylinder_surface', fields: ['Cp'],
+      field_ranges: { Cp: [-1, 1] as [number, number] },
       manifest_path: 'surface.manifest.json', preview_manifest_path: 'surface.preview.manifest.json',
       vertices: 100, triangles: 80, preview_vertices: 50, preview_triangles: 40,
       bounds: [[-1, -2, 0], [3, 2, 1]] as [[number, number, number], [number, number, number]],

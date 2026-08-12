@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -23,6 +23,7 @@ describe('CaseSlicePlayerPanel', () => {
     const frame = {
       slice: 'slice_Wake',
       fields: ['Mach'],
+      field_ranges: { Mach: [0, 3] as [number, number] },
       manifest_path: 'frame.manifest.json',
       preview_manifest_path: 'frame.preview.manifest.json',
       vertices: 100_000,
@@ -57,6 +58,7 @@ describe('CaseSlicePlayerPanel', () => {
     expect(sliceFrameAssetURL('case/1', 'job 1', {
       slice: 'slice_Wake',
       fields: [],
+      field_ranges: {},
       manifest_path: 'slice frame/1.manifest.json',
       vertices: 1,
       triangles: 1,
@@ -99,5 +101,21 @@ describe('CaseSlicePlayerPanel', () => {
       { slice: 'b', fields: [], manifest_path: 'b-0.json', vertices: 1, triangles: 1, bounds },
     ]
     expect(slicePlaybackTimeline(frames, ['a', 'b'])).toEqual([{ step: undefined, frames: [frames[0], frames[2]] }])
+  })
+
+  it('uses one stable field range across every frame of only the selected slices', () => {
+    const bounds = [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]]
+    const frame = (slice: string, path: string, range: [number, number]) => ({
+      slice, fields: ['Mach'], field_ranges: { Mach: range }, manifest_path: path,
+      vertices: 1, triangles: 1, bounds,
+    })
+    const frames = [
+      frame('a', 'a-0.json', [0, 1]),
+      frame('a', 'a-1.json', [0.2, 2]),
+      frame('b', 'b-0.json', [-3, 0.5]),
+      frame('unselected', 'c-0.json', [-100, 100]),
+    ]
+    expect(selectedSliceFieldRange(frames, ['a', 'b'], 'Mach')).toEqual([-3, 2])
+    expect(selectedSliceFieldRange(frames, ['a'], 'Mach')).toEqual([0, 2])
   })
 })
