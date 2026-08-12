@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, Eye, EyeOff, Search, Volume2 } from 'lucide-react'
+import { Eye, EyeOff, Search, Volume2 } from 'lucide-react'
 import type { VolumeZoneRow, VolumeZoneType } from '../../lib/volumeMeshReview'
 import { useI18n } from '../../i18n'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
@@ -103,20 +103,10 @@ export function VolumeZoneInspector({
                     >
                       <button
                         type="button"
-                        className="volume-zone-selection-toggle"
-                        aria-pressed={selected}
-                        aria-label={t(selected ? 'Remove {name} from selection' : 'Add {name} to selection').replace('{name}', zone.name)}
-                        title={t(selected ? 'Remove from selection' : 'Add to selection')}
-                        onClick={() => onSelect(zone.id, true)}
-                      >
-                        {selected && <Check size={11} aria-hidden="true" />}
-                      </button>
-                      <button
-                        type="button"
                         className="volume-zone-select"
                         aria-pressed={selected}
                         title={zone.name}
-                        onClick={() => onSelect(zone.id, false)}
+                        onClick={(event) => onSelect(zone.id, event.shiftKey)}
                       >
                         <span className="viewer-color-swatch" style={{ background: zone.color }} />
                         <strong>{zone.name}</strong>

@@ -15,7 +15,7 @@ import {
 import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerSelection } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
@@ -91,6 +91,21 @@ function isReportedMetric(value: unknown): boolean {
 
 export function computeReadiness(detail: ResourceDetail | null) {
   return computeVolumeReadiness({ detail })
+}
+
+export function nextVolumeSelection(
+  selection: ViewerSelection,
+  groupId: string,
+  additive: boolean,
+): ViewerSelection {
+  if (!additive) return { groupId, groupIds: [groupId] }
+  const current = selection.groupIds?.length
+    ? selection.groupIds
+    : selection.groupId ? [selection.groupId] : []
+  const groupIds = current.includes(groupId)
+    ? current.filter((id) => id !== groupId)
+    : [...current, groupId]
+  return { groupId: groupIds.at(-1) ?? null, groupIds }
 }
 
 export default function VolumeMeshWorkspace({
@@ -222,13 +237,7 @@ export default function VolumeMeshWorkspace({
       review.setSelection({ groupId: null })
       return
     }
-    const current = review.selection.groupIds?.length
-      ? review.selection.groupIds
-      : review.selection.groupId ? [review.selection.groupId] : []
-    const groupIds = additive
-      ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
-      : [groupId]
-    review.setSelection({ groupId: groupIds.at(-1) ?? null, groupIds })
+    review.setSelection(nextVolumeSelection(review.selection, groupId, additive))
     review.setMode('overview')
   }
   const activateContextReview = (mode: 'quality' | 'boundary-layer' | 'refinements') => {

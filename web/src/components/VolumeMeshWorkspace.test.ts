@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { computeReadiness } from './VolumeMeshWorkspace'
+import { computeReadiness, nextVolumeSelection } from './VolumeMeshWorkspace'
 
 function buildDetail(status: string, summary?: Record<string, unknown>, errors?: Record<string, unknown>): ResourceDetail {
   return {
@@ -65,5 +65,20 @@ describe('computeReadiness', () => {
     const cellCheck = checks.find((c) => c.label.includes('Cell count'))
     expect(cellCheck?.status).toBe('ready')
     expect(cellCheck?.hint).toContain('42')
+  })
+})
+
+describe('nextVolumeSelection', () => {
+  it('switches to a single item on a normal click', () => {
+    expect(nextVolumeSelection({ groupId: 'a', groupIds: ['a', 'b'] }, 'c', false)).toEqual({
+      groupId: 'c',
+      groupIds: ['c'],
+    })
+  })
+
+  it('adds and removes items on Shift-click', () => {
+    const added = nextVolumeSelection({ groupId: 'a', groupIds: ['a'] }, 'b', true)
+    expect(added).toEqual({ groupId: 'b', groupIds: ['a', 'b'] })
+    expect(nextVolumeSelection(added, 'a', true)).toEqual({ groupId: 'b', groupIds: ['b'] })
   })
 })

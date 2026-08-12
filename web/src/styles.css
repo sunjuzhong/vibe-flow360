@@ -5926,7 +5926,7 @@ button { color: inherit; }
 .volume-zone-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) 30px;
   align-items: center;
   overflow: hidden;
   border-radius: 6px;
@@ -5946,7 +5946,6 @@ button { color: inherit; }
   text-align: left;
   cursor: pointer;
 }
-.volume-zone-selection-toggle,
 .volume-zone-visibility-toggle {
   display: grid;
   place-items: center;
@@ -5955,25 +5954,11 @@ button { color: inherit; }
   background: transparent;
   cursor: pointer;
 }
-.volume-zone-selection-toggle {
-  width: 16px;
-  height: 16px;
-  margin-left: 6px;
-  border: 1px solid #aeb8a6;
-  border-radius: 4px;
-}
-.volume-zone-selection-toggle[aria-pressed='true'] {
-  border-color: #76931f;
-  color: #fff;
-  background: #76931f;
-}
 .volume-zone-visibility-toggle {
   width: 28px;
   height: 30px;
   border-radius: 5px;
 }
-.volume-zone-selection-toggle:hover,
-.volume-zone-selection-toggle:focus-visible,
 .volume-zone-visibility-toggle:hover,
 .volume-zone-visibility-toggle:focus-visible { background-color: rgba(118, 147, 31, .12); }
 .volume-zone-select .viewer-color-swatch { grid-row: 1 / 4; align-self: center; }

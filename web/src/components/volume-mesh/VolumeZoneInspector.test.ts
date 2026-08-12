@@ -45,8 +45,7 @@ describe('VolumeZoneInspector filters', () => {
 
     expect(html).toContain('title="Main Fluid"')
     expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('aria-label="Remove Main Fluid from selection"')
-    expect(html).toContain('aria-label="Add Rotor to selection"')
+    expect(html).not.toContain('volume-zone-selection-toggle')
     expect(html).toContain('aria-label="Hide Main Fluid"')
     expect(html).toContain('Expand Volume Mesh')
     expect(html).toContain('Expand Slices')
