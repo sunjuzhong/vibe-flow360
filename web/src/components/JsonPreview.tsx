@@ -5,6 +5,8 @@ type Props = {
   value: unknown
   empty?: string
   className?: string
+  expansion?: Readonly<Record<string, boolean>>
+  onExpansionChange?: (path: string, open: boolean) => void
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -32,12 +34,24 @@ function collectionSummary(value: unknown[] | Record<string, unknown>) {
   return `${count} ${noun}`
 }
 
-function JsonNode({ value, name, depth }: { value: unknown; name?: string; depth: number }) {
+function jsonChildPath(parent: string, key: string) {
+  return `${parent}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`
+}
+
+function JsonNode({ value, name, depth, path, expansion, onExpansionChange }: {
+  value: unknown
+  name?: string
+  depth: number
+  path: string
+  expansion?: Readonly<Record<string, boolean>>
+  onExpansionChange?: (path: string, open: boolean) => void
+}) {
   const collection = Array.isArray(value) || isRecord(value)
   const entries: Array<[string, unknown]> = Array.isArray(value)
     ? value.map((child, index) => [String(index), child])
     : isRecord(value) ? Object.entries(value) : []
-  const [open, setOpen] = useState(depth < 2)
+  const [localOpen, setLocalOpen] = useState(depth < 2)
+  const open = expansion?.[path] ?? localOpen
 
   if (!collection) {
     return (
@@ -50,7 +64,11 @@ function JsonNode({ value, name, depth }: { value: unknown; name?: string; depth
 
   return (
     <div className={`json-preview-node depth-${Math.min(depth, 4)}`}>
-      <button type="button" className="json-preview-summary" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="json-preview-summary" aria-expanded={open} onClick={() => {
+        const next = !open
+        setLocalOpen(next)
+        onExpansionChange?.(path, next)
+      }}>
         <ChevronRight size={13} className={open ? 'open' : ''} />
         {name !== undefined && <span className="json-preview-key">{name}</span>}
         <span className="json-preview-bracket">{Array.isArray(value) ? '[' : '{'}</span>
@@ -59,7 +77,17 @@ function JsonNode({ value, name, depth }: { value: unknown; name?: string; depth
       </button>
       {open && entries.length > 0 && (
         <div className="json-preview-children">
-          {entries.map(([key, child]) => <JsonNode key={key} name={key} value={child} depth={depth + 1} />)}
+          {entries.map(([key, child]) => (
+            <JsonNode
+              key={key}
+              name={key}
+              value={child}
+              depth={depth + 1}
+              path={jsonChildPath(path, key)}
+              expansion={expansion}
+              onExpansionChange={onExpansionChange}
+            />
+          ))}
         </div>
       )}
       {open && entries.length === 0 && <div className="json-preview-empty">Empty {valueKind(value)}</div>}
@@ -67,7 +95,7 @@ function JsonNode({ value, name, depth }: { value: unknown; name?: string; depth
   )
 }
 
-export default function JsonPreview({ value, empty = 'No JSON data.', className = '' }: Props) {
+export default function JsonPreview({ value, empty = 'No JSON data.', className = '', expansion, onExpansionChange }: Props) {
   const [copied, setCopied] = useState(false)
   const emptyValue = value === null || value === undefined
     || (Array.isArray(value) && value.length === 0)
@@ -87,7 +115,9 @@ export default function JsonPreview({ value, empty = 'No JSON data.', className 
         <span>JSON Preview</span>
         <button type="button" onClick={() => void copy()}>{copied ? <Check size={13} /> : <Clipboard size={13} />}{copied ? 'Copied' : 'Copy JSON'}</button>
       </div>
-      <div className="json-preview-tree"><JsonNode value={value} depth={0} /></div>
+      <div className="json-preview-tree">
+        <JsonNode value={value} depth={0} path="$" expansion={expansion} onExpansionChange={onExpansionChange} />
+      </div>
     </div>
   )
 }

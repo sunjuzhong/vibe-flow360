@@ -45,11 +45,31 @@ function valueText(value: unknown) {
   return String(value)
 }
 
-export function CompareParameterValue({ value }: { value: unknown }) {
+type JsonExpansionState = Record<string, boolean>
+
+export function CompareParameterValue({ value, expansion, onExpansionChange }: {
+  value: unknown
+  expansion?: Readonly<JsonExpansionState>
+  onExpansionChange?: (path: string, open: boolean) => void
+}) {
   if (value !== null && typeof value === 'object') {
-    return <JsonPreview value={value} className="compare-json-preview" />
+    return <JsonPreview value={value} className="compare-json-preview" expansion={expansion} onExpansionChange={onExpansionChange} />
   }
   return <span className="compare-scalar-value">{valueText(value)}</span>
+}
+
+function CompareParameterDiffRow({ diff }: { diff: CompareResult['diffs'][number] }) {
+  const [expansion, setExpansion] = useState<JsonExpansionState>({})
+  const setPathExpansion = (path: string, open: boolean) => {
+    setExpansion((current) => ({ ...current, [path]: open }))
+  }
+  return (
+    <div className="compare-diff-row">
+      <code>{diff.path}<small>{diff.compared_to}</small></code>
+      <div className="compare-diff-value"><CompareParameterValue value={diff.baseline} expansion={expansion} onExpansionChange={setPathExpansion} /></div>
+      <div className="compare-diff-value"><CompareParameterValue value={diff.other} expansion={expansion} onExpansionChange={setPathExpansion} /></div>
+    </div>
+  )
 }
 
 function formatBytes(value?: number) {
@@ -532,7 +552,7 @@ export default function ComparePage() {
                 <section className="compare-diffs">
                   <div className="compare-section-heading"><div><p className="eyebrow">{t('SETUP DELTA')}</p><h2>{t('SimulationParams differences')}</h2></div><span>{t('{count} semantic differences').replace('{count}', String(result.diffs.length))}</span></div>
                   <div className="compare-diff-head"><span>{t('Path')}</span><span>{t('Baseline value')}</span><span>{t('Candidate value')}</span></div>
-                  {result.diffs.map((diff) => <div className="compare-diff-row" key={`${diff.compared_to ?? 'candidate'}-${diff.path}`}><code>{diff.path}<small>{diff.compared_to}</small></code><div className="compare-diff-value"><CompareParameterValue value={diff.baseline} /></div><div className="compare-diff-value"><CompareParameterValue value={diff.other} /></div></div>)}
+                  {result.diffs.map((diff) => <CompareParameterDiffRow diff={diff} key={`${diff.compared_to ?? 'candidate'}-${diff.path}`} />)}
                   {!result.diffs.length && <p>{t('No semantic parameter differences found.')}</p>}
                 </section>
               )}
