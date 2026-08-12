@@ -28,6 +28,7 @@ import {
 } from '../api/client'
 import Flow360IdLink from '../components/Flow360IdLink'
 import JsonPreview from '../components/JsonPreview'
+import { ResultFileComparisonDialog } from '../components/ResultFileComparisonDialog'
 import TopBar from '../components/TopBar'
 import { LazyViewer3D, type ViewerCameraCommand, type ViewerCameraState } from '../components/viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
@@ -143,7 +144,7 @@ export default function ComparePage() {
   const [analysisQuestion, setAnalysisQuestion] = useState('')
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisError, setAnalysisError] = useState('')
-  const [filePreview, setFilePreview] = useState<{ path: string; contents: Record<string, string>; loading: boolean; error?: string } | null>(null)
+  const [filePreview, setFilePreview] = useState<{ path: string; caseIds: string[]; contents: Record<string, string>; loading: boolean; error?: string } | null>(null)
   const [parameterName, setParameterName] = useState('operating_condition.alpha.value')
   const [parameterValues, setParameterValues] = useState('0, 5, 10')
   const [sweep, setSweep] = useState<SweepResult | null>(null)
@@ -203,12 +204,13 @@ export default function ComparePage() {
   }
 
   const previewCommonFile = async (path: string, compareCases: CaseComparison[]) => {
-    setFilePreview({ path, contents: {}, loading: true })
+    const caseIds = compareCases.map((item) => item.id)
+    setFilePreview({ path, caseIds, contents: {}, loading: true })
     try {
       const entries = await Promise.all(compareCases.map(async (item) => [item.id, await api.previewResult('Case', item.id, path)] as const))
-      setFilePreview({ path, contents: Object.fromEntries(entries), loading: false })
+      setFilePreview({ path, caseIds, contents: Object.fromEntries(entries), loading: false })
     } catch (cause) {
-      setFilePreview({ path, contents: {}, loading: false, error: String(cause).replace('Error: ', '') })
+      setFilePreview({ path, caseIds, contents: {}, loading: false, error: String(cause).replace('Error: ', '') })
     }
   }
 
@@ -379,7 +381,7 @@ export default function ComparePage() {
                     {artifactMatrix.map((row) => {
                       const comparableCases = result.cases.filter((item) => row.byCase[item.id]?.previewable)
                       return <div className="compare-file-row" key={row.path}>
-                        <div><strong title={row.path}>{row.path.split('/').pop()}</strong><small>{row.category}</small>{comparableCases.length >= 2 && <button type="button" onClick={() => void previewCommonFile(row.path, comparableCases)}>{t('Compare text')}</button>}</div>
+                        <div><strong title={row.path}>{row.path.split('/').pop()}</strong><small>{row.category}</small>{comparableCases.length >= 2 && <button type="button" onClick={() => void previewCommonFile(row.path, comparableCases)}>{t('Compare file')}</button>}</div>
                         {result.cases.map((item) => {
                           const artifact = row.byCase[item.id]
                           return <div key={item.id} className={artifact ? 'available' : 'missing'}>{artifact ? <><CheckCircle2 size={13} /><span>{formatBytes(artifact.size_bytes)}</span><button type="button" aria-label={t('Download result')} onClick={() => void api.downloadResult('Case', item.id, artifact.path)}><Download size={12} /></button></> : <span>{t('Missing')}</span>}</div>
@@ -388,12 +390,6 @@ export default function ComparePage() {
                     })}
                     {!artifactMatrix.length && <div className="detail-empty">{t('No result artifacts reported.')}</div>}
                   </div>
-                  {filePreview && <div className="compare-file-preview">
-                    <header><div><strong>{filePreview.path}</strong><small>{t('Bounded text preview; use convergence and KPI assessments for decisions.')}</small></div><button type="button" onClick={() => setFilePreview(null)}>×</button></header>
-                    {filePreview.loading && <div className="detail-state"><RefreshCw className="spin" size={16} />{t('Loading result files…')}</div>}
-                    {filePreview.error && <div className="compare-ai-error"><AlertCircle size={13} />{filePreview.error}</div>}
-                    {!filePreview.loading && !filePreview.error && <div className="compare-file-preview-grid">{result.cases.filter((item) => filePreview.contents[item.id] !== undefined).map((item) => <article key={item.id}><strong>{item.name}</strong><pre>{filePreview.contents[item.id].slice(0, 12000)}</pre></article>)}</div>}
-                  </div>}
                 </section>
               )}
 
@@ -417,6 +413,16 @@ export default function ComparePage() {
               )}
             </>
           )}
+          {filePreview && result && <ResultFileComparisonDialog
+            path={filePreview.path}
+            loading={filePreview.loading}
+            error={filePreview.error}
+            cases={filePreview.caseIds.map((caseId) => {
+              const item = result.cases.find((candidate) => candidate.id === caseId)
+              return { id: caseId, name: item?.name ?? caseId, content: filePreview.contents[caseId] }
+            })}
+            onClose={() => setFilePreview(null)}
+          />}
         </main>
       )}
     </div>
