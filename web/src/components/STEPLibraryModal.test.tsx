@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import STEPLibraryModal from './STEPLibraryModal'
+import STEPLibraryModal, { conciseSTEPError } from './STEPLibraryModal'
 
 describe('STEPLibraryModal', () => {
   it('presents independent upload, AI design, validation, and direct project creation', () => {
@@ -26,5 +26,10 @@ describe('STEPLibraryModal', () => {
     expect(markup).not.toContain('Add an existing STEP file')
     expect(markup).toContain('Upload new asset')
     expect(markup).not.toContain('Close STEP library')
+  })
+
+  it('reduces backend preview tracebacks to actionable validation evidence', () => {
+    expect(conciseSTEPError('Traceback (most recent call last):\n  File "/tmp/preview.py", line 18\nValueError: STEP File could not be loaded')).toBe('ValueError: STEP File could not be loaded')
+    expect(conciseSTEPError('preview process stopped')).toBe('preview process stopped')
   })
 })
