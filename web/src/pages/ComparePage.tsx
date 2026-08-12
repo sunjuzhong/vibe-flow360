@@ -27,6 +27,7 @@ import {
   type SweepResult,
 } from '../api/client'
 import Flow360IdLink from '../components/Flow360IdLink'
+import JsonPreview from '../components/JsonPreview'
 import TopBar from '../components/TopBar'
 import { LazyViewer3D, type ViewerCameraCommand, type ViewerCameraState } from '../components/viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
@@ -39,6 +40,13 @@ function valueText(value: unknown) {
   if (value === null) return 'Removed'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
+}
+
+export function CompareParameterValue({ value }: { value: unknown }) {
+  if (value !== null && typeof value === 'object') {
+    return <JsonPreview value={value} className="compare-json-preview" />
+  }
+  return <span className="compare-scalar-value">{valueText(value)}</span>
 }
 
 function formatBytes(value?: number) {
@@ -393,7 +401,7 @@ export default function ComparePage() {
                 <section className="compare-diffs">
                   <div className="compare-section-heading"><div><p className="eyebrow">{t('SETUP DELTA')}</p><h2>{t('SimulationParams differences')}</h2></div><span>{t('{count} semantic differences').replace('{count}', String(result.diffs.length))}</span></div>
                   <div className="compare-diff-head"><span>{t('Path')}</span><span>{t('Baseline value')}</span><span>{t('Candidate value')}</span></div>
-                  {result.diffs.map((diff) => <div key={`${diff.compared_to ?? 'candidate'}-${diff.path}`}><code>{diff.path}<small>{diff.compared_to}</small></code><span>{valueText(diff.baseline)}</span><span>{valueText(diff.other)}</span></div>)}
+                  {result.diffs.map((diff) => <div className="compare-diff-row" key={`${diff.compared_to ?? 'candidate'}-${diff.path}`}><code>{diff.path}<small>{diff.compared_to}</small></code><div className="compare-diff-value"><CompareParameterValue value={diff.baseline} /></div><div className="compare-diff-value"><CompareParameterValue value={diff.other} /></div></div>)}
                   {!result.diffs.length && <p>{t('No semantic parameter differences found.')}</p>}
                 </section>
               )}

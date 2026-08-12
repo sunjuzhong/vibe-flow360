@@ -1,5 +1,6 @@
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildArtifactMatrix, parseSweepValues, toggleCaseSelection } from './ComparePage'
+import { buildArtifactMatrix, CompareParameterValue, parseSweepValues, toggleCaseSelection } from './ComparePage'
 
 describe('ComparePage URL and sweep helpers', () => {
   it('keeps Case selection order stable for URL restoration', () => {
@@ -28,5 +29,16 @@ describe('ComparePage URL and sweep helpers', () => {
     expect(matrix.map((row) => row.path)).toEqual(['results/forces.csv', 'results/residual.csv'])
     expect(matrix[0].byCase['case-a']?.category).toBe('forces')
     expect(matrix[0].byCase['case-b']).toBeUndefined()
+  })
+
+  it('renders structured parameter values as a bounded JSON tree', () => {
+    const objectMarkup = renderToStaticMarkup(CompareParameterValue({ value: { outputs: [{ name: 'surface', fields: ['Cp'] }] } }))
+    const scalarMarkup = renderToStaticMarkup(CompareParameterValue({ value: 0.000026 }))
+
+    expect(objectMarkup).toContain('json-preview compare-json-preview')
+    expect(objectMarkup).toContain('JSON Preview')
+    expect(objectMarkup).toContain('outputs')
+    expect(scalarMarkup).toContain('compare-scalar-value')
+    expect(scalarMarkup).not.toContain('JSON Preview')
   })
 })
