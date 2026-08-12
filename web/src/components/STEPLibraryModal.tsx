@@ -1,11 +1,12 @@
 import { Box, CheckCircle2, Download, FileUp, FolderInput, FolderOpen, Loader2, Plus, RefreshCw, Sparkles, X, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type FolderNode, type STEPAIJob, type STEPAsset, type STEPPreviewManifest, type STEPProjectResult, type STEPVersion } from '../api/client'
+import { api, type FolderNode, type STEPAsset, type STEPPreviewManifest, type STEPProjectResult, type STEPVersion } from '../api/client'
 import { useI18n } from '../i18n'
 import FolderTree from './FolderTree'
 import { LazyViewer3D } from './viewer/LazyViewer3D'
 import { readSTEPFolderSelection, writeSTEPFolderSelection } from '../lib/stepLibrarySelection'
+import STEPDesignModal from './STEPDesignModal'
 import './STEPLibraryModal.css'
 
 function formatBytes(value: number) {
@@ -63,8 +64,6 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
   const [description, setDescription] = useState('')
   const [unit, setUnit] = useState<'m' | 'mm' | 'cm' | 'inch'>('m')
   const [file, setFile] = useState<File | null>(null)
-  const [aiPrompt, setAIPrompt] = useState('')
-  const [aiJob, setAIJob] = useState<STEPAIJob | null>(null)
   const [compareVersionId, setCompareVersionId] = useState('')
   const [preview, setPreview] = useState<STEPPreviewManifest | null>(null)
   const [previewError, setPreviewError] = useState('')
@@ -136,27 +135,6 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
     return () => { active = false }
   }, [selectedAsset?.id, selectedVersion?.id, selectedVersion?.validation.status, compareVersionId, t])
 
-  useEffect(() => {
-    if (!aiJob || !['queued', 'running', 'recovering'].includes(aiJob.status)) return
-    const timer = window.setInterval(async () => {
-      try {
-        const current = await api.stepAIJob(aiJob.id)
-        setAIJob(current)
-        if (current.status === 'completed') {
-          setSelectedAssetId(current.asset_id ?? '')
-          setSelectedVersionId(current.version_id ?? '')
-          setAIPrompt('')
-          await load(true)
-        } else if (current.status === 'failed' || current.status === 'needs_input') {
-          setError(current.error || current.detail || 'AI STEP generation needs attention.')
-        }
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
-      }
-    }, 1200)
-    return () => window.clearInterval(timer)
-  }, [aiJob?.id, aiJob?.status])
-
   const upload = async (event: FormEvent) => {
     event.preventDefault()
     if (!file || (creationMode === 'upload-new' && !assetName.trim())) return
@@ -175,33 +153,6 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
       if (embedded) setCreationDialogOpen(false)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause))
     } finally { setBusy(false) }
-  }
-
-  const startAIDesign = async () => {
-    if (!aiPrompt.trim()) return
-    setBusy(true); setError('')
-    try {
-      const revise = creationMode === 'ai-revise' && selectedAsset && selectedVersion
-      const job = await api.aiDesignSTEPAsset({
-        prompt: aiPrompt.trim(), name: creationMode === 'ai-new' ? assetName.trim() || undefined : undefined,
-        asset_id: revise ? selectedAsset.id : undefined, parent_version_id: revise ? selectedVersion.id : undefined,
-        folder_id: creationMode === 'ai-new' ? selectedFolderId : undefined,
-      })
-      setAIJob(job)
-      if (embedded) setCreationDialogOpen(false)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause))
-    } finally { setBusy(false) }
-  }
-
-  const designWithAI = (event: FormEvent) => {
-    event.preventDefault()
-    void startAIDesign()
-  }
-
-  const cancelAIDesign = async () => {
-    if (!aiJob) return
-    try { setAIJob(await api.cancelStepAIJob(aiJob.id))
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
   const createProject = async () => {
@@ -252,7 +203,7 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
   const aiMode = creationMode === 'ai-new' || creationMode === 'ai-revise'
   const chooseCreationMode = (mode: typeof creationMode) => {
     setCreationMode(mode)
-    if (embedded) setCreationDialogOpen(true)
+    if (embedded || mode === 'ai-new' || mode === 'ai-revise') setCreationDialogOpen(true)
   }
   const creationTitle = t(creationMode === 'upload-new' ? 'Upload STEP asset'
     : creationMode === 'upload-version' ? 'Upload a new STEP version'
@@ -266,12 +217,6 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
       <label className="step-library-file"><FileUp size={14} /><span>{file?.name || 'Choose .step or .stp'}</span><input ref={fileInput} type="file" accept=".step,.stp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
       <select value={unit} onChange={(event) => setUnit(event.target.value as typeof unit)} aria-label="STEP length unit"><option value="m">metres</option><option value="mm">millimetres</option><option value="cm">centimetres</option><option value="inch">inches</option></select>
       <button type="submit" disabled={busy || !file || (creationMode === 'upload-new' && !assetName.trim())}>{busy ? <Loader2 className="spin" size={13} /> : <FileUp size={13} />} Store and validate</button>
-    </form>}
-    {aiMode && <form className="step-library-ai" onSubmit={designWithAI}>
-      <div><strong>{creationMode === 'ai-revise' ? `Create a new version of ${selectedAsset?.name}` : 'Create exact STEP with AI'}</strong><small>{creationMode === 'ai-revise' && !selectedVersion?.geometry ? 'AI will reconstruct this imported STEP from its validated dimensions and your requested change.' : 'OpenCascade must validate the exact CAD before it is ready.'}</small></div>
-      {creationMode === 'ai-new' && <input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Asset name (optional)" aria-label="STEP asset name" />}
-      <textarea value={aiPrompt} onChange={(event) => setAIPrompt(event.target.value)} placeholder={creationMode === 'ai-revise' ? 'Describe only the change, e.g. increase the chord by 10%…' : 'Describe the geometry and defining dimensions…'} rows={5} />
-      <button type="submit" disabled={busy || !aiPrompt.trim()}>{busy ? <Loader2 className="spin" size={13} /> : <Sparkles size={13} />} {creationMode === 'ai-revise' ? 'Generate new version' : 'Generate STEP asset'}</button>
     </form>}
   </>
 
@@ -302,13 +247,12 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
             <div className="step-library-tabs" role="group" aria-label="STEP creation method">
               {assetId && <Link className="step-library-back-link" to="/step-library">← {t('Back to STEP library')}</Link>}
               {!assetId && <button className={!embedded && creationMode === 'upload-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-new')}><FileUp size={13} /> Upload new asset</button>}
-              {!assetId && <button className={!embedded && creationMode === 'ai-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-new')}><Sparkles size={13} /> AI new design</button>}
+              {!assetId && <button className={!embedded && creationMode === 'ai-new' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-new')}><Sparkles size={13} /> AI Design</button>}
               {selectedAsset && <button className={!embedded && creationMode === 'upload-version' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('upload-version')}><Plus size={13} /> Upload version</button>}
               {selectedVersion && <button className={!embedded && creationMode === 'ai-revise' ? 'active' : ''} type="button" onClick={() => chooseCreationMode('ai-revise')}><Sparkles size={13} /> {selectedVersion.geometry ? 'AI revise' : 'AI reconstruct'}</button>}
             </div>
           </div>
           {!embedded && creationForm}
-          {aiJob && <section className={`step-ai-job status-${aiJob.status}`} aria-live="polite"><div><strong>{aiJob.detail || aiJob.stage}</strong><small>{aiJob.stage.replaceAll('-', ' ')} · {aiJob.progress}%</small></div><progress max={100} value={aiJob.progress} />{['queued', 'running', 'recovering'].includes(aiJob.status) && <button type="button" onClick={() => void cancelAIDesign()}>Cancel generation</button>}{['failed', 'needs_input', 'cancelled'].includes(aiJob.status) && <button type="button" onClick={() => void startAIDesign()}>Retry as a new job</button>}</section>}
           {!loading && !assetId && folderAssets.length === 0 && <section className="step-library-empty-panel"><Box size={22} /><strong>{t('No STEP assets in this folder.')}</strong><p>{t('Upload an existing STEP file or ask AI to create an exact CAD design.')}</p></section>}
           {!loading && !assetId && folderAssets.length > 0 && <section className="step-asset-grid">{folderAssets.map((asset) => { const latest = asset.versions.at(-1); return <article className="step-asset-card" key={asset.id}><Link to={`/step-library/${encodeURIComponent(asset.id)}`} aria-label={`${t('Open STEP asset')} ${asset.name}`}><div className="step-asset-thumbnail">{latest?.validation.status === 'ready' ? <img src={api.stepVersionThumbnailURL(asset.id, latest.id)} alt="" /> : <Box size={34} />}</div><div className="step-asset-card-body"><div><strong>{asset.name}</strong><span className={`step-status status-${latest?.validation.status}`}><StatusIcon version={latest!} /> {latest?.validation.status}</span></div><p>{asset.description || t('No description')}</p><small>V{latest?.number} · {latest ? formatBytes(latest.size) : '—'} · {asset.versions.length} {t(asset.versions.length === 1 ? 'version' : 'versions')}</small></div></Link></article> })}</section>}
           {assetId && !loading && !selectedAsset && <section className="step-library-empty-panel"><XCircle size={22} /><strong>{t('STEP asset not found')}</strong><Link to="/step-library">{t('Back to STEP library')}</Link></section>}
@@ -327,7 +271,8 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
         </main>
       </div>
     </section>
-    {embedded && creationDialogOpen && <div className="step-library-creation-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setCreationDialogOpen(false) }}><section className="step-library-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="step-creation-title"><header><div><p className="eyebrow">CREATE GEOMETRY</p><h2 id="step-creation-title">{creationTitle}</h2></div><button type="button" onClick={() => setCreationDialogOpen(false)} disabled={busy} aria-label="Close STEP creation"><X size={17} /></button></header>{creationForm}</section></div>}
+    {creationDialogOpen && aiMode && <STEPDesignModal mode={creationMode === 'ai-new' ? 'new' : selectedVersion?.geometry ? 'revise' : 'reconstruct'} assetName={selectedAsset?.name} assetId={creationMode === 'ai-revise' ? selectedAsset?.id : undefined} parentVersionId={creationMode === 'ai-revise' ? selectedVersion?.id : undefined} folderId={selectedFolderId} folderName={selectedLocalFolder?.name} onClose={() => setCreationDialogOpen(false)} onCompleted={(job) => { setSelectedAssetId(job.asset_id ?? ''); setSelectedVersionId(job.version_id ?? ''); void load(true) }} />}
+    {embedded && creationDialogOpen && uploadMode && <div className="step-library-creation-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setCreationDialogOpen(false) }}><section className="step-library-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="step-creation-title"><header><div><p className="eyebrow">CREATE GEOMETRY</p><h2 id="step-creation-title">{creationTitle}</h2></div><button type="button" onClick={() => setCreationDialogOpen(false)} disabled={busy} aria-label="Close STEP creation"><X size={17} /></button></header>{creationForm}</section></div>}
     {folderAction && folderRoot && <div className="step-library-creation-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setFolderAction(null) }}><section className="step-folder-dialog" role="dialog" aria-modal="true" aria-labelledby="step-folder-title"><header><h2 id="step-folder-title">{t(folderAction.mode === 'create' ? 'New folder' : folderAction.mode === 'rename' ? 'Rename folder' : folderAction.mode === 'delete' ? 'Delete folder' : folderAction.mode === 'move-asset' ? 'Move asset' : 'Move folder')}</h2><button type="button" onClick={() => setFolderAction(null)} disabled={busy} aria-label={t('Close folder dialog')}><X size={17} /></button></header><form onSubmit={submitFolderAction}>
       {folderAction.mode === 'delete' ? <p>{t('The folder must be empty before it can be deleted.')}</p> : <>
         {(folderAction.mode === 'create' || folderAction.mode === 'rename') && <label>{t('Folder name')}<input autoFocus value={folderName} onChange={(event) => setFolderName(event.target.value)} /></label>}
