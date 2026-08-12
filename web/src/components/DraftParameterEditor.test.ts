@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DynamicFormSchema } from '../api/client'
-import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAutoSyncReady, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
+import { buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAutoSyncReady, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -81,6 +81,13 @@ describe('Draft parameter editor', () => {
       { operating_condition: { alpha: 0, beta: 0 }, outputs: ['forces'] },
       { operating_condition: { alpha: 5 }, outputs: ['forces'] },
     )).toEqual({ operating_condition: { alpha: 5, beta: null } })
+  })
+
+  it('builds an empty AI patch from the Draft baseline when the editor candidate cannot be serialized', () => {
+    const baseline = { fluid: { density: { value: 1.225, units: 'unsupported-unit' } } }
+    const candidate = null
+
+    expect(draftAIAssistPatch(baseline, candidate)).toEqual({})
   })
 
   it('auto-syncs only the latest validated candidate and stops retrying a failed revision', () => {

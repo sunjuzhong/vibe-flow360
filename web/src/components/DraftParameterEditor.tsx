@@ -182,7 +182,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   }
 
   const fillWithAI = async () => {
-    if (!project || !resource || !candidateResult.value || !aiPrompt.trim() || aiLoading) return
+    if (!project || !resource || !aiPrompt.trim() || aiLoading) return
     const requestDraftId = draftId
     setAILoading(true)
     setAIMessage('')
@@ -198,7 +198,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         target: 'case',
         intent: aiPrompt.trim(),
         prompt: aiPrompt.trim(),
-        patch: createJSONMergePatch(baseline, candidateResult.value),
+        patch: draftAIAssistPatch(baseline, candidateResult.value),
         autonomous: true,
       })
       if (currentDraftIdRef.current !== requestDraftId) return
@@ -574,6 +574,13 @@ export function createJSONMergePatch(before: Record<string, unknown>, after: Rec
     }
   }
   return patch
+}
+
+export function draftAIAssistPatch(
+  baseline: Record<string, unknown>,
+  candidate: Record<string, unknown> | null,
+) {
+  return createJSONMergePatch(baseline, candidate ?? baseline)
 }
 
 function compactValue(value: unknown) {
