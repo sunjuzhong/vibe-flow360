@@ -31,7 +31,6 @@ import TopBar from '../components/TopBar'
 import Flow360IdLink from '../components/Flow360IdLink'
 import { useI18n } from '../i18n'
 import STEPLibraryModal from '../components/STEPLibraryModal'
-import { useI18n } from '../i18n'
 
 function projectCount(project: ProjectRecord, key: string) {
   return project.statistics?.[key]?.count ?? 0
