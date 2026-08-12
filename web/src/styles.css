@@ -464,7 +464,7 @@ button { color: inherit; }
   .brand-beta { display: none; }
 }
 
-.compare-page { min-height: 100vh; background: #f4f4f0; color: #252921; }
+.compare-page { min-height: 100vh; padding-top: 58px; background: #f4f4f0; color: #252921; }
 .compare-header { padding: 24px 32px; border-bottom: 1px solid #dedfd7; background: #fff; }
 .compare-header > a { display: inline-flex; align-items: center; gap: 6px; color: #5f655a; font-size: 11px; text-decoration: none; margin-bottom: 15px; }
 .compare-header h1 { display: flex; align-items: center; gap: 9px; margin: 2px 0 6px; font-size: 24px; }
