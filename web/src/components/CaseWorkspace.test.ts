@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -115,6 +115,19 @@ describe('Case surface visibility', () => {
       { id: 'boundaries', visible: true, entityIds: ['wall'] },
     ]
     expect(caseVisualizationGroupCounts(members, {})).toEqual({ total: 2, visible: 1 })
+  })
+
+  it('isolates every entity represented by the selected visualization item', () => {
+    const members = [
+      { id: 'surface-output', visible: true, entityIds: ['wall', 'symmetry'] },
+      { id: 'slice-output', visible: true, entityIds: ['slice-y'] },
+      { id: 'unavailable-output', visible: false, entityIds: [] },
+    ]
+    expect(isolateCaseVisualizationMap(members, ['wall', 'symmetry'])).toEqual({
+      wall: true,
+      symmetry: true,
+      'slice-y': false,
+    })
   })
 })
 

@@ -29,6 +29,7 @@ const messages: Record<string, string> = {
   Filter: '筛选',
   Name: '名称',
   Type: '类型',
+  Disabled: '未启用',
   Status: '状态',
   Parent: '父级',
   Children: '子项',
