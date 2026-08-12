@@ -1395,6 +1395,8 @@ export const api = {
     mutate<STEPVersion>(`/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/validate`),
   stepVersionDownloadURL: (assetId: string, versionId: string) =>
     `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/download`,
+  stepVersionThumbnailURL: (assetId: string, versionId: string) =>
+    `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/thumbnail.svg`,
   stepVersionPreview: (assetId: string, versionId: string, compareVersionId?: string) => {
     const params = compareVersionId ? `?compare_version_id=${encodeURIComponent(compareVersionId)}` : ''
     return json<STEPPreviewManifest>(`/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/preview${params}`)

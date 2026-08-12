@@ -211,3 +211,39 @@ printf '%s' '{"vertices":24,"triangles":12,"bounds":[0,0,0,1,2,3]}'
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
 }
+
+func TestCadQueryGeneratorStagesSTEPThumbnailInput(t *testing.T) {
+	directory := t.TempDir()
+	fakeUV := filepath.Join(directory, "uv")
+	script := `#!/bin/sh
+script_path=""
+input_path=""
+output_path=""
+for argument in "$@"; do
+  case "$argument" in
+    */thumbnail_step.py) script_path="$argument" ;;
+    */input.step) input_path="$argument" ;;
+    *.svg) output_path="$argument" ;;
+  esac
+done
+test -f "$script_path" || exit 31
+test -f "$input_path" || exit 32
+test "${script_path%/*}" = "${input_path%/*}" || exit 33
+case "$output_path" in /*) ;; *) exit 34 ;; esac
+printf '<svg />' > "$output_path"
+`
+	if err := os.WriteFile(fakeUV, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stepPath := filepath.Join(directory, "source.step")
+	if err := os.WriteFile(stepPath, []byte("ISO-10303-21;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(directory, "thumbnail.svg")
+	if err := (&CadQueryGenerator{UVBinary: fakeUV, Timeout: time.Second}).ThumbnailSTEP(context.Background(), stepPath, output); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(output); err != nil || string(data) != "<svg />" {
+		t.Fatalf("unexpected thumbnail: %q %v", data, err)
+	}
+}

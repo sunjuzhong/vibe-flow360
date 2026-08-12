@@ -58,6 +58,7 @@ function AppRoutes() {
           <Route path="/" element={<WorkspacePage />} />
           <Route path="/tutorials" element={<TutorialLibraryPage />} />
           <Route path="/step-library" element={<STEPLibraryPage />} />
+          <Route path="/step-library/:assetId" element={<STEPLibraryPage />} />
           <Route path="/tutorials/:tutorialId" element={<TutorialPage />} />
           <Route path="/projects/:projectId/compare" element={<ComparePage />} />
           <Route path="/compares" element={<CompareWorkspaceListPage />} />

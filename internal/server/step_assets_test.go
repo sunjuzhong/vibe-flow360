@@ -27,6 +27,13 @@ type fixedSTEPValidator struct {
 
 type fixedSTEPPreviewer struct{ calls int }
 
+type fixedSTEPThumbnailer struct{ calls int }
+
+func (thumbnailer *fixedSTEPThumbnailer) ThumbnailSTEP(_ context.Context, _ string, output string) error {
+	thumbnailer.calls++
+	return os.WriteFile(output, []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0o600)
+}
+
 func (previewer *fixedSTEPPreviewer) PreviewSTEP(_ context.Context, _ []string, output string) (aicreate.STEPPreview, error) {
 	previewer.calls++
 	if err := os.WriteFile(output, []byte("glTF"), 0o600); err != nil {
@@ -49,6 +56,7 @@ func stepAssetTestRouter(app *Server) *gin.Engine {
 	router.PATCH("/api/step-assets/:asset_id/folder", app.moveSTEPAsset)
 	router.POST("/api/step-assets/:asset_id/versions/:version_id/create-project", app.createProjectFromSTEPAsset)
 	router.GET("/api/step-assets/:asset_id/versions/:version_id/preview", app.previewSTEPAssetVersion)
+	router.GET("/api/step-assets/:asset_id/versions/:version_id/thumbnail.svg", app.thumbnailSTEPAssetVersion)
 	return router
 }
 
@@ -247,5 +255,34 @@ func TestSTEPPreviewComparesReadyVersionsAndCachesAsset(t *testing.T) {
 	}
 	if previewer.calls != 1 {
 		t.Fatalf("preview cache missed: calls=%d", previewer.calls)
+	}
+}
+
+func TestSTEPThumbnailRendersAndCachesReadyVersion(t *testing.T) {
+	root := t.TempDir()
+	store, err := stepassets.NewStore(filepath.Join(root, "library"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, version, err := store.Create("Wheel", "", "wheel.step", "mm", "upload", "", "", strings.NewReader("ISO-10303-21;"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := aicreate.GeometryValidation{SolidCount: 1, FaceCount: 4, Volume: 10, Bounds: []float64{-1, -1, -1, 1, 1, 1}}
+	if _, err := store.SetValidation(asset.ID, version.ID, stepassets.Validation{Status: stepassets.StatusReady, Report: &report}); err != nil {
+		t.Fatal(err)
+	}
+	thumbnailer := &fixedSTEPThumbnailer{}
+	router := stepAssetTestRouter(&Server{workDir: root, stepAssets: store, stepThumbnailer: thumbnailer})
+	path := "/api/step-assets/" + asset.ID + "/versions/" + version.ID + "/thumbnail.svg"
+	for attempt := 0; attempt < 2; attempt++ {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "<svg") {
+			t.Fatalf("thumbnail status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if thumbnailer.calls != 1 {
+		t.Fatalf("thumbnail cache missed: calls=%d", thumbnailer.calls)
 	}
 }

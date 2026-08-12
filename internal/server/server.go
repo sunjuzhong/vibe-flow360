@@ -55,6 +55,7 @@ type Server struct {
 	cadGenerator       aicreate.Generator
 	stepValidator      aicreate.STEPValidator
 	stepPreviewer      aicreate.STEPPreviewer
+	stepThumbnailer    aicreate.STEPThumbnailer
 	stepAssets         *stepassets.Store
 	stepJobMu          sync.Mutex
 	stepJobCancels     map[string]context.CancelFunc
@@ -183,6 +184,7 @@ func New() *Server {
 		cadGenerator:       cadRuntime,
 		stepValidator:      cadRuntime,
 		stepPreviewer:      cadRuntime,
+		stepThumbnailer:    cadRuntime,
 		stepAssets:         stepAssetStore,
 		stepJobCancels:     map[string]context.CancelFunc{},
 		stepJobSlots:       make(chan struct{}, 1),
@@ -401,6 +403,7 @@ func (s *Server) routes() {
 		api.GET("/step-assets/:asset_id/versions/:version_id/download", s.downloadSTEPAssetVersion)
 		api.GET("/step-assets/:asset_id/versions/:version_id/preview", s.previewSTEPAssetVersion)
 		api.GET("/step-assets/:asset_id/versions/:version_id/preview.glb", s.previewSTEPAssetVersionFile)
+		api.GET("/step-assets/:asset_id/versions/:version_id/thumbnail.svg", s.thumbnailSTEPAssetVersion)
 		api.POST("/step-assets/:asset_id/versions/:version_id/create-project", s.createProjectFromSTEPAsset)
 		api.POST("/ai-create", s.aiCreateProject)
 		api.GET("/ai-create/progress/:request_id", s.aiCreateProgressStatus)

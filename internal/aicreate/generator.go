@@ -25,6 +25,9 @@ var stepValidatorScript []byte
 //go:embed assets/preview_step.py
 var stepPreviewScript []byte
 
+//go:embed assets/thumbnail_step.py
+var stepThumbnailScript []byte
+
 type GeometryValidation struct {
 	SolidCount           int       `json:"solid_count"`
 	FaceCount            int       `json:"face_count"`
@@ -56,6 +59,10 @@ type STEPPreview struct {
 
 type STEPPreviewer interface {
 	PreviewSTEP(context.Context, []string, string) (STEPPreview, error)
+}
+
+type STEPThumbnailer interface {
+	ThumbnailSTEP(context.Context, string, string) error
 }
 
 type GenerationFailureKind string
@@ -322,6 +329,50 @@ func (g *CadQueryGenerator) PreviewSTEP(ctx context.Context, inputPaths []string
 		return preview, fmt.Errorf("STEP preview returned invalid data: %w", err)
 	}
 	return preview, nil
+}
+
+func (g *CadQueryGenerator) ThumbnailSTEP(ctx context.Context, inputPath, outputPath string) error {
+	absoluteOutputPath, err := filepath.Abs(outputPath)
+	if err != nil {
+		return fmt.Errorf("resolve STEP thumbnail output: %w", err)
+	}
+	directory, err := os.MkdirTemp("", "vibesim-step-thumbnail-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(directory)
+	scriptPath := filepath.Join(directory, "thumbnail_step.py")
+	if err := os.WriteFile(scriptPath, stepThumbnailScript, 0o500); err != nil {
+		return err
+	}
+	stagedPath := filepath.Join(directory, "input.step")
+	if err := copySTEPInput(inputPath, stagedPath); err != nil {
+		return fmt.Errorf("stage STEP thumbnail input: %w", err)
+	}
+	uvBinary, err := resolveCADRuntimeBinary(g.UVBinary)
+	if err != nil {
+		return err
+	}
+	args := []string{"run", "--no-project"}
+	if g.Offline {
+		args = append(args, "--offline")
+	}
+	args = append(args, "--python", firstConfigured(g.Python, "3.11"), "--with", "cadquery==2.6.1", "python", scriptPath, stagedPath, filepath.Clean(absoluteOutputPath))
+	runCtx, cancel := context.WithTimeout(ctx, g.Timeout)
+	defer cancel()
+	command := exec.CommandContext(runCtx, uvBinary, args...)
+	command.Dir = directory
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + directory, "TMPDIR=" + directory, "UV_NO_PROGRESS=1"}
+	if g.CacheDir != "" {
+		command.Env = append(command.Env, "UV_CACHE_DIR="+g.CacheDir)
+	}
+	if g.PythonDir != "" {
+		command.Env = append(command.Env, "UV_PYTHON_INSTALL_DIR="+g.PythonDir)
+	}
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("STEP thumbnail generation failed: %s", strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func copySTEPInput(sourcePath, destinationPath string) error {

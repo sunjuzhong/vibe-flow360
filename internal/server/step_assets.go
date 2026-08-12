@@ -60,6 +60,32 @@ func (s *Server) previewSTEPAssetVersionFile(c *gin.Context) {
 	c.File(s.stepPreviewPath(c.Param("version_id"), strings.TrimSpace(c.Query("compare_version_id"))))
 }
 
+func (s *Server) thumbnailSTEPAssetVersion(c *gin.Context) {
+	version, source, ok := s.stepAssets.Version(c.Param("asset_id"), c.Param("version_id"))
+	if !ok || version.Validation.Status != stepassets.StatusReady {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	output := filepath.Join(s.workDir, "step-thumbnails", version.ID+".svg")
+	if info, err := os.Stat(output); err != nil || info.Size() == 0 {
+		if s.stepThumbnailer == nil {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		if err := s.stepThumbnailer.ThumbnailSTEP(c.Request.Context(), source, output); err != nil {
+			log.Printf("STEP thumbnail failed for asset %s version %s: %v", c.Param("asset_id"), version.ID, err)
+			c.Status(http.StatusUnprocessableEntity)
+			return
+		}
+	}
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.File(output)
+}
+
 func humanizeSTEPPreviewError(err error) string {
 	message := strings.ToLower(err.Error())
 	if strings.Contains(message, "must pass validation") || strings.Contains(message, "not ready") {
@@ -392,10 +418,11 @@ func (s *Server) runAISTEPJob(jobID string) {
 			return
 		}
 		if version.Geometry == nil {
-			s.finishAISTEPJobError(jobID, "This uploaded STEP has no editable AI CAD recipe. Upload a revised file as a new version, or create a new AI-authored design.")
-			return
+			sourceContext, _ := json.Marshal(version.Validation.Report)
+			blueprint, err = aicreate.Design(ctx, s.agent, request.Prompt+"\n\nReconstruct the requested revised geometry as a new exact parametric CAD version. The parent is an imported STEP without feature history, so preserve its validated overall dimensions and topology where the change does not require otherwise. Parent validation metrics (OpenCascade millimetres): "+string(sourceContext))
+		} else {
+			blueprint, err = aicreate.ReviseGeometry(ctx, s.agent, *version.Geometry, request.Prompt)
 		}
-		blueprint, err = aicreate.ReviseGeometry(ctx, s.agent, *version.Geometry, request.Prompt)
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
