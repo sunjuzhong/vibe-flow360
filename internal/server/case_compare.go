@@ -268,38 +268,46 @@ func (s *Server) analyzeCaseComparison(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
+	response, status, err := s.generateComparisonAnalysis(c.Request.Context(), result, request.Language, request.Question)
+	if err != nil {
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func (s *Server) generateComparisonAnalysis(ctx context.Context, result comparison.CompareResult, requestedLanguage, requestedQuestion string) (comparisonAnalysisResponse, int, error) {
+	if s.agent == nil || !s.agent.SupportsGeneration() {
+		return comparisonAnalysisResponse{}, http.StatusServiceUnavailable, errors.New("AI comparison requires a configured model provider")
+	}
 	evidence := comparisonPromptEvidence(result)
 	payload, err := json.Marshal(evidence)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare comparison evidence"})
-		return
+		return comparisonAnalysisResponse{}, http.StatusInternalServerError, errors.New("could not prepare comparison evidence")
 	}
 	language := "English"
-	if strings.HasPrefix(strings.ToLower(request.Language), "zh") {
+	if strings.HasPrefix(strings.ToLower(requestedLanguage), "zh") {
 		language = "Simplified Chinese"
 	}
-	question := strings.TrimSpace(request.Question)
+	question := strings.TrimSpace(requestedQuestion)
 	if question == "" {
 		question = "Which differences are decision-relevant, what evidence supports them, and what should be checked next?"
 	}
-	ctx, cancel := resultInterpretationContext(c.Request.Context(), s.agent)
+	ctx, cancel := resultInterpretationContext(ctx, s.agent)
 	defer cancel()
 	analysis, err := s.agent.Complete(ctx, comparisonAnalysisSystemPrompt,
 		fmt.Sprintf("Analyze this Case comparison in %s. User question: %s\n\nStructured evidence:\n%s", language, question, payload), "")
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI comparison timed out"})
-			return
+			return comparisonAnalysisResponse{}, http.StatusGatewayTimeout, errors.New("AI comparison timed out")
 		}
 		if _, timedOut := agent.GenerationTimeout(err); timedOut {
-			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI comparison timed out"})
-			return
+			return comparisonAnalysisResponse{}, http.StatusGatewayTimeout, errors.New("AI comparison timed out")
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": "AI comparison is temporarily unavailable"})
-		return
+		return comparisonAnalysisResponse{}, http.StatusBadGateway, errors.New("AI comparison is temporarily unavailable")
 	}
 	state := s.agent.State()
-	c.JSON(http.StatusOK, comparisonAnalysisResponse{Analysis: strings.TrimSpace(analysis), Provider: state.Provider, Model: state.Model})
+	return comparisonAnalysisResponse{Analysis: strings.TrimSpace(analysis), Provider: state.Provider, Model: state.Model}, http.StatusOK, nil
 }
 
 func comparisonPromptEvidence(result comparison.CompareResult) map[string]interface{} {

@@ -484,6 +484,7 @@ button { color: inherit; }
 .compare-picker-heading > div { display: grid; gap: 2px; }
 .compare-picker-heading strong { font-size: 12px; }
 .compare-picker-heading span { color: #81877c; font-size: 10px; }
+.compare-project-picker { display: flex; grid-column: 1 / -1; align-items: end; gap: 8px; padding: 9px 10px; border: 1px solid #e0e3da; border-radius: 8px; background: #f8f9f5; }.compare-project-picker label { display: grid; flex: 1; min-width: 0; gap: 4px; color: #687060; font-size: 9px; font-weight: 700; }.compare-project-picker input,.compare-project-picker button { min-height: 32px; border: 1px solid #ccd2c2; border-radius: 6px; background: #fff; }.compare-project-picker input { min-width: 0; padding: 0 9px; font: inherit; }.compare-project-picker button { display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; color: #61752f; font-size: 9px; font-weight: 700; cursor: pointer; }.compare-project-picker button:disabled { opacity: .5; cursor: wait; }
 .compare-case-list { display: flex; min-width: 0; gap: 8px; overflow-x: auto; }
 .compare-case-option { display: grid; min-width: 205px; max-width: 280px; flex: 1; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid #e0e2db; border-radius: 8px; cursor: pointer; }
 .compare-case-option.selected { border-color: #9aaf58; background: #f4f8e9; }
@@ -530,6 +531,8 @@ button { color: inherit; }
 .compare-ai-panel textarea { min-height: 72px; resize: vertical; padding: 9px; border: 1px solid #ccd2c2; border-radius: 8px; background: #fff; font-size: 11px; line-height: 1.45; }
 .compare-ai-panel > button { display: inline-flex; min-height: 35px; align-items: center; justify-content: center; gap: 6px; border: 1px solid #61752f; border-radius: 8px; color: #fff; background: #61752f; font-size: 10px; font-weight: 700; cursor: pointer; }
 .compare-ai-panel > button:disabled { opacity: .5; cursor: wait; }
+.compare-ai-history { display: grid; gap: 4px; color: #687060; font-size: 9px; font-weight: 700; }.compare-ai-history select { min-width: 0; min-height: 31px; padding: 0 7px; border: 1px solid #ccd2c2; border-radius: 6px; background: #fff; font-size: 9px; }
+.compare-history-bar { display: flex; min-width: 0; align-items: end; justify-content: space-between; gap: 12px; padding: 10px 13px; border: 1px solid #daddd3; border-radius: 10px; background: #f8f9f5; }.compare-history-bar label { display: grid; min-width: 0; gap: 4px; color: #67705f; font-size: 9px; font-weight: 700; }.compare-history-bar select { min-width: min(430px,70vw); min-height: 31px; padding: 0 8px; border: 1px solid #ccd2c2; border-radius: 6px; background: #fff; font-size: 9px; }.compare-history-bar > span { color: #80877b; font-size: 9px; }
 .compare-ai-answer { max-height: 440px; overflow: auto; padding: 11px; border: 1px solid #dce3cb; border-radius: 8px; background: #fff; color: #4e5548; font-size: 10px; line-height: 1.55; }
 .compare-ai-answer > :first-child { margin-top: 0; }.compare-ai-answer > :last-child { margin-bottom: 0; }
 .compare-ai-answer h1,.compare-ai-answer h2,.compare-ai-answer h3 { margin: 13px 0 6px; font-size: 11px; }
@@ -608,7 +611,7 @@ button { color: inherit; }
   .compare-viewport-grid,.compare-file-preview-grid { grid-template-columns: 1fr; }.compare-viewport { height: 390px; }
 }
 @media (max-width: 680px) {
-  .compare-picker { grid-template-columns: 1fr; }.compare-picker > .geometry-plan-action { width: 100%; justify-content: center; }
+  .compare-picker { grid-template-columns: 1fr; }.compare-picker > .geometry-plan-action { width: 100%; justify-content: center; }.compare-project-picker,.compare-history-bar { align-items: stretch; flex-direction: column; }.compare-project-picker button { justify-content: center; }.compare-history-bar select { width: 100%; min-width: 0; }
   .compare-header-inner { grid-template-columns: 1fr; }.compare-header-inner > a:first-child { grid-column: 1; }.compare-header-actions { justify-content: flex-start; flex-wrap: wrap; }.compare-library-grid { grid-template-columns: 1fr; }
   .compare-section-heading { align-items: flex-start; flex-direction: column; }.compare-section-heading > span { text-align: left; }
   .compare-diff-head { display: none; }.compare-diff-row { grid-template-columns: minmax(0,1fr); }

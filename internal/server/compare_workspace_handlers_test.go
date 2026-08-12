@@ -33,6 +33,7 @@ func TestCompareWorkspaceStateAndAISessionRoutes(t *testing.T) {
 	router.GET("/api/compare-workspaces", app.listCompareWorkspaces)
 	router.PUT("/api/compare-workspaces/:compare_id/view-state", app.updateCompareWorkspaceViewState)
 	router.POST("/api/compare-workspaces/:compare_id/ai-sessions", app.appendCompareWorkspaceAISession)
+	router.POST("/api/compare-workspaces/:compare_id/analyze", app.analyzeCompareWorkspaceRevision)
 
 	list := httptest.NewRecorder()
 	router.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/compare-workspaces", nil))
@@ -50,5 +51,11 @@ func TestCompareWorkspaceStateAndAISessionRoutes(t *testing.T) {
 	router.ServeHTTP(ai, httptest.NewRequest(http.MethodPost, "/api/compare-workspaces/"+workspace.ID+"/ai-sessions", strings.NewReader(`{"question":"why?","analysis":"because","provider":"test","model":"test"}`)))
 	if ai.Code != http.StatusCreated || !strings.Contains(ai.Body.String(), `"analysis":"because"`) {
 		t.Fatalf("unexpected AI session response: %d %s", ai.Code, ai.Body.String())
+	}
+
+	unknownRevision := httptest.NewRecorder()
+	router.ServeHTTP(unknownRevision, httptest.NewRequest(http.MethodPost, "/api/compare-workspaces/"+workspace.ID+"/analyze", strings.NewReader(`{"evidence_revision_id":"rev-missing","question":"why?"}`)))
+	if unknownRevision.Code != http.StatusBadRequest || !strings.Contains(unknownRevision.Body.String(), "revision does not exist") {
+		t.Fatalf("unexpected unknown revision response: %d %s", unknownRevision.Code, unknownRevision.Body.String())
 	}
 }

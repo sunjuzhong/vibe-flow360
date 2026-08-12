@@ -184,6 +184,21 @@ func (s *Store) UpdateViewState(id string, viewState json.RawMessage) (Workspace
 	})
 }
 
+func (s *Store) AddRevision(id string, snapshot comparison.CompareResult) (Workspace, error) {
+	return s.update(id, func(workspace *Workspace) error {
+		revisionID, err := newID("rev")
+		if err != nil {
+			return err
+		}
+		revision := EvidenceRevision{
+			ID: revisionID, Number: len(workspace.Revisions) + 1, Snapshot: snapshot, CreatedAt: time.Now().UTC(),
+		}
+		workspace.Revisions = append(workspace.Revisions, revision)
+		workspace.ActiveRevisionID = revisionID
+		return nil
+	})
+}
+
 func (s *Store) AppendAISession(id string, session AISession) (Workspace, error) {
 	if strings.TrimSpace(session.Analysis) == "" {
 		return Workspace{}, errors.New("AI analysis is required")

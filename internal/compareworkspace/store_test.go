@@ -99,3 +99,28 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("expected deleted workspace to be absent, got %v", err)
 	}
 }
+
+func TestWorkspaceAddsImmutableEvidenceRevision(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(CreateInput{
+		Name:         "History",
+		Participants: []Participant{{CaseID: "case-a"}, {CaseID: "case-b"}},
+		Snapshot:     comparison.CompareResult{Cases: []comparison.CaseComparison{{ID: "case-a", Status: "running"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.AddRevision(created.ID, comparison.CompareResult{Cases: []comparison.CaseComparison{{ID: "case-a", Status: "completed"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Revisions) != 2 || updated.Revisions[1].Number != 2 || updated.ActiveRevisionID != updated.Revisions[1].ID {
+		t.Fatalf("unexpected revision history: %+v", updated.Revisions)
+	}
+	if updated.Revisions[0].Snapshot.Cases[0].Status != "running" || updated.Revisions[1].Snapshot.Cases[0].Status != "completed" {
+		t.Fatalf("prior evidence was overwritten: %+v", updated.Revisions)
+	}
+}

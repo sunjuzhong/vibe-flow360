@@ -908,6 +908,7 @@ export type CompareWorkspaceViewState = {
   parameter_expansions?: Record<string, Record<string, boolean>>
   selected_result_path?: string | null
   visual_visibility?: Record<string, Record<string, boolean>>
+  selected_revision_id?: string
 }
 
 export type ViewerCameraStateJSON = {
@@ -1281,6 +1282,10 @@ export const api = {
     replace<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/view-state`, { view_state: viewState }),
   appendCompareWorkspaceAISession: (compareId: string, input: Omit<CompareWorkspaceAISession, 'id' | 'created_at'>) =>
     mutate<CompareWorkspaceAISession>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/ai-sessions`, input),
+  analyzeCompareWorkspaceRevision: (compareId: string, input: { evidence_revision_id: string; language: string; question?: string }) =>
+    mutate<ComparisonAnalysis & { session: CompareWorkspaceAISession }>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/analyze`, input),
+  refreshCompareWorkspaceEvidence: (compareId: string) =>
+    mutate<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/refresh`, {}),
   updateCompareWorkspaceStatus: (compareId: string, status: 'active' | 'archived') =>
     replace<CompareWorkspace>(`/api/compare-workspaces/${encodeURIComponent(compareId)}/status`, { status }),
   duplicateCompareWorkspace: (compareId: string, name?: string) =>

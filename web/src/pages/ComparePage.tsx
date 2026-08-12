@@ -29,6 +29,7 @@ import {
   type Flow360Status,
   type ProjectInfo,
   type ProjectItem,
+  type ProjectRecord,
   type SweepResult,
 } from '../api/client'
 import Flow360IdLink from '../components/Flow360IdLink'
@@ -42,6 +43,7 @@ import { useI18n } from '../i18n'
 import type { UVFEntityInfo } from '../lib/uvf-three'
 
 type CompareView = 'evidence' | 'visual' | 'files' | 'parameters' | 'sweep'
+export type CompareCaseOption = ProjectItem & { projectId: string; projectName: string }
 
 function valueText(value: unknown) {
   if (value === undefined) return '—'
@@ -89,6 +91,22 @@ export function toggleCaseSelection(selectedIds: string[], id: string) {
   return selectedIds.includes(id)
     ? selectedIds.filter((selected) => selected !== id)
     : [...selectedIds, id]
+}
+
+export function mergeCompareCaseOptions(current: CompareCaseOption[], external: CompareCaseOption[]) {
+  return [...current, ...external].filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
+}
+
+export function buildCompareParticipants(result: CompareResult, options: CompareCaseOption[], fallbackProject: { id: string; name?: string }) {
+  return result.cases.map((item) => {
+    const option = options.find((candidate) => candidate.id === item.id)
+    return {
+      project_id: option?.projectId ?? fallbackProject.id,
+      project_name_snapshot: option?.projectName ?? fallbackProject.name,
+      case_id: item.id,
+      case_name_snapshot: item.name,
+    }
+  })
 }
 
 export function parseSweepValues(input: string) {
@@ -291,6 +309,10 @@ export default function ComparePage() {
   const [status, setStatus] = useState<Flow360Status | null>(null)
   const [project, setProject] = useState<ProjectInfo | null>(null)
   const [cases, setCases] = useState<ProjectItem[]>([])
+  const [externalCases, setExternalCases] = useState<CompareCaseOption[]>([])
+  const [projectOptions, setProjectOptions] = useState<ProjectRecord[]>([])
+  const [externalProjectId, setExternalProjectId] = useState('')
+  const [externalProjectLoading, setExternalProjectLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [result, setResult] = useState<CompareResult | null>(null)
@@ -321,6 +343,9 @@ export default function ComparePage() {
   const [saveName, setSaveName] = useState('')
   const [saveLoading, setSaveLoading] = useState(false)
   const [workspaceSaveState, setWorkspaceSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [selectedRevisionId, setSelectedRevisionId] = useState('')
+  const [refreshLoading, setRefreshLoading] = useState(false)
+  const [analysisSessionId, setAnalysisSessionId] = useState('')
 
   useEffect(() => {
     api.flow360Status().then(setStatus).catch(() => setStatus({ available: false }))
@@ -328,9 +353,11 @@ export default function ComparePage() {
       api.compareWorkspace(compareId)
         .then((saved) => {
           setWorkspace(saved)
-          const snapshot = saved.revisions?.find((revision) => revision.id === saved.active_revision_id)?.snapshot ?? saved.revisions?.at(-1)?.snapshot
+          const requestedRevisionID = saved.view_state?.selected_revision_id ?? saved.active_revision_id ?? saved.revisions?.at(-1)?.id ?? ''
+          const snapshot = saved.revisions?.find((revision) => revision.id === requestedRevisionID)?.snapshot ?? saved.revisions?.at(-1)?.snapshot
           if (!snapshot) throw new Error(t('Saved comparison evidence is unavailable.'))
           setResult(snapshot)
+          setSelectedRevisionId(requestedRevisionID)
           const view = saved.view_state ?? {}
           setActiveView(view.active_view ?? 'evidence')
           setVisualCandidateId(view.visual_candidate_id ?? snapshot.cases[1]?.id ?? '')
@@ -342,10 +369,11 @@ export default function ComparePage() {
           setParameterExpansions(view.parameter_expansions ?? {})
           setSelectedResultPath(view.selected_result_path ?? null)
           setVisualVisibility(view.visual_visibility ?? {})
-          const latestAI = saved.ai_sessions?.at(-1)
+          const latestAI = saved.ai_sessions?.filter((session) => session.evidence_revision_id === requestedRevisionID).at(-1)
           if (latestAI) {
             setAnalysis(latestAI.analysis)
             setAnalysisQuestion(latestAI.question ?? '')
+            setAnalysisSessionId(latestAI.id)
           }
           const primaryProjectId = saved.participants[0]?.project_id
           if (primaryProjectId) {
@@ -363,6 +391,9 @@ export default function ComparePage() {
       return
     }
     workspaceHydrated.current = false
+    void api.projects().then((projectsResponse) => {
+      setProjectOptions(projectsResponse.data.records ?? projectsResponse.data.projects ?? [])
+    }).catch(() => undefined)
     Promise.all([api.projectInfo(routeProjectId), api.projectItems(routeProjectId)])
       .then(([info, items]) => {
         setProject(info.data)
@@ -383,7 +414,8 @@ export default function ComparePage() {
     parameter_expansions: parameterExpansions,
     selected_result_path: selectedResultPath,
     visual_visibility: visualVisibility,
-  }), [activeView, cameraSync, fieldVisualizationEnabled, linkedManifestSelection, parameterExpansions, selectedField, selectedResultPath, visualCandidateId, visualVisibility, wireframe])
+    selected_revision_id: selectedRevisionId || undefined,
+  }), [activeView, cameraSync, fieldVisualizationEnabled, linkedManifestSelection, parameterExpansions, selectedField, selectedResultPath, selectedRevisionId, visualCandidateId, visualVisibility, wireframe])
 
   useEffect(() => {
     if (!compareId || !workspaceHydrated.current) return
@@ -398,6 +430,29 @@ export default function ComparePage() {
     }, 800)
     return () => window.clearTimeout(timer)
   }, [compareId, persistedViewState])
+
+  const allCaseOptions = useMemo<CompareCaseOption[]>(() => {
+    const current = cases.map((item) => ({ ...item, projectId, projectName: project?.name ?? projectId }))
+    return mergeCompareCaseOptions(current, externalCases)
+  }, [cases, externalCases, project?.name, projectId])
+
+  const loadExternalProject = async () => {
+    const targetProjectID = externalProjectId.trim()
+    if (!targetProjectID || targetProjectID === projectId) return
+    setExternalProjectLoading(true)
+    setError('')
+    try {
+      const [info, items] = await Promise.all([api.projectInfo(targetProjectID), api.projectItems(targetProjectID)])
+      const additions = items.data.items.filter((item) => item.type === 'Case').map((item) => ({
+        ...item, projectId: targetProjectID, projectName: info.data.name,
+      }))
+      setExternalCases((current) => [...current.filter((item) => item.projectId !== targetProjectID), ...additions])
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setExternalProjectLoading(false)
+    }
+  }
 
   const toggleCase = (id: string) => {
     const next = toggleCaseSelection(selectedIds, id)
@@ -433,22 +488,60 @@ export default function ComparePage() {
     setAnalysisLoading(true)
     setAnalysisError('')
     try {
-      const response = await api.analyzeCaseComparison(selectedIds, language, analysisQuestion.trim() || undefined)
-      setAnalysis(response.analysis)
-      if (compareId && workspace?.active_revision_id) {
-        const session = await api.appendCompareWorkspaceAISession(compareId, {
-          evidence_revision_id: workspace.active_revision_id,
+      if (compareId && workspace && selectedRevisionId) {
+        const response = await api.analyzeCompareWorkspaceRevision(compareId, {
+          evidence_revision_id: selectedRevisionId,
+          language,
           question: analysisQuestion.trim() || undefined,
-          analysis: response.analysis,
-          provider: response.provider,
-          model: response.model,
         })
+        const session = response.session
+        setAnalysis(response.analysis)
         setWorkspace((current) => current ? { ...current, ai_sessions: [...(current.ai_sessions ?? []), session] } : current)
+        setAnalysisSessionId(session.id)
+      } else {
+        const response = await api.analyzeCaseComparison(selectedIds, language, analysisQuestion.trim() || undefined)
+        setAnalysis(response.analysis)
       }
     } catch (cause) {
       setAnalysisError(String(cause).replace('Error: ', ''))
     } finally {
       setAnalysisLoading(false)
+    }
+  }
+
+  const selectEvidenceRevision = (revisionID: string) => {
+    if (!workspace) return
+    const revision = workspace.revisions?.find((item) => item.id === revisionID)
+    if (!revision) return
+    setSelectedRevisionId(revisionID)
+    setResult(revision.snapshot)
+    setVisualCandidateId(revision.snapshot.cases[1]?.id ?? '')
+    const latestAI = workspace.ai_sessions?.filter((session) => session.evidence_revision_id === revisionID).at(-1)
+    setAnalysis(latestAI?.analysis ?? '')
+    setAnalysisQuestion(latestAI?.question ?? '')
+    setAnalysisSessionId(latestAI?.id ?? '')
+  }
+
+  const refreshEvidence = async () => {
+    if (!compareId) return
+    setRefreshLoading(true)
+    setError('')
+    try {
+      const refreshed = await api.refreshCompareWorkspaceEvidence(compareId)
+      setWorkspace(refreshed)
+      const revision = refreshed.revisions?.find((item) => item.id === refreshed.active_revision_id) ?? refreshed.revisions?.at(-1)
+      if (revision) {
+        setSelectedRevisionId(revision.id)
+        setResult(revision.snapshot)
+        setVisualCandidateId(revision.snapshot.cases[1]?.id ?? '')
+        setAnalysis('')
+        setAnalysisQuestion('')
+        setAnalysisSessionId('')
+      }
+    } catch (cause) {
+      setError(String(cause).replace('Error: ', ''))
+    } finally {
+      setRefreshLoading(false)
     }
   }
 
@@ -471,12 +564,7 @@ export default function ComparePage() {
     try {
       const saved = await api.createCompareWorkspace({
         name: saveName.trim(),
-        participants: result.cases.map((item) => ({
-          project_id: projectId,
-          project_name_snapshot: project?.name,
-          case_id: item.id,
-          case_name_snapshot: item.name,
-        })),
+        participants: buildCompareParticipants(result, allCaseOptions, { id: projectId, name: project?.name }),
         view_state: persistedViewState,
       })
       setSaveOpen(false)
@@ -522,6 +610,11 @@ export default function ComparePage() {
     { id: 'sweep', label: t('Parameter Sweep'), icon: SlidersHorizontal },
   ]
   const participantForCase = (caseId: string) => workspace?.participants.find((participant) => participant.case_id === caseId)
+    ?? (() => {
+      const option = allCaseOptions.find((item) => item.id === caseId)
+      return option ? { project_id: option.projectId, project_name_snapshot: option.projectName, case_id: option.id, case_name_snapshot: option.name, role: 'candidate' as const, position: 0, availability: 'available' as const } : undefined
+    })()
+  const revisionSessions = workspace?.ai_sessions?.filter((session) => session.evidence_revision_id === selectedRevisionId) ?? []
 
   return (
     <div className="compare-page">
@@ -540,6 +633,7 @@ export default function ComparePage() {
               setSaveName(`${result.cases[0]?.name ?? t('Baseline')} vs ${result.cases[1]?.name ?? t('Candidate')}`)
               setSaveOpen(true)
             }}><BookmarkPlus size={14} />{t('Save comparison')}</button>}
+            {workspace && <button type="button" disabled={refreshLoading} onClick={() => void refreshEvidence()}>{refreshLoading ? <RefreshCw className="spin" size={14} /> : <RefreshCw size={14} />}{t('Refresh evidence')}</button>}
             {workspace && <span className={`compare-save-state ${workspaceSaveState}`}>{workspaceSaveState === 'saving' ? t('Saving…') : workspaceSaveState === 'error' ? t('Save failed') : t('Saved')}</span>}
           </div>
         </div>
@@ -555,11 +649,16 @@ export default function ComparePage() {
               <div><strong>{t('Select Cases')}</strong><span>{t('First selection is the baseline.')}</span></div>
               <span>{t('{count} selected').replace('{count}', String(selectedIds.length))}</span>
             </div>
+            <div className="compare-project-picker">
+              <label><span>{t('Add Cases from another Project')}</span><input list="compare-project-options" value={externalProjectId} onChange={(event) => setExternalProjectId(event.target.value)} placeholder={t('Project ID')} /></label>
+              <datalist id="compare-project-options">{projectOptions.filter((item) => item.id !== projectId).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</datalist>
+              <button type="button" disabled={!externalProjectId.trim() || externalProjectLoading} onClick={() => void loadExternalProject()}>{externalProjectLoading ? <RefreshCw className="spin" size={14} /> : <LibraryBig size={14} />}{t('Load Project Cases')}</button>
+            </div>
             <div className="compare-case-list">
-              {cases.map((item) => (
+              {allCaseOptions.map((item) => (
                 <label key={item.id} className={`compare-case-option ${selectedIds.includes(item.id) ? 'selected' : ''}`}>
                   <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleCase(item.id)} />
-                  <span><strong>{item.name}</strong><small>{item.id}</small></span>
+                  <span><strong>{item.name}</strong><small>{item.projectName} · {item.id}</small></span>
                   {selectedIds[0] === item.id && <em>{t('Baseline')}</em>}
                 </label>
               ))}
@@ -575,6 +674,13 @@ export default function ComparePage() {
             <section className="compare-availability-banner" role="status">
               <AlertCircle size={16} />
               <div><strong>{t('Some original Cases are unavailable')}</strong><span>{t('Saved parameter, KPI, artifact, and AI evidence remains available. Live files and 3D assets are disabled for unavailable Cases.')}</span></div>
+            </section>
+          )}
+
+          {workspace && (workspace.revisions?.length ?? 0) > 0 && (
+            <section className="compare-history-bar">
+              <label>{t('Evidence revision')}<select value={selectedRevisionId} onChange={(event) => selectEvidenceRevision(event.target.value)}>{[...(workspace.revisions ?? [])].reverse().map((revision) => <option value={revision.id} key={revision.id}>{t('Revision {number} · {date}').replace('{number}', String(revision.number)).replace('{date}', new Date(revision.created_at).toLocaleString())}</option>)}</select></label>
+              <span>{selectedRevisionId === workspace.active_revision_id ? t('Latest evidence') : t('Historical evidence · AI analysis uses this revision')}</span>
             </section>
           )}
 
@@ -627,6 +733,12 @@ export default function ComparePage() {
                   <aside className="compare-ai-panel">
                     <div className="compare-ai-heading"><span><Sparkles size={16} /></span><div><strong>{t('AI difference analysis')}</strong><small>{t('Uses parameters and result evidence together')}</small></div></div>
                     {!analysis && <p>{t('Ask AI to connect setup changes with convergence, KPI, artifact, and visualization evidence. Unsupported causal claims must be identified as hypotheses.')}</p>}
+                    {revisionSessions.length > 0 && <label className="compare-ai-history">{t('AI session')}<select value={analysisSessionId} onChange={(event) => {
+                      const session = revisionSessions.find((item) => item.id === event.target.value)
+                      setAnalysisSessionId(event.target.value)
+                      setAnalysis(session?.analysis ?? '')
+                      setAnalysisQuestion(session?.question ?? '')
+                    }}><option value="">{t('New analysis')}</option>{revisionSessions.map((session, index) => <option value={session.id} key={session.id}>{t('Analysis {number} · {date}').replace('{number}', String(index + 1)).replace('{date}', new Date(session.created_at).toLocaleString())}</option>)}</select></label>}
                     {analysis && <div className="compare-ai-answer"><ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis}</ReactMarkdown></div>}
                     <textarea value={analysisQuestion} onChange={(event) => setAnalysisQuestion(event.target.value)} placeholder={t('Optional: What decision are you trying to make?')} />
                     {analysisError && <div className="compare-ai-error"><AlertCircle size={13} />{analysisError}</div>}
