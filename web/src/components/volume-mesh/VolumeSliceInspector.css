@@ -8,6 +8,18 @@
   background: #e8e4dc;
 }
 
+.volume-field-slice-option {
+  padding-top: 5px;
+  border-top: 1px solid rgb(213 215 206 / 75%);
+}
+
+.volume-field-slice-option > span {
+  color: #6f7767;
+  font-weight: 650;
+}
+
+.volume-field-slice-option .volume-slice-variant { margin-top: 4px; }
+
 .volume-slice-variant button {
   min-height: 27px;
   border: 1px solid transparent;

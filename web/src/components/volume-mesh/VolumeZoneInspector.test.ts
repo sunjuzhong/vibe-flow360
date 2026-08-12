@@ -36,7 +36,7 @@ describe('VolumeZoneInspector filters', () => {
       null,
       createElement(VolumeZoneInspector, {
         inventory: zones,
-        selectedId: 'fluid-1',
+        selectedIds: ['fluid-1'],
         visibility: { 'fluid-1': true, 'rotor-1': true, 'zone-3': true },
         onSelect: () => undefined,
         onSetVisibility: () => undefined,

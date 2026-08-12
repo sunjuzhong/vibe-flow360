@@ -261,6 +261,7 @@ type Props = {
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
+  fieldPanelExtra?: React.ReactNode
   showVectorControls?: boolean
   showEntityLegend?: boolean
   showWarnings?: boolean
@@ -309,6 +310,7 @@ export function Viewer3D({
   captureRequest = 0,
   onCapture,
   showFieldPanel = true,
+  fieldPanelExtra,
   showVectorControls = false,
   showEntityLegend = true,
   showWarnings = true,
@@ -1709,6 +1711,7 @@ export function Viewer3D({
               ))}
             </select>
           </label>
+          {fieldPanelExtra}
           {selectedField && (
             <div className="viewer-field-controls">
               <label className="viewer-field-label">

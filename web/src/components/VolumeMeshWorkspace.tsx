@@ -30,6 +30,7 @@ import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
   ResourceReviewLaunchers,
+  ResourceReviewToggle,
 } from './ResourceReviewDialog'
 import { useI18n } from '../i18n'
 import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
@@ -39,7 +40,7 @@ import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPa
 import { VolumeCapabilityPanel } from './volume-mesh/VolumeCapabilityPanel'
 import { VolumeParameterSummary } from './volume-mesh/VolumeParameterSummary'
 import { VolumeQualityInspector } from './volume-mesh/VolumeQualityInspector'
-import { VolumeSliceInspector } from './volume-mesh/VolumeSliceInspector'
+import { VolumeSliceInspector, VolumeSliceVariantControl } from './volume-mesh/VolumeSliceInspector'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
 import { VolumeZoneSelectionCard } from './volume-mesh/VolumeZoneSelectionCard'
 import { BoundaryLayerInspector } from './volume-mesh/BoundaryLayerInspector'
@@ -194,14 +195,15 @@ export default function VolumeMeshWorkspace({
   const reviewLabel = reviewLevel === 'ready'
     ? 'Ready for a Case Draft'
     : reviewLevel === 'blocked' ? 'Resolve volume mesh blockers' : 'Engineering review required'
-  const selectedZone = review.selectedZone
-  const selectedZoneVisible = selectedZone ? review.visibility[selectedZone.id] !== false : false
+  const selectedZones = review.selectedZones
+  const selectedZoneIds = selectedZones.map((zone) => zone.id)
+  const selectedZoneVisible = selectedZones.some((zone) => review.visibility[zone.id] !== false)
   const entityNames = Object.fromEntries(review.zones.map((zone) => [zone.id, zone.name]))
-  const selectedZoneHasBoundaryLayer = Boolean(selectedZone && review.boundaryLayer.rules.some((rule) => (
-    rule.targets.some((target) => target.matchedGroupId === selectedZone.id)
+  const selectedZoneHasBoundaryLayer = Boolean(selectedZones.length && review.boundaryLayer.rules.some((rule) => (
+    rule.targets.some((target) => target.matchedGroupId && selectedZoneIds.includes(target.matchedGroupId))
   )))
-  const selectedZoneHasRefinement = Boolean(selectedZone && review.refinements.rules.some((rule) => (
-    rule.matchedTargets.some((target) => target.id === selectedZone.id)
+  const selectedZoneHasRefinement = Boolean(selectedZones.length && review.refinements.rules.some((rule) => (
+    rule.matchedTargets.some((target) => selectedZoneIds.includes(target.id))
   )))
   const contextualReviewCount = (review.qualityFields.length > 0 ? 1 : 0)
     + (selectedZoneHasBoundaryLayer ? 1 : 0)
@@ -211,9 +213,19 @@ export default function VolumeMeshWorkspace({
     : review.mode === 'boundary-layer'
       ? t('Boundary layers')
       : review.mode === 'refinements' ? t('Refinements') : t('Section diagnostic')
-  const selectZone = (groupId: string | null) => {
-    review.setSelection({ groupId })
-    if (groupId) review.setMode('overview')
+  const selectZone = (groupId: string | null, additive = false) => {
+    if (!groupId) {
+      review.setSelection({ groupId: null })
+      return
+    }
+    const current = review.selection.groupIds?.length
+      ? review.selection.groupIds
+      : review.selection.groupId ? [review.selection.groupId] : []
+    const groupIds = additive
+      ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
+      : [groupId]
+    review.setSelection({ groupId: groupIds.at(-1) ?? null, groupIds })
+    review.setMode('overview')
   }
   const activateContextReview = (mode: 'quality' | 'boundary-layer' | 'refinements') => {
     review.setMode(mode)
@@ -235,7 +247,7 @@ export default function VolumeMeshWorkspace({
           </div>
           <VolumeZoneInspector
             inventory={review.zones}
-            selectedId={review.selection.groupId}
+            selectedIds={selectedZoneIds}
             visibility={review.visibility}
             onSelect={selectZone}
             onSetVisibility={(groupIds, visible) => review.setVisibility({
@@ -252,13 +264,14 @@ export default function VolumeMeshWorkspace({
             manifest={manifest}
             state={viewerState}
             selection={review.selection}
-            onSelectionChange={(selection) => selectZone(selection.groupId)}
+            onSelectionChange={review.setSelection}
             entityVisibility={review.visibility}
             onEntityVisibilityChange={review.setVisibility}
             selectedField={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.selectedField : null}
             onSelectedFieldChange={review.setSelectedField}
             onFieldsDiscovered={review.handleFieldsDiscovered}
             fieldNames={review.mode === 'boundary-layer' ? review.boundaryLayerFieldNames : review.qualityFieldNames}
+            fieldEntityIds={selectedZoneIds.length ? selectedZoneIds : undefined}
             fieldRange={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.range : null}
             onFieldHistogramChange={review.setHistogram}
             onFieldExtremaChange={review.setExtrema}
@@ -270,6 +283,13 @@ export default function VolumeMeshWorkspace({
             cameraCommand={cameraCommand}
             clipPlane={review.mode === 'slices' ? review.clipPlane : null}
             showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}
+            fieldPanelExtra={review.mode === 'quality' ? (
+              <VolumeSliceVariantControl
+                variants={review.sliceVariants}
+                variant={review.sliceVariant}
+                onVariant={review.setSliceVariant}
+              />
+            ) : undefined}
             showEntityLegend={false}
             showWarnings={previewSource !== 'fallback'}
             projectId={projectId}
@@ -311,15 +331,18 @@ export default function VolumeMeshWorkspace({
             </div>
           )}
 
-          {selectedZone && (
+          {selectedZones.length > 0 && (
             <section className="volume-context-panel" aria-label={t('Available actions for this item')}>
               <VolumeZoneSelectionCard
-                zone={selectedZone}
+                zones={selectedZones}
                 visible={selectedZoneVisible}
                 contextOnly={previewSource === 'fallback'}
                 onFocus={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
-                onIsolate={() => review.isolateZone(selectedZone.id)}
-                onToggleVisibility={() => review.toggleZoneVisibility(selectedZone.id)}
+                onIsolate={() => review.isolateZones(selectedZoneIds)}
+                onToggleVisibility={() => review.setVisibility({
+                  ...review.visibility,
+                  ...Object.fromEntries(selectedZoneIds.map((id) => [id, !selectedZoneVisible])),
+                })}
                 onShowAll={review.showAllZones}
                 onClear={() => {
                   review.setSelection({ groupId: null })
@@ -329,11 +352,11 @@ export default function VolumeMeshWorkspace({
               {contextualReviewCount > 0 ? (
                 <ResourceReviewLaunchers>
                   {review.qualityFields.length > 0 && (
-                    <ResourceReviewLauncher
-                      icon={<SlidersHorizontal size={14} />}
+                    <ResourceReviewToggle
                       label={t('Cell quality')}
                       summary={t('{count} fields available').replace('{count}', String(review.qualityFields.length))}
-                      onClick={() => activateContextReview('quality')}
+                      checked={review.mode === 'quality'}
+                      onChange={(checked) => review.setMode(checked ? 'quality' : 'overview')}
                     />
                   )}
                   {selectedZoneHasBoundaryLayer && (

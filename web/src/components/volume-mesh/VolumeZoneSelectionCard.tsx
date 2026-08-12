@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n'
 import type { VolumeZoneRow } from '../../lib/volumeMeshReview'
 
 export function VolumeZoneSelectionCard({
-  zone,
+  zones,
   visible,
   contextOnly,
   onFocus,
@@ -12,7 +12,7 @@ export function VolumeZoneSelectionCard({
   onShowAll,
   onClear,
 }: {
-  zone?: VolumeZoneRow
+  zones: VolumeZoneRow[]
   visible: boolean
   contextOnly: boolean
   onFocus: () => void
@@ -22,6 +22,15 @@ export function VolumeZoneSelectionCard({
   onClear: () => void
 }) {
   const { t } = useI18n()
+  const zone = zones[0]
+  const multiple = zones.length > 1
+  const zoneTypes = [...new Set(zones.map((item) => contextOnly ? t('Context surface') : t(item.zoneType)))]
+  const triangles = zones.every((item) => item.triangles !== undefined)
+    ? zones.reduce((total, item) => total + (item.triangles ?? 0), 0)
+    : undefined
+  const vertices = zones.every((item) => item.vertices !== undefined)
+    ? zones.reduce((total, item) => total + (item.vertices ?? 0), 0)
+    : undefined
 
   return (
     <section className="geometry-selection-card volume-selection-card">
@@ -29,11 +38,11 @@ export function VolumeZoneSelectionCard({
       {zone ? (
         <>
           <dl>
-            <div className="volume-selection-name"><dt>{t('Name')}</dt><dd title={zone.name}>{zone.name}</dd></div>
-            <div><dt>{t('Type')}</dt><dd>{contextOnly ? t('Context surface') : t(zone.zoneType)}</dd></div>
-            <div><dt>{t('Type evidence')}</dt><dd>{t(zone.typeProvenance)}</dd></div>
-            <div><dt>{t('Rendered elements')}</dt><dd>{zone.triangles?.toLocaleString() ?? t('Not reported')}</dd></div>
-            <div><dt>{t('Vertices')}</dt><dd>{zone.vertices?.toLocaleString() ?? t('Not reported')}</dd></div>
+            <div className="volume-selection-name"><dt>{multiple ? t('Selection') : t('Name')}</dt><dd title={multiple ? zones.map((item) => item.name).join(', ') : zone.name}>{multiple ? t('{count} items selected').replace('{count}', String(zones.length)) : zone.name}</dd></div>
+            <div><dt>{t('Type')}</dt><dd>{zoneTypes.join(', ')}</dd></div>
+            {!multiple && <div><dt>{t('Type evidence')}</dt><dd>{t(zone.typeProvenance)}</dd></div>}
+            <div><dt>{t('Rendered elements')}</dt><dd>{triangles?.toLocaleString() ?? t('Not reported')}</dd></div>
+            <div><dt>{t('Vertices')}</dt><dd>{vertices?.toLocaleString() ?? t('Not reported')}</dd></div>
           </dl>
           <div className="volume-selection-actions" aria-label={t('Selection actions')}>
             <button type="button" onClick={onFocus}><LocateFixed size={12} /> {t('Focus')}</button>

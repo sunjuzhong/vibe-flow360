@@ -5,6 +5,7 @@ import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
   ResourceReviewLaunchers,
+  ResourceReviewToggle,
 } from './ResourceReviewDialog'
 
 describe('ResourceReviewDialog', () => {
@@ -41,5 +42,16 @@ describe('ResourceReviewDialog', () => {
     expect(html).toContain('aria-label="Review details"')
     expect(html).toContain('Quality controls')
     expect(html).toContain('4 fields')
+  })
+
+  it('renders an inline review option as a checkbox-like button', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ResourceReviewToggle label="Cell quality" summary="6 fields" checked onChange={() => undefined} />
+      </I18nProvider>,
+    )
+    expect(html).toContain('role="checkbox"')
+    expect(html).toContain('aria-checked="true"')
+    expect(html).toContain('Cell quality')
   })
 })

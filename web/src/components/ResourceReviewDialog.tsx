@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useId } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, X } from 'lucide-react'
+import { Check, ChevronRight, X } from 'lucide-react'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useI18n } from '../i18n'
 
@@ -90,6 +90,31 @@ export function ResourceReviewLauncher({
       <span className="resource-review-launcher-icon">{icon}</span>
       <span><strong>{label}</strong><small>{summary}</small></span>
       <ChevronRight size={15} aria-hidden="true" />
+    </button>
+  )
+}
+
+export function ResourceReviewToggle({
+  label,
+  summary,
+  checked,
+  onChange,
+}: {
+  label: string
+  summary: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`resource-review-toggle ${checked ? 'checked' : ''}`}
+      role="checkbox"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="resource-review-toggle-box">{checked && <Check size={12} aria-hidden="true" />}</span>
+      <span><strong>{label}</strong><small>{summary}</small></span>
     </button>
   )
 }

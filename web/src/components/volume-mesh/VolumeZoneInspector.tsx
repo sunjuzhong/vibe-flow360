@@ -39,16 +39,16 @@ export function groupVolumeZones(inventory: VolumeZoneRow[]): Array<{ group: str
 
 export function VolumeZoneInspector({
   inventory,
-  selectedId,
+  selectedIds,
   visibility,
   onSelect,
   onSetVisibility,
   contextOnly = false,
 }: {
   inventory: VolumeZoneRow[]
-  selectedId: string | null
+  selectedIds: string[]
   visibility: Record<string, boolean>
-  onSelect: (groupId: string) => void
+  onSelect: (groupId: string, additive: boolean) => void
   onSetVisibility: (groupIds: string[], visible: boolean) => void
   contextOnly?: boolean
 }) {
@@ -97,15 +97,15 @@ export function VolumeZoneInspector({
                   const visible = visibility[zone.id] !== false
                   return (
                     <div
-                      className={`volume-zone-row ${selectedId === zone.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+                      className={`volume-zone-row ${selectedIds.includes(zone.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
                       key={zone.id}
                     >
                       <button
                         type="button"
                         className="volume-zone-select"
-                        aria-pressed={selectedId === zone.id}
+                        aria-pressed={selectedIds.includes(zone.id)}
                         title={zone.name}
-                        onClick={() => onSelect(zone.id)}
+                        onClick={(event) => onSelect(zone.id, event.metaKey || event.ctrlKey)}
                       >
                         <span className="viewer-color-swatch" style={{ background: zone.color }} />
                         <strong>{zone.name}</strong>

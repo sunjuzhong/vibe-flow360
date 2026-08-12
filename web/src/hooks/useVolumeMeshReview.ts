@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react'
 import type { ResourceDetail } from '../api/client'
-import type { BoundingBoxData, MeshGroupData, ViewerClipPlane } from '../components/viewer/LazyViewer3D'
+import type { BoundingBoxData, MeshGroupData, ViewerClipPlane, ViewerSelection } from '../components/viewer/LazyViewer3D'
 import type {
   UVFFieldExtrema,
   UVFFieldHistogram,
@@ -25,7 +25,7 @@ type ReviewGroup = MeshGroupData
 
 export type VolumeMeshReviewState = {
   mode: VolumeViewMode
-  selection: { groupId: string | null }
+  selection: ViewerSelection
   visibility: Record<string, boolean>
   allFields: UVFFieldInfo[]
   qualityFields: UVFFieldInfo[]
@@ -45,7 +45,7 @@ export type VolumeMeshReviewState = {
 export type VolumeMeshReviewAction =
   | { type: 'reset-groups'; groups: ReviewGroup[] }
   | { type: 'mode'; mode: VolumeViewMode }
-  | { type: 'selection'; groupId: string | null }
+  | { type: 'selection'; groupId: string | null; groupIds?: string[] }
   | { type: 'visibility'; visibility: Record<string, boolean> }
   | { type: 'toggle-visibility'; groupId: string }
   | { type: 'fields'; fields: UVFFieldInfo[] }
@@ -95,9 +95,14 @@ export function reduceVolumeMeshReviewState(
       )
       return {
         ...state,
-        selection: action.groups.some((group) => group.id === state.selection.groupId)
-          ? state.selection
-          : { groupId: null },
+        selection: (() => {
+          const available = new Set(action.groups.map((group) => group.id))
+          const groupIds = (state.selection.groupIds ?? []).filter((id) => available.has(id))
+          const groupId = state.selection.groupId && available.has(state.selection.groupId)
+            ? state.selection.groupId
+            : groupIds[0] ?? null
+          return { groupId, ...(groupIds.length > 1 ? { groupIds } : {}) }
+        })(),
         visibility,
         allFields: [],
         qualityFields: [],
@@ -128,7 +133,7 @@ export function reduceVolumeMeshReviewState(
       }
     }
     case 'selection':
-      return { ...state, selection: { groupId: action.groupId } }
+      return { ...state, selection: { groupId: action.groupId, ...(action.groupIds?.length ? { groupIds: action.groupIds } : {}) } }
     case 'visibility':
       return { ...state, visibility: action.visibility }
     case 'toggle-visibility':
@@ -181,7 +186,7 @@ export function reduceVolumeMeshReviewState(
       return {
         ...state,
         probe,
-        selection: { groupId: probe.entityId },
+        selection: { groupId: probe.entityId, groupIds: [probe.entityId] },
         focusTarget: [...probe.position],
       }
     }
@@ -197,9 +202,27 @@ export function reduceVolumeMeshReviewState(
       const review = buildVolumeSliceVariantReview(action.groups)
       const available = action.variant === 'flat' ? review.hasFlat : review.hasCrinkled
       if (!available) return state
+      const currentIds = state.selection.groupIds?.length
+        ? state.selection.groupIds
+        : state.selection.groupId ? [state.selection.groupId] : []
+      const familyByGroupId = new Map<string, (typeof review.families)[number]>()
+      for (const family of review.families) {
+        for (const id of [...family.flatGroupIds, ...family.crinkledGroupIds]) familyByGroupId.set(id, family)
+      }
+      const addedFamilies = new Set<string>()
+      const groupIds = currentIds.flatMap((id) => {
+        const family = familyByGroupId.get(id)
+        if (!family) return [id]
+        if (addedFamilies.has(family.key)) return []
+        addedFamilies.add(family.key)
+        const preferred = action.variant === 'flat' ? family.flatGroupIds : family.crinkledGroupIds
+        const fallback = action.variant === 'flat' ? family.crinkledGroupIds : family.flatGroupIds
+        return preferred.length ? preferred : fallback
+      })
       return {
         ...state,
         sliceVariant: action.variant,
+        selection: { groupId: groupIds[0] ?? null, ...(groupIds.length ? { groupIds } : {}) },
         visibility: applyVolumeSliceVariantVisibility(state.visibility, review, action.variant),
       }
     }
@@ -240,6 +263,13 @@ export function useVolumeMeshReview({
     fields: state.allFields,
   }), [detail, groups, previewSource, state.allFields])
   const selectedZone = zones.find((zone) => zone.id === state.selection.groupId)
+  const selectedZoneIds = state.selection.groupIds?.length
+    ? state.selection.groupIds
+    : state.selection.groupId ? [state.selection.groupId] : []
+  const selectedZones = selectedZoneIds.flatMap((id) => {
+    const zone = zones.find((candidate) => candidate.id === id)
+    return zone ? [zone] : []
+  })
   const qualityFieldNames = state.qualityFields.map((field) => field.name)
   const boundaryLayerFieldNames = state.boundaryLayerFields.map((field) => field.name)
   const selectedFieldInfo = [...state.qualityFields, ...state.boundaryLayerFields]
@@ -265,12 +295,13 @@ export function useVolumeMeshReview({
     }
   }, [boundingBox, state.clipAxis])
   const setSelection = useCallback(
-    (selection: { groupId: string | null }) => dispatch({ type: 'selection', groupId: selection.groupId }),
+    (selection: ViewerSelection) => dispatch({ type: 'selection', groupId: selection.groupId, groupIds: selection.groupIds }),
     [],
   )
-  const isolateZone = useCallback((groupId: string) => {
-    dispatch({ type: 'visibility', visibility: Object.fromEntries(zones.map((zone) => [zone.id, zone.id === groupId])) })
-    dispatch({ type: 'selection', groupId })
+  const isolateZones = useCallback((groupIds: string[]) => {
+    const selected = new Set(groupIds)
+    dispatch({ type: 'visibility', visibility: Object.fromEntries(zones.map((zone) => [zone.id, selected.has(zone.id)])) })
+    dispatch({ type: 'selection', groupId: groupIds[0] ?? null, groupIds })
   }, [zones])
   const showAllZones = useCallback(() => {
     dispatch({
@@ -299,6 +330,7 @@ export function useVolumeMeshReview({
     sliceVariants,
     capabilities,
     selectedZone,
+    selectedZones,
     qualityFieldNames,
     boundaryLayerFieldNames,
     selectedFieldInfo,
@@ -308,7 +340,8 @@ export function useVolumeMeshReview({
     setSelection,
     setVisibility: (visibility: Record<string, boolean>) => dispatch({ type: 'visibility', visibility }),
     toggleZoneVisibility: (groupId: string) => dispatch({ type: 'toggle-visibility', groupId }),
-    isolateZone,
+    isolateZone: (groupId: string) => isolateZones([groupId]),
+    isolateZones,
     showAllZones,
     hideAllZones,
     handleFieldsDiscovered: (fields: UVFFieldInfo[]) => dispatch({ type: 'fields', fields }),

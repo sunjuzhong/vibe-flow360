@@ -58,6 +58,48 @@
 
 .resource-review-launcher:hover,
 .resource-review-launcher:focus-visible { background: #f3f6ec; }
+
+.resource-review-toggle {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 43px;
+  padding: 7px 10px;
+  color: #4e5848;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid #eceee7;
+  background: transparent;
+  cursor: pointer;
+}
+
+.resource-review-toggle:hover,
+.resource-review-toggle:focus-visible,
+.resource-review-toggle.checked { background: #f3f6ec; }
+
+.resource-review-toggle-box {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid #aeb8a0;
+  border-radius: 4px;
+  color: #fff;
+  background: #fff;
+}
+
+.resource-review-toggle.checked .resource-review-toggle-box {
+  border-color: #76931f;
+  background: #76931f;
+}
+
+.resource-review-toggle strong,
+.resource-review-toggle small { display: block; }
+
+.resource-review-toggle strong { font-size: 11px; }
+.resource-review-toggle small { margin-top: 2px; color: #858e7c; font-size: 9px; }
 .resource-review-launcher > span:nth-child(2) { min-width: 0; }
 .resource-review-launcher strong,
 .resource-review-launcher small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

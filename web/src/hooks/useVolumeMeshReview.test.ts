@@ -52,6 +52,25 @@ describe('VolumeMesh review store', () => {
     expect(refreshed.visibility).toEqual({ fluid: true, solid: false })
   })
 
+  it('preserves every valid item in a multi-selection when groups refresh', () => {
+    const selected = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, {
+      type: 'selection',
+      groupId: 'slice-flat',
+      groupIds: ['slice-flat', 'slice-crinkled', 'missing'],
+    })
+    const refreshed = reduceVolumeMeshReviewState(selected, {
+      type: 'reset-groups',
+      groups: [
+        { id: 'slice-flat', name: 'Slice (flat)', color: '#aaa', visible: true },
+        { id: 'slice-crinkled', name: 'Slice (crinkled)', color: '#bbb', visible: true },
+      ],
+    })
+    expect(refreshed.selection).toEqual({
+      groupId: 'slice-flat',
+      groupIds: ['slice-flat', 'slice-crinkled'],
+    })
+  })
+
   it('keeps boundary-layer evidence separate from general quality fields', () => {
     const discovered = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, {
       type: 'fields',
@@ -82,5 +101,24 @@ describe('VolumeMesh review store', () => {
     const switched = reduceVolumeMeshReviewState(loaded, { type: 'slice-variant', variant: 'crinkled', groups })
     expect(switched.sliceVariant).toBe('crinkled')
     expect(switched.visibility).toEqual({ flat: false, crinkled: true, fluid: false })
+  })
+
+  it('moves a multi-selection to every matching slice representation', () => {
+    const groups = [
+      { id: 'wake-flat', name: 'Wake (flat)', color: '#aaa', visible: true },
+      { id: 'wake-crinkled', name: 'Wake (crinkled)', color: '#bbb', visible: false },
+      { id: 'shock-flat', name: 'Shock (flat)', color: '#ccc', visible: true },
+      { id: 'shock-crinkled', name: 'Shock (crinkled)', color: '#ddd', visible: false },
+    ]
+    const selected = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, {
+      type: 'selection',
+      groupId: 'wake-flat',
+      groupIds: ['wake-flat', 'shock-flat'],
+    })
+    const switched = reduceVolumeMeshReviewState(selected, { type: 'slice-variant', variant: 'crinkled', groups })
+    expect(switched.selection).toEqual({
+      groupId: 'wake-crinkled',
+      groupIds: ['wake-crinkled', 'shock-crinkled'],
+    })
   })
 })

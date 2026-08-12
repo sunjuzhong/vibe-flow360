@@ -1,6 +1,35 @@
 import { AlertCircle, Slice } from 'lucide-react'
 import type { VolumeSliceVariant, VolumeSliceVariantReview } from '../../lib/volumeMeshReview'
+import { useI18n } from '../../i18n'
 import './VolumeSliceInspector.css'
+
+export function VolumeSliceVariantControl({
+  variants,
+  variant,
+  onVariant,
+}: {
+  variants: VolumeSliceVariantReview
+  variant: VolumeSliceVariant
+  onVariant: (variant: VolumeSliceVariant) => void
+}) {
+  const { t } = useI18n()
+  if (variants.families.length === 0) return null
+  return (
+    <div className="volume-field-slice-option">
+      <span>{t('Slice representation')}</span>
+      <div className="volume-slice-variant" role="group" aria-label={t('Generated slice representation')}>
+        {(['flat', 'crinkled'] as const).map((candidate) => {
+          const supported = candidate === 'flat' ? variants.hasFlat : variants.hasCrinkled
+          return (
+            <button type="button" className={variant === candidate ? 'active' : ''} disabled={!supported} aria-pressed={variant === candidate} key={candidate} onClick={() => onVariant(candidate)}>
+              {t(candidate === 'flat' ? 'Flat' : 'Crinkled')}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export function VolumeSliceInspector({
   enabled,
@@ -36,16 +65,7 @@ export function VolumeSliceInspector({
       )}
       {variants.families.length > 0 && (
         <>
-          <div className="volume-slice-variant" role="group" aria-label="Generated slice representation">
-            {(['flat', 'crinkled'] as const).map((candidate) => {
-              const supported = candidate === 'flat' ? variants.hasFlat : variants.hasCrinkled
-              return (
-                <button type="button" className={variant === candidate ? 'active' : ''} disabled={!supported} aria-pressed={variant === candidate} key={candidate} onClick={() => onVariant(candidate)}>
-                  {candidate === 'flat' ? 'Flat' : 'Crinkled'}
-                </button>
-              )
-            })}
-          </div>
+          <VolumeSliceVariantControl variants={variants} variant={variant} onVariant={onVariant} />
           <p className="volume-slice-variant-detail">
             {`${variants.pairedCount} paired generated ${variants.pairedCount === 1 ? 'slice' : 'slices'} · Flat is the default where available.`}
             {!variants.hasFlat ? ' Flat is unavailable, so Crinkled is retained.' : !variants.hasCrinkled ? ' Crinkled is unavailable.' : ''}

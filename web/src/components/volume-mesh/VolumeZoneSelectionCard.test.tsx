@@ -20,7 +20,7 @@ describe('VolumeZoneSelectionCard', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
         <VolumeZoneSelectionCard
-          zone={selectedZone}
+          zones={[selectedZone]}
           visible
           contextOnly={false}
           onFocus={() => undefined}
@@ -40,5 +40,25 @@ describe('VolumeZoneSelectionCard', () => {
     expect(html).toContain('Focus')
     expect(html).toContain('Isolate')
     expect(html).toContain('Clear selection')
+  })
+
+  it('summarizes multiple selected items and aggregates their counts', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <VolumeZoneSelectionCard
+          zones={[selectedZone, { ...selectedZone, id: 'slice-two', name: 'Second slice', triangles: 10, vertices: 5 }]}
+          visible
+          contextOnly={false}
+          onFocus={() => undefined}
+          onIsolate={() => undefined}
+          onToggleVisibility={() => undefined}
+          onShowAll={() => undefined}
+          onClear={() => undefined}
+        />
+      </I18nProvider>,
+    )
+    expect(html).toContain('2 items selected')
+    expect(html).toContain('120,408')
+    expect(html).toContain('40,215')
   })
 })
