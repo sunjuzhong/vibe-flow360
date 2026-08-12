@@ -332,6 +332,7 @@ func (s *Server) routes() {
 		api.GET("/flow360/resources/:resource_type/:resource_id/visualization/*asset_path", s.flow360ResourceVisualizationAsset)
 		api.GET("/flow360/resources/:resource_type/:resource_id/convergence", s.flow360CaseConvergence)
 		api.POST("/flow360/compare", s.compareCases)
+		api.POST("/flow360/compare/analyze", s.analyzeCaseComparison)
 		api.POST("/flow360/sweep", s.generateSweepPlan)
 		api.GET("/plans", s.listPlans)
 		api.POST("/plans", s.createPlan)
@@ -2271,68 +2272,11 @@ func (s *Server) compareCases(c *gin.Context) {
 			}
 		}
 	}
-
-	kpiKeys := req.KPIKeys
-	if len(kpiKeys) == 0 {
-		kpiKeys = []string{"Cl", "Cd", "Cm"}
+	result, err := s.buildCaseComparison(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
 	}
-
-	var baseline map[string]interface{}
-	var others []map[string]interface{}
-
-	for i, id := range req.CaseIDs {
-		resource, err := s.fetchCaseResource(c.Request.Context(), id)
-		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"error":   fmt.Sprintf("failed to fetch case %s: %s", id, err.Error()),
-				"case_id": id,
-			})
-			return
-		}
-
-		params := map[string]interface{}{
-			"id":   id,
-			"type": resource.Type,
-		}
-
-		if name := extractField(resource.Info, "name"); name != "" {
-			params["name"] = name
-		} else {
-			params["name"] = id
-		}
-
-		if status := extractField(resource.State, "status"); status != "" {
-			params["status"] = status
-		} else {
-			params["status"] = "unknown"
-		}
-
-		if resource.Summary != nil {
-			params["summary"] = rawToMap(resource.Summary)
-		}
-		if resource.SimulationParams != nil {
-			params["simulation_params"] = rawToMap(resource.SimulationParams)
-		}
-
-		if i == 0 {
-			baseline = params
-		} else {
-			others = append(others, params)
-		}
-	}
-
-	result := comparison.CompareCases(baseline, others, kpiKeys)
-	for i := range result.Cases {
-		assessment, assessments := s.caseConvergenceEvidence(c.Request.Context(), result.Cases[i].ID)
-		result.Cases[i].Convergence = assessment
-		if resultKPIs := kpisFromConvergence(assessments, kpiKeys, assessment.Status == convergence.StatusConverged); len(resultKPIs) > 0 {
-			result.Cases[i].KPIs = resultKPIs
-		}
-		for j := range result.Cases[i].KPIs {
-			result.Cases[i].KPIs[j].Converged = assessment.Status == convergence.StatusConverged
-		}
-	}
-	result.Ranking = comparison.RankCases(result.Cases)
 
 	c.JSON(http.StatusOK, result)
 }

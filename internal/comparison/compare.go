@@ -34,13 +34,31 @@ type CompareResult struct {
 	Ranking []RankedCase     `json:"ranking,omitempty"`
 }
 
+type ResultArtifact struct {
+	Name          string `json:"name,omitempty"`
+	Path          string `json:"path"`
+	FileType      string `json:"file_type,omitempty"`
+	SizeBytes     int64  `json:"size_bytes,omitempty"`
+	Category      string `json:"category"`
+	Previewable   bool   `json:"previewable"`
+	Visualization bool   `json:"visualization"`
+}
+
+type VisualizationEvidence struct {
+	Available   bool     `json:"available"`
+	ResultPaths []string `json:"result_paths,omitempty"`
+	OutputCount int      `json:"output_count,omitempty"`
+}
+
 type CaseComparison struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Status      string                 `json:"status"`
-	Params      map[string]interface{} `json:"params"`
-	Convergence convergence.Assessment `json:"convergence"`
-	KPIs        []KPIData              `json:"kpis"`
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	Status        string                 `json:"status"`
+	Params        map[string]interface{} `json:"params"`
+	Convergence   convergence.Assessment `json:"convergence"`
+	KPIs          []KPIData              `json:"kpis"`
+	Artifacts     []ResultArtifact       `json:"artifacts,omitempty"`
+	Visualization VisualizationEvidence  `json:"visualization"`
 }
 
 type RankedCase struct {

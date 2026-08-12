@@ -778,12 +778,32 @@ export type CaseComparison = {
     converged: boolean
     source: string
   }>
+  artifacts?: Array<{
+    name?: string
+    path: string
+    file_type?: string
+    size_bytes?: number
+    category: 'residuals' | 'forces' | 'monitors' | 'flow-fields' | 'other' | string
+    previewable: boolean
+    visualization: boolean
+  }>
+  visualization: {
+    available: boolean
+    result_paths?: string[]
+    output_count?: number
+  }
 }
 
 export type CompareResult = {
   cases: CaseComparison[]
   diffs: Array<{ path: string; baseline: unknown; other: unknown; compared_to?: string }>
   ranking?: Array<{ id: string; name: string; score: number; reason: string }>
+}
+
+export type ComparisonAnalysis = {
+  analysis: string
+  provider: string
+  model: string
 }
 
 export type SweepParameter = {
@@ -1118,6 +1138,13 @@ export const api = {
     ),
   compareCases: (caseIds: string[]) =>
     mutate<CompareResult>('/api/flow360/compare', { case_ids: caseIds, baseline: caseIds[0] }),
+  analyzeCaseComparison: (caseIds: string[], language: string, question?: string) =>
+    mutate<ComparisonAnalysis>('/api/flow360/compare/analyze', {
+      case_ids: caseIds,
+      baseline: caseIds[0],
+      language,
+      question,
+    }),
   sweep: (input: {
     baseline_case_id: string
     project_id: string
