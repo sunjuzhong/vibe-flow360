@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildArtifactMatrix, CompareParameterValue, matchCompareManifestItem, parseSweepValues, toggleCaseSelection } from './ComparePage'
+import type { CompareResult } from '../api/client'
+import { buildArtifactMatrix, buildCompareParticipants, CompareParameterValue, matchCompareManifestItem, mergeCompareCaseOptions, parseSweepValues, toggleCaseSelection } from './ComparePage'
 
 describe('ComparePage URL and sweep helpers', () => {
   it('keeps Case selection order stable for URL restoration', () => {
@@ -52,5 +53,24 @@ describe('ComparePage URL and sweep helpers', () => {
     expect(matchCompareManifestItem(groups, { id: 'baseline-wall', name: 'Cylinder Wall', path: ['Surfaces'] })?.id).toBe('candidate-wall')
     expect(matchCompareManifestItem(groups, { id: 'baseline-slice', name: 'mid-span' })?.id).toBe('candidate-slice')
     expect(matchCompareManifestItem(groups, { id: 'missing', name: 'Inlet' })).toBeNull()
+  })
+
+  it('keeps cross-Project Case ownership when persisting participants', () => {
+    const options = mergeCompareCaseOptions(
+      [{ id: 'case-a', name: 'A', type: 'Case', parent_id: null, projectId: 'prj-a', projectName: 'Project A' }],
+      [{ id: 'case-b', name: 'B', type: 'Case', parent_id: null, projectId: 'prj-b', projectName: 'Project B' }],
+    )
+    const result: CompareResult = {
+      cases: [
+        { id: 'case-a', name: 'A', status: 'completed', params: {}, convergence: { status: 'converged', reason: '' }, kpis: [], visualization: { available: false } },
+        { id: 'case-b', name: 'B', status: 'completed', params: {}, convergence: { status: 'converged', reason: '' }, kpis: [], visualization: { available: false } },
+      ],
+      diffs: [], ranking: [],
+    }
+
+    expect(buildCompareParticipants(result, options, { id: 'fallback' })).toMatchObject([
+      { project_id: 'prj-a', project_name_snapshot: 'Project A', case_id: 'case-a' },
+      { project_id: 'prj-b', project_name_snapshot: 'Project B', case_id: 'case-b' },
+    ])
   })
 })

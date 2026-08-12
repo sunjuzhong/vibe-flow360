@@ -162,6 +162,98 @@ func (s *Server) appendCompareWorkspaceAISession(c *gin.Context) {
 	c.JSON(http.StatusCreated, workspace.AISessions[len(workspace.AISessions)-1])
 }
 
+func (s *Server) refreshCompareWorkspaceEvidence(c *gin.Context) {
+	if s.compareWorkspaces == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "compare workspace storage is unavailable"})
+		return
+	}
+	workspace, err := s.compareWorkspaces.Get(c.Param("compare_id"))
+	if errors.Is(err, compareworkspace.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	caseIDs := make([]string, len(workspace.Participants))
+	for index, participant := range workspace.Participants {
+		caseIDs[index] = participant.CaseID
+	}
+	snapshot, err := s.buildCaseComparison(c.Request.Context(), compareRequest{CaseIDs: caseIDs, Baseline: caseIDs[0]})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "comparison evidence could not be refreshed; the existing revision was preserved: " + err.Error()})
+		return
+	}
+	workspace, err = s.compareWorkspaces.AddRevision(workspace.ID, snapshot)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, workspace)
+}
+
+func (s *Server) analyzeCompareWorkspaceRevision(c *gin.Context) {
+	if s.compareWorkspaces == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "compare workspace storage is unavailable"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+	var req struct {
+		EvidenceRevisionID string `json:"evidence_revision_id"`
+		Language           string `json:"language,omitempty"`
+		Question           string `json:"question,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	workspace, err := s.compareWorkspaces.Get(c.Param("compare_id"))
+	if errors.Is(err, compareworkspace.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	revisionID := strings.TrimSpace(req.EvidenceRevisionID)
+	if revisionID == "" {
+		revisionID = workspace.ActiveRevisionID
+	}
+	var snapshotRevision *compareworkspace.EvidenceRevision
+	for index := range workspace.Revisions {
+		if workspace.Revisions[index].ID == revisionID {
+			snapshotRevision = &workspace.Revisions[index]
+			break
+		}
+	}
+	if snapshotRevision == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "comparison evidence revision does not exist"})
+		return
+	}
+	response, status, err := s.generateComparisonAnalysis(c.Request.Context(), snapshotRevision.Snapshot, req.Language, req.Question)
+	if err != nil {
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	updated, err := s.compareWorkspaces.AppendAISession(workspace.ID, compareworkspace.AISession{
+		EvidenceRevisionID: revisionID,
+		Question:           strings.TrimSpace(req.Question),
+		Analysis:           response.Analysis,
+		Provider:           response.Provider,
+		Model:              response.Model,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response.Analysis, "provider": response.Provider, "model": response.Model,
+		"session": updated.AISessions[len(updated.AISessions)-1],
+	})
+}
+
 func (s *Server) updateCompareWorkspaceStatus(c *gin.Context) {
 	if s.compareWorkspaces == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "compare workspace storage is unavailable"})
