@@ -5947,11 +5947,9 @@ button { color: inherit; }
 }
 .volume-zone-select .viewer-color-swatch { grid-row: 1 / 4; align-self: center; }
 .volume-zone-select strong,
-.volume-zone-select small,
-.volume-zone-select em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.volume-zone-select small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .volume-zone-select strong { font-size: 11px; }
 .volume-zone-select small { color: #827b70; font: 9px 'DM Mono'; }
-.volume-zone-select em { color: #a17d4e; font-size: 8px; font-style: normal; }
 .volume-quality-field,
 .volume-field-distribution,
 .volume-slice-inspector,

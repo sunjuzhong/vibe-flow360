@@ -7,9 +7,9 @@ import { VolumeZoneInspector } from './VolumeZoneInspector'
 import type { VolumeZoneRow } from '../../lib/volumeMeshReview'
 
 const zones: VolumeZoneRow[] = [
-  { id: 'fluid-1', name: 'Main Fluid', zoneType: 'fluid', typeProvenance: 'provided', color: '#aaa', visible: true },
-  { id: 'rotor-1', name: 'Rotor', zoneType: 'rotation', typeProvenance: 'provided', color: '#bbb', visible: true },
-  { id: 'zone-3', name: 'Mystery', zoneType: 'unknown', typeProvenance: 'unknown', color: '#ccc', visible: true, path: ['root', 'porous-block'] },
+  { id: 'fluid-1', name: 'Main Fluid', zoneType: 'fluid', typeProvenance: 'provided', color: '#aaa', visible: true, path: ['volumeMesh'] },
+  { id: 'rotor-1', name: 'Rotor', zoneType: 'rotation', typeProvenance: 'provided', color: '#bbb', visible: true, path: ['volumeMesh', 'rotors'] },
+  { id: 'zone-3', name: 'Mystery', zoneType: 'unknown', typeProvenance: 'unknown', color: '#ccc', visible: true, path: ['slices', 'porous-block'] },
 ]
 
 describe('VolumeZoneInspector filters', () => {
@@ -23,11 +23,10 @@ describe('VolumeZoneInspector filters', () => {
     expect(filterVolumeZones(zones, '', 'unknown').map((zone) => zone.id)).toEqual(['zone-3'])
   })
 
-  it('creates real type groups instead of presenting a type filter', () => {
-    expect(groupVolumeZones(zones).map(({ type, zones }) => [type, zones.length])).toEqual([
-      ['fluid', 1],
-      ['rotation', 1],
-      ['unknown', 1],
+  it('groups by the direct BodyGroup member encoded in the manifest path', () => {
+    expect(groupVolumeZones(zones).map(({ group, zones }) => [group, zones.length])).toEqual([
+      ['volumeMesh', 2],
+      ['slices', 1],
     ])
   })
 
@@ -46,7 +45,10 @@ describe('VolumeZoneInspector filters', () => {
 
     expect(html).toContain('title="Main Fluid"')
     expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('Collapse fluid')
+    expect(html).toContain('Expand Volume Mesh')
+    expect(html).toContain('Expand Slices')
+    expect(html).not.toContain('type inferred from name')
+    expect(html).not.toContain('type not reported')
     expect(html).not.toContain('aria-label="Isolate Main Fluid"')
     expect(html).not.toContain('Filter VolumeMesh zones by type')
   })

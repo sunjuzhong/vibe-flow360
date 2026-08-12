@@ -6,8 +6,6 @@ import { ManifestMemberGroup } from '../ManifestMemberGroup'
 
 export type VolumeZoneFilter = 'all' | VolumeZoneType
 
-const zoneTypeOrder: VolumeZoneType[] = ['fluid', 'rotation', 'porous', 'solid', 'farfield', 'unknown']
-
 export function filterVolumeZones(inventory: VolumeZoneRow[], query: string, filter: VolumeZoneFilter) {
   const normalized = query.trim().toLocaleLowerCase()
   return inventory.filter((row) => {
@@ -16,11 +14,27 @@ export function filterVolumeZones(inventory: VolumeZoneRow[], query: string, fil
   })
 }
 
-export function groupVolumeZones(inventory: VolumeZoneRow[]): Array<{ type: VolumeZoneType; zones: VolumeZoneRow[] }> {
-  return zoneTypeOrder.flatMap((type) => {
-    const zones = inventory.filter((zone) => zone.zoneType === type)
-    return zones.length ? [{ type, zones }] : []
-  })
+export function volumeManifestGroup(zone: VolumeZoneRow): string {
+  return zone.path?.[0]?.trim() || 'Other'
+}
+
+export function volumeManifestGroupLabel(group: string): string {
+  if (group === 'Other') return group
+  return group
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/^./, (character) => character.toUpperCase())
+}
+
+export function groupVolumeZones(inventory: VolumeZoneRow[]): Array<{ group: string; zones: VolumeZoneRow[] }> {
+  const grouped = new Map<string, VolumeZoneRow[]>()
+  for (const zone of inventory) {
+    const group = volumeManifestGroup(zone)
+    const zones = grouped.get(group)
+    if (zones) zones.push(zone)
+    else grouped.set(group, [zone])
+  }
+  return [...grouped].map(([group, zones]) => ({ group, zones }))
 }
 
 export function VolumeZoneInspector({
@@ -41,7 +55,9 @@ export function VolumeZoneInspector({
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => filterVolumeZones(inventory, query, 'all'), [inventory, query])
-  const grouped = useMemo(() => groupVolumeZones(filtered), [filtered])
+  const grouped = useMemo(() => contextOnly
+    ? [{ group: 'geometry-context', zones: filtered }]
+    : groupVolumeZones(filtered), [contextOnly, filtered])
 
   return (
     <div className="volume-zone-inspector">
@@ -61,20 +77,20 @@ export function VolumeZoneInspector({
         </div>
       )}
       <div className="volume-zone-groups">
-        {grouped.map(({ type, zones }) => {
+        {grouped.map(({ group, zones }) => {
           const visibleCount = zones.filter((zone) => visibility[zone.id] !== false).length
           const ids = zones.map((zone) => zone.id)
           return (
             <ManifestMemberGroup
-              label={contextOnly ? t('Geometry context surfaces') : t(type)}
+              label={contextOnly ? t('Geometry context surfaces') : t(volumeManifestGroupLabel(group))}
               memberLabel={contextOnly ? t('surfaces') : t('regions')}
               icon={<Volume2 size={13} aria-hidden="true" />}
               total={zones.length}
               visibleCount={visibleCount}
               onShowAll={() => onSetVisibility(ids, true)}
               onHideAll={() => onSetVisibility(ids, false)}
-              defaultExpanded={grouped.length === 1 || type === 'fluid'}
-              key={type}
+              defaultExpanded={grouped.length === 1}
+              key={group}
             >
               <div className="volume-zone-list">
                 {zones.map((zone) => {
@@ -94,7 +110,6 @@ export function VolumeZoneInspector({
                         <span className="viewer-color-swatch" style={{ background: zone.color }} />
                         <strong>{zone.name}</strong>
                         <small>{zone.triangles?.toLocaleString() ?? '—'} {t('rendered elements')}</small>
-                        {zone.typeProvenance !== 'provided' && <em>{t(zone.typeProvenance === 'name-inferred' ? 'type inferred from name' : 'type not reported')}</em>}
                       </button>
                     </div>
                   )
