@@ -132,6 +132,31 @@ export type ViewerCameraCommand = {
   nonce: number
 }
 
+export type ViewerCameraState = {
+  position: [number, number, number]
+  target: [number, number, number]
+  up: [number, number, number]
+  zoom: number
+}
+
+export function captureViewerCameraState(camera: THREE.PerspectiveCamera, target: THREE.Vector3): ViewerCameraState {
+  return {
+    position: camera.position.toArray(),
+    target: target.toArray(),
+    up: camera.up.toArray(),
+    zoom: camera.zoom,
+  }
+}
+
+export function applyViewerCameraState(camera: THREE.PerspectiveCamera, target: THREE.Vector3, state: ViewerCameraState) {
+  camera.position.fromArray(state.position)
+  camera.up.fromArray(state.up)
+  camera.zoom = state.zoom
+  camera.updateProjectionMatrix()
+  target.fromArray(state.target)
+  camera.lookAt(target)
+}
+
 export type ViewerOverlayContent = Omit<ViewerOverlayFrame, 'resourceRef' | 'assetWorldMatrix'>
 
 export function createEngineeringLightRig() {
@@ -269,6 +294,8 @@ type Props = {
   topToolbar?: React.ReactNode
   floatingPanel?: React.ReactNode
   cameraCommand?: ViewerCameraCommand | null
+  cameraState?: ViewerCameraState | null
+  onCameraStateChange?: (state: ViewerCameraState) => void
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
   preserveCameraOnAssetChange?: boolean
@@ -318,6 +345,8 @@ export function Viewer3D({
   topToolbar,
   floatingPanel,
   cameraCommand,
+  cameraState,
+  onCameraStateChange,
   showNormals = false,
   entityAppearances = {},
   preserveCameraOnAssetChange = false,
@@ -358,6 +387,9 @@ export function Viewer3D({
   const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
   const [cameraNavigating, setCameraNavigating] = useState(false)
   const cameraNavigatingRef = useRef(false)
+  const applyingCameraStateRef = useRef(false)
+  const cameraStateFrameRef = useRef<number | null>(null)
+  const onCameraStateChangeRef = useRef(onCameraStateChange)
   const [pivotFeedback, setPivotFeedback] = useState<{ x: number; y: number; id: number } | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<ViewerAssetStats | null>(null)
@@ -402,6 +434,10 @@ export function Viewer3D({
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
     : controlledSelectedField
+
+  useEffect(() => {
+    onCameraStateChangeRef.current = onCameraStateChange
+  }, [onCameraStateChange])
   const fieldEntityScopeKey = fieldEntityIds?.join('\u0000') ?? ''
   const scopedFields = useMemo(() => {
     const asset = uvfAssetRef.current
@@ -576,6 +612,14 @@ export function Viewer3D({
     container.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
     configureCFDNavigationControls(controls)
+    controls.addEventListener('change', () => {
+      if (applyingCameraStateRef.current || cameraStateFrameRef.current !== null) return
+      cameraStateFrameRef.current = requestAnimationFrame(() => {
+        cameraStateFrameRef.current = null
+        if (applyingCameraStateRef.current) return
+        onCameraStateChangeRef.current?.(captureViewerCameraState(camera, controls.target))
+      })
+    })
     controls.addEventListener('start', () => {
       cameraNavigatingRef.current = true
       setCameraNavigating(true)
@@ -854,6 +898,8 @@ export function Viewer3D({
 
     return () => {
       cancelAnimationFrame(rafId)
+      if (cameraStateFrameRef.current !== null) cancelAnimationFrame(cameraStateFrameRef.current)
+      cameraStateFrameRef.current = null
       if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
       navCubeAnimationRef.current = null
       if (pivotFeedbackTimeoutRef.current !== null) window.clearTimeout(pivotFeedbackTimeoutRef.current)
@@ -938,6 +984,19 @@ export function Viewer3D({
     if (!cameraCommand) return
     applyCameraCommand(cameraCommand.type)
   }, [applyCameraCommand, cameraCommand])
+
+  useEffect(() => {
+    if (!cameraState || assetState.status !== 'ready') return
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls) return
+    if (cameraStateFrameRef.current !== null) cancelAnimationFrame(cameraStateFrameRef.current)
+    cameraStateFrameRef.current = null
+    applyingCameraStateRef.current = true
+    applyViewerCameraState(camera, controls.target, cameraState)
+    controls.update()
+    applyingCameraStateRef.current = false
+  }, [assetState.status, cameraState])
 
   useViewerViewport({
     containerRef,

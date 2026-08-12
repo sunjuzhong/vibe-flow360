@@ -28,7 +28,7 @@ import {
 } from '../api/client'
 import Flow360IdLink from '../components/Flow360IdLink'
 import TopBar from '../components/TopBar'
-import { LazyViewer3D, type ViewerCameraCommand } from '../components/viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerCameraCommand, type ViewerCameraState } from '../components/viewer/LazyViewer3D'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useI18n } from '../i18n'
 
@@ -71,12 +71,16 @@ export function buildArtifactMatrix(cases: CaseComparison[]) {
   }))
 }
 
-function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange, cameraCommand }: {
+function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange, wireframe, onWireframeChange, cameraCommand, cameraState, onCameraStateChange }: {
   item: CaseComparison
   projectId: string
   selectedField: string | null
   onSelectedFieldChange: (field: string | null) => void
+  wireframe: boolean
+  onWireframeChange: (wireframe: boolean) => void
   cameraCommand: ViewerCameraCommand | null
+  cameraState: ViewerCameraState | null
+  onCameraStateChange: (state: ViewerCameraState) => void
 }) {
   const { t } = useI18n()
   const { manifest, state, source } = useResourcePreview('Case', item.id)
@@ -92,7 +96,11 @@ function CompareViewport({ item, projectId, selectedField, onSelectedFieldChange
           state={state}
           selectedField={selectedField}
           onSelectedFieldChange={onSelectedFieldChange}
+          wireframe={wireframe}
+          onWireframeChange={onWireframeChange}
           cameraCommand={cameraCommand}
+          cameraState={cameraState}
+          onCameraStateChange={onCameraStateChange}
           projectId={projectId}
           showWarnings={false}
           showEntityLegend={false}
@@ -120,7 +128,9 @@ export default function ComparePage() {
   const [activeView, setActiveView] = useState<CompareView>('evidence')
   const [visualCandidateId, setVisualCandidateId] = useState('')
   const [selectedField, setSelectedField] = useState<string | null>(null)
+  const [wireframe, setWireframe] = useState(false)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
+  const [cameraSync, setCameraSync] = useState<{ sourceId: string; state: ViewerCameraState } | null>(null)
   const [analysis, setAnalysis] = useState('')
   const [analysisQuestion, setAnalysisQuestion] = useState('')
   const [analysisLoading, setAnalysisLoading] = useState(false)
@@ -162,6 +172,7 @@ export default function ComparePage() {
       const next = await api.compareCases(selectedIds)
       setResult(next)
       setVisualCandidateId(next.cases[1]?.id ?? '')
+      setCameraSync(null)
       setActiveView('evidence')
     } catch (cause) {
       setError(String(cause).replace('Error: ', ''))
@@ -331,12 +342,22 @@ export default function ComparePage() {
                     <label>{t('Candidate')}<select value={visualCandidate.id} onChange={(event) => setVisualCandidateId(event.target.value)}>{result.cases.slice(1).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
                   </div>
                   <div className="compare-visual-toolbar">
-                    <span>{t('Apply the same orientation command to both viewers.')}</span>
+                    <span>{t('Drag, pan, zoom, fields, and wireframe are synchronized between both viewers.')}</span>
                     {(['fit', 'x', 'y', 'z', 'iso'] as const).map((command) => <button type="button" key={command} onClick={() => setCameraCommand({ type: command, nonce: Date.now() })}>{command.toUpperCase()}</button>)}
                   </div>
                   <div className="compare-viewport-grid">
-                    <CompareViewport item={baselineResult} projectId={projectId} selectedField={selectedField} onSelectedFieldChange={setSelectedField} cameraCommand={cameraCommand} />
-                    <CompareViewport item={visualCandidate} projectId={projectId} selectedField={selectedField} onSelectedFieldChange={setSelectedField} cameraCommand={cameraCommand} />
+                    {[baselineResult, visualCandidate].map((item) => <CompareViewport
+                      key={item.id}
+                      item={item}
+                      projectId={projectId}
+                      selectedField={selectedField}
+                      onSelectedFieldChange={setSelectedField}
+                      wireframe={wireframe}
+                      onWireframeChange={setWireframe}
+                      cameraCommand={cameraCommand}
+                      cameraState={cameraSync?.sourceId === item.id ? null : cameraSync?.state ?? null}
+                      onCameraStateChange={(state) => setCameraSync({ sourceId: item.id, state })}
+                    />)}
                   </div>
                   <div className="compare-compatibility-note"><AlertCircle size={14} /><span><strong>{t('Numerical difference fields require compatibility checks.')}</strong>{t('Topology, coordinates, field definitions, normalization, and time alignment must match before subtraction. Until then, this view is an evidence-aligned side-by-side comparison.')}</span></div>
                 </section>

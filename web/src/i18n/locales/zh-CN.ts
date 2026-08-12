@@ -241,7 +241,7 @@ const messages: Record<string, string> = {
   'FLOW-FIELD REVIEW': '流场审查',
   'Side-by-side visual comparison': '并排可视化比较',
   'Candidate': '候选算例',
-  'Apply the same orientation command to both viewers.': '向两个视图应用相同的方向命令。',
+  'Drag, pan, zoom, fields, and wireframe are synchronized between both viewers.': '两个视图会同步旋转、平移、缩放、字段与线框状态。',
   'Numerical difference fields require compatibility checks.': '数值差值场需要先完成兼容性检查。',
   'Topology, coordinates, field definitions, normalization, and time alignment must match before subtraction. Until then, this view is an evidence-aligned side-by-side comparison.': '只有拓扑、坐标、字段定义、归一化方式和时间位置一致时才能做减法；在此之前，本视图仅用于证据对齐的并排比较。',
   'Context only': '仅空间上下文',

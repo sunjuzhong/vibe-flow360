@@ -11,6 +11,7 @@ export type {
   MeshGroupData,
   ViewerClipPlane,
   ViewerCameraCommand,
+  ViewerCameraState,
   ViewerAssetStats,
   ViewerManifest,
   ViewerOverlayContent,

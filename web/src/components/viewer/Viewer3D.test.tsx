@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { createEngineeringLightRig, mergeViewerManifestMetadata, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
+import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -9,6 +9,24 @@ function renderViewer(viewer: React.ReactNode) {
 }
 
 describe('Viewer3D layout state', () => {
+  it('captures and applies a camera pose for linked viewers', () => {
+    const source = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
+    source.position.set(3, 4, 5)
+    source.up.set(0, 0, 1)
+    source.zoom = 1.4
+    const sourceTarget = new THREE.Vector3(0.5, -0.25, 1)
+    const state = captureViewerCameraState(source, sourceTarget)
+
+    const linked = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
+    const linkedTarget = new THREE.Vector3()
+    applyViewerCameraState(linked, linkedTarget, state)
+
+    expect(linked.position.toArray()).toEqual([3, 4, 5])
+    expect(linkedTarget.toArray()).toEqual([0.5, -0.25, 1])
+    expect(linked.up.toArray()).toEqual([0, 0, 1])
+    expect(linked.zoom).toBe(1.4)
+  })
+
   it('merges independently selectable asset-layer metadata', () => {
     const base = {
       format: 'flow360-uvf', asset_url: '/base.json', bounding_box: { min: [0, 0, 0], max: [1, 1, 1] },
