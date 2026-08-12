@@ -511,6 +511,25 @@
   font-size: 10px;
 }
 
+.volume-context-panel {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #dfe3d8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .62);
+}
+
+.volume-context-panel > .volume-selection-card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.volume-context-panel > .resource-review-launchers {
+  margin-top: 9px;
+}
+
 .volume-review-workspace .volume-mesh-checks {
   grid-template-columns: minmax(0, 1fr);
 }
