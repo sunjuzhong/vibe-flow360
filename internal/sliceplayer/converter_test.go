@@ -174,6 +174,9 @@ func TestConvertTarGzGroupsProcessorPiecesIntoOneFrame(t *testing.T) {
 	if playback.Frames[0].Slice != "slice_Wake" || strings.Join(playback.Frames[0].Fields, ",") != "Mach" {
 		t.Fatalf("frame identity or fields were not preserved: %#v", playback.Frames[0])
 	}
+	if bounds := playback.Frames[0].FieldRanges["Mach"]; bounds != [2]float64{0, 3} {
+		t.Fatalf("frame field range was not aggregated across processor pieces: %#v", bounds)
+	}
 }
 
 func TestConvertTarGzPreservesMultipleNamedSliceTracks(t *testing.T) {

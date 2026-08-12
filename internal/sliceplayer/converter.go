@@ -37,16 +37,17 @@ type Playback struct {
 }
 
 type PlaybackFrame struct {
-	Slice               string        `json:"slice"`
-	Step                *int64        `json:"step,omitempty"`
-	Fields              []string      `json:"fields"`
-	ManifestPath        string        `json:"manifest_path"`
-	Vertices            int           `json:"vertices"`
-	Triangles           int           `json:"triangles"`
-	Bounds              [2][3]float64 `json:"bounds"`
-	PreviewManifestPath string        `json:"preview_manifest_path,omitempty"`
-	PreviewVertices     int           `json:"preview_vertices,omitempty"`
-	PreviewTriangles    int           `json:"preview_triangles,omitempty"`
+	Slice               string                `json:"slice"`
+	Step                *int64                `json:"step,omitempty"`
+	Fields              []string              `json:"fields"`
+	FieldRanges         map[string][2]float64 `json:"field_ranges"`
+	ManifestPath        string                `json:"manifest_path"`
+	Vertices            int                   `json:"vertices"`
+	Triangles           int                   `json:"triangles"`
+	Bounds              [2][3]float64         `json:"bounds"`
+	PreviewManifestPath string                `json:"preview_manifest_path,omitempty"`
+	PreviewVertices     int                   `json:"preview_vertices,omitempty"`
+	PreviewTriangles    int                   `json:"preview_triangles,omitempty"`
 }
 
 type uvfSection struct {
@@ -470,8 +471,7 @@ func mergeBounds(a, b [2][3]float64, set bool) [2][3]float64 {
 
 func buildFrameManifest(frame *frameBuild) ([]map[string]any, PlaybackFrame, error) {
 	entries := []map[string]any{}
-	summary := PlaybackFrame{Slice: frame.Slice, Step: frame.Step, Fields: []string{}}
-	fieldSet := map[string]struct{}{}
+	summary := PlaybackFrame{Slice: frame.Slice, Step: frame.Step, Fields: []string{}, FieldRanges: map[string][2]float64{}}
 	boundsSet := false
 	for i, piece := range frame.Pieces {
 		solidID := "piece-" + strconv.Itoa(i)
@@ -480,11 +480,25 @@ func buildFrameManifest(frame *frameBuild) ([]map[string]any, PlaybackFrame, err
 		summary.Vertices += piece.Vertices
 		summary.Triangles += piece.Triangles
 		summary.Bounds = mergeBounds(summary.Bounds, piece.Bounds, boundsSet)
-		for field := range piece.Fields {
-			fieldSet[field] = struct{}{}
+		for field, bounds := range piece.Fields {
+			previous, exists := summary.FieldRanges[field]
+			if !exists {
+				summary.FieldRanges[field] = bounds
+				continue
+			}
+			if bounds[0] < previous[0] {
+				previous[0] = bounds[0]
+			}
+			if bounds[1] > previous[1] {
+				previous[1] = bounds[1]
+			}
+			summary.FieldRanges[field] = previous
 		}
 		boundsSet = true
 	}
-	summary.Fields = sortedKeys(fieldSet)
+	for field := range summary.FieldRanges {
+		summary.Fields = append(summary.Fields, field)
+	}
+	sort.Strings(summary.Fields)
 	return entries, summary, nil
 }

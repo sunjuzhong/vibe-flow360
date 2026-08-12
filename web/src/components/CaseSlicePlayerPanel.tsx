@@ -120,6 +120,26 @@ export function slicePlaybackTimeline(
   }))
 }
 
+export function selectedSliceFieldRange(
+  frames: SlicePlaybackFrame[],
+  selectedTracks: string[],
+  fieldName: string | null,
+  fallbackName = 'Slice',
+): [number, number] | null {
+  if (!fieldName || selectedTracks.length === 0) return null
+  const selected = new Set(selectedTracks)
+  let range: [number, number] | null = null
+  for (const frame of frames) {
+    if (!selected.has(frame.slice || fallbackName)) continue
+    const frameRange = frame.field_ranges?.[fieldName]
+    if (!frameRange || !Number.isFinite(frameRange[0]) || !Number.isFinite(frameRange[1])) continue
+    range = range
+      ? [Math.min(range[0], frameRange[0]), Math.max(range[1], frameRange[1])]
+      : [frameRange[0], frameRange[1]]
+  }
+  return range
+}
+
 function playbackFrameManifest(
   caseId: string,
   jobId: string,
@@ -204,10 +224,18 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
     playbackFrameManifest(caseId, job.id, item, archiveKind)
   )), [archiveKind, caseId, frames, job.id])
   const manifest = manifests[0] ?? null
+  const selectedTrackFrames = useMemo(() => {
+    const selected = new Set(selectedTracks)
+    return (playback?.frames ?? []).filter((item) => selected.has(item.slice || fallbackTrackName))
+  }, [fallbackTrackName, playback?.frames, selectedTracks])
   const selectedFields = useMemo(() => {
-    const names = [...new Set(frames.flatMap((item) => item.fields ?? []))]
+    const names = [...new Set(selectedTrackFrames.flatMap((item) => item.fields ?? []))]
     return names.length ? names.sort((left, right) => left.localeCompare(right)) : playback?.fields ?? []
-  }, [frames, playback?.fields])
+  }, [playback?.fields, selectedTrackFrames])
+  const selectedFieldRange = useMemo(
+    () => selectedSliceFieldRange(playback?.frames ?? [], selectedTracks, selectedField, fallbackTrackName),
+    [fallbackTrackName, playback?.frames, selectedField, selectedTracks],
+  )
 
   useEffect(() => {
     if (selectedField && !selectedFields.includes(selectedField)) setSelectedField(selectedFields[0] ?? null)
@@ -253,7 +281,7 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
       )}
       <div className="slice-playback-viewer">
         <LazyViewer3D manifest={manifest} additionalManifests={manifests.slice(1)} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
-          fieldNames={selectedFields} fieldRange={selectedField ? playback.field_ranges[selectedField] ?? null : null}
+          fieldNames={selectedFields} fieldRange={selectedFieldRange}
           showFieldPanel={sliceFieldPanelVisible(playing)}
           showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
           uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
