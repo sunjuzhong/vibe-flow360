@@ -7,7 +7,7 @@ import { VolumeZoneInspector } from './VolumeZoneInspector'
 import type { VolumeZoneRow } from '../../lib/volumeMeshReview'
 
 const zones: VolumeZoneRow[] = [
-  { id: 'fluid-1', name: 'Main Fluid', zoneType: 'fluid', typeProvenance: 'provided', color: '#aaa', visible: true, path: ['volumeMesh'] },
+  { id: 'fluid-1', name: 'Main Fluid', zoneType: 'fluid', typeProvenance: 'provided', color: '#aaa', visible: true, triangles: 324, path: ['volumeMesh'] },
   { id: 'rotor-1', name: 'Rotor', zoneType: 'rotation', typeProvenance: 'provided', color: '#bbb', visible: true, path: ['volumeMesh', 'rotors'] },
   { id: 'zone-3', name: 'Mystery', zoneType: 'unknown', typeProvenance: 'unknown', color: '#ccc', visible: true, path: ['slices', 'porous-block'] },
 ]
@@ -53,5 +53,7 @@ describe('VolumeZoneInspector filters', () => {
     expect(html).not.toContain('type not reported')
     expect(html).not.toContain('aria-label="Isolate Main Fluid"')
     expect(html).not.toContain('Filter VolumeMesh zones by type')
+    expect(html).not.toContain('324')
+    expect(html).not.toContain('rendered elements')
   })
 })
