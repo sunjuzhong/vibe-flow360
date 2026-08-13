@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import {
   initialSurfaceMeshReviewState,
+  nextSurfaceSelection,
   reduceSurfaceMeshReviewState,
 } from './useSurfaceMeshReview'
 
 describe('SurfaceMesh review store', () => {
+  it('replaces selection normally and toggles it with Shift-click', () => {
+    expect(nextSurfaceSelection({ groupId: 'wing' }, 'farfield', false)).toEqual({
+      groupId: 'farfield',
+      groupIds: ['farfield'],
+    })
+    expect(nextSurfaceSelection({ groupId: 'wing', groupIds: ['wing'] }, 'farfield', true)).toEqual({
+      groupId: 'farfield',
+      groupIds: ['wing', 'farfield'],
+    })
+    expect(nextSurfaceSelection({ groupId: 'farfield', groupIds: ['wing', 'farfield'] }, 'wing', true)).toEqual({
+      groupId: 'farfield',
+      groupIds: ['farfield'],
+    })
+  })
+
   it('preserves a valid selection and resets visibility for a new manifest', () => {
     const selected = reduceSurfaceMeshReviewState(initialSurfaceMeshReviewState, {
       type: 'selection',

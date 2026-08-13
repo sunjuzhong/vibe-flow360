@@ -31,14 +31,13 @@ describe('SurfaceBoundaryInspector', () => {
       <I18nProvider>
         <SurfaceBoundaryInspector
           inventory={inventory}
-          selectedId="face-9"
+          selectedIds={['face-9']}
           conflictCount={1}
           visibility={{ 'face-2': false }}
           onSelect={vi.fn()}
           onToggleVisibility={vi.fn()}
           onShowAll={vi.fn()}
           onHideAll={vi.fn()}
-          onClearSelection={vi.fn()}
         />
       </I18nProvider>,
     )
@@ -68,14 +67,13 @@ describe('SurfaceBoundaryInspector', () => {
       <I18nProvider>
         <SurfaceBoundaryInspector
           inventory={inventory.slice(0, 2)}
-          selectedId={null}
+          selectedIds={[]}
           conflictCount={0}
           visibility={{}}
           onSelect={vi.fn()}
           onToggleVisibility={vi.fn()}
           onShowAll={vi.fn()}
           onHideAll={vi.fn()}
-          onClearSelection={vi.fn()}
         />
       </I18nProvider>,
     )

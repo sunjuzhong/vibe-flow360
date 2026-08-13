@@ -20,7 +20,7 @@ import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from '.
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { useResourcePreview } from '../hooks/useResourcePreview'
-import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
+import { nextSurfaceSelection, useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
 import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
 import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
@@ -214,14 +214,15 @@ export default function SurfaceMeshWorkspace({
           </div>
           <SurfaceBoundaryInspector
             inventory={review.boundaryInventory}
-            selectedId={review.selection.groupId}
+            selectedIds={review.selectedBoundaryIds}
             conflictCount={review.boundaryConflictCount}
             visibility={review.visibility}
-            onSelect={(groupId) => review.setSelection({ groupId })}
+            onSelect={(groupId, additive) => review.setSelection(
+              nextSurfaceSelection(review.selection, groupId, additive),
+            )}
             onToggleVisibility={review.toggleBoundaryVisibility}
             onShowAll={review.showAllBoundaries}
             onHideAll={review.hideAllBoundaries}
-            onClearSelection={() => review.setSelection({ groupId: null })}
           />
           <ParameterEntityInventory
             entities={draftEntities}
