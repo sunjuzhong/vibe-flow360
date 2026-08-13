@@ -1,5 +1,6 @@
 import { AlertCircle, Plus, Save, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { DynamicFormSchema } from '../api/client'
 import { useI18n } from '../i18n'
 import type { ParameterEntity, ParameterEntityType } from '../lib/draftEntities'
@@ -424,6 +425,7 @@ export default function DraftEntityEditorDialog({
   const schema = useMemo(() => draftEntitySchema(type, unit, t), [t, type, unit])
   const [value, setValue] = useState<unknown>(() => hydrateSchemaValue(schema, editableEntityValue(entity, type, unit)))
   const [error, setError] = useState('')
+  const titleId = useId()
 
   useEffect(() => {
     const nextType = entity?.type ?? 'Box'
@@ -467,13 +469,29 @@ export default function DraftEntityEditorDialog({
     }
   }
 
-  return (
-    <div className="schema-form-backdrop" role="presentation">
-      <form className="schema-form-dialog draft-entity-editor-dialog" onSubmit={submit} aria-label={t(entity ? 'Edit Draft entity' : 'Add Draft entity')}>
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) onClose()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [onClose, saving])
+
+  const dialog = (
+    <div className="schema-form-backdrop draft-entity-editor-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !saving) onClose()
+    }}>
+      <form
+        className="schema-form-dialog draft-entity-editor-dialog"
+        onSubmit={submit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <header>
           <div>
             <p className="eyebrow">{t('DRAFT ENTITY')}</p>
-            <h2>{t(entity ? 'Edit Draft entity' : 'Add Draft entity')}</h2>
+            <h2 id={titleId}>{t(entity ? 'Edit Draft entity' : 'Add Draft entity')}</h2>
             <span>{t('Configure the entity in project coordinates. Saving validates and updates the active Draft SimulationParams.')}</span>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label={t('Close Draft entity editor')}><X size={18} /></button>
@@ -497,4 +515,5 @@ export default function DraftEntityEditorDialog({
       </form>
     </div>
   )
+  return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body)
 }
