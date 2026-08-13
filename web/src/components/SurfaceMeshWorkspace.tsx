@@ -246,32 +246,34 @@ export default function SurfaceMeshWorkspace({
             <div><span>{t('MESH')}</span><strong>{t('Visualization objects')}</strong></div>
             <span className="geometry-count-badge">{review.boundaryInventory.length + parameterEntities.length}</span>
           </div>
-          <SurfaceBoundaryInspector
-            inventory={review.boundaryInventory}
-            selectedIds={review.selectedBoundaryIds}
-            conflictCount={review.boundaryConflictCount}
-            visibility={review.visibility}
-            onSelect={(groupId, additive) => review.setSelection(
-              nextSurfaceSelection(review.selection, groupId, additive),
-            )}
-            onToggleVisibility={review.toggleBoundaryVisibility}
-            onShowAll={review.showAllBoundaries}
-            onHideAll={review.hideAllBoundaries}
-          />
-          <ParameterEntityInventory
-            entities={draftEntities}
-            visibility={parameterEntityVisibility}
-            onVisibilityChange={setParameterEntityVisibility}
-            source="draft"
-            unit={parameterEntityUnit}
-            onMutate={onMutateDraftEntity}
-          />
-          <ParameterEntityInventory
-            entities={ghostEntities}
-            visibility={parameterEntityVisibility}
-            onVisibilityChange={setParameterEntityVisibility}
-            source="ghost"
-          />
+          <div className="geometry-entity-tree surface-entity-tree">
+            <SurfaceBoundaryInspector
+              inventory={review.boundaryInventory}
+              selectedIds={review.selectedBoundaryIds}
+              conflictCount={review.boundaryConflictCount}
+              visibility={review.visibility}
+              onSelect={(groupId, additive) => review.setSelection(
+                nextSurfaceSelection(review.selection, groupId, additive),
+              )}
+              onToggleVisibility={review.toggleBoundaryVisibility}
+              onShowAll={review.showAllBoundaries}
+              onHideAll={review.hideAllBoundaries}
+            />
+            <ParameterEntityInventory
+              entities={draftEntities}
+              visibility={parameterEntityVisibility}
+              onVisibilityChange={setParameterEntityVisibility}
+              source="draft"
+              unit={parameterEntityUnit}
+              onMutate={onMutateDraftEntity}
+            />
+            <ParameterEntityInventory
+              entities={ghostEntities}
+              visibility={parameterEntityVisibility}
+              onVisibilityChange={setParameterEntityVisibility}
+              source="ghost"
+            />
+          </div>
         </>
       )}
       viewer={(

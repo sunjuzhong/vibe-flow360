@@ -189,6 +189,7 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html).toContain('Review evidence')
     expect(html).toContain('Surface appearance')
     expect(html).toContain('All Surface boundaries')
+    expect(html).toContain('geometry-entity-tree surface-entity-tree')
     expect(html).toContain('aria-label="Surface opacity"')
     expect(html).toContain('data-surface-color="#a9b7bc"')
     expect(html).toContain('data-surface-opacity="1"')
