@@ -185,6 +185,10 @@ export function useSurfaceMeshReview(
   const selectedBoundaryIds = state.selection.groupIds?.length
     ? state.selection.groupIds
     : state.selection.groupId ? [state.selection.groupId] : []
+  const selectedBoundaries = selectedBoundaryIds.flatMap((id) => {
+    const boundary = boundaryInventory.find((row) => row.id === id)
+    return boundary ? [boundary] : []
+  })
   const assignedBoundaryCount = boundaryInventory.filter((row) => row.status === 'assigned').length
   const boundaryConflictCount = boundaryInventory.filter((row) => row.status === 'conflict').length
 
@@ -265,6 +269,7 @@ export function useSurfaceMeshReview(
     selectedFieldInfo,
     selectedBoundary,
     selectedBoundaryIds,
+    selectedBoundaries,
     assignedBoundaryCount,
     boundaryConflictCount,
     setMode,
