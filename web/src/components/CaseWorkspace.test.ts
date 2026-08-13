@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -239,9 +239,41 @@ describe('groupCaseVisualizationMembers', () => {
     }] }, ['slices'])
 
     expect(caseVisualizationSections(groups, true, configured)[0].members).toMatchObject([
-      { name: 'longitudinal_y1m', entityIds: ['slice-y1'], triangles: 120, playbackKind: 'slices' },
-      { name: 'horizontal_z1m', entityIds: ['slice-z1'], triangles: 180, playbackKind: 'slices' },
+      { name: 'longitudinal_y1m', folderPath: ['comparison planes'], entityIds: ['slice-y1'], triangles: 120, playbackKind: 'slices' },
+      { name: 'horizontal_z1m', folderPath: ['comparison planes'], entityIds: ['slice-z1'], triangles: 180, playbackKind: 'slices' },
     ])
+  })
+
+  it('maps GeometryGroup ancestors to folders and SolidGeometry entries to atomic leaves', () => {
+    const groups = [
+      { id: 'slice-y1', name: 'longitudinal_y1m', color: '#fff', visible: true, entity_type: 'SolidGeometry', path: ['slices', 'comparison planes'] },
+      { id: 'slice-z1', name: 'horizontal_z1m', color: '#fff', visible: true, entity_type: 'SolidGeometry', path: ['slices', 'comparison planes'] },
+    ]
+    const members = groupCaseVisualizationMembers(groups)[0].members
+
+    expect(caseVisualizationMemberTree(members)).toMatchObject([{
+      kind: 'folder',
+      name: 'comparison planes',
+      members: [{ id: 'slice-y1' }, { id: 'slice-z1' }],
+      children: [
+        { kind: 'member', member: { id: 'slice-y1', name: 'longitudinal_y1m' } },
+        { kind: 'member', member: { id: 'slice-z1', name: 'horizontal_z1m' } },
+      ],
+    }])
+  })
+
+  it('aggregates Face render groups into their parent SolidGeometry leaf', () => {
+    const groups = [
+      { id: 'wall-a', name: 'wall-a', color: '#fff', visible: true, triangles: 40, entity_type: 'Face', path: ['boundaries', 'Cylinder_surface'] },
+      { id: 'wall-b', name: 'wall-b', color: '#fff', visible: true, triangles: 60, entity_type: 'Face', path: ['boundaries', 'Cylinder_surface'] },
+    ]
+
+    expect(groupCaseVisualizationMembers(groups)[0].members).toMatchObject([{
+      name: 'Cylinder_surface',
+      folderPath: [],
+      entityIds: ['wall-a', 'wall-b'],
+      triangles: 100,
+    }])
   })
 
   it('adds a Slice player section when only the time-series archive exists', () => {
