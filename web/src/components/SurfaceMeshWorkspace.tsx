@@ -40,6 +40,7 @@ import {
   ResourceReviewDialog,
   ResourceReviewLauncher,
   ResourceReviewLaunchers,
+  ResourceReviewToggle,
 } from './ResourceReviewDialog'
 import { useI18n } from '../i18n'
 import {
@@ -405,6 +406,14 @@ export default function SurfaceMeshWorkspace({
           )}
 
           <ResourceReviewLaunchers>
+            {review.qualityFields.length > 0 && (
+              <ResourceReviewToggle
+                label={t('Mesh quality')}
+                summary={t('{count} fields available').replace('{count}', String(review.qualityFields.length))}
+                checked={review.mode === 'quality'}
+                onChange={(checked) => review.setMode(checked ? 'quality' : 'boundaries')}
+              />
+            )}
             <ResourceReviewLauncher
               icon={<Activity size={14} />}
               label={t('Preflight evidence')}
