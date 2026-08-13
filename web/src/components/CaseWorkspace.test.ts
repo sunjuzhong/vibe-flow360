@@ -229,6 +229,21 @@ describe('groupCaseVisualizationMembers', () => {
     expect(groupCaseVisualizationMembers(groups)[0].members).toHaveLength(2)
   })
 
+  it('expands multiple SolidGeometry slices under one output container', () => {
+    const groups = [
+      { id: 'slice-y1', name: 'longitudinal_y1m', color: '#fff', visible: true, triangles: 120, entity_type: 'SolidGeometry', path: ['slices', 'comparison planes'] },
+      { id: 'slice-z1', name: 'horizontal_z1m', color: '#fff', visible: true, triangles: 180, entity_type: 'SolidGeometry', path: ['slices', 'comparison planes'] },
+    ]
+    const configured = caseConfiguredVisualizationMembers({ outputs: [{
+      output_type: 'SliceOutput', name: 'comparison planes', private_attribute_id: 'slice-output',
+    }] }, ['slices'])
+
+    expect(caseVisualizationSections(groups, true, configured)[0].members).toMatchObject([
+      { name: 'longitudinal_y1m', entityIds: ['slice-y1'], triangles: 120, playbackKind: 'slices' },
+      { name: 'horizontal_z1m', entityIds: ['slice-z1'], triangles: 180, playbackKind: 'slices' },
+    ])
+  })
+
   it('adds a Slice player section when only the time-series archive exists', () => {
     const groups = [
       { id: 'wall', name: 'Wall', color: '#fff', visible: true, path: ['boundaries'] },

@@ -249,18 +249,32 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
   const categorized = new Map<CaseVisualizationCategory, CaseVisualizationMember[]>(
     caseVisualizationCategoryOrder.map((category) => [category, []]),
   )
-  for (const group of groups) {
+  const categorizedGroups = groups.map((group) => {
     const hints = meshGroupManifestHints(group).map(normalizeManifestHint)
-    const category = hints.some((hint) => hint.includes('streamline'))
+    const category: CaseVisualizationCategory = hints.some((hint) => hint.includes('streamline'))
       ? 'streamlines'
       : hints.some((hint) => hint.includes('isosurface'))
         ? 'isosurfaces'
         : hints.some((hint) => hint.includes('slice'))
           ? 'slices'
           : 'surfaces'
+    return { category, group }
+  })
+  const containerCounts = new Map<string, number>()
+  for (const { category, group } of categorizedGroups) {
     const containerName = group.path?.at(-1) || group.name
+    const key = `${category}\u0000${normalizeManifestHint(containerName)}`
+    containerCounts.set(key, (containerCounts.get(key) ?? 0) + 1)
+  }
+  for (const { category, group } of categorizedGroups) {
+    const containerName = group.path?.at(-1) || group.name
+    const containerKey = `${category}\u0000${normalizeManifestHint(containerName)}`
+    const expandContainer = category !== 'surfaces'
+      && group.entity_type === 'SolidGeometry'
+      && (containerCounts.get(containerKey) ?? 0) > 1
+    const memberName = expandContainer ? group.name : containerName
     const members = categorized.get(category)!
-    const existing = members.find((member) => member.name === containerName)
+    const existing = expandContainer ? undefined : members.find((member) => member.name === memberName)
     if (existing) {
       existing.entityIds.push(group.id)
       existing.visible ||= group.visible
@@ -270,7 +284,7 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
     }
     members.push({
       ...group,
-      name: containerName,
+      name: memberName,
       entityIds: [group.id],
       source: 'manifest',
     })
@@ -342,6 +356,12 @@ export function caseVisualizationSections(
     ))
     if (existing) existing.playbackKind ??= member.playbackKind
     else {
+      const descendants = section.members.filter((candidate) => candidate.source === 'manifest'
+        && candidate.path?.some((segment) => normalizeManifestHint(segment) === normalizedName))
+      if (descendants.length > 0) {
+        for (const descendant of descendants) descendant.playbackKind ??= member.playbackKind
+        continue
+      }
       const firstAutomatic = section.members.findIndex((candidate) => candidate.source !== 'output')
       if (firstAutomatic < 0) section.members.push(member)
       else section.members.splice(firstAutomatic, 0, member)
