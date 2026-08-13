@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
+import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -9,6 +9,22 @@ function renderViewer(viewer: React.ReactNode) {
 }
 
 describe('Viewer3D layout state', () => {
+  it('keeps single and multi-selection unchanged when empty viewer space is clicked', () => {
+    const single = { groupId: 'wall', groupIds: ['wall'] }
+    const multiple = { groupId: 'farfield', groupIds: ['wall', 'farfield'] }
+
+    expect(nextViewerSelection(single, null, false)).toBe(single)
+    expect(nextViewerSelection(multiple, null, false)).toBe(multiple)
+    expect(nextViewerSelection(multiple, 'symmetry', false)).toEqual({
+      groupId: 'symmetry',
+      groupIds: ['symmetry'],
+    })
+    expect(nextViewerSelection(multiple, 'symmetry', true)).toEqual({
+      groupId: 'symmetry',
+      groupIds: ['wall', 'farfield', 'symmetry'],
+    })
+  })
+
   it('captures and applies a camera pose for linked viewers', () => {
     const source = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
     source.position.set(3, 4, 5)
