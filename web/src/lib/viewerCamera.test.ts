@@ -114,6 +114,23 @@ describe('responsive viewer camera framing', () => {
     )
   })
 
+  it('derives orbit bounds only from currently visible renderables', () => {
+    const root = new THREE.Group()
+    const left = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2))
+    left.position.x = -5
+    const rightGroup = new THREE.Group()
+    const right = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2))
+    right.position.x = 5
+    rightGroup.add(right)
+    root.add(left, rightGroup)
+
+    expect(visibleObjectBounds([root])?.getCenter(new THREE.Vector3()).x).toBeCloseTo(0)
+    rightGroup.visible = false
+    expect(visibleObjectBounds([root])?.getCenter(new THREE.Vector3()).x).toBeCloseTo(-5)
+    left.visible = false
+    expect(visibleObjectBounds([root]).isEmpty()).toBe(true)
+  })
+
   it('keeps the object centered and increases distance for a portrait viewport', () => {
     const desktop = createFixture(16 / 9)
     const desktopFit = fitPerspectiveCameraToObject(

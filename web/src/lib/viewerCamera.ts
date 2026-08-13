@@ -34,18 +34,24 @@ export type CameraFit = {
   distance: number
 }
 
-/** Bounds rendered geometry while respecting visibility on every ancestor. */
-export function visibleObjectBounds(object: THREE.Object3D): THREE.Box3 {
-  object.updateMatrixWorld(true)
+/** Bounds rendered geometry across one or more roots while respecting visibility on every ancestor. */
+export function visibleObjectBounds(
+  input: THREE.Object3D | readonly (THREE.Object3D | null | undefined)[],
+): THREE.Box3 {
   const bounds = new THREE.Box3()
-  object.traverseVisible((child) => {
-    const geometry = (child as THREE.Mesh | THREE.Line | THREE.Points).geometry
-    if (!(geometry instanceof THREE.BufferGeometry)) return
-    if (!geometry.boundingBox) geometry.computeBoundingBox()
-    if (geometry.boundingBox && !geometry.boundingBox.isEmpty()) {
-      bounds.union(geometry.boundingBox.clone().applyMatrix4(child.matrixWorld))
-    }
-  })
+  const roots: readonly (THREE.Object3D | null | undefined)[] = Array.isArray(input) ? input : [input]
+  for (const root of roots) {
+    if (!root) continue
+    root.updateWorldMatrix(true, true)
+    root.traverseVisible((child) => {
+      const geometry = (child as THREE.Mesh | THREE.Line | THREE.Points).geometry
+      if (!(geometry instanceof THREE.BufferGeometry)) return
+      if (!geometry.boundingBox) geometry.computeBoundingBox()
+      if (geometry.boundingBox && !geometry.boundingBox.isEmpty()) {
+        bounds.union(geometry.boundingBox.clone().applyMatrix4(child.matrixWorld))
+      }
+    })
+  }
   return bounds
 }
 

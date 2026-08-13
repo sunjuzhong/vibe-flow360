@@ -13,6 +13,7 @@ import {
   interpolateCameraPivot,
   rotateCameraRigAroundPivot,
   updatePerspectiveCameraClipping,
+  visibleObjectBounds,
   zoomCameraRigToAnchor,
 } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
@@ -651,6 +652,40 @@ export function Viewer3D({
     return fit
   }, [])
 
+  const animatePivotTo = useCallback((nextTarget: THREE.Vector3) => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls) return
+    if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
+    const startPosition = camera.position.clone()
+    const startTarget = controls.target.clone()
+    const startedAt = performance.now()
+    const duration = 180
+    const animateCamera = (now: number) => {
+      const linear = Math.min(1, (now - startedAt) / duration)
+      const progress = linear * linear * (3 - 2 * linear)
+      const frame = interpolateCameraPivot(startPosition, startTarget, nextTarget, progress)
+      camera.position.copy(frame.position)
+      controls.target.copy(frame.target)
+      camera.lookAt(frame.target)
+      controls.update()
+      if (linear < 1) navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
+      else navCubeAnimationRef.current = null
+    }
+    navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
+  }, [])
+
+  const recenterOnVisibleEntities = useCallback(() => {
+    const bounds = visibleObjectBounds([assetRef.current, parameterEntityGroupRef.current])
+    const controls = controlsRef.current
+    if (bounds.isEmpty() || !controls) return
+    const center = bounds.getCenter(new THREE.Vector3())
+    const size = bounds.getSize(new THREE.Vector3()).length()
+    if (center.distanceTo(controls.target) <= Math.max(size * 1e-6, 1e-9)) return
+    lastSurfacePivotRef.current = center.clone()
+    animatePivotTo(center)
+  }, [animatePivotTo])
+
   const navigateFromNavCube = useCallback(({ direction, up }: NavCubeOrientation) => {
     const camera = cameraRef.current
     const controls = controlsRef.current
@@ -1275,11 +1310,13 @@ export function Viewer3D({
         })
       }
     }
-  }, [assetState.status, displayManifest, entityVisibility, groupVisibility])
+    recenterOnVisibleEntities()
+  }, [assetState.status, displayManifest, entityVisibility, groupVisibility, recenterOnVisibleEntities])
 
   useEffect(() => {
     setParameterEntityVisibility(parameterEntityGroupRef.current, parameterEntityVisibility)
-  }, [assetState.status, parameterEntityVisibility])
+    recenterOnVisibleEntities()
+  }, [assetState.status, parameterEntityVisibility, recenterOnVisibleEntities])
 
   useEffect(() => {
     const clipping = effectiveClipPlane
@@ -1560,29 +1597,6 @@ export function Viewer3D({
       point: raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? controls.target.clone(),
       surface: false,
     }
-  }, [])
-
-  const animatePivotTo = useCallback((nextTarget: THREE.Vector3) => {
-    const camera = cameraRef.current
-    const controls = controlsRef.current
-    if (!camera || !controls) return
-    if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
-    const startPosition = camera.position.clone()
-    const startTarget = controls.target.clone()
-    const startedAt = performance.now()
-    const duration = 180
-    const animateCamera = (now: number) => {
-      const linear = Math.min(1, (now - startedAt) / duration)
-      const progress = linear * linear * (3 - 2 * linear)
-      const frame = interpolateCameraPivot(startPosition, startTarget, nextTarget, progress)
-      camera.position.copy(frame.position)
-      controls.target.copy(frame.target)
-      camera.lookAt(frame.target)
-      controls.update()
-      if (linear < 1) navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
-      else navCubeAnimationRef.current = null
-    }
-    navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
   }, [])
 
   const showPivotFeedback = (clientX: number, clientY: number) => {
