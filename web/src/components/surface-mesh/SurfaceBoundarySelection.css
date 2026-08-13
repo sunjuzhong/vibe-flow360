@@ -1,15 +1,11 @@
 .surface-review-workspace .resource-review-inventory .surface-boundary-row {
-  min-height: 58px;
+  min-height: 34px;
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-select > span {
-  display: -webkit-box;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .surface-review-workspace .surface-boundary-selection-card dd {

@@ -142,7 +142,7 @@ describe('SurfaceMeshWorkspace capabilities', () => {
 
     expect(html).toContain('Surface boundaries')
     expect(html).toContain('aria-label="Hide Face 1"')
-    expect(html).toContain('aria-label="Isolate Face 1"')
+    expect(html).toContain('aria-label="Select Face 1"')
     expect(html).toContain('Mesh Quality')
     expect(html).toContain('surface-quality-filter-panel')
     expect(html).toContain('Rule 1 minimum area')
