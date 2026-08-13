@@ -32,11 +32,9 @@ describe('SurfaceBoundaryInspector', () => {
         <SurfaceBoundaryInspector
           inventory={inventory}
           selectedId="face-9"
-          selectedBoundary={inventory[8]}
           conflictCount={1}
           visibility={{ 'face-2': false }}
           onSelect={vi.fn()}
-          onIsolate={vi.fn()}
           onToggleVisibility={vi.fn()}
           onShowAll={vi.fn()}
           onHideAll={vi.fn()}
@@ -50,9 +48,8 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).toContain('wing-9')
     expect(markup).toContain('farfield')
     expect(markup).toContain('Show wing-2')
-    expect(markup).toContain('Isolate wing-9')
+    expect(markup).toContain('Search and filter')
     expect(markup).toContain('12 of 12 matching faces')
-    expect(markup).toContain('1 face selected')
     expect(markup).toContain('Hide all boundaries')
     expect(markup).not.toContain('Show all boundaries')
     expect(markup).toContain('title="11/12 visible"')
@@ -60,7 +57,8 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).toContain('geometry-entity-row surface-boundary-row assigned selected')
     expect(markup).toContain('aria-pressed="true"')
     expect(markup).toContain('title="wing-9"')
-    expect(markup).toContain('>Clear</button>')
+    expect(markup).toContain('role="checkbox" aria-checked="true" aria-label="Clear selection"')
+    expect(markup).not.toContain('triangles</em>')
     expect(markup).not.toContain('Selected: wing-9')
   })
 
@@ -73,7 +71,6 @@ describe('SurfaceBoundaryInspector', () => {
           conflictCount={0}
           visibility={{}}
           onSelect={vi.fn()}
-          onIsolate={vi.fn()}
           onToggleVisibility={vi.fn()}
           onShowAll={vi.fn()}
           onHideAll={vi.fn()}
@@ -82,10 +79,9 @@ describe('SurfaceBoundaryInspector', () => {
       </I18nProvider>,
     )
 
-    expect(markup).toContain('0 faces selected')
     expect(markup).toContain('aria-label="Hide all boundaries"')
     expect(markup).not.toContain('aria-label="Show all boundaries"')
     expect(markup).not.toMatch(/aria-label="Hide all boundaries"[^>]*disabled=""/)
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Clear<\/button>/)
+    expect(markup).not.toContain('surface-boundary-selection-tools')
   })
 })

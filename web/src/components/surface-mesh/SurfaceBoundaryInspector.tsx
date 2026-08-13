@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Eye, EyeOff, Focus, Layers3, Search, Square, SquareCheckBig } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff, Layers3, Search, Square, SquareCheckBig } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
 import { useI18n } from '../../i18n'
@@ -29,11 +29,9 @@ export function filterSurfaceBoundaries(
 export function SurfaceBoundaryInspector({
   inventory,
   selectedId,
-  selectedBoundary,
   conflictCount,
   visibility,
   onSelect,
-  onIsolate,
   onToggleVisibility,
   onShowAll,
   onHideAll,
@@ -41,11 +39,9 @@ export function SurfaceBoundaryInspector({
 }: {
   inventory: SurfaceBoundaryRow[]
   selectedId: string | null
-  selectedBoundary?: SurfaceBoundaryRow
   conflictCount: number
   visibility: Record<string, boolean>
   onSelect: (groupId: string) => void
-  onIsolate: (groupId: string) => void
   onToggleVisibility: (groupId: string) => void
   onShowAll: () => void
   onHideAll: () => void
@@ -66,6 +62,13 @@ export function SurfaceBoundaryInspector({
     unassigned: inventory.filter((row) => row.status === 'unassigned').length,
     conflict: inventory.filter((row) => row.status === 'conflict').length,
   }), [inventory])
+  const filterSummary = filter === 'all'
+    ? t('All · {count}').replace('{count}', String(inventory.length))
+    : filter === 'assigned'
+      ? t('Assigned · {count}').replace('{count}', String(counts.assigned))
+      : filter === 'unassigned'
+        ? t('Unassigned · {count}').replace('{count}', String(counts.unassigned))
+        : t('Conflicts · {count}').replace('{count}', String(counts.conflict))
 
   const updateQuery = (value: string) => {
     setQuery(value)
@@ -78,42 +81,9 @@ export function SurfaceBoundaryInspector({
 
   return (
     <div className="surface-boundary-inspector">
-      {inventory.length > 0 && (
-        <div className="surface-boundary-tools">
-          <label className="surface-boundary-search">
-            <Search size={12} aria-hidden="true" />
-            <input
-              type="search"
-              value={query}
-              placeholder="Find face, model, or type"
-              aria-label="Search SurfaceMesh boundaries"
-              onChange={(event) => updateQuery(event.target.value)}
-            />
-          </label>
-          <select
-            value={filter}
-            aria-label="Filter SurfaceMesh boundaries by assignment status"
-            onChange={(event) => updateFilter(event.target.value as SurfaceBoundaryFilter)}
-          >
-            <option value="all">All · {inventory.length}</option>
-            <option value="assigned">Assigned · {counts.assigned}</option>
-            <option value="unassigned">Unassigned · {counts.unassigned}</option>
-            <option value="conflict">Conflicts · {counts.conflict}</option>
-          </select>
-          <span>{displayed.length} of {filtered.length} matching faces</span>
-        </div>
-      )}
-      {inventory.length > 0 && (
-        <div className="geometry-selection-tools surface-boundary-selection-tools">
-          <strong>{t(selectedBoundary ? '1 face selected' : '0 faces selected')}</strong>
-          <button type="button" disabled={!selectedBoundary} onClick={onClearSelection}>
-            {t('Clear')}
-          </button>
-        </div>
-      )}
       <ManifestMemberGroup
-        label="Surface boundaries"
-        memberLabel="boundaries"
+        label={t('Surface boundaries')}
+        memberLabel={t('boundaries')}
         icon={<Layers3 size={13} aria-hidden="true" />}
         total={inventory.length}
         visibleCount={visibleBoundaryCount}
@@ -121,6 +91,41 @@ export function SurfaceBoundaryInspector({
         onHideAll={onHideAll}
         defaultExpanded={false}
       >
+        {inventory.length > 0 && (
+          <details className="surface-boundary-filter-disclosure">
+            <summary>
+              <Search size={12} aria-hidden="true" />
+              <span>{t('Search and filter')}</span>
+              <small>{filterSummary}</small>
+              <ChevronDown size={12} aria-hidden="true" />
+            </summary>
+            <div className="surface-boundary-tools">
+              <label className="surface-boundary-search">
+                <Search size={12} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={query}
+                  placeholder={t('Find face, model, or type')}
+                  aria-label={t('Search SurfaceMesh boundaries')}
+                  onChange={(event) => updateQuery(event.target.value)}
+                />
+              </label>
+              <select
+                value={filter}
+                aria-label={t('Filter SurfaceMesh boundaries by assignment status')}
+                onChange={(event) => updateFilter(event.target.value as SurfaceBoundaryFilter)}
+              >
+                <option value="all">{t('All · {count}').replace('{count}', String(inventory.length))}</option>
+                <option value="assigned">{t('Assigned · {count}').replace('{count}', String(counts.assigned))}</option>
+                <option value="unassigned">{t('Unassigned · {count}').replace('{count}', String(counts.unassigned))}</option>
+                <option value="conflict">{t('Conflicts · {count}').replace('{count}', String(counts.conflict))}</option>
+              </select>
+              <span>{t('{shown} of {total} matching faces')
+                .replace('{shown}', String(displayed.length))
+                .replace('{total}', String(filtered.length))}</span>
+            </div>
+          </details>
+        )}
         <div className="surface-boundary-list">
           {displayed.length > 0 ? displayed.map((row) => {
             const visible = visibility[row.id] !== false
@@ -150,9 +155,8 @@ export function SurfaceBoundaryInspector({
                 <small>
                   {row.assignments.length > 0
                     ? row.assignments.map((assignment) => `${assignment.modelName} · ${assignment.modelType}`).join(', ')
-                    : 'Unassigned'}
+                    : t('Unassigned')}
                 </small>
-                <em>{row.status} · {row.triangles?.toLocaleString() ?? '—'} triangles</em>
               </button>
               <div className="surface-boundary-row-actions">
                 <button
@@ -164,19 +168,11 @@ export function SurfaceBoundaryInspector({
                 >
                   {visible ? <Eye size={12} /> : <EyeOff size={12} />}
                 </button>
-                <button
-                  type="button"
-                  aria-label={t(`Isolate ${row.name}`)}
-                  title={t(`Isolate ${row.name}`)}
-                  onClick={() => onIsolate(row.id)}
-                >
-                  <Focus size={12} />
-                </button>
               </div>
             </div>
             )
           }) : (
-            <p>{inventory.length > 0 ? 'No faces match the current search and status filter.' : 'No Face entities are present in the current render asset.'}</p>
+            <p>{t(inventory.length > 0 ? 'No faces match the current search and status filter.' : 'No Face entities are present in the current render asset.')}</p>
           )}
         </div>
         {visibleCount < filtered.length && (
@@ -185,12 +181,12 @@ export function SurfaceBoundaryInspector({
             className="surface-boundary-more"
             onClick={() => setVisibleCount((current) => current + initialVisibleCount)}
           >
-            Show {Math.min(initialVisibleCount, filtered.length - visibleCount)} more faces
+            {t('Show {count} more faces').replace('{count}', String(Math.min(initialVisibleCount, filtered.length - visibleCount)))}
           </button>
         )}
       </ManifestMemberGroup>
       {conflictCount > 0 && filter !== 'conflict' && (
-        <p className="surface-review-warning">{conflictCount} face group(s) have multiple model assignments.</p>
+        <p className="surface-review-warning">{t('{count} face group(s) have multiple model assignments.').replace('{count}', String(conflictCount))}</p>
       )}
     </div>
   )

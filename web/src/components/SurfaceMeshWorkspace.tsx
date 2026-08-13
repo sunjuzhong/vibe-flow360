@@ -204,11 +204,9 @@ export default function SurfaceMeshWorkspace({
           <SurfaceBoundaryInspector
             inventory={review.boundaryInventory}
             selectedId={review.selection.groupId}
-            selectedBoundary={review.selectedBoundary}
             conflictCount={review.boundaryConflictCount}
             visibility={review.visibility}
             onSelect={(groupId) => review.setSelection({ groupId })}
-            onIsolate={review.isolateBoundary}
             onToggleVisibility={review.toggleBoundaryVisibility}
             onShowAll={review.showAllBoundaries}
             onHideAll={review.hideAllBoundaries}
