@@ -51,6 +51,7 @@ import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSele
 import { normalizeViewerFieldRange, resolveViewerFieldDomain, ViewerFieldRangeControl } from './ViewerFieldRangeControl'
 import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
 import { useI18n } from '../../i18n'
+import { createDraftEntityGroup, setDraftEntityVisibility, type DraftEntity } from '../../lib/draftEntities'
 
 export type MeshGroupData = {
   id: string
@@ -88,6 +89,7 @@ export type ViewerManifest = {
 }
 
 const EMPTY_VIEWER_MANIFESTS: ViewerManifest[] = []
+const EMPTY_DRAFT_ENTITIES: DraftEntity[] = []
 
 export function viewerManifestSetKey(manifests: readonly ViewerManifest[]): string {
   return manifests.map((item) => item.asset_url).filter(Boolean).join('|')
@@ -264,6 +266,8 @@ type Props = {
   selection?: ViewerSelection
   entityVisibility?: Record<string, boolean>
   onEntityVisibilityChange?: (visibility: Record<string, boolean>) => void
+  draftEntities?: DraftEntity[]
+  draftEntityVisibility?: Record<string, boolean>
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
@@ -315,6 +319,8 @@ export function Viewer3D({
   selection,
   entityVisibility,
   onEntityVisibilityChange,
+  draftEntities = EMPTY_DRAFT_ENTITIES,
+  draftEntityVisibility = {},
   wireframe,
   onWireframeChange,
   onFieldsDiscovered,
@@ -372,6 +378,7 @@ export function Viewer3D({
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
+  const draftEntityGroupRef = useRef<THREE.Group | null>(null)
   const loadedAssetURLRef = useRef<string | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
@@ -679,6 +686,7 @@ export function Viewer3D({
     if (!scene) return
 
     const previousRoot = assetRef.current
+    const previousDraftGroup = draftEntityGroupRef.current
     const previousDispose = assetDisposeRef.current
     const retainPrevious = preserveCamera && previousRoot !== null
     if (!retainPrevious) {
@@ -687,7 +695,9 @@ export function Viewer3D({
       uvfAssetRef.current = null
       meshesRef.current.clear()
       if (previousRoot) scene.remove(previousRoot)
+      if (previousDraftGroup) scene.remove(previousDraftGroup)
       assetRef.current = null
+      draftEntityGroupRef.current = null
       setAssetStats(null)
       assetBoundsSphereRef.current = null
       setAvailableFields([])
@@ -833,6 +843,18 @@ export function Viewer3D({
       root.position.copy(center.multiplyScalar(-scale))
       root.userData.viewerNormalized = true
     }
+    let nextDraftGroup: THREE.Group | null = null
+    if (draftEntities.length) {
+      const sourceBounds = new THREE.Box3(
+        new THREE.Vector3(...displayManifest!.bounding_box.min),
+        new THREE.Vector3(...displayManifest!.bounding_box.max),
+      )
+      nextDraftGroup = createDraftEntityGroup(draftEntities, sourceBounds)
+      nextDraftGroup.position.copy(root.position)
+      nextDraftGroup.quaternion.copy(root.quaternion)
+      nextDraftGroup.scale.copy(root.scale)
+      disposers.push(() => disposeObject(nextDraftGroup!))
+    }
     if (nextUVFAsset) {
       const presentation = framePresentationRef.current
       const nextField = nextFields.find((field) => field.name === presentation.selectedField)
@@ -853,10 +875,13 @@ export function Viewer3D({
     }
     if (retainPrevious && previousRoot) {
       scene.remove(previousRoot)
+      if (previousDraftGroup) scene.remove(previousDraftGroup)
       previousDispose?.()
     }
     scene.add(root)
+    if (nextDraftGroup) scene.add(nextDraftGroup)
     assetRef.current = root
+    draftEntityGroupRef.current = nextDraftGroup
     assetDisposeRef.current = nextDispose
     uvfAssetRef.current = nextUVFAsset
     meshesRef.current = nextMeshes
@@ -884,7 +909,7 @@ export function Viewer3D({
         fitCameraToObject(camera, controls, root)
       }
     }
-  }, [fitCameraToObject, uvfAssetCache])
+  }, [displayManifest, draftEntities, fitCameraToObject, uvfAssetCache])
 
   useEffect(() => {
     const container = containerRef.current
@@ -1118,6 +1143,7 @@ export function Viewer3D({
     const asset = uvfAssetRef.current
     if (!asset) return
     asset.object.traverse((object) => {
+      if (object.userData.draftEntity === true) return
       if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
       if (object.userData.uvfFieldFilterOverlay === true) return
       if (object.userData.uvfVectorVisualizationOverlay === true) return
@@ -1168,10 +1194,14 @@ export function Viewer3D({
   }, [assetState.status, displayManifest, entityVisibility, groupVisibility])
 
   useEffect(() => {
+    setDraftEntityVisibility(draftEntityGroupRef.current, draftEntityVisibility)
+  }, [assetState.status, draftEntityVisibility])
+
+  useEffect(() => {
     const clipping = clipPlane
       ? [new THREE.Plane(new THREE.Vector3(...clipPlane.normal).normalize(), clipPlane.constant)]
       : []
-    assetRef.current?.traverse((object) => {
+    const applyClipping = (root: THREE.Object3D | null) => root?.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((material) => {
@@ -1180,6 +1210,8 @@ export function Viewer3D({
         material.needsUpdate = true
       })
     })
+    applyClipping(assetRef.current)
+    applyClipping(draftEntityGroupRef.current)
   }, [assetState.status, clipPlane])
 
   useEffect(() => {
@@ -2153,9 +2185,13 @@ export function precisionFallbackNotice(requestedLevel: number, defaultLevel: nu
 
 function disposeObject(root: THREE.Object3D) {
   root.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Line)) return
-    object.geometry.dispose()
-    const materials = Array.isArray(object.material) ? object.material : [object.material]
+    const renderable = object as THREE.Object3D & {
+      geometry?: THREE.BufferGeometry
+      material?: THREE.Material | THREE.Material[]
+    }
+    if (!renderable.geometry || !renderable.material) return
+    renderable.geometry.dispose()
+    const materials = Array.isArray(renderable.material) ? renderable.material : [renderable.material]
     materials.forEach((material) => material.dispose())
   })
 }

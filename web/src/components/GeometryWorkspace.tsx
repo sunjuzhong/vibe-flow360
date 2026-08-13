@@ -87,6 +87,7 @@ import { useI18n } from '../i18n'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
+import { DraftEntityInventory, useDraftEntities, useDraftEntityVisibility } from './DraftEntityInventory'
 import './GeometryWorkspace.css'
 
 const readinessCopy = {
@@ -401,6 +402,7 @@ export default function GeometryWorkspace({
   const { t, language } = useI18n()
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
+  const [draftEntityVisibility, setDraftEntityVisibility] = useDraftEntityVisibility(detail?.simulation_params)
   const [entitySearch, setEntitySearch] = useState('')
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
@@ -437,6 +439,7 @@ export default function GeometryWorkspace({
     resourceId ?? detail?.id ?? null,
   )
   const status = resourceStatus(detail)
+  const draftEntities = useDraftEntities(detail?.simulation_params)
   const review = useMemo(
     () => buildGeometryReview(detail, manifest, status, diagnosticReport),
     [detail, diagnosticReport, manifest, status],
@@ -883,7 +886,7 @@ export default function GeometryWorkspace({
         <div className="geometry-panel-heading">
           <div><span>MODEL</span><strong>Geometry inventory</strong></div>
           <span className="geometry-count-badge">
-            {(manifest?.groups.length ?? 0) + (manifest?.edges?.length ?? 0)}
+            {(manifest?.groups.length ?? 0) + (manifest?.edges?.length ?? 0) + draftEntities.length}
           </span>
         </div>
         <label className="geometry-entity-search">
@@ -1012,6 +1015,11 @@ export default function GeometryWorkspace({
               )
             })}
           </ManifestMemberGroup>
+          <DraftEntityInventory
+            entities={draftEntities}
+            visibility={draftEntityVisibility}
+            onVisibilityChange={setDraftEntityVisibility}
+          />
           {filteredGroups.length === 0 && filteredEdges.length === 0 && (
             <div className="geometry-empty-list">{`No geometry entities match “${entitySearch}”.`}</div>
           )}
@@ -1032,6 +1040,8 @@ export default function GeometryWorkspace({
           onSelectionChange={setViewerSelection}
           entityVisibility={entityVisibility}
           onEntityVisibilityChange={setEntityVisibility}
+          draftEntities={draftEntities}
+          draftEntityVisibility={draftEntityVisibility}
           entityAppearances={entityAppearances}
           clipPlane={clipPlane}
           projectId={projectId}

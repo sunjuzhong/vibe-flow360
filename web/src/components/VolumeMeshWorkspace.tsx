@@ -25,6 +25,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
+import { DraftEntityInventory, useDraftEntities, useDraftEntityVisibility } from './DraftEntityInventory'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
@@ -127,6 +128,8 @@ export default function VolumeMeshWorkspace({
   onPlanCase: () => Promise<void>
   onShowLogs?: () => void
 }) {
+  const [draftEntityVisibility, setDraftEntityVisibility] = useDraftEntityVisibility(detail?.simulation_params)
+  const draftEntities = useDraftEntities(detail?.simulation_params)
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
@@ -251,7 +254,7 @@ export default function VolumeMeshWorkspace({
               <span>{previewSource === 'fallback' ? 'CONTEXT' : 'REGIONS'}</span>
               <strong>{previewSource === 'fallback' ? 'Geometry inventory' : 'Domain inventory'}</strong>
             </div>
-            <span className="geometry-count-badge">{review.zones.length}</span>
+            <span className="geometry-count-badge">{review.zones.length + draftEntities.length}</span>
           </div>
           <VolumeZoneInspector
             inventory={review.zones}
@@ -264,6 +267,11 @@ export default function VolumeMeshWorkspace({
             })}
             contextOnly={previewSource === 'fallback'}
           />
+          <DraftEntityInventory
+            entities={draftEntities}
+            visibility={draftEntityVisibility}
+            onVisibilityChange={setDraftEntityVisibility}
+          />
         </>
       )}
       viewer={(
@@ -275,6 +283,8 @@ export default function VolumeMeshWorkspace({
             onSelectionChange={review.setSelection}
             entityVisibility={review.visibility}
             onEntityVisibilityChange={review.setVisibility}
+            draftEntities={draftEntities}
+            draftEntityVisibility={draftEntityVisibility}
             selectedField={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.selectedField : null}
             onSelectedFieldChange={review.setSelectedField}
             onFieldsDiscovered={review.handleFieldsDiscovered}
