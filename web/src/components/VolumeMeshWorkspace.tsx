@@ -227,11 +227,6 @@ export default function VolumeMeshWorkspace({
   const contextualReviewCount = (review.qualityFields.length > 0 ? 1 : 0)
     + (selectedZoneHasBoundaryLayer ? 1 : 0)
     + (selectedZoneHasRefinement ? 1 : 0)
-  const activeReviewLabel = review.mode === 'quality'
-    ? t('Cell quality')
-    : review.mode === 'boundary-layer'
-      ? t('Boundary layers')
-      : review.mode === 'refinements' ? t('Refinements') : t('Section diagnostic')
   const selectZone = (groupId: string | null, additive = false) => {
     if (!groupId) {
       review.setSelection({ groupId: null })
@@ -395,29 +390,19 @@ export default function VolumeMeshWorkspace({
             </section>
           )}
 
-          {review.mode !== 'overview' && review.mode !== 'zones' && (
-            <div className="volume-active-review-banner" role="status">
-              <div><span>{t('Active item review')}</span><strong>{activeReviewLabel}</strong></div>
-              <button type="button" onClick={() => review.setMode('overview')}>{t('Close review')}</button>
-            </div>
-          )}
-
           {review.mode === 'quality' ? (
-            <section className="geometry-selection-card volume-active-review">
-              <div className="geometry-section-title"><ScanLine size={13} /> Cell quality · {review.qualityFields.length} fields</div>
-              <VolumeQualityInspector
-                fields={review.qualityFields}
-                field={review.selectedFieldInfo}
-                range={review.range}
-                histogram={review.histogram}
-                extrema={review.extrema}
-                probe={review.probe}
-                entityNames={entityNames}
-                onFieldChange={review.setSelectedField}
-                onRangeChange={(range) => review.setRange(range)}
-                onLocateExtreme={review.locateExtreme}
-              />
-            </section>
+            <VolumeQualityInspector
+              fields={review.qualityFields}
+              field={review.selectedFieldInfo}
+              range={review.range}
+              histogram={review.histogram}
+              extrema={review.extrema}
+              probe={review.probe}
+              entityNames={entityNames}
+              onFieldChange={review.setSelectedField}
+              onRangeChange={(range) => review.setRange(range)}
+              onLocateExtreme={review.locateExtreme}
+            />
           ) : review.mode === 'boundary-layer' ? (
             <BoundaryLayerInspector
               review={review.boundaryLayer}

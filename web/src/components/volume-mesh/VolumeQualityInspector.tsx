@@ -40,12 +40,7 @@ export function VolumeQualityInspector({
       </select>
     </label>
   )
-  if (!field) return (
-    <>
-      {fieldSelector}
-      {fields.length === 0 && <p>No scalar cell-quality field is present. Select Quality after a diagnostic UVF asset is available.</p>}
-    </>
-  )
+  if (!field) return fieldSelector
   const activeHistogram = histogram?.field.name === field.name ? histogram : null
   const activeProbe = probe?.fieldName === field.name ? probe : null
   const riskDirection = volumeQualityRiskDirection(field.name)
