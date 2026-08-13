@@ -314,7 +314,7 @@ function CompareViewport({ item, projectId, availability = 'available', selected
       {selectedItem && (
         <div className="compare-selection-card-wrap">
           <CaseVisualizationSelectionCard
-            item={{ ...selectedItem, typeLabel: selectedItem.entity_type || t('Visualization object'), entityIds: [selectedItem.id] }}
+            items={[{ ...selectedItem, typeLabel: selectedItem.entity_type || t('Visualization object'), entityIds: [selectedItem.id] }]}
             visible={selectedVisible}
             fieldNames={selectedFieldNames}
             fieldVisualizationEnabled={fieldVisualizationEnabled}

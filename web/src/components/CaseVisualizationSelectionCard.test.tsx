@@ -8,7 +8,7 @@ describe('CaseVisualizationSelectionCard', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider>
         <CaseVisualizationSelectionCard
-          item={{ name: 'Cylinder wall', typeLabel: 'Surfaces', triangles: 120, vertices: 80, entityIds: ['wall'] }}
+          items={[{ name: 'Cylinder wall', typeLabel: 'Surfaces', triangles: 120, vertices: 80, entityIds: ['wall'] }]}
           visible
           fieldNames={['Cp', 'CfVec']}
           fieldVisualizationEnabled
@@ -29,5 +29,33 @@ describe('CaseVisualizationSelectionCard', () => {
     expect(markup).toContain('Isolate')
     expect(markup).toContain('Hide')
     expect(markup).toContain('Field visualization')
+  })
+
+  it('summarizes shared controls for multiple selected visualization objects', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <CaseVisualizationSelectionCard
+          items={[
+            { name: 'Slice A', typeLabel: 'Slices', triangles: 120, vertices: 80, entityIds: ['a'] },
+            { name: 'Slice B', typeLabel: 'Slices', triangles: 180, vertices: 100, entityIds: ['b'] },
+          ]}
+          visible
+          fieldNames={['Mach']}
+          fieldVisualizationEnabled
+          activeField="Mach"
+          onFocus={() => undefined}
+          onIsolate={() => undefined}
+          onToggleVisibility={() => undefined}
+          onShowAll={() => undefined}
+          onClear={() => undefined}
+          onFieldVisualizationChange={() => undefined}
+        />
+      </I18nProvider>,
+    )
+
+    expect(markup).toContain('2 items selected')
+    expect(markup).toContain('300')
+    expect(markup).toContain('180')
+    expect(markup).toContain('Mach')
   })
 })

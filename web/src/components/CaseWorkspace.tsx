@@ -16,6 +16,8 @@ import {
   EyeOff,
   Film,
   Folder,
+  Square,
+  SquareCheckBig,
   LoaderCircle,
 } from 'lucide-react'
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
@@ -470,6 +472,28 @@ export function caseObjectFieldNames(entities: UVFEntityInfo[], entityId: string
   return entities.find((entity) => entity.id === entityId)?.fields ?? []
 }
 
+export function caseCommonFieldNames(
+  entities: UVFEntityInfo[],
+  members: CaseVisualizationMember[],
+): string[] {
+  if (!members.length) return []
+  const fieldsByMember = members.map((member) => new Set(member.entityIds
+    .flatMap((entityId) => caseObjectFieldNames(entities, entityId))))
+  return [...fieldsByMember[0]].filter((field) => fieldsByMember
+    .slice(1).every((fields) => fields.has(field)))
+}
+
+export function nextCaseVisualizationSelection(
+  selectedIds: string[],
+  memberId: string,
+  additive: boolean,
+): string[] {
+  if (!additive) return [memberId]
+  return selectedIds.includes(memberId)
+    ? selectedIds.filter((id) => id !== memberId)
+    : [...selectedIds, memberId]
+}
+
 export function caseFieldForSelection(activeField: string | null, fieldNames: string[]): string | null {
   return activeField && fieldNames.includes(activeField) ? activeField : null
 }
@@ -609,7 +633,7 @@ export default function CaseWorkspace({
   const [archiveLayerLoading, setArchiveLayerLoading] = useState<string | null>(null)
   const [archiveLayerError, setArchiveLayerError] = useState('')
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
-  const [selectedVisualizationId, setSelectedVisualizationId] = useState<string | null>(null)
+  const [selectedVisualizationIds, setSelectedVisualizationIds] = useState<string[]>([])
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
@@ -675,23 +699,26 @@ export default function CaseWorkspace({
     () => Object.values(archiveLayers).map((layer) => layer.manifest),
     [archiveLayers],
   )
-  const selectedVisualizationObject = visualizationGroups
-    .flatMap(({ members }) => members)
-    .find((member) => member.id === selectedVisualizationId) ?? null
-  const selectedVisualizationCategory = visualizationGroups
-    .find(({ members }) => members.some((member) => member.id === selectedVisualizationId))?.category ?? null
   const allVisualizationMembers = visualizationGroups.flatMap(({ members }) => members)
+  const selectedVisualizationObjects = selectedVisualizationIds.flatMap((id) => {
+    const member = allVisualizationMembers.find((candidate) => candidate.id === id)
+    return member ? [member] : []
+  })
+  const selectedVisualizationItems = selectedVisualizationObjects.map((member) => ({
+    ...member,
+    typeLabel: t(caseVisualizationCategoryLabel(visualizationGroups
+      .find(({ members }) => members.some((candidate) => candidate.id === member.id))?.category ?? 'surfaces')),
+  }))
   const selectedFieldNames = useMemo(
-    () => [...new Set((selectedVisualizationObject?.entityIds ?? [])
-      .flatMap((entityId) => caseObjectFieldNames(viewerEntities, entityId)))],
-    [selectedVisualizationObject, viewerEntities],
+    () => caseCommonFieldNames(viewerEntities, selectedVisualizationObjects),
+    [selectedVisualizationObjects, viewerEntities],
   )
   const selectedFieldEntityIds = useMemo(
-    () => selectedVisualizationObject?.entityIds ?? [],
-    [selectedVisualizationObject],
+    () => selectedVisualizationObjects.flatMap((member) => member.entityIds),
+    [selectedVisualizationObjects],
   )
-  const selectedVisualizationVisible = Boolean(selectedVisualizationObject?.entityIds.some(
-    (entityId) => entityVisibility[entityId] ?? selectedVisualizationObject.visible,
+  const selectedVisualizationVisible = selectedVisualizationObjects.some((member) => member.entityIds.some(
+    (entityId) => entityVisibility[entityId] ?? member.visible,
   ))
 
   useEffect(() => {
@@ -699,40 +726,37 @@ export default function CaseWorkspace({
   }, [manifest?.asset_url])
 
   useEffect(() => {
-    if (viewerState.status !== 'ready' || !selectedVisualizationId) return
-    const reconciled = reconcileCaseVisualizationSelection(
-      selectedVisualizationId,
-      viewerSelection,
-      visualizationGroups,
-    )
-    if (reconciled.selectedVisualizationId !== selectedVisualizationId) {
-      setSelectedVisualizationId(reconciled.selectedVisualizationId)
-    }
+    if (viewerState.status !== 'ready' || !selectedVisualizationIds.length) return
+    const availableMembers = visualizationGroups.flatMap(({ members }) => members)
+    const nextSelectedIds = selectedVisualizationIds.filter((id) => availableMembers.some((member) => member.id === id))
+    const nextGroupIds = nextSelectedIds.flatMap((id) => availableMembers
+      .find((member) => member.id === id)?.entityIds ?? [])
+    if (nextSelectedIds.length !== selectedVisualizationIds.length) setSelectedVisualizationIds(nextSelectedIds)
     const currentGroupIds = viewerSelection.groupIds ?? []
-    const nextGroupIds = reconciled.viewerSelection.groupIds ?? []
     if (
-      reconciled.viewerSelection.groupId !== viewerSelection.groupId
+      (nextGroupIds.at(-1) ?? null) !== viewerSelection.groupId
       || currentGroupIds.length !== nextGroupIds.length
       || currentGroupIds.some((id, index) => id !== nextGroupIds[index])
     ) {
-      setViewerSelection(reconciled.viewerSelection)
+      setViewerSelection({ groupId: nextGroupIds.at(-1) ?? null, groupIds: nextGroupIds })
     }
-  }, [selectedVisualizationId, viewerSelection, viewerState.status, visualizationGroups])
+  }, [selectedVisualizationIds, viewerSelection, viewerState.status, visualizationGroups])
 
   useEffect(() => {
     setArchiveLayers({})
     setArchiveLayerLoading(null)
     setArchiveLayerError('')
     setViewerSelection({ groupId: null })
-    setSelectedVisualizationId(null)
+    setSelectedVisualizationIds([])
     setActiveField(null)
     setFieldVisualizationEnabled(false)
   }, [resourceIdentity])
 
   useEffect(() => {
+    if (selectedVisualizationIds.length) return
     setFieldVisualizationEnabled(false)
     setActiveField(null)
-  }, [selectedVisualizationId])
+  }, [selectedVisualizationIds.length])
 
   useEffect(() => {
     const compatibleField = caseFieldForSelection(activeField, selectedFieldNames)
@@ -765,13 +789,13 @@ export default function CaseWorkspace({
       ...current,
       ...Object.fromEntries(layer.entityIds.map((entityId) => [entityId, true])),
     }))
-    setSelectedVisualizationId(member.id)
+    setSelectedVisualizationIds([member.id])
     setViewerSelection({ groupId: layer.entityIds[0] ?? null, groupIds: layer.entityIds })
     setArchiveLayerError('')
   }, [detail?.id, resourceId, t])
 
   const activateArchiveMember = useCallback(async (member: CaseVisualizationMember) => {
-    setSelectedVisualizationId(member.id)
+    setSelectedVisualizationIds([member.id])
     const loaded = archiveLayers[member.id]
     if (loaded) {
       setViewerSelection({ groupId: loaded.entityIds[0] ?? null, groupIds: loaded.entityIds })
@@ -820,7 +844,14 @@ export default function CaseWorkspace({
     const selectedMember = visualizationGroups
       .flatMap(({ members }) => members)
       .find((member) => selection.groupId && member.entityIds.includes(selection.groupId))
-    setSelectedVisualizationId(selectedMember?.id ?? null)
+    setSelectedVisualizationIds(selectedMember ? [selectedMember.id] : [])
+  }
+  const selectVisualizationMember = (member: CaseVisualizationMember, additive: boolean) => {
+    const selectedIds = nextCaseVisualizationSelection(selectedVisualizationIds, member.id, additive)
+    const entityIds = selectedIds.flatMap((id) => allVisualizationMembers
+      .find((candidate) => candidate.id === id)?.entityIds ?? [])
+    setSelectedVisualizationIds(selectedIds)
+    setViewerSelection({ groupId: entityIds.at(-1) ?? null, groupIds: entityIds })
   }
   const unit = findLengthUnit([
     detail?.simulation_params,
@@ -930,7 +961,7 @@ export default function CaseWorkspace({
                       if (!group.entityIds.length) {
                         const loadingLayer = archiveLayerLoading === group.id
                         return (
-                          <div className={`geometry-entity-row archive-placeholder ${selectedVisualizationId === group.id ? 'selected' : ''}`} key={group.id}>
+                          <div className={`geometry-entity-row archive-placeholder ${selectedVisualizationIds.includes(group.id) ? 'selected' : ''}`} key={group.id}>
                             <button
                               type="button"
                               className="geometry-entity-select"
@@ -956,10 +987,19 @@ export default function CaseWorkspace({
                         )
                       }
                       return (
-                        <div className={`geometry-entity-row ${selectedVisualizationId === group.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
-                          <button type="button" className="geometry-entity-select" onClick={() => {
-                            setSelectedVisualizationId(group.id)
-                            setViewerSelection({ groupId: group.entityIds[0] ?? null, groupIds: group.entityIds })
+                        <div className={`geometry-entity-row case-visualization-row ${selectedVisualizationIds.includes(group.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
+                          <button
+                            type="button"
+                            className="case-visualization-selection-toggle"
+                            role="checkbox"
+                            aria-checked={selectedVisualizationIds.includes(group.id)}
+                            aria-label={t(selectedVisualizationIds.includes(group.id) ? 'Remove {name} from selection' : 'Add {name} to selection').replace('{name}', group.name)}
+                            onClick={() => selectVisualizationMember(group, true)}
+                          >
+                            {selectedVisualizationIds.includes(group.id) ? <SquareCheckBig size={12} /> : <Square size={12} />}
+                          </button>
+                          <button type="button" className="geometry-entity-select" onClick={(event) => {
+                            selectVisualizationMember(group, event.shiftKey || event.metaKey || event.ctrlKey)
                           }} title={t('Select visualization object')}>
                             <span className="viewer-color-swatch" style={{ background: group.color }} />
                             <span>{group.name}</span>
@@ -1054,7 +1094,7 @@ export default function CaseWorkspace({
             onSelectedFieldChange={setActiveField}
             fieldNames={selectedFieldNames}
             fieldEntityIds={selectedFieldEntityIds}
-            showFieldPanel={Boolean(fieldVisualizationEnabled && selectedVisualizationObject && selectedFieldNames.length > 0)}
+            showFieldPanel={Boolean(fieldVisualizationEnabled && selectedVisualizationObjects.length && selectedFieldNames.length > 0)}
             showVectorControls={fieldVisualizationEnabled}
             showEntityLegend={false}
             onEntitiesDiscovered={setViewerEntities}
@@ -1132,12 +1172,9 @@ export default function CaseWorkspace({
             </div>
           )}
 
-          {selectedVisualizationObject && (
+          {selectedVisualizationObjects.length > 0 && (
             <CaseVisualizationSelectionCard
-              item={{
-                ...selectedVisualizationObject,
-                typeLabel: selectedVisualizationCategory ? t(caseVisualizationCategoryLabel(selectedVisualizationCategory)) : t('Visualization object'),
-              }}
+              items={selectedVisualizationItems}
               visible={selectedVisualizationVisible}
               fieldNames={selectedFieldNames}
               fieldVisualizationEnabled={fieldVisualizationEnabled}
@@ -1145,18 +1182,18 @@ export default function CaseWorkspace({
               onFocus={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
               onIsolate={() => setEntityVisibility((current) => ({
                 ...current,
-                ...isolateCaseVisualizationMap(allVisualizationMembers, selectedVisualizationObject.entityIds),
+                ...isolateCaseVisualizationMap(allVisualizationMembers, selectedFieldEntityIds),
               }))}
               onToggleVisibility={() => setEntityVisibility((current) => ({
                 ...current,
-                ...Object.fromEntries(selectedVisualizationObject.entityIds.map((id) => [id, !selectedVisualizationVisible])),
+                ...Object.fromEntries(selectedFieldEntityIds.map((id) => [id, !selectedVisualizationVisible])),
               }))}
               onShowAll={() => setEntityVisibility((current) => ({
                 ...current,
                 ...caseSurfaceVisibilityMap(allVisualizationMembers, true),
               }))}
               onClear={() => {
-                setSelectedVisualizationId(null)
+                setSelectedVisualizationIds([])
                 setViewerSelection({ groupId: null })
               }}
               onFieldVisualizationChange={(checked) => {

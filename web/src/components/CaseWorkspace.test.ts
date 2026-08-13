@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -364,6 +364,25 @@ describe('Case object field capabilities', () => {
     expect(caseObjectFieldNames(entities, 'qcriterion')).toEqual(['Mach'])
     expect(caseObjectFieldNames(entities, 'streamline')).toEqual([])
     expect(caseObjectFieldNames(entities, null)).toEqual([])
+  })
+
+  it('returns only fields shared by every selected SolidGeometry item', () => {
+    const sharedEntities = [
+      { id: 'slice-a', name: 'A', type: 'SolidGeometry', parentId: 'slices', children: [], fields: ['Cp', 'Mach'] },
+      { id: 'slice-b', name: 'B', type: 'SolidGeometry', parentId: 'slices', children: [], fields: ['Mach', 'vorticityMagnitude'] },
+    ]
+    const members = [
+      { id: 'slice-a', name: 'A', color: '#fff', visible: true, entityIds: ['slice-a'], source: 'manifest' as const },
+      { id: 'slice-b', name: 'B', color: '#fff', visible: true, entityIds: ['slice-b'], source: 'manifest' as const },
+    ]
+    expect(caseCommonFieldNames(sharedEntities, members)).toEqual(['Mach'])
+    expect(caseCommonFieldNames(sharedEntities, [members[0]])).toEqual(['Cp', 'Mach'])
+  })
+
+  it('adds and removes Case visualization items from an additive selection', () => {
+    expect(nextCaseVisualizationSelection(['surface'], 'slice', true)).toEqual(['surface', 'slice'])
+    expect(nextCaseVisualizationSelection(['surface', 'slice'], 'surface', true)).toEqual(['slice'])
+    expect(nextCaseVisualizationSelection(['surface', 'slice'], 'iso', false)).toEqual(['iso'])
   })
 
   it('clears a field that is not supported by the next selection', () => {
