@@ -45,7 +45,7 @@ import {
   type ViewerPointerEvent,
 } from '../../lib/viewer-tools'
 import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSelection } from './ViewerPrecisionControl'
-import { normalizeViewerFieldRange, ViewerFieldRangeControl } from './ViewerFieldRangeControl'
+import { normalizeViewerFieldRange, resolveViewerFieldDomain, ViewerFieldRangeControl } from './ViewerFieldRangeControl'
 import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
 import { useI18n } from '../../i18n'
 
@@ -449,21 +449,25 @@ export function Viewer3D({
     ? scopedFields.filter((field) => fieldNames.includes(field.name))
     : scopedFields
   const activeField = displayedFields.find((field) => field.name === selectedField)
-  const resolvedFieldScale = activeField
-    ? resolveFieldScale(fieldScale, activeField.min, activeField.max)
-    : 'linear'
-  const baseFieldRange = useMemo(
-    () => activeField ? normalizeViewerFieldRange(fieldRange, activeField.min, activeField.max) : null,
+  const fieldDomain = useMemo(
+    () => activeField ? resolveViewerFieldDomain(fieldRange, activeField.min, activeField.max) : null,
     [activeField, fieldRange],
   )
+  const resolvedFieldScale = activeField
+    ? resolveFieldScale(fieldScale, fieldDomain![0], fieldDomain![1])
+    : 'linear'
+  const baseFieldRange = useMemo(
+    () => fieldDomain ? normalizeViewerFieldRange(fieldRange, fieldDomain[0], fieldDomain[1]) : null,
+    [fieldDomain, fieldRange],
+  )
   const fieldRangeKey = activeField && baseFieldRange
-    ? `${manifest?.asset_url ?? ''}|${activeField.name}|${baseFieldRange[0]}|${baseFieldRange[1]}`
+    ? `${activeField.name}|${baseFieldRange[0]}|${baseFieldRange[1]}`
     : ''
-  const activeColorRange = useMemo(() => activeField && baseFieldRange
+  const activeColorRange = useMemo(() => activeField && baseFieldRange && fieldDomain
     ? fieldRangeOverride?.key === fieldRangeKey
-      ? normalizeViewerFieldRange(fieldRangeOverride.range, activeField.min, activeField.max)
+      ? normalizeViewerFieldRange(fieldRangeOverride.range, fieldDomain[0], fieldDomain[1])
       : baseFieldRange
-    : null, [activeField, baseFieldRange, fieldRangeKey, fieldRangeOverride])
+    : null, [activeField, baseFieldRange, fieldDomain, fieldRangeKey, fieldRangeOverride])
   const effectiveWireframe = wireframe ?? wireframeOn
   const vectorArrowLimit = vectorArrowDensity === 'sparse' ? 120 : vectorArrowDensity === 'dense' ? 480 : 260
   const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled, vectorArrowLimit })
@@ -1808,7 +1812,7 @@ export function Viewer3D({
                 >
                   <option value="auto">{`Auto (${resolvedFieldScale === 'log' ? 'Log10' : 'Linear'})`}</option>
                   <option value="linear">Linear</option>
-                  <option value="log" disabled={!activeField || !canUseLogFieldScale(activeField.min, activeField.max)}>
+                  <option value="log" disabled={!fieldDomain || !canUseLogFieldScale(fieldDomain[0], fieldDomain[1])}>
                     Log10
                   </option>
                 </select>
@@ -1818,8 +1822,8 @@ export function Viewer3D({
           {selectedField && activeField && activeColorRange && (
             <ViewerFieldRangeControl
               fieldName={activeField.name}
-              min={activeField.min}
-              max={activeField.max}
+              min={fieldDomain![0]}
+              max={fieldDomain![1]}
               range={activeColorRange}
               scale={resolvedFieldScale}
               colormap={colormap}

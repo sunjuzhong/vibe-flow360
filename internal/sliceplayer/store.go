@@ -91,9 +91,63 @@ func NewStore(root string) (*Store, error) {
 			job.FinishedAt = &now
 			_ = store.writeJob(job)
 		}
+		if store.upgradePlaybackFrameRanges(&job) {
+			_ = store.writeJob(job)
+		}
 		store.jobs[job.ID] = job
 	}
 	return store, nil
+}
+
+func (s *Store) upgradePlaybackFrameRanges(job *Job) bool {
+	if job.Report == nil || job.Report.IndexVersion >= IndexVersion || job.Report.Playback == nil || !job.Report.Playback.Ready {
+		return false
+	}
+	playback := job.Report.Playback
+	ranges := make([]map[string][2]float64, len(playback.Frames))
+	for frameIndex, frame := range playback.Frames {
+		manifestPath := filepath.Join(s.cacheDirectory(job.CacheKey), "assets", filepath.FromSlash(frame.ManifestPath))
+		payload, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return false
+		}
+		var entries []struct {
+			Resources struct {
+				Buffers struct {
+					Bounds map[string][2]float64 `json:"bounds"`
+				} `json:"buffers"`
+			} `json:"resources"`
+		}
+		if json.Unmarshal(payload, &entries) != nil {
+			return false
+		}
+		frameRanges := map[string][2]float64{}
+		for _, entry := range entries {
+			for field, bounds := range entry.Resources.Buffers.Bounds {
+				previous, exists := frameRanges[field]
+				if !exists {
+					frameRanges[field] = bounds
+					continue
+				}
+				if bounds[0] < previous[0] {
+					previous[0] = bounds[0]
+				}
+				if bounds[1] > previous[1] {
+					previous[1] = bounds[1]
+				}
+				frameRanges[field] = previous
+			}
+		}
+		if len(frame.Fields) > 0 && len(frameRanges) == 0 {
+			return false
+		}
+		ranges[frameIndex] = frameRanges
+	}
+	for frameIndex := range playback.Frames {
+		playback.Frames[frameIndex].FieldRanges = ranges[frameIndex]
+	}
+	job.Report.IndexVersion = IndexVersion
+	return true
 }
 
 func CacheKey(caseID, resultPath string, size int64) string {
