@@ -16,7 +16,8 @@ const maxConcurrentBufferLoads = 4
 const maxTotalBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_TOTAL_BUFFER_BYTES)
 
 const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
-export const WIREFRAME_OVERLAY_WIDTH = 1.6
+export const WIREFRAME_OVERLAY_WIDTH = 2.2
+export const FIELD_FILTER_OVERLAY_WIDTH = 3
 
 type LoadOptions = {
   signal?: AbortSignal
@@ -932,7 +933,7 @@ export function setFieldFilterOverlay(asset: UVFAsset, filter: UVFFieldFilter | 
     if (!(positions instanceof THREE.BufferAttribute)) return
     const index = geometry.getIndex()
     const triangleCount = Math.floor((index?.count ?? positions.count) / 3)
-    const segmentIndices: number[] = []
+    const segmentPositions: number[] = []
     for (let triangle = 0; triangle < triangleCount; triangle++) {
       const offset = triangle * 3
       const vertices = index
@@ -943,21 +944,24 @@ export function setFieldFilterOverlay(asset: UVFAsset, filter: UVFFieldFilter | 
       if (!matchesFilter) continue
       matchingTriangles++
       for (const [from, to] of [[0, 1], [1, 2], [2, 0]]) {
-        segmentIndices.push(vertices[from], vertices[to])
+        for (const vertexIndex of [vertices[from], vertices[to]]) {
+          segmentPositions.push(
+            positions.getX(vertexIndex),
+            positions.getY(vertexIndex),
+            positions.getZ(vertexIndex),
+          )
+        }
       }
     }
-    if (segmentIndices.length === 0) return
+    if (segmentPositions.length === 0) return
 
-    const overlayGeometry = new THREE.BufferGeometry()
-    overlayGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(positions.array, positions.itemSize, positions.normalized),
-    )
-    overlayGeometry.setIndex(segmentIndices)
-    const overlay = new THREE.LineSegments(
+    const overlayGeometry = new LineSegmentsGeometry()
+    overlayGeometry.setPositions(segmentPositions)
+    const overlay = new LineSegments2(
       overlayGeometry,
-      new THREE.LineBasicMaterial({
+      new LineMaterial({
         color: 0xff5a1f,
+        linewidth: FIELD_FILTER_OVERLAY_WIDTH,
         transparent: true,
         opacity: 0.98,
         depthWrite: false,
@@ -1002,7 +1006,7 @@ function removeFieldFilterOverlay(face: THREE.Mesh): void {
   const existing = face.children.filter((child) => child.userData.uvfFieldFilterOverlay === true)
   for (const child of existing) {
     face.remove(child)
-    if (!(child instanceof THREE.LineSegments)) continue
+    if (!(child instanceof LineSegments2) && !(child instanceof THREE.LineSegments)) continue
     child.geometry.dispose()
     const materials = Array.isArray(child.material) ? child.material : [child.material]
     materials.forEach((material) => material.dispose())
