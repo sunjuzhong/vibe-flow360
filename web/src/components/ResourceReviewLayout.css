@@ -795,6 +795,12 @@
 
 .case-review-details summary::-webkit-details-marker { display: none; }
 .case-review-details[open] summary { border-bottom: 1px solid #e5e7e0; }
+.case-review-details summary > svg { margin-left: auto; transition: transform .16s ease; }
+.case-review-details[open] summary > svg { transform: rotate(180deg); }
+.case-review-evidence-content { padding: 9px; }
+.case-review-evidence-content .viewer-asset-information { margin: 0; }
+.case-review-evidence-content .convergence-banner.compact,
+.case-review-evidence-content .case-summary-grid { margin-top: 8px; }
 .case-review-detail-block { display: grid; gap: 8px; padding: 9px; }
 .case-review-detail-block > strong { color: #788076; font: 8px 'DM Mono'; letter-spacing: .04em; text-transform: uppercase; }
 .case-review-detail-block .case-detail-list { grid-template-columns: minmax(0, 1fr) minmax(80px, auto); }

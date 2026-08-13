@@ -18,6 +18,7 @@ import {
   Folder,
   Square,
   SquareCheckBig,
+  ChevronDown,
   LoaderCircle,
 } from 'lucide-react'
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
@@ -1145,24 +1146,32 @@ export default function CaseWorkspace({
             <p>{t(reviewDetail)}</p>
           </div>
 
-          <ViewerAssetInformation stats={viewerAssetStats} />
+          <details className="case-review-details case-review-evidence">
+            <summary>
+              <span>{t('Review evidence')}</span>
+              <ChevronDown size={14} aria-hidden="true" />
+            </summary>
+            <div className="case-review-evidence-content">
+              <ViewerAssetInformation stats={viewerAssetStats} />
 
-          {convResult && (
-            <div className={`convergence-banner compact convergence-${convResult.status}`}>
-              {convResult.status === 'converged' ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
-              <div>
-                <strong>{t(formatConvergenceStatus(convResult.status))}</strong>
-                <p>{localizeConvergenceReason(convResult.reason, t)}</p>
+              {convResult && (
+                <div className={`convergence-banner compact convergence-${convResult.status}`}>
+                  {convResult.status === 'converged' ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
+                  <div>
+                    <strong>{t(formatConvergenceStatus(convResult.status))}</strong>
+                    <p>{localizeConvergenceReason(convResult.reason, t)}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="geometry-summary-grid case-summary-grid">
+                <div><span><Clock size={12} /> Elapsed</span><strong>{viewModel.runTime}</strong></div>
+                <div><span><Gauge size={12} /> Operating point</span><strong>{metricText(velocity)}</strong></div>
+                <div><span><FileOutput size={12} /> Results</span><strong>{viewModel.resultCount}</strong></div>
+                <div><span><Wind size={12} /> Turbulence</span><strong>{viewModel.turbulenceModel}</strong></div>
               </div>
             </div>
-          )}
-
-          <div className="geometry-summary-grid case-summary-grid">
-            <div><span><Clock size={12} /> Elapsed</span><strong>{viewModel.runTime}</strong></div>
-            <div><span><Gauge size={12} /> Operating point</span><strong>{metricText(velocity)}</strong></div>
-            <div><span><FileOutput size={12} /> Results</span><strong>{viewModel.resultCount}</strong></div>
-            <div><span><Wind size={12} /> Turbulence</span><strong>{viewModel.turbulenceModel}</strong></div>
-          </div>
+          </details>
 
           {hasErrors && (
             <div className="case-warning-banner">
