@@ -90,6 +90,8 @@ export type ViewerManifest = {
 
 const EMPTY_VIEWER_MANIFESTS: ViewerManifest[] = []
 const EMPTY_PARAMETER_ENTITIES: ParameterEntity[] = []
+const EMPTY_VISIBILITY: Record<string, boolean> = {}
+const EMPTY_ENTITY_APPEARANCES: Record<string, ViewerEntityAppearance> = {}
 
 export function viewerManifestSetKey(manifests: readonly ViewerManifest[]): string {
   return manifests.map((item) => item.asset_url).filter(Boolean).join('|')
@@ -325,7 +327,7 @@ export function Viewer3D({
   entityVisibility,
   onEntityVisibilityChange,
   parameterEntities = EMPTY_PARAMETER_ENTITIES,
-  parameterEntityVisibility = {},
+  parameterEntityVisibility = EMPTY_VISIBILITY,
   wireframe,
   onWireframeChange,
   onFieldsDiscovered,
@@ -362,7 +364,7 @@ export function Viewer3D({
   cameraState,
   onCameraStateChange,
   showNormals = false,
-  entityAppearances = {},
+  entityAppearances = EMPTY_ENTITY_APPEARANCES,
   preserveCameraOnAssetChange = false,
   uvfAssetCache,
   onAssetReady,
@@ -417,7 +419,8 @@ export function Viewer3D({
   const [cameraNavigating, setCameraNavigating] = useState(false)
   const cameraNavigatingRef = useRef(false)
   const applyingCameraStateRef = useRef(false)
-  const cameraStateFrameRef = useRef<number | null>(null)
+  const cameraStateTimeoutRef = useRef<number | null>(null)
+  const lastCameraStateEmissionRef = useRef(0)
   const onCameraStateChangeRef = useRef(onCameraStateChange)
   const [pivotFeedback, setPivotFeedback] = useState<{ x: number; y: number; id: number } | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
@@ -468,6 +471,29 @@ export function Viewer3D({
   useEffect(() => {
     onCameraStateChangeRef.current = onCameraStateChange
   }, [onCameraStateChange])
+
+  const emitCameraState = useCallback(() => {
+    cameraStateTimeoutRef.current = null
+    if (applyingCameraStateRef.current) return
+    const callback = onCameraStateChangeRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!callback || !camera || !controls) return
+    lastCameraStateEmissionRef.current = performance.now()
+    callback(captureViewerCameraState(camera, controls.target))
+  }, [])
+
+  const scheduleCameraState = useCallback((immediate = false) => {
+    if (!onCameraStateChangeRef.current || applyingCameraStateRef.current) return
+    if (immediate) {
+      if (cameraStateTimeoutRef.current !== null) window.clearTimeout(cameraStateTimeoutRef.current)
+      emitCameraState()
+      return
+    }
+    if (cameraStateTimeoutRef.current !== null) return
+    const elapsed = performance.now() - lastCameraStateEmissionRef.current
+    cameraStateTimeoutRef.current = window.setTimeout(emitCameraState, Math.max(0, 33 - elapsed))
+  }, [emitCameraState])
   const fieldEntityScopeKey = fieldEntityIds?.join('\u0000') ?? ''
   const scopedFields = useMemo(() => {
     const asset = uvfAssetRef.current
@@ -654,12 +680,7 @@ export function Viewer3D({
     configureCFDNavigationControls(controls)
     controls.addEventListener('change', () => {
       renderSchedulerRef.current?.invalidate()
-      if (applyingCameraStateRef.current || cameraStateFrameRef.current !== null) return
-      cameraStateFrameRef.current = requestAnimationFrame(() => {
-        cameraStateFrameRef.current = null
-        if (applyingCameraStateRef.current) return
-        onCameraStateChangeRef.current?.(captureViewerCameraState(camera, controls.target))
-      })
+      scheduleCameraState()
     })
     controls.addEventListener('start', () => {
       cameraNavigatingRef.current = true
@@ -668,6 +689,7 @@ export function Viewer3D({
     controls.addEventListener('end', () => {
       cameraNavigatingRef.current = false
       setCameraNavigating(false)
+      scheduleCameraState(true)
     })
 
     scene.add(createEngineeringLightRig())
@@ -678,7 +700,7 @@ export function Viewer3D({
     controlsRef.current = controls
 
     return { scene, camera, renderer }
-  }, [])
+  }, [scheduleCameraState])
 
   const updateGeometry = useCallback(async (
     manifests: ViewerManifest[],
@@ -957,8 +979,8 @@ export function Viewer3D({
     return () => {
       scheduler.dispose()
       if (renderSchedulerRef.current === scheduler) renderSchedulerRef.current = null
-      if (cameraStateFrameRef.current !== null) cancelAnimationFrame(cameraStateFrameRef.current)
-      cameraStateFrameRef.current = null
+      if (cameraStateTimeoutRef.current !== null) window.clearTimeout(cameraStateTimeoutRef.current)
+      cameraStateTimeoutRef.current = null
       if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
       navCubeAnimationRef.current = null
       if (pivotFeedbackTimeoutRef.current !== null) window.clearTimeout(pivotFeedbackTimeoutRef.current)
@@ -986,7 +1008,29 @@ export function Viewer3D({
 
   // React state and prop changes may mutate materials, visibility, overlays, or
   // tools. Coalesce them into a single frame instead of maintaining an idle loop.
-  useEffect(() => invalidateViewer())
+  useEffect(() => invalidateViewer(), [
+    activeColorRange,
+    assetState.status,
+    clipPlane,
+    colormap,
+    effectiveWireframe,
+    entityAppearances,
+    entityVisibility,
+    fieldEntityScopeKey,
+    fieldFilter,
+    groupVisibility,
+    hoveredGroup,
+    invalidateViewer,
+    overlays,
+    parameterEntityVisibility,
+    resolvedFieldScale,
+    selectedField,
+    showNormals,
+    snapStatus,
+    vectorArrowsEnabled,
+    vectorArrowLimit,
+    vectorLICEnabled,
+  ])
 
   const fitAssetToViewport = useCallback(() => {
     const asset = assetRef.current
@@ -1057,8 +1101,8 @@ export function Viewer3D({
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (!camera || !controls) return
-    if (cameraStateFrameRef.current !== null) cancelAnimationFrame(cameraStateFrameRef.current)
-    cameraStateFrameRef.current = null
+    if (cameraStateTimeoutRef.current !== null) window.clearTimeout(cameraStateTimeoutRef.current)
+    cameraStateTimeoutRef.current = null
     applyingCameraStateRef.current = true
     applyViewerCameraState(camera, controls.target, cameraState)
     controls.update()
@@ -1443,7 +1487,8 @@ export function Viewer3D({
   const setNavigationActive = useCallback((active: boolean) => {
     cameraNavigatingRef.current = active
     setCameraNavigating(active)
-  }, [])
+    if (!active) scheduleCameraState(true)
+  }, [scheduleCameraState])
 
   const cancelViewerInteraction = useCallback((pointerId?: number) => {
     const container = containerRef.current
