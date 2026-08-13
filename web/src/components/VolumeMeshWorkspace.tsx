@@ -412,23 +412,24 @@ export default function VolumeMeshWorkspace({
               ) : (
                 <p className="volume-context-empty">{t('No additional review operations are available for this item.')}</p>
               )}
+              {review.mode === 'quality' && (
+                <VolumeQualityInspector
+                  fields={review.qualityFields}
+                  field={review.selectedFieldInfo}
+                  range={review.range}
+                  histogram={review.histogram}
+                  extrema={review.extrema}
+                  probe={review.probe}
+                  entityNames={entityNames}
+                  onFieldChange={review.setSelectedField}
+                  onRangeChange={(range) => review.setRange(range)}
+                  onLocateExtreme={review.locateExtreme}
+                />
+              )}
             </section>
           )}
 
-          {review.mode === 'quality' ? (
-            <VolumeQualityInspector
-              fields={review.qualityFields}
-              field={review.selectedFieldInfo}
-              range={review.range}
-              histogram={review.histogram}
-              extrema={review.extrema}
-              probe={review.probe}
-              entityNames={entityNames}
-              onFieldChange={review.setSelectedField}
-              onRangeChange={(range) => review.setRange(range)}
-              onLocateExtreme={review.locateExtreme}
-            />
-          ) : review.mode === 'boundary-layer' ? (
+          {review.mode === 'boundary-layer' ? (
             <BoundaryLayerInspector
               review={review.boundaryLayer}
               field={review.selectedFieldInfo}
@@ -466,7 +467,7 @@ export default function VolumeMeshWorkspace({
               onPosition={review.setClipPosition}
               onVariant={review.setSliceVariant}
             />
-          ) : (
+          ) : review.mode === 'quality' ? null : (
             <VolumeCapabilityPanel capabilities={review.capabilities} />
           )}
 
