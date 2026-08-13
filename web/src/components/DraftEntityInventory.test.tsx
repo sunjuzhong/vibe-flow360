@@ -17,6 +17,7 @@ describe('ParameterEntityInventory', () => {
     )
     expect(html).toContain('Draft entities')
     expect(html).toContain('Wake box')
+    expect(html).toContain('<span class="geometry-face-name"><span title="Wake box">Wake box</span><small>Box</small></span>')
     expect(html).toContain('class="geometry-entity-row hidden"')
     expect(html).toContain('aria-label="Show parameter entity Wake box"')
     expect(html).toContain('aria-pressed="false"')

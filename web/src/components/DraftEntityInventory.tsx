@@ -74,8 +74,10 @@ export function ParameterEntityInventory({
           <div className={`geometry-entity-row ${visible ? '' : 'hidden'} ${source === 'draft' && onMutate ? 'editable' : ''}`.trim()} data-entity-id={entity.id} key={entity.key}>
             <div className="geometry-entity-select draft-entity-label">
               <span className={`viewer-color-swatch ${source === 'ghost' ? 'ghost-entity-swatch' : 'draft-entity-swatch'}`} />
-              <span title={entity.name}>{entity.name}</span>
-              <small>{entity.renderable ? entity.type : t('Metadata only')}</small>
+              <span className="geometry-face-name">
+                <span title={entity.name}>{entity.name}</span>
+                <small>{entity.renderable ? entity.type : t('Metadata only')}</small>
+              </span>
             </div>
             {source === 'draft' && onMutate && (
               <button type="button" className="geometry-entity-edit" onClick={() => setEditor(entity)} aria-label={t('Edit Draft entity {name}').replace('{name}', entity.name)} title={t('Edit Draft entity')}>
