@@ -7663,6 +7663,7 @@ button { color: inherit; }
   margin: 1px 0;
   border-radius: 5px;
 }
+.geometry-entity-row.editable { grid-template-columns: minmax(0, 1fr) 28px 28px; }
 
 .geometry-entity-row:hover { background: #eeefe9; }
 .geometry-entity-row.selected { color: #34400f; background: #e4edc9; }
@@ -7729,6 +7730,25 @@ button { color: inherit; }
   background: transparent;
   cursor: pointer;
 }
+
+.geometry-entity-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #7c8376;
+  background: transparent;
+  cursor: pointer;
+}
+.geometry-entity-edit:hover { color: #52651d; background: rgb(255 255 255 / 60%); }
+.parameter-entity-actions { display: flex; justify-content: flex-end; padding: 4px 5px; }
+.parameter-entity-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #d5d9cd; border-radius: 5px; color: #59634d; background: #fff; font-size: 8px; }
+.draft-entity-editor-dialog .schema-form-body { display: grid; gap: 12px; overflow-y: auto; }
+.draft-entity-editor-actions > span { flex: 1; }
+.draft-entity-editor-actions button { display: inline-flex; align-items: center; gap: 5px; }
+.draft-entity-editor-actions button.danger { color: #a33f35; border-color: #e3c0bb; background: #fff8f6; }
 
 .geometry-entity-visibility:hover { color: #3f4b25; background: rgb(255 255 255 / 60%); }
 .geometry-entity-row.hidden .geometry-entity-visibility { color: #9a9f95; }

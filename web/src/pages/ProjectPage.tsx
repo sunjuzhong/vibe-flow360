@@ -62,6 +62,11 @@ import {
   geometryDiagnosticAgentAction,
   type GeometryReviewTemplateId,
 } from '../lib/geometryAdvanced'
+import {
+  applyDraftEntityMutation,
+  isDraftEntityValidationIssue,
+  type DraftEntityMutation,
+} from '../lib/draftEntities'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
@@ -489,6 +494,21 @@ export default function ProjectPage() {
       ? { ...detail, simulation_params: draftDetail.simulation_params }
       : detail
   ), [detail, draftDetail?.simulation_params, draftMode])
+  const mutateDraftEntity = useCallback(async (mutation: DraftEntityMutation) => {
+    if (!draftMode || !activeDraft || !draftDetail?.simulation_params) {
+      throw new Error('Open an editable Draft before changing Draft entities.')
+    }
+    const next = applyDraftEntityMutation(draftDetail.simulation_params, mutation)
+    const validation = await api.validateDraftParameters(activeDraft.id, next)
+    const blockingIssue = validation.issues.find((issue) => (
+      issue.level === 'error' && isDraftEntityValidationIssue(issue)
+    ))
+    if (blockingIssue) {
+      throw new Error(`${blockingIssue.path ? `${blockingIssue.path}: ` : ''}${blockingIssue.message}`)
+    }
+    const response = await api.updateDraftParameters(activeDraft.id, next, projectId)
+    setDraftDetail((current) => current ? { ...current, simulation_params: response.simulation_params } : current)
+  }, [activeDraft, draftDetail?.simulation_params, draftMode, projectId])
   const surfaceMeshVersions = useMemo(
     () => items.filter((item) => (
       item.type === 'SurfaceMesh'
@@ -865,6 +885,7 @@ export default function ProjectPage() {
                   setPlanOpen(true)
                 }}
                 onPlanSurfaceMesh={() => createDraftFromResource(`${selected.name} Draft`)}
+                onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
               />
             )}
             {selected.type === 'SurfaceMesh' && (
@@ -895,6 +916,7 @@ export default function ProjectPage() {
                   setPlanOpen(true)
                 }}
                 onPlanVolumeMesh={() => createDraftFromResource(`${selected.name} Draft`)}
+                onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
               />
             )}
             {selected.type === 'VolumeMesh' && (
@@ -907,6 +929,7 @@ export default function ProjectPage() {
                 annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
+                onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
                 onShowLogs={() => {
                   setDetailTab('logs')
                   setActivePanel('details')
@@ -923,6 +946,7 @@ export default function ProjectPage() {
                 annotationsModel={annotations}
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
+                onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
               />
             )}
 

@@ -26,6 +26,20 @@ export type ParameterEntity = {
   lengthUnit?: string
 }
 
+export type DraftEntityMutation =
+  | { type: 'upsert'; previousId?: string; entity: Record<string, unknown> }
+  | { type: 'delete'; id: string }
+
+export function isDraftEntityValidationIssue(issue: {
+  code?: string
+  path?: string
+  message?: string
+}): boolean {
+  const evidence = `${issue.code ?? ''} ${issue.path ?? ''} ${issue.message ?? ''}`.toLowerCase()
+  return evidence.includes('draft_entit')
+    || (evidence.includes('project_entity_info') && evidence.includes('entit'))
+}
+
 const supportedDraftTypes = new Set<ParameterEntityType>([
   'Box', 'Cylinder', 'Point', 'Sphere', 'AxisymmetricBody', 'CustomVolume',
   'SeedpointVolume', 'PointArray', 'PointArray2D', 'Slice',
@@ -51,9 +65,68 @@ function record(value: unknown): Record<string, unknown> {
     : {}
 }
 
+export function draftEntityRecords(params: unknown): Record<string, unknown>[] {
+  const cache = record(record(params).private_attribute_asset_cache)
+  const info = record(cache.project_entity_info)
+  const candidates = Array.isArray(info.draft_entities)
+    ? info.draft_entities
+    : Array.isArray(cache.draft_entities) ? cache.draft_entities : []
+  return candidates.map(record)
+}
+
+function entityID(entity: Record<string, unknown>): string {
+  const value = entity.private_attribute_id ?? entity.id
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+export function applyDraftEntityMutation(
+  params: Record<string, unknown>,
+  mutation: DraftEntityMutation,
+): Record<string, unknown> {
+  const entities = draftEntityRecords(params)
+  let nextEntities: Record<string, unknown>[]
+  if (mutation.type === 'delete') {
+    nextEntities = entities.filter((entity) => entityID(entity) !== mutation.id)
+    if (nextEntities.length === entities.length) throw new Error('The Draft entity no longer exists.')
+  } else {
+    const nextID = entityID(mutation.entity)
+    if (!nextID) throw new Error('Draft entity ID is required.')
+    const previousID = mutation.previousId?.trim()
+    if (entities.some((entity) => entityID(entity) === nextID && entityID(entity) !== previousID)) {
+      throw new Error(`Draft entity ID “${nextID}” already exists.`)
+    }
+    if (previousID) {
+      let replaced = false
+      nextEntities = entities.map((entity) => {
+        if (!replaced && entityID(entity) === previousID) {
+          replaced = true
+          return mutation.entity
+        }
+        return entity
+      })
+      if (!replaced) throw new Error('The Draft entity no longer exists.')
+    } else {
+      nextEntities = [...entities, mutation.entity]
+    }
+  }
+  const cache = record(params.private_attribute_asset_cache)
+  const info = record(cache.project_entity_info)
+  const nextCache: Record<string, unknown> = {
+    ...cache,
+    project_entity_info: { ...info, draft_entities: nextEntities },
+  }
+  if (Array.isArray(cache.draft_entities)) nextCache.draft_entities = nextEntities
+  return { ...params, private_attribute_asset_cache: nextCache }
+}
+
 function quantityUnit(value: unknown): string | undefined {
   const unit = record(value).units
   return typeof unit === 'string' && unit.trim() ? unit.trim() : undefined
+}
+
+export function parameterEntityLengthUnit(params: unknown): string {
+  const cache = record(record(params).private_attribute_asset_cache)
+  return quantityUnit(cache.project_length_unit) ?? 'm'
 }
 
 function parseEntityCollection(
