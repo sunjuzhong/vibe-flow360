@@ -65,6 +65,7 @@ vi.mock('../hooks/useSurfaceMeshReview', () => ({
     setProbe: vi.fn(),
     locateExtreme: vi.fn(),
     isolateBoundary: vi.fn(),
+    isolateBoundaries: vi.fn(),
     toggleBoundaryVisibility: vi.fn(),
     showAllBoundaries: vi.fn(),
     hideAllBoundaries: vi.fn(),

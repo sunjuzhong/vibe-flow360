@@ -129,6 +129,28 @@ describe('Case surface visibility', () => {
       'slice-y': false,
     })
   })
+
+  it('keeps manifest ancestors visible for multiple selected Case entities', () => {
+    const members = [
+      { id: 'surface-output', visible: true, entityIds: ['wall', 'symmetry', 'farfield'] },
+      { id: 'slice-output', visible: true, entityIds: ['slice-y'] },
+    ]
+    const manifestGroups = [
+      { id: 'boundaries', name: 'Boundaries', color: '#aaa', visible: true },
+      { id: 'wall', name: 'Wall', color: '#bbb', visible: true, path: ['boundaries'] },
+      { id: 'symmetry', name: 'Symmetry', color: '#ccc', visible: true, path: ['boundaries'] },
+      { id: 'farfield', name: 'Farfield', color: '#ddd', visible: true, path: ['boundaries'] },
+      { id: 'slice-y', name: 'Slice', color: '#eee', visible: true },
+    ]
+
+    expect(isolateCaseVisualizationMap(members, ['wall', 'symmetry', 'farfield'], manifestGroups)).toEqual({
+      wall: true,
+      symmetry: true,
+      farfield: true,
+      'slice-y': false,
+      boundaries: true,
+    })
+  })
 })
 
 describe('Case archive layers', () => {

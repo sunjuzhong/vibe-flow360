@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { isolatedManifestVisibility } from '../lib/manifestVisibility'
 import {
   api,
   type GeometryComparison,
@@ -636,9 +637,8 @@ export default function GeometryWorkspace({
 
   const isolateSelectedEntities = () => {
     if (selectedEntityIds.length === 0) return
-    const selected = new Set(selectedEntityIds)
     const allEntities = [...(manifest?.groups ?? []), ...(manifest?.edges ?? [])]
-    setEntityVisibility(Object.fromEntries(allEntities.map(({ id }) => [id, selected.has(id)])))
+    setEntityVisibility(isolatedManifestVisibility(allEntities, selectedEntityIds))
   }
 
   const applyAppearanceToSelection = (appearanceId = selectedAppearanceId) => {

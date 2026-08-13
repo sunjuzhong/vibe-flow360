@@ -33,6 +33,7 @@ import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
+import { isolatedManifestVisibility } from '../lib/manifestVisibility'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
@@ -525,10 +526,13 @@ export function caseSurfaceVisibilityMap(groups: CaseSurfaceGroup[], visible: bo
 export function isolateCaseVisualizationMap(
   groups: CaseSurfaceGroup[],
   selectedEntityIds: string[],
+  manifestGroups: MeshGroupData[] = [],
 ): Record<string, boolean> {
   return {
     ...caseSurfaceVisibilityMap(groups, false),
-    ...Object.fromEntries(selectedEntityIds.map((id) => [id, true])),
+    ...(manifestGroups.length
+      ? isolatedManifestVisibility(manifestGroups, selectedEntityIds)
+      : Object.fromEntries(selectedEntityIds.map((id) => [id, true]))),
   }
 }
 
@@ -708,6 +712,10 @@ export default function CaseWorkspace({
   const archiveLayerManifests = useMemo(
     () => Object.values(archiveLayers).map((layer) => layer.manifest),
     [archiveLayers],
+  )
+  const renderableVisualizationGroups = useMemo(
+    () => [...surfaceGroups, ...archiveLayerManifests.flatMap((layerManifest) => layerManifest.groups)],
+    [archiveLayerManifests, surfaceGroups],
   )
   const allVisualizationMembers = visualizationGroups.flatMap(({ members }) => members)
   const selectedVisualizationObjects = selectedVisualizationIds.flatMap((id) => {
@@ -1215,7 +1223,7 @@ export default function CaseWorkspace({
               onFocus={() => setCameraCommand({ type: 'fit-selection', nonce: Date.now() })}
               onIsolate={() => setEntityVisibility((current) => ({
                 ...current,
-                ...isolateCaseVisualizationMap(allVisualizationMembers, selectedFieldEntityIds),
+                ...isolateCaseVisualizationMap(allVisualizationMembers, selectedFieldEntityIds, renderableVisualizationGroups),
               }))}
               onToggleVisibility={() => setEntityVisibility((current) => ({
                 ...current,

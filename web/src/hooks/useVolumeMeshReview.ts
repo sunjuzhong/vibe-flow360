@@ -20,6 +20,7 @@ import {
   type VolumeSliceVariant,
 } from '../lib/volumeMeshReview'
 import { buildVolumeRefinementReview } from '../lib/volumeRefinementReview'
+import { isolatedManifestVisibility } from '../lib/manifestVisibility'
 
 type ReviewGroup = MeshGroupData
 
@@ -78,20 +79,6 @@ export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
   clipAxis: 'x',
   clipPosition: 0,
   sliceVariant: 'flat',
-}
-
-export function isolatedVolumeZoneVisibility(
-  zones: ReviewGroup[],
-  groupIds: string[],
-): Record<string, boolean> {
-  const selectedIds = new Set(groupIds)
-  const selectedZones = zones.filter((zone) => selectedIds.has(zone.id))
-  return Object.fromEntries(zones.map((zone) => {
-    const isSelected = selectedIds.has(zone.id)
-    const isAncestorOfSelection = selectedZones.some((selected) => selected.path?.includes(zone.id))
-    const isDescendantOfSelection = zone.path?.some((ancestorId) => selectedIds.has(ancestorId)) ?? false
-    return [zone.id, isSelected || isAncestorOfSelection || isDescendantOfSelection]
-  }))
 }
 
 export function reduceVolumeMeshReviewState(
@@ -315,7 +302,7 @@ export function useVolumeMeshReview({
   const isolateZones = useCallback((groupIds: string[]) => {
     const available = new Set(zones.map((zone) => zone.id))
     const selectedIds = [...new Set(groupIds)].filter((groupId) => available.has(groupId))
-    dispatch({ type: 'visibility', visibility: isolatedVolumeZoneVisibility(zones, selectedIds) })
+    dispatch({ type: 'visibility', visibility: isolatedManifestVisibility(zones, selectedIds) })
     dispatch({ type: 'selection', groupId: selectedIds.at(-1) ?? null, groupIds: selectedIds })
   }, [zones])
   const showAllZones = useCallback(() => {

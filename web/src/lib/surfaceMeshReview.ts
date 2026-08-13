@@ -9,6 +9,7 @@ export type SurfaceGroup = {
   id: string
   name: string
   triangles?: number
+  path?: string[]
 }
 
 export type SurfaceBoundaryAssignment = {

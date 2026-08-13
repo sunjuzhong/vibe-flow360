@@ -194,9 +194,8 @@ export default function SurfaceMeshWorkspace({
     : reviewLevel === 'blocked'
       ? 'Failed processing or conflicting boundary assignments must be resolved before trusting this mesh.'
       : 'Review processing state, missing evidence, and unassigned boundaries before proceeding.'
-  const selectedBoundaryVisible = review.selectedBoundary
-    ? review.visibility[review.selectedBoundary.id] !== false
-    : false
+  const selectedBoundaryVisible = review.selectedBoundaryIds.length > 0
+    && review.selectedBoundaryIds.every((id) => review.visibility[id] !== false)
   const requestSelectionFocus = () => {
     setCameraCommand((current) => ({ type: 'fit-selection', nonce: (current?.nonce ?? 0) + 1 }))
   }
@@ -381,10 +380,13 @@ export default function SurfaceMeshWorkspace({
                     <button type="button" onClick={requestSelectionFocus}>
                       <LocateFixed size={12} /> {t('Focus')}
                     </button>
-                    <button type="button" onClick={() => review.isolateBoundary(review.selectedBoundary!.id)}>
+                    <button type="button" onClick={() => review.isolateBoundaries(review.selectedBoundaryIds)}>
                       <ScanLine size={12} /> {t('Isolate')}
                     </button>
-                    <button type="button" onClick={() => review.toggleBoundaryVisibility(review.selectedBoundary!.id)}>
+                    <button type="button" onClick={() => review.setVisibility({
+                      ...review.visibility,
+                      ...Object.fromEntries(review.selectedBoundaryIds.map((id) => [id, !selectedBoundaryVisible])),
+                    })}>
                       {selectedBoundaryVisible ? <EyeOff size={12} /> : <Eye size={12} />}
                       {t(selectedBoundaryVisible ? 'Hide' : 'Show')}
                     </button>

@@ -12,6 +12,7 @@ import {
   surfaceMeshParameterSummary,
   type SurfaceGroup,
 } from '../lib/surfaceMeshReview'
+import { isolatedManifestVisibility } from '../lib/manifestVisibility'
 
 export type SurfaceViewMode = 'plain' | 'boundaries' | 'quality'
 
@@ -227,12 +228,14 @@ export function useSurfaceMeshReview(
   const handleFieldsDiscovered = useCallback((fields: UVFFieldInfo[]) => {
     dispatch({ type: 'fields', fields: classifySurfaceMeshQualityFields(fields) })
   }, [])
-  const isolateBoundary = useCallback((groupId: string) => {
+  const isolateBoundaries = useCallback((groupIds: string[]) => {
+    const available = new Set(boundaryInventory.map((row) => row.id))
+    const selectedIds = [...new Set(groupIds)].filter((groupId) => available.has(groupId))
     dispatch({
       type: 'visibility',
-      visibility: Object.fromEntries(boundaryInventory.map((row) => [row.id, row.id === groupId])),
+      visibility: isolatedManifestVisibility(boundaryInventory, selectedIds),
     })
-    dispatch({ type: 'selection', groupId })
+    dispatch({ type: 'selection', groupId: selectedIds.at(-1) ?? null, groupIds: selectedIds })
   }, [boundaryInventory])
   const showAllBoundaries = useCallback(() => {
     dispatch({
@@ -273,7 +276,8 @@ export function useSurfaceMeshReview(
     setExtrema,
     setProbe,
     handleFieldsDiscovered,
-    isolateBoundary,
+    isolateBoundary: (groupId: string) => isolateBoundaries([groupId]),
+    isolateBoundaries,
     showAllBoundaries,
     hideAllBoundaries,
     toggleBoundaryVisibility,
