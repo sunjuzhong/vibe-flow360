@@ -664,6 +664,7 @@
 }
 
 .case-surface-list .geometry-entity-select {
+  grid-template-columns: auto minmax(0, 1fr);
   padding-left: 7px;
 }
 
