@@ -1,8 +1,9 @@
-import { Eye, EyeOff, Shapes } from 'lucide-react'
+import { Eye, EyeOff, Pencil, Plus, Shapes } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useI18n } from '../i18n'
-import { parseDraftEntities, parseGhostEntities, type ParameterEntity } from '../lib/draftEntities'
+import { parameterEntityLengthUnit, parseDraftEntities, parseGhostEntities, type DraftEntityMutation, type ParameterEntity } from '../lib/draftEntities'
 import { ManifestMemberGroup } from './ManifestMemberGroup'
+import DraftEntityEditorDialog from './DraftEntityEditorDialog'
 
 export function useDraftEntities(params: unknown) {
   return useMemo(() => parseDraftEntities(params), [params])
@@ -10,6 +11,10 @@ export function useDraftEntities(params: unknown) {
 
 export function useGhostEntities(params: unknown) {
   return useMemo(() => parseGhostEntities(params), [params])
+}
+
+export function useParameterEntityUnit(params: unknown) {
+  return useMemo(() => parameterEntityLengthUnit(params), [params])
 }
 
 export function useParameterEntityVisibility(params: unknown) {
@@ -26,14 +31,20 @@ export function ParameterEntityInventory({
   visibility,
   onVisibilityChange,
   source,
+  unit = 'm',
+  onMutate,
 }: {
   entities: ParameterEntity[]
   visibility: Record<string, boolean>
   onVisibilityChange: (visibility: Record<string, boolean>) => void
   source: ParameterEntity['source']
+  unit?: string
+  onMutate?: (mutation: DraftEntityMutation) => Promise<void>
 }) {
   const { t } = useI18n()
-  if (!entities.length) return null
+  const [editor, setEditor] = useState<ParameterEntity | 'new' | null>(null)
+  const [saving, setSaving] = useState(false)
+  if (!entities.length && !(source === 'draft' && onMutate)) return null
   const label = source === 'ghost' ? t('Ghost entities') : t('Draft entities')
   const renderableEntities = entities.filter((entity) => entity.renderable)
   const visibleCount = renderableEntities.filter((entity) => visibility[entity.key] ?? false).length
@@ -52,15 +63,25 @@ export function ParameterEntityInventory({
       onHideAll={() => onVisibilityChange({ ...visibility, ...bulkVisibility(false) })}
       onShowAll={() => onVisibilityChange({ ...visibility, ...bulkVisibility(true) })}
     >
+      {source === 'draft' && onMutate && (
+        <div className="parameter-entity-actions">
+          <button type="button" onClick={() => setEditor('new')}><Plus size={12} />{t('Add entity')}</button>
+        </div>
+      )}
       {entities.map((entity) => {
         const visible = visibility[entity.key] ?? false
         return (
-          <div className={`geometry-entity-row ${visible ? '' : 'hidden'}`} data-entity-id={entity.id} key={entity.key}>
+          <div className={`geometry-entity-row ${visible ? '' : 'hidden'} ${source === 'draft' && onMutate ? 'editable' : ''}`.trim()} data-entity-id={entity.id} key={entity.key}>
             <div className="geometry-entity-select draft-entity-label">
               <span className={`viewer-color-swatch ${source === 'ghost' ? 'ghost-entity-swatch' : 'draft-entity-swatch'}`} />
               <span title={entity.name}>{entity.name}</span>
               <small>{entity.renderable ? entity.type : t('Metadata only')}</small>
             </div>
+            {source === 'draft' && onMutate && (
+              <button type="button" className="geometry-entity-edit" onClick={() => setEditor(entity)} aria-label={t('Edit Draft entity {name}').replace('{name}', entity.name)} title={t('Edit Draft entity')}>
+                <Pencil size={12} />
+              </button>
+            )}
             <button
               type="button"
               className="geometry-entity-visibility"
@@ -77,6 +98,32 @@ export function ParameterEntityInventory({
           </div>
         )
       })}
+      {editor && source === 'draft' && onMutate && (
+        <DraftEntityEditorDialog
+          entity={editor === 'new' ? undefined : editor}
+          unit={unit}
+          saving={saving}
+          onClose={() => setEditor(null)}
+          onSave={async (entity) => {
+            setSaving(true)
+            try {
+              await onMutate({ type: 'upsert', previousId: editor === 'new' ? undefined : editor.id, entity })
+              setEditor(null)
+            } finally {
+              setSaving(false)
+            }
+          }}
+          onDelete={editor === 'new' ? undefined : async () => {
+            setSaving(true)
+            try {
+              await onMutate({ type: 'delete', id: editor.id })
+              setEditor(null)
+            } finally {
+              setSaving(false)
+            }
+          }}
+        />
+      )}
     </ManifestMemberGroup>
   )
 }

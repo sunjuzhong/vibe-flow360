@@ -25,7 +25,8 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
-import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityVisibility } from './DraftEntityInventory'
+import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
+import type { DraftEntityMutation } from '../lib/draftEntities'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
@@ -118,6 +119,7 @@ export default function VolumeMeshWorkspace({
   geometryResourceId,
   onPlanCase,
   onShowLogs,
+  onMutateDraftEntity,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -127,8 +129,10 @@ export default function VolumeMeshWorkspace({
   geometryResourceId?: string | null
   onPlanCase: () => Promise<void>
   onShowLogs?: () => void
+  onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
 }) {
   const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
+  const parameterEntityUnit = useParameterEntityUnit(detail?.simulation_params)
   const draftEntities = useDraftEntities(detail?.simulation_params)
   const ghostEntities = useGhostEntities(detail?.simulation_params)
   const parameterEntities = useMemo(() => [...draftEntities, ...ghostEntities], [draftEntities, ghostEntities])
@@ -274,6 +278,8 @@ export default function VolumeMeshWorkspace({
             visibility={parameterEntityVisibility}
             onVisibilityChange={setParameterEntityVisibility}
             source="draft"
+            unit={parameterEntityUnit}
+            onMutate={onMutateDraftEntity}
           />
           <ParameterEntityInventory
             entities={ghostEntities}

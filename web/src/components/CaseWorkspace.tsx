@@ -51,7 +51,8 @@ import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFEntityInfo } from '../lib/uvf-three'
 import { meshGroupManifestHints, normalizeManifestHint } from '../lib/manifestGroups'
 import { ManifestMemberGroup } from './ManifestMemberGroup'
-import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityVisibility } from './DraftEntityInventory'
+import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
+import type { DraftEntityMutation } from '../lib/draftEntities'
 
 function formatConvergenceStatus(status: string): string {
   switch (status) {
@@ -619,6 +620,7 @@ export default function CaseWorkspace({
   annotationsModel,
   geometryResourceId,
   onPlanCase,
+  onMutateDraftEntity,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -627,6 +629,7 @@ export default function CaseWorkspace({
   annotationsModel: ProjectAnnotationsModel<JsonValue>
   geometryResourceId?: string | null
   onPlanCase: () => Promise<void>
+  onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'convergence' | 'slices' | null>(null)
@@ -638,6 +641,7 @@ export default function CaseWorkspace({
   const [selectedVisualizationIds, setSelectedVisualizationIds] = useState<string[]>([])
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
+  const parameterEntityUnit = useParameterEntityUnit(detail?.simulation_params)
   const draftEntities = useDraftEntities(detail?.simulation_params)
   const ghostEntities = useGhostEntities(detail?.simulation_params)
   const parameterEntities = useMemo(() => [...draftEntities, ...ghostEntities], [draftEntities, ghostEntities])
@@ -1036,6 +1040,8 @@ export default function CaseWorkspace({
             visibility={parameterEntityVisibility}
             onVisibilityChange={setParameterEntityVisibility}
             source="draft"
+            unit={parameterEntityUnit}
+            onMutate={onMutateDraftEntity}
           />
           <ParameterEntityInventory
             entities={ghostEntities}

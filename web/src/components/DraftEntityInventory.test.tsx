@@ -39,4 +39,20 @@ describe('ParameterEntityInventory', () => {
     expect(html).toContain('aria-label="Spatial geometry is unavailable"')
     expect(html).toContain('disabled=""')
   })
+
+  it('offers creation in an empty editable Draft entity group', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ParameterEntityInventory
+          entities={[]}
+          visibility={{}}
+          onVisibilityChange={() => undefined}
+          onMutate={async () => undefined}
+          source="draft"
+        />
+      </I18nProvider>,
+    )
+    expect(html).toContain('Draft entities')
+    expect(html).toContain('Add entity')
+  })
 })

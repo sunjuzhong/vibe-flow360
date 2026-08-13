@@ -33,7 +33,8 @@ import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
-import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityVisibility } from './DraftEntityInventory'
+import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
+import type { DraftEntityMutation } from '../lib/draftEntities'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
@@ -100,6 +101,7 @@ export default function SurfaceMeshWorkspace({
   versions,
   onCreateRemediationPlan,
   onPlanVolumeMesh,
+  onMutateDraftEntity,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -110,9 +112,11 @@ export default function SurfaceMeshWorkspace({
   versions: ProjectItem[]
   onCreateRemediationPlan: (recommendation: SurfaceRemediationRecommendation) => Promise<void>
   onPlanVolumeMesh: () => Promise<void>
+  onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
 }) {
   const { t } = useI18n()
   const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
+  const parameterEntityUnit = useParameterEntityUnit(detail?.simulation_params)
   const draftEntities = useDraftEntities(detail?.simulation_params)
   const ghostEntities = useGhostEntities(detail?.simulation_params)
   const parameterEntities = useMemo(() => [...draftEntities, ...ghostEntities], [draftEntities, ghostEntities])
@@ -222,6 +226,8 @@ export default function SurfaceMeshWorkspace({
             visibility={parameterEntityVisibility}
             onVisibilityChange={setParameterEntityVisibility}
             source="draft"
+            unit={parameterEntityUnit}
+            onMutate={onMutateDraftEntity}
           />
           <ParameterEntityInventory
             entities={ghostEntities}

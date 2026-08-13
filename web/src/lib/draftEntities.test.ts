@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { createParameterEntityGroup, parseDraftEntities, parseGhostEntities, setParameterEntityVisibility } from './draftEntities'
+import { applyDraftEntityMutation, createParameterEntityGroup, isDraftEntityValidationIssue, parseDraftEntities, parseGhostEntities, setParameterEntityVisibility } from './draftEntities'
 
 describe('draft entities', () => {
   it('reads supported entities from the private asset cache with stable fallbacks', () => {
@@ -89,5 +89,38 @@ describe('draft entities', () => {
     expect(group.children[1].position.toArray()).toEqual([0, 1, 0])
     setParameterEntityVisibility(group, { 'ghost:farfield': true, 'ghost:symmetric': true })
     expect(group.children.map((child) => child.visible)).toEqual([true, true, false])
+  })
+
+  it('adds, edits, and deletes canonical Draft entities without dropping asset metadata', () => {
+    const params = {
+      private_attribute_asset_cache: {
+        use_inhouse_mesher: true,
+        project_entity_info: {
+          grouped_faces: [{ id: 'face-1' }],
+          draft_entities: [{ private_attribute_id: 'sphere-1', private_attribute_entity_type_name: 'Sphere', name: 'Old' }],
+        },
+      },
+    }
+    const added = applyDraftEntityMutation(params, { type: 'upsert', entity: {
+      private_attribute_id: 'box-1', private_attribute_entity_type_name: 'Box', name: 'Box',
+    } })
+    expect(parseDraftEntities(added).map((entity) => entity.id)).toEqual(['sphere-1', 'box-1'])
+    const addedCache = added.private_attribute_asset_cache as { project_entity_info: { grouped_faces: unknown } }
+    expect(addedCache.project_entity_info.grouped_faces).toEqual([{ id: 'face-1' }])
+    const edited = applyDraftEntityMutation(added, { type: 'upsert', previousId: 'sphere-1', entity: {
+      private_attribute_id: 'sphere-2', private_attribute_entity_type_name: 'Sphere', name: 'New',
+    } })
+    expect(parseDraftEntities(edited).map((entity) => entity.id)).toEqual(['sphere-2', 'box-1'])
+    const removed = applyDraftEntityMutation(edited, { type: 'delete', id: 'box-1' })
+    expect(parseDraftEntities(removed).map((entity) => entity.id)).toEqual(['sphere-2'])
+    expect(() => applyDraftEntityMutation(removed, { type: 'upsert', entity: {
+      private_attribute_id: 'sphere-2', private_attribute_entity_type_name: 'Sphere', name: 'Duplicate',
+    } })).toThrow('already exists')
+  })
+
+  it('only treats Draft entity validation failures as mutation blockers', () => {
+    expect(isDraftEntityValidationIssue({ code: 'draft_entity_unregistered', path: 'models[0]' })).toBe(true)
+    expect(isDraftEntityValidationIssue({ path: 'private_attribute_asset_cache.project_entity_info.draft_entities[0].radius' })).toBe(true)
+    expect(isDraftEntityValidationIssue({ code: 'missing_boundary', path: 'models[0].entities' })).toBe(false)
   })
 })
