@@ -406,12 +406,14 @@ export default function VolumeMeshWorkspace({
             <section className="geometry-selection-card volume-active-review">
               <div className="geometry-section-title"><ScanLine size={13} /> Cell quality · {review.qualityFields.length} fields</div>
               <VolumeQualityInspector
+                fields={review.qualityFields}
                 field={review.selectedFieldInfo}
                 range={review.range}
                 histogram={review.histogram}
                 extrema={review.extrema}
                 probe={review.probe}
                 entityNames={entityNames}
+                onFieldChange={review.setSelectedField}
                 onRangeChange={(range) => review.setRange(range)}
                 onLocateExtreme={review.locateExtreme}
               />

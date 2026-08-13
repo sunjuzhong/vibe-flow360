@@ -6942,6 +6942,24 @@ button { color: inherit; }
   border: 1px solid #e0e3da;
   border-radius: 6px;
 }
+.volume-quality-field-selector {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  color: #686f63;
+  font-size: 10px;
+  font-weight: 650;
+}
+.volume-quality-field-selector select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #d9ddcf;
+  border-radius: 6px;
+  color: #454b42;
+  background: #fff;
+}
 .surface-advanced-controls > label { display: flex; align-items: center; gap: 6px; color: #65705f; font-size: 10px; }
 .surface-advanced-controls > label,
 .surface-measurement-result { grid-column: 1 / -1; }
