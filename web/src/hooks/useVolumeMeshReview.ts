@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react'
 import type { ResourceDetail } from '../api/client'
-import type { BoundingBoxData, MeshGroupData, ViewerClipPlane, ViewerSelection } from '../components/viewer/LazyViewer3D'
+import type { BoundingBoxData, MeshGroupData, ViewerSelection } from '../components/viewer/LazyViewer3D'
 import type {
   UVFFieldExtrema,
   UVFFieldHistogram,
@@ -37,9 +37,6 @@ export type VolumeMeshReviewState = {
   extrema: UVFFieldExtrema | null
   probe: UVFFieldProbe | null
   focusTarget: [number, number, number] | null
-  clipEnabled: boolean
-  clipAxis: 'x' | 'y' | 'z'
-  clipPosition: number
   sliceVariant: VolumeSliceVariant
 }
 
@@ -57,9 +54,6 @@ export type VolumeMeshReviewAction =
   | { type: 'probe'; probe: UVFFieldProbe | null }
   | { type: 'locate-extreme'; direction: 'min' | 'max' }
   | { type: 'focus-point'; position: [number, number, number] }
-  | { type: 'clip-enabled'; enabled: boolean }
-  | { type: 'clip-axis'; axis: 'x' | 'y' | 'z'; position: number }
-  | { type: 'clip-position'; position: number }
   | { type: 'slice-variant'; variant: VolumeSliceVariant; groups: ReviewGroup[] }
 
 export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
@@ -75,9 +69,6 @@ export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
   extrema: null,
   probe: null,
   focusTarget: null,
-  clipEnabled: false,
-  clipAxis: 'x',
-  clipPosition: 0,
   sliceVariant: 'flat',
 }
 
@@ -125,7 +116,6 @@ export function reduceVolumeMeshReviewState(
       return {
         ...state,
         mode: action.mode,
-        clipEnabled: action.mode === 'slices',
         selectedField: selected?.name ?? null,
         range: selected ? [selected.min, selected.max] : null,
         histogram: selected ? state.histogram : null,
@@ -193,12 +183,6 @@ export function reduceVolumeMeshReviewState(
     }
     case 'focus-point':
       return { ...state, focusTarget: [...action.position] }
-    case 'clip-enabled':
-      return { ...state, clipEnabled: action.enabled }
-    case 'clip-axis':
-      return { ...state, clipAxis: action.axis, clipPosition: action.position }
-    case 'clip-position':
-      return { ...state, clipPosition: action.position }
     case 'slice-variant': {
       const review = buildVolumeSliceVariantReview(action.groups)
       const available = action.variant === 'flat' ? review.hasFlat : review.hasCrinkled
@@ -275,26 +259,13 @@ export function useVolumeMeshReview({
   const boundaryLayerFieldNames = state.boundaryLayerFields.map((field) => field.name)
   const selectedFieldInfo = [...state.qualityFields, ...state.boundaryLayerFields]
     .find((field) => field.name === state.selectedField)
-  const clipBounds = useMemo(() => axisBounds(boundingBox, state.clipAxis), [boundingBox, state.clipAxis])
-  const clipPlane = useMemo<ViewerClipPlane | null>(() => {
-    if (!state.clipEnabled || previewSource !== 'primary') return null
-    const normal: [number, number, number] = state.clipAxis === 'x'
-      ? [1, 0, 0]
-      : state.clipAxis === 'y' ? [0, 1, 0] : [0, 0, 1]
-    return { normal, constant: -state.clipPosition }
-  }, [previewSource, state.clipAxis, state.clipEnabled, state.clipPosition])
-
   useEffect(() => {
     dispatch({ type: 'reset-groups', groups })
   }, [groups])
 
   const setMode = useCallback((mode: VolumeViewMode) => {
     dispatch({ type: 'mode', mode })
-    if (mode === 'slices') {
-      const bounds = axisBounds(boundingBox, state.clipAxis)
-      dispatch({ type: 'clip-position', position: (bounds[0] + bounds[1]) / 2 })
-    }
-  }, [boundingBox, state.clipAxis])
+  }, [])
   const setSelection = useCallback(
     (selection: ViewerSelection) => dispatch({ type: 'selection', groupId: selection.groupId, groupIds: selection.groupIds }),
     [],
@@ -318,11 +289,6 @@ export function useVolumeMeshReview({
   const hideAllZones = useCallback(() => {
     dispatch({ type: 'visibility', visibility: Object.fromEntries(zones.map((zone) => [zone.id, false])) })
   }, [zones])
-  const setClipAxis = useCallback((axis: 'x' | 'y' | 'z') => {
-    const bounds = axisBounds(boundingBox, axis)
-    dispatch({ type: 'clip-axis', axis, position: (bounds[0] + bounds[1]) / 2 })
-  }, [boundingBox])
-
   return {
     ...state,
     zones,
@@ -336,8 +302,6 @@ export function useVolumeMeshReview({
     qualityFieldNames,
     boundaryLayerFieldNames,
     selectedFieldInfo,
-    clipBounds,
-    clipPlane,
     setMode,
     setSelection,
     setVisibility: (visibility: Record<string, boolean>) => dispatch({ type: 'visibility', visibility }),
@@ -354,17 +318,6 @@ export function useVolumeMeshReview({
     setProbe: (probe: UVFFieldProbe | null) => dispatch({ type: 'probe', probe }),
     locateExtreme: (direction: 'min' | 'max') => dispatch({ type: 'locate-extreme', direction }),
     focusPoint: (position: [number, number, number]) => dispatch({ type: 'focus-point', position }),
-    setClipEnabled: (enabled: boolean) => dispatch({ type: 'clip-enabled', enabled }),
-    setClipAxis,
-    setClipPosition: (position: number) => dispatch({ type: 'clip-position', position }),
     setSliceVariant: (variant: VolumeSliceVariant) => dispatch({ type: 'slice-variant', variant, groups }),
   }
-}
-
-function axisBounds(boundingBox: BoundingBoxData | null | undefined, axis: 'x' | 'y' | 'z'): [number, number] {
-  if (!boundingBox) return [-1, 1]
-  const index = axis === 'x' ? 0 : axis === 'y' ? 1 : 2
-  const min = boundingBox.min[index]
-  const max = boundingBox.max[index]
-  return Number.isFinite(min) && Number.isFinite(max) && min < max ? [min, max] : [-1, 1]
 }

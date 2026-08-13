@@ -1,31 +1,19 @@
-import { Camera, GitCompare, Scissors, Sparkles } from 'lucide-react'
+import { Camera, GitCompare, Sparkles } from 'lucide-react'
 import type { ProjectItem } from '../../api/client'
 import type { UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe } from '../../lib/uvf-three'
 import type {
   SurfaceParameterDifference,
   SurfaceRemediationRecommendation,
 } from '../../lib/surfaceMeshAdvanced'
+import { useI18n } from '../../i18n'
 
 export function SurfaceAdvancedToolbar({
-  clipping,
-  onToggleClipping,
   onCapture,
 }: {
-  clipping: boolean
-  onToggleClipping: () => void
   onCapture: () => void
 }) {
   return (
     <div className="surface-advanced-toolbar" role="group" aria-label="Advanced surface review tools">
-      <button
-        type="button"
-        className={clipping ? 'active' : ''}
-        aria-pressed={clipping}
-        title="Toggle clipping plane"
-        onClick={onToggleClipping}
-      >
-        <Scissors size={11} /> Clip
-      </button>
       <button type="button" onClick={onCapture} title="Export the current view as PNG">
         <Camera size={11} /> Export PNG
       </button>
@@ -44,17 +32,11 @@ export function SurfaceAdvancedReview({
   baselineHistogram,
   comparisonHistogram,
   qualityError,
-  clipEnabled,
-  clipAxis,
-  clipPosition,
   field,
   probe,
   remediationBusy,
   remediationError,
   onCompareId,
-  onClipEnabled,
-  onClipAxis,
-  onClipPosition,
   onCreateRemediation,
 }: {
   defaultOpen?: boolean
@@ -67,22 +49,17 @@ export function SurfaceAdvancedReview({
   baselineHistogram: UVFFieldHistogram | null
   comparisonHistogram: UVFFieldHistogram | null
   qualityError?: string
-  clipEnabled: boolean
-  clipAxis: 'x' | 'y' | 'z'
-  clipPosition: number
   field?: UVFFieldInfo
   probe: UVFFieldProbe | null
   remediationBusy: boolean
   remediationError: string
   onCompareId: (id: string) => void
-  onClipEnabled: (enabled: boolean) => void
-  onClipAxis: (axis: 'x' | 'y' | 'z') => void
-  onClipPosition: (position: number) => void
   onCreateRemediation: () => void
 }) {
+  const { t } = useI18n()
   return (
     <details className="surface-advanced-review" open={defaultOpen}>
-      <summary><span><GitCompare size={14} /> Advanced review</span><small>Compare · Clip · Export · AI patch</small></summary>
+      <summary><span><GitCompare size={14} /> Advanced review</span><small>{t('Compare · Export · AI patch')}</small></summary>
       <div className="surface-advanced-content">
         <label className="surface-compare-select">
           Compare with
@@ -111,34 +88,6 @@ export function SurfaceAdvancedReview({
             ) : qualityError ? <p>{qualityError}</p> : <p>Select a shared quality field to compare distributions.</p>}
           </div>
         )}
-        <div className="surface-advanced-controls">
-          <label>
-            <input
-              type="checkbox"
-              checked={clipEnabled}
-              onChange={(event) => onClipEnabled(event.target.checked)}
-            />
-            Clipping plane
-          </label>
-          {clipEnabled && (
-            <>
-              <select value={clipAxis} onChange={(event) => onClipAxis(event.target.value as 'x' | 'y' | 'z')}>
-                <option value="x">X plane</option>
-                <option value="y">Y plane</option>
-                <option value="z">Z plane</option>
-              </select>
-              <input
-                aria-label="Clipping plane position"
-                type="range"
-                min="-1"
-                max="1"
-                step="0.01"
-                value={clipPosition}
-                onChange={(event) => onClipPosition(Number(event.target.value))}
-              />
-            </>
-          )}
-        </div>
         <div className="surface-remediation">
           <strong><Sparkles size={11} /> Evidence-backed remediation</strong>
           <p>

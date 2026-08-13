@@ -1611,6 +1611,9 @@ Object.assign(messages, {
 
 Object.assign(messages, {
   'Clip axis': '裁剪轴',
+  'Compare · Export · AI patch': '比较 · 导出 · AI 补丁',
+  'The representation switch controls Flow360-generated slice faces. Use the shared Clip tool below the 3D view for interactive clipping.': '表示切换控制 Flow360 生成的切片面。交互式裁剪请使用 3D 视图下方的通用“裁剪”工具。',
+  'No Flow360-generated flat or crinkled slice pair was identified. Use the shared Clip tool below the 3D view for interactive clipping.': '未识别到 Flow360 生成的平面或褶皱切片对。交互式裁剪请使用 3D 视图下方的通用“裁剪”工具。',
   Position: '位置',
   'Geometry clipping plane position': '几何裁剪平面位置',
   face: '面',

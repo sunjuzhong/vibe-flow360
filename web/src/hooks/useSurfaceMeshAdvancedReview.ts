@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer } from 'react'
 import { api, type ProjectItem, type ResourceDetail } from '../api/client'
-import type { ViewerClipPlane, ViewerManifest } from '../components/viewer/LazyViewer3D'
+import type { ViewerManifest } from '../components/viewer/LazyViewer3D'
 import {
   UVFLoader,
   createFieldHistogram,
@@ -25,9 +25,6 @@ type State = {
   comparison: Comparison | null
   comparisonLoading: boolean
   comparisonError: string
-  clipEnabled: boolean
-  clipAxis: 'x' | 'y' | 'z'
-  clipPosition: number
   captureRequest: number
   remediationBusy: boolean
   remediationError: string
@@ -38,9 +35,6 @@ type Action =
   | { type: 'comparison-loading' }
   | { type: 'comparison-ready'; comparison: Comparison }
   | { type: 'comparison-error'; error: string }
-  | { type: 'clip-enabled'; enabled: boolean }
-  | { type: 'clip-axis'; axis: 'x' | 'y' | 'z' }
-  | { type: 'clip-position'; position: number }
   | { type: 'capture' }
   | { type: 'remediation-start' }
   | { type: 'remediation-done' }
@@ -51,9 +45,6 @@ const initialState: State = {
   comparison: null,
   comparisonLoading: false,
   comparisonError: '',
-  clipEnabled: false,
-  clipAxis: 'x',
-  clipPosition: 0,
   captureRequest: 0,
   remediationBusy: false,
   remediationError: '',
@@ -69,12 +60,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, comparisonLoading: false, comparison: action.comparison }
     case 'comparison-error':
       return { ...state, comparisonLoading: false, comparison: null, comparisonError: action.error }
-    case 'clip-enabled':
-      return { ...state, clipEnabled: action.enabled }
-    case 'clip-axis':
-      return { ...state, clipAxis: action.axis }
-    case 'clip-position':
-      return { ...state, clipPosition: action.position }
     case 'capture':
       return { ...state, captureRequest: state.captureRequest + 1 }
     case 'remediation-start':
@@ -102,14 +87,6 @@ export function useSurfaceMeshAdvancedReview({
     () => versions.filter((version) => version.id !== currentId),
     [currentId, versions],
   )
-  const clipPlane = useMemo<ViewerClipPlane | null>(() => {
-    if (!state.clipEnabled) return null
-    const normal: [number, number, number] = state.clipAxis === 'x'
-      ? [1, 0, 0]
-      : state.clipAxis === 'y' ? [0, 1, 0] : [0, 0, 1]
-    return { normal, constant: -state.clipPosition }
-  }, [state.clipAxis, state.clipEnabled, state.clipPosition])
-
   useEffect(() => {
     if (!state.compareId) return
     const resource = comparisonVersions.find((version) => version.id === state.compareId)
@@ -170,11 +147,7 @@ export function useSurfaceMeshAdvancedReview({
   return {
     ...state,
     comparisonVersions,
-    clipPlane,
     setCompareId: (id: string) => dispatch({ type: 'compare-id', id }),
-    setClipEnabled: (enabled: boolean) => dispatch({ type: 'clip-enabled', enabled }),
-    setClipAxis: (axis: 'x' | 'y' | 'z') => dispatch({ type: 'clip-axis', axis }),
-    setClipPosition: (position: number) => dispatch({ type: 'clip-position', position }),
     requestCapture: () => dispatch({ type: 'capture' }),
     runRemediation: async (task: () => Promise<void>) => {
       dispatch({ type: 'remediation-start' })

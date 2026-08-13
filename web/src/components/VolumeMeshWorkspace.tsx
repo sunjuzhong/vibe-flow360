@@ -314,7 +314,6 @@ export default function VolumeMeshWorkspace({
             onAssetStatsChange={setViewerAssetStats}
             focusTarget={review.focusTarget}
             cameraCommand={cameraCommand}
-            clipPlane={review.mode === 'slices' ? review.clipPlane : null}
             showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}
             fieldPanelExtra={review.mode === 'quality' ? ((fieldPanel) => (
               <>
@@ -454,16 +453,9 @@ export default function VolumeMeshWorkspace({
             />
           ) : review.mode === 'slices' ? (
             <VolumeSliceInspector
-              enabled={review.clipEnabled}
-              axis={review.clipAxis}
-              position={review.clipPosition}
-              bounds={review.clipBounds}
               available={previewSource === 'primary'}
               variants={review.sliceVariants}
               variant={review.sliceVariant}
-              onEnabled={review.setClipEnabled}
-              onAxis={review.setClipAxis}
-              onPosition={review.setClipPosition}
               onVariant={review.setSliceVariant}
             />
           ) : review.mode === 'quality' ? null : (
