@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { createDraftEntityGroup, parseDraftEntities, setDraftEntityVisibility } from './draftEntities'
+import { createParameterEntityGroup, parseDraftEntities, parseGhostEntities, setParameterEntityVisibility } from './draftEntities'
 
 describe('draft entities', () => {
   it('reads supported entities from the private asset cache with stable fallbacks', () => {
@@ -16,8 +16,8 @@ describe('draft entities', () => {
       },
     })
     expect(entities).toMatchObject([
-      { id: 'box-1', name: 'Refinement box', type: 'Box', lengthUnit: 'm' },
-      { id: 'draft-entity-Point-1', name: 'Probe', type: 'Point', lengthUnit: 'm' },
+      { id: 'box-1', key: 'draft:box-1', name: 'Refinement box', type: 'Box', lengthUnit: 'm' },
+      { id: 'draft-entity-Point-1', key: 'draft:draft-entity-Point-1', name: 'Probe', type: 'Point', lengthUnit: 'm' },
     ])
   })
 
@@ -26,9 +26,9 @@ describe('draft entities', () => {
       { private_attribute_entity_type_name: 'Sphere', private_attribute_id: 'sphere-1', radius: { value: 1, units: 'm' } },
       { private_attribute_entity_type_name: 'Slice', private_attribute_id: 'slice-1', origin: { value: [0, 0, 0], units: 'm' } },
     ] } } })
-    const group = createDraftEntityGroup(entities, new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1)))
+    const group = createParameterEntityGroup(entities, new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1)))
     expect(group.children.map((child) => child.visible)).toEqual([false, false])
-    setDraftEntityVisibility(group, { 'sphere-1': true })
+    setParameterEntityVisibility(group, { 'draft:sphere-1': true })
     expect(group.children.map((child) => child.visible)).toEqual([true, false])
   })
 
@@ -41,7 +41,7 @@ describe('draft entities', () => {
         location: { value: [1, 2, 3], units: 'm' },
       }] },
     } })
-    const group = createDraftEntityGroup([entity], new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(1, 1, 1)))
+    const group = createParameterEntityGroup([entity], new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(1, 1, 1)))
     const positions = (group.children[0] as THREE.Points).geometry.getAttribute('position')
     expect([positions.getX(0), positions.getY(0), positions.getZ(0)]).toEqual([1000, 2000, 3000])
   })
@@ -60,9 +60,34 @@ describe('draft entities', () => {
       { private_attribute_entity_type_name: 'Slice', origin: { value: [0, 0, 0], units: 'm' }, normal: [0, 0, 1] },
     ].map((entity, index) => ({ ...entity, private_attribute_id: `entity-${index}` }))
     const entities = parseDraftEntities({ private_attribute_asset_cache: { draft_entities: types } })
-    const group = createDraftEntityGroup(entities, new THREE.Box3(new THREE.Vector3(-2, -2, -2), new THREE.Vector3(2, 2, 2)))
+    const group = createParameterEntityGroup(entities, new THREE.Box3(new THREE.Vector3(-2, -2, -2), new THREE.Vector3(2, 2, 2)))
     expect(entities).toHaveLength(10)
     expect(group.children).toHaveLength(10)
     expect(group.children.every((child) => child.visible === false)).toBe(true)
+  })
+
+  it('parses and draws spatial ghost entities without inventing wind-tunnel geometry', () => {
+    const entities = parseGhostEntities({ private_attribute_asset_cache: { project_entity_info: { ghost_entities: [
+      { private_attribute_entity_type_name: 'GhostSphere', private_attribute_id: 'farfield', name: 'farfield', center: [0, 0, 0], max_radius: 5 },
+      { private_attribute_entity_type_name: 'GhostCircularPlane', private_attribute_id: 'symmetric', center: [0, 1, 0], max_radius: 5, normal_axis: [0, 1, 0] },
+      { private_attribute_entity_type_name: 'WindTunnelGhostSurface', private_attribute_id: 'windTunnelInlet', used_by: ['all'] },
+    ] } } })
+    expect(entities).toMatchObject([
+      { key: 'ghost:farfield', type: 'GhostSphere', renderable: true },
+      { key: 'ghost:symmetric', type: 'GhostCircularPlane', renderable: true },
+      { key: 'ghost:windTunnelInlet', type: 'WindTunnelGhostSurface', renderable: false },
+    ])
+    const group = createParameterEntityGroup(entities, new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1)))
+    expect(group.children).toHaveLength(3)
+    expect(group.children[0].children.length).toBeGreaterThan(0)
+    expect(group.children[1].children.length).toBeGreaterThan(0)
+    expect(group.children[2].children).toHaveLength(0)
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(group.children[1].quaternion)
+    expect(normal.x).toBeCloseTo(0)
+    expect(normal.y).toBeCloseTo(1)
+    expect(normal.z).toBeCloseTo(0)
+    expect(group.children[1].position.toArray()).toEqual([0, 1, 0])
+    setParameterEntityVisibility(group, { 'ghost:farfield': true, 'ghost:symmetric': true })
+    expect(group.children.map((child) => child.visible)).toEqual([true, true, false])
   })
 })

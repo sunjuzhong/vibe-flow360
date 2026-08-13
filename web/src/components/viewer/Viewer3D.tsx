@@ -51,7 +51,7 @@ import { commonPrecisionLevels, ViewerPrecisionControl, type ViewerPrecisionSele
 import { normalizeViewerFieldRange, resolveViewerFieldDomain, ViewerFieldRangeControl } from './ViewerFieldRangeControl'
 import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
 import { useI18n } from '../../i18n'
-import { createDraftEntityGroup, setDraftEntityVisibility, type DraftEntity } from '../../lib/draftEntities'
+import { createParameterEntityGroup, setParameterEntityVisibility, type ParameterEntity } from '../../lib/draftEntities'
 
 export type MeshGroupData = {
   id: string
@@ -89,7 +89,7 @@ export type ViewerManifest = {
 }
 
 const EMPTY_VIEWER_MANIFESTS: ViewerManifest[] = []
-const EMPTY_DRAFT_ENTITIES: DraftEntity[] = []
+const EMPTY_PARAMETER_ENTITIES: ParameterEntity[] = []
 
 export function viewerManifestSetKey(manifests: readonly ViewerManifest[]): string {
   return manifests.map((item) => item.asset_url).filter(Boolean).join('|')
@@ -266,8 +266,8 @@ type Props = {
   selection?: ViewerSelection
   entityVisibility?: Record<string, boolean>
   onEntityVisibilityChange?: (visibility: Record<string, boolean>) => void
-  draftEntities?: DraftEntity[]
-  draftEntityVisibility?: Record<string, boolean>
+  parameterEntities?: ParameterEntity[]
+  parameterEntityVisibility?: Record<string, boolean>
   wireframe?: boolean
   onWireframeChange?: (wireframe: boolean) => void
   onFieldsDiscovered?: (fields: UVFFieldInfo[]) => void
@@ -319,8 +319,8 @@ export function Viewer3D({
   selection,
   entityVisibility,
   onEntityVisibilityChange,
-  draftEntities = EMPTY_DRAFT_ENTITIES,
-  draftEntityVisibility = {},
+  parameterEntities = EMPTY_PARAMETER_ENTITIES,
+  parameterEntityVisibility = {},
   wireframe,
   onWireframeChange,
   onFieldsDiscovered,
@@ -378,7 +378,7 @@ export function Viewer3D({
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
-  const draftEntityGroupRef = useRef<THREE.Group | null>(null)
+  const parameterEntityGroupRef = useRef<THREE.Group | null>(null)
   const loadedAssetURLRef = useRef<string | null>(null)
   const assetDisposeRef = useRef<(() => void) | null>(null)
   const uvfAssetRef = useRef<UVFAsset | null>(null)
@@ -686,7 +686,7 @@ export function Viewer3D({
     if (!scene) return
 
     const previousRoot = assetRef.current
-    const previousDraftGroup = draftEntityGroupRef.current
+    const previousParameterGroup = parameterEntityGroupRef.current
     const previousDispose = assetDisposeRef.current
     const retainPrevious = preserveCamera && previousRoot !== null
     if (!retainPrevious) {
@@ -695,9 +695,9 @@ export function Viewer3D({
       uvfAssetRef.current = null
       meshesRef.current.clear()
       if (previousRoot) scene.remove(previousRoot)
-      if (previousDraftGroup) scene.remove(previousDraftGroup)
+      if (previousParameterGroup) scene.remove(previousParameterGroup)
       assetRef.current = null
-      draftEntityGroupRef.current = null
+      parameterEntityGroupRef.current = null
       setAssetStats(null)
       assetBoundsSphereRef.current = null
       setAvailableFields([])
@@ -843,17 +843,17 @@ export function Viewer3D({
       root.position.copy(center.multiplyScalar(-scale))
       root.userData.viewerNormalized = true
     }
-    let nextDraftGroup: THREE.Group | null = null
-    if (draftEntities.length) {
+    let nextParameterGroup: THREE.Group | null = null
+    if (parameterEntities.length) {
       const sourceBounds = new THREE.Box3(
         new THREE.Vector3(...displayManifest!.bounding_box.min),
         new THREE.Vector3(...displayManifest!.bounding_box.max),
       )
-      nextDraftGroup = createDraftEntityGroup(draftEntities, sourceBounds)
-      nextDraftGroup.position.copy(root.position)
-      nextDraftGroup.quaternion.copy(root.quaternion)
-      nextDraftGroup.scale.copy(root.scale)
-      disposers.push(() => disposeObject(nextDraftGroup!))
+      nextParameterGroup = createParameterEntityGroup(parameterEntities, sourceBounds)
+      nextParameterGroup.position.copy(root.position)
+      nextParameterGroup.quaternion.copy(root.quaternion)
+      nextParameterGroup.scale.copy(root.scale)
+      disposers.push(() => disposeObject(nextParameterGroup!))
     }
     if (nextUVFAsset) {
       const presentation = framePresentationRef.current
@@ -875,13 +875,13 @@ export function Viewer3D({
     }
     if (retainPrevious && previousRoot) {
       scene.remove(previousRoot)
-      if (previousDraftGroup) scene.remove(previousDraftGroup)
+      if (previousParameterGroup) scene.remove(previousParameterGroup)
       previousDispose?.()
     }
     scene.add(root)
-    if (nextDraftGroup) scene.add(nextDraftGroup)
+    if (nextParameterGroup) scene.add(nextParameterGroup)
     assetRef.current = root
-    draftEntityGroupRef.current = nextDraftGroup
+    parameterEntityGroupRef.current = nextParameterGroup
     assetDisposeRef.current = nextDispose
     uvfAssetRef.current = nextUVFAsset
     meshesRef.current = nextMeshes
@@ -909,7 +909,7 @@ export function Viewer3D({
         fitCameraToObject(camera, controls, root)
       }
     }
-  }, [displayManifest, draftEntities, fitCameraToObject, uvfAssetCache])
+  }, [displayManifest, fitCameraToObject, parameterEntities, uvfAssetCache])
 
   useEffect(() => {
     const container = containerRef.current
@@ -1143,7 +1143,7 @@ export function Viewer3D({
     const asset = uvfAssetRef.current
     if (!asset) return
     asset.object.traverse((object) => {
-      if (object.userData.draftEntity === true) return
+      if (object.userData.parameterEntity === true) return
       if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
       if (object.userData.uvfFieldFilterOverlay === true) return
       if (object.userData.uvfVectorVisualizationOverlay === true) return
@@ -1194,8 +1194,8 @@ export function Viewer3D({
   }, [assetState.status, displayManifest, entityVisibility, groupVisibility])
 
   useEffect(() => {
-    setDraftEntityVisibility(draftEntityGroupRef.current, draftEntityVisibility)
-  }, [assetState.status, draftEntityVisibility])
+    setParameterEntityVisibility(parameterEntityGroupRef.current, parameterEntityVisibility)
+  }, [assetState.status, parameterEntityVisibility])
 
   useEffect(() => {
     const clipping = clipPlane
@@ -1211,7 +1211,7 @@ export function Viewer3D({
       })
     })
     applyClipping(assetRef.current)
-    applyClipping(draftEntityGroupRef.current)
+    applyClipping(parameterEntityGroupRef.current)
   }, [assetState.status, clipPlane])
 
   useEffect(() => {

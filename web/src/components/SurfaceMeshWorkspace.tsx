@@ -13,7 +13,7 @@ import {
   Triangle,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
@@ -33,7 +33,7 @@ import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
-import { DraftEntityInventory, useDraftEntities, useDraftEntityVisibility } from './DraftEntityInventory'
+import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityVisibility } from './DraftEntityInventory'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
@@ -112,8 +112,10 @@ export default function SurfaceMeshWorkspace({
   onPlanVolumeMesh: () => Promise<void>
 }) {
   const { t } = useI18n()
-  const [draftEntityVisibility, setDraftEntityVisibility] = useDraftEntityVisibility(detail?.simulation_params)
+  const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
   const draftEntities = useDraftEntities(detail?.simulation_params)
+  const ghostEntities = useGhostEntities(detail?.simulation_params)
+  const parameterEntities = useMemo(() => [...draftEntities, ...ghostEntities], [draftEntities, ghostEntities])
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | 'advanced' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
@@ -202,7 +204,7 @@ export default function SurfaceMeshWorkspace({
         <>
           <div className="geometry-panel-heading">
             <div><span>{t('MESH')}</span><strong>{t('Visualization objects')}</strong></div>
-            <span className="geometry-count-badge">{review.boundaryInventory.length + draftEntities.length}</span>
+            <span className="geometry-count-badge">{review.boundaryInventory.length + parameterEntities.length}</span>
           </div>
           <SurfaceBoundaryInspector
             inventory={review.boundaryInventory}
@@ -215,10 +217,17 @@ export default function SurfaceMeshWorkspace({
             onHideAll={review.hideAllBoundaries}
             onClearSelection={() => review.setSelection({ groupId: null })}
           />
-          <DraftEntityInventory
+          <ParameterEntityInventory
             entities={draftEntities}
-            visibility={draftEntityVisibility}
-            onVisibilityChange={setDraftEntityVisibility}
+            visibility={parameterEntityVisibility}
+            onVisibilityChange={setParameterEntityVisibility}
+            source="draft"
+          />
+          <ParameterEntityInventory
+            entities={ghostEntities}
+            visibility={parameterEntityVisibility}
+            onVisibilityChange={setParameterEntityVisibility}
+            source="ghost"
           />
         </>
       )}
@@ -231,8 +240,8 @@ export default function SurfaceMeshWorkspace({
           onSelectionChange={review.setSelection}
           entityVisibility={review.visibility}
           onEntityVisibilityChange={review.setVisibility}
-          draftEntities={draftEntities}
-          draftEntityVisibility={draftEntityVisibility}
+          parameterEntities={parameterEntities}
+          parameterEntityVisibility={parameterEntityVisibility}
           selectedField={review.mode === 'quality' ? review.selectedField : null}
           onSelectedFieldChange={review.setSelectedField}
           onFieldsDiscovered={review.handleFieldsDiscovered}
