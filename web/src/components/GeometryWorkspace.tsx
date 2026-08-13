@@ -954,11 +954,9 @@ export default function GeometryWorkspace({
                       {appearanceForGroup(group.id)?.name ?? 'Default CAD'}
                     </small>
                   </span>
-                  <small className={effectiveSemanticAssignments[group.id] ? 'assigned' : ''}>
-                    {effectiveSemanticAssignments[group.id]
-                      ? effectiveSemanticAssignments[group.id].role
-                      : group.triangles !== undefined ? `${group.triangles} tris` : 'unassigned'}
-                  </small>
+                  {effectiveSemanticAssignments[group.id] && (
+                    <small className="assigned">{effectiveSemanticAssignments[group.id].role}</small>
+                  )}
                 </button>
                 <button
                   type="button"
