@@ -668,13 +668,53 @@
 }
 
 .case-manifest-folder {
+  position: relative;
   min-width: 0;
+  margin-left: 12px;
+  padding-left: 9px;
+  border-left: 1px solid #d8ddd0;
+}
+
+.case-manifest-folder::before {
+  position: absolute;
+  top: 17px;
+  left: 0;
+  width: 8px;
+  border-top: 1px solid #d8ddd0;
+  content: '';
+}
+
+.case-manifest-folder > .manifest-member-group {
+  border-top: 0;
+}
+
+.case-manifest-folder > .manifest-member-group > .manifest-member-group__header {
+  min-height: 30px;
+  padding: 3px 2px;
+  border-radius: 5px;
+  background: #fafbf7;
+}
+
+.case-manifest-folder > .manifest-member-group > .manifest-member-group__header .manifest-member-group__toggle {
+  color: #687064;
+  font-size: 9px;
+}
+
+.case-manifest-folder > .manifest-member-group > .manifest-member-group__header .manifest-member-group__toggle > strong {
+  font-weight: 600;
+}
+
+.case-manifest-folder > .manifest-member-group > .manifest-member-group__header .manifest-member-group__visibility {
+  width: 22px;
+  height: 22px;
+  border-color: transparent;
+  background: transparent;
 }
 
 .case-manifest-folder__children {
-  margin-left: 7px;
-  padding-left: 5px;
-  border-left: 1px solid #e1e5d9;
+  margin-left: 8px;
+  padding: 3px 0 4px 7px;
+  border-left: 1px solid #e0e4da;
 }
 
 .case-manifest-folder__children > .case-manifest-folder > .manifest-member-group {
