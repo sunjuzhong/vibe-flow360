@@ -80,6 +80,20 @@ export const initialVolumeMeshReviewState: VolumeMeshReviewState = {
   sliceVariant: 'flat',
 }
 
+export function isolatedVolumeZoneVisibility(
+  zones: ReviewGroup[],
+  groupIds: string[],
+): Record<string, boolean> {
+  const selectedIds = new Set(groupIds)
+  const selectedZones = zones.filter((zone) => selectedIds.has(zone.id))
+  return Object.fromEntries(zones.map((zone) => {
+    const isSelected = selectedIds.has(zone.id)
+    const isAncestorOfSelection = selectedZones.some((selected) => selected.path?.includes(zone.id))
+    const isDescendantOfSelection = zone.path?.some((ancestorId) => selectedIds.has(ancestorId)) ?? false
+    return [zone.id, isSelected || isAncestorOfSelection || isDescendantOfSelection]
+  }))
+}
+
 export function reduceVolumeMeshReviewState(
   state: VolumeMeshReviewState,
   action: VolumeMeshReviewAction,
@@ -299,9 +313,10 @@ export function useVolumeMeshReview({
     [],
   )
   const isolateZones = useCallback((groupIds: string[]) => {
-    const selected = new Set(groupIds)
-    dispatch({ type: 'visibility', visibility: Object.fromEntries(zones.map((zone) => [zone.id, selected.has(zone.id)])) })
-    dispatch({ type: 'selection', groupId: groupIds[0] ?? null, groupIds })
+    const available = new Set(zones.map((zone) => zone.id))
+    const selectedIds = [...new Set(groupIds)].filter((groupId) => available.has(groupId))
+    dispatch({ type: 'visibility', visibility: isolatedVolumeZoneVisibility(zones, selectedIds) })
+    dispatch({ type: 'selection', groupId: selectedIds.at(-1) ?? null, groupIds: selectedIds })
   }, [zones])
   const showAllZones = useCallback(() => {
     dispatch({
