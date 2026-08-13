@@ -121,6 +121,21 @@ export type ViewerSelection = {
   groupIds?: string[]
 }
 
+export function nextViewerSelection(
+  selection: ViewerSelection | undefined,
+  groupId: string | null,
+  additive: boolean,
+): ViewerSelection {
+  if (!groupId) return selection ?? { groupId: null }
+  const current = selection?.groupIds?.length
+    ? selection.groupIds
+    : selection?.groupId ? [selection.groupId] : []
+  const groupIds = additive
+    ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
+    : [groupId]
+  return { groupId: groupIds.at(-1) ?? null, groupIds }
+}
+
 export type ViewerAssetStats = {
   faces: number
   edges: number
@@ -1332,9 +1347,6 @@ export function Viewer3D({
         if (object.userData.groupId === groupId) object.visible = visible
       })
     }
-    if (!visible && selection?.groupId === groupId) {
-      onSelectionChange?.({ groupId: null })
-    }
   }
 
   const resolvePointerPick = (event: ViewerPointerEvent) => {
@@ -1448,21 +1460,14 @@ export function Viewer3D({
         allowMiss: true,
         onPick: (pick, event) => {
           if (!pick) {
-            onSelectionChange?.({ groupId: null })
             setHoveredGroup(null)
             return true
           }
           const mesh = meshForEntity(pick.entityId)
           const groupId = String(mesh?.userData.groupId ?? pick.entityId ?? '')
           if (!groupId) return false
-          const current = selection?.groupIds?.length
-            ? selection.groupIds
-            : selection?.groupId ? [selection.groupId] : []
-          const additive = event.ctrlKey || event.metaKey || event.shiftKey
-          const groupIds = additive
-            ? current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId]
-            : [groupId]
-          onSelectionChange?.({ groupId: groupIds.at(-1) ?? null, groupIds })
+          const additive = Boolean(event.ctrlKey || event.metaKey || event.shiftKey)
+          onSelectionChange?.(nextViewerSelection(selection, groupId, additive))
           setHoveredGroup(groupId)
           return true
         },
