@@ -34,6 +34,7 @@ export function SurfaceAdvancedToolbar({
 }
 
 export function SurfaceAdvancedReview({
+  defaultOpen = false,
   versions,
   compareId,
   comparisonName,
@@ -56,6 +57,7 @@ export function SurfaceAdvancedReview({
   onClipPosition,
   onCreateRemediation,
 }: {
+  defaultOpen?: boolean
   versions: ProjectItem[]
   compareId: string
   comparisonName?: string
@@ -79,7 +81,7 @@ export function SurfaceAdvancedReview({
   onCreateRemediation: () => void
 }) {
   return (
-    <details className="surface-advanced-review">
+    <details className="surface-advanced-review" open={defaultOpen}>
       <summary><span><GitCompare size={14} /> Advanced review</span><small>Compare · Clip · Export · AI patch</small></summary>
       <div className="surface-advanced-content">
         <label className="surface-compare-select">

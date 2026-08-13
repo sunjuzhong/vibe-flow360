@@ -1,5 +1,6 @@
 import {
   Activity,
+  ChevronDown,
   CheckCircle2,
   CircleDashed,
   Eye,
@@ -110,7 +111,7 @@ export default function SurfaceMeshWorkspace({
   onPlanVolumeMesh: () => Promise<void>
 }) {
   const { t } = useI18n()
-  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | null>(null)
+  const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | 'advanced' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
@@ -192,12 +193,12 @@ export default function SurfaceMeshWorkspace({
   return (
     <ResourceReviewLayout
       className={`surface-mesh-workspace surface-review-workspace surface-mode-${review.mode}`}
-      inventoryLabel="SurfaceMesh boundary inventory"
-      inspectorLabel="SurfaceMesh engineering review"
+      inventoryLabel={t('SurfaceMesh boundary inventory')}
+      inspectorLabel={t('SurfaceMesh engineering review')}
       inventory={(
         <>
           <div className="geometry-panel-heading">
-            <div><span>BOUNDARIES</span><strong>Surface inventory</strong></div>
+            <div><span>{t('MESH')}</span><strong>{t('Visualization objects')}</strong></div>
             <span className="geometry-count-badge">{review.boundaryInventory.length}</span>
           </div>
           <SurfaceBoundaryInspector
@@ -282,19 +283,27 @@ export default function SurfaceMeshWorkspace({
             </div>
           </div>
 
-          <ViewerAssetInformation stats={viewerAssetStats} />
-
-          {reportedMetrics.length > 0 && (
-            <div className="geometry-summary-grid surface-summary-grid">
-              {reportedMetrics.map(({ label, value, icon: Icon }) => (
-                <div key={label}>
-                  <span><Icon size={12} /> {label}</span>
-                  <strong>{metricText(value)}</strong>
+          <details className="case-review-details case-review-evidence">
+            <summary>
+              <span>{t('Review evidence')}</span>
+              <ChevronDown size={14} aria-hidden="true" />
+            </summary>
+            <div className="case-review-evidence-content">
+              <ViewerAssetInformation stats={viewerAssetStats} />
+              {reportedMetrics.length > 0 && (
+                <div className="geometry-summary-grid surface-summary-grid">
+                  {reportedMetrics.map(({ label, value, icon: Icon }) => (
+                    <div key={label}>
+                      <span><Icon size={12} /> {t(label)}</span>
+                      <strong>{metricText(value)}</strong>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
+          </details>
 
+          {(review.mode !== 'boundaries' || review.selectedBoundary) && (
           <section className="geometry-selection-card surface-active-review surface-boundary-selection-card">
             <div className="geometry-section-title">
               <ScanLine size={13} />
@@ -361,7 +370,7 @@ export default function SurfaceMeshWorkspace({
                     </button>
                   </div>
                 </>
-              ) : <p>Select a boundary in the inventory or 3D viewer to inspect it.</p>
+              ) : null
             ) : (
               <p>
                 Plain mode shows the unclassified surface discretization without boundary colors or diagnostic fields.
@@ -369,6 +378,7 @@ export default function SurfaceMeshWorkspace({
               </p>
             )}
           </section>
+          )}
 
           <ResourceReviewLaunchers>
             <ResourceReviewLauncher
@@ -387,39 +397,16 @@ export default function SurfaceMeshWorkspace({
                 onClick={() => setActiveReviewDialog('parameters')}
               />
             )}
+            <ResourceReviewLauncher
+              icon={<Settings2 size={14} />}
+              label={t('Advanced review')}
+              summary={t('Compare · Clip · Export · AI patch')}
+              onClick={() => setActiveReviewDialog('advanced')}
+            />
           </ResourceReviewLaunchers>
-          <SurfaceAdvancedReview
-            versions={advanced.comparisonVersions}
-            compareId={advanced.compareId}
-            comparisonName={advanced.comparison?.resource.name}
-            loading={advanced.comparisonLoading}
-            error={advanced.comparisonError}
-            parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
-            baselineHistogram={review.histogram}
-            comparisonHistogram={advanced.comparison?.histogram ?? null}
-            qualityError={advanced.comparison?.qualityError}
-            clipEnabled={advanced.clipEnabled}
-            clipAxis={advanced.clipAxis}
-            clipPosition={advanced.clipPosition}
-            field={review.selectedFieldInfo}
-            probe={review.probe}
-            remediationBusy={advanced.remediationBusy}
-            remediationError={advanced.remediationError}
-            onCompareId={advanced.setCompareId}
-            onClipEnabled={advanced.setClipEnabled}
-            onClipAxis={advanced.setClipAxis}
-            onClipPosition={advanced.setClipPosition}
-            onCreateRemediation={() => {
-              if (!review.selectedFieldInfo || !review.probe) return
-              const recommendation = buildSurfaceRemediationRecommendation({
-                field: review.selectedFieldInfo,
-                probe: review.probe,
-                simulationParams: detail?.simulation_params,
-              })
-              void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
-            }}
-          />
-          <ResourceCreateDraftAction onCreate={onPlanVolumeMesh} />
+          <div className="case-review-actions">
+            <ResourceCreateDraftAction onCreate={onPlanVolumeMesh} />
+          </div>
           {primaryError && previewSource === 'fallback' && (
             <small className="cfd-source-detail" title={primaryError}>Spatial context fallback is active</small>
           )}
@@ -453,6 +440,47 @@ export default function SurfaceMeshWorkspace({
               onClose={() => setActiveReviewDialog(null)}
             >
               <SurfaceParameterSummary parameters={review.surfaceParameters} defaultOpen />
+            </ResourceReviewDialog>
+          )}
+          {activeReviewDialog === 'advanced' && (
+            <ResourceReviewDialog
+              title={t('Advanced review')}
+              subtitle={t('Compare · Clip · Export · AI patch')}
+              icon={<Settings2 size={18} />}
+              onClose={() => setActiveReviewDialog(null)}
+            >
+              <SurfaceAdvancedReview
+                defaultOpen
+                versions={advanced.comparisonVersions}
+                compareId={advanced.compareId}
+                comparisonName={advanced.comparison?.resource.name}
+                loading={advanced.comparisonLoading}
+                error={advanced.comparisonError}
+                parameterDifferences={advanced.comparison?.parameterDifferences ?? []}
+                baselineHistogram={review.histogram}
+                comparisonHistogram={advanced.comparison?.histogram ?? null}
+                qualityError={advanced.comparison?.qualityError}
+                clipEnabled={advanced.clipEnabled}
+                clipAxis={advanced.clipAxis}
+                clipPosition={advanced.clipPosition}
+                field={review.selectedFieldInfo}
+                probe={review.probe}
+                remediationBusy={advanced.remediationBusy}
+                remediationError={advanced.remediationError}
+                onCompareId={advanced.setCompareId}
+                onClipEnabled={advanced.setClipEnabled}
+                onClipAxis={advanced.setClipAxis}
+                onClipPosition={advanced.setClipPosition}
+                onCreateRemediation={() => {
+                  if (!review.selectedFieldInfo || !review.probe) return
+                  const recommendation = buildSurfaceRemediationRecommendation({
+                    field: review.selectedFieldInfo,
+                    probe: review.probe,
+                    simulationParams: detail?.simulation_params,
+                  })
+                  void advanced.runRemediation(() => onCreateRemediationPlan(recommendation))
+                }}
+              />
             </ResourceReviewDialog>
           )}
         </>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Eye, EyeOff, Focus, Layers3, Search } from 'lucide-react'
+import { Eye, EyeOff, Focus, Layers3, Search, Square, SquareCheckBig } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
 import { useI18n } from '../../i18n'
@@ -119,6 +119,7 @@ export function SurfaceBoundaryInspector({
         visibleCount={visibleBoundaryCount}
         onShowAll={onShowAll}
         onHideAll={onHideAll}
+        defaultExpanded={false}
       >
         <div className="surface-boundary-list">
           {displayed.length > 0 ? displayed.map((row) => {
@@ -128,6 +129,16 @@ export function SurfaceBoundaryInspector({
               key={row.id}
               className={`geometry-entity-row surface-boundary-row ${row.status} ${selectedId === row.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
             >
+              <button
+                type="button"
+                className="surface-boundary-selection-toggle"
+                role="checkbox"
+                aria-checked={selectedId === row.id}
+                aria-label={t(selectedId === row.id ? 'Clear selection' : 'Select {name}').replace('{name}', row.name)}
+                onClick={() => selectedId === row.id ? onClearSelection() : onSelect(row.id)}
+              >
+                {selectedId === row.id ? <SquareCheckBig size={12} /> : <Square size={12} />}
+              </button>
               <button
                 type="button"
                 className="geometry-entity-select surface-boundary-select"
