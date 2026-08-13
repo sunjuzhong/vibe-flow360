@@ -25,6 +25,17 @@ export function normalizeViewerFieldRange(
   return lower < upper ? [lower, upper] : [min, max]
 }
 
+export function resolveViewerFieldDomain(
+  range: [number, number] | null | undefined,
+  min: number,
+  max: number,
+): [number, number] {
+  if (range && Number.isFinite(range[0]) && Number.isFinite(range[1]) && range[0] !== range[1]) {
+    return [Math.min(range[0], range[1]), Math.max(range[0], range[1])]
+  }
+  return [min, max]
+}
+
 export function viewerFieldRangeSliderPosition(
   min: number,
   max: number,

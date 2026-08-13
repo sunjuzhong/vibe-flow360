@@ -1,6 +1,10 @@
 package sliceplayer
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestStorePersistsCompletedIndexAndReusesCache(t *testing.T) {
 	root := t.TempDir()
@@ -61,5 +65,43 @@ func TestLatestForResultPathKeepsArchiveJobsIndependent(t *testing.T) {
 	}
 	if latest, ok := store.LatestForResultPath("case-1", "results/surfaces.tar.gz"); !ok || latest.ID != surfaces.ID {
 		t.Fatalf("unexpected Surface job: %#v", latest)
+	}
+}
+
+func TestNewStoreUpgradesLegacyPlaybackRangesFromLocalManifests(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Create("case-1", "results/slices.tar.gz", 100, "v5:legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetDir := filepath.Join(store.cacheDirectory("v5:legacy"), "assets")
+	if err := os.MkdirAll(assetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `[{"resources":{"buffers":{"bounds":{"Mach":[-2,3]}}}}]`
+	if err := os.WriteFile(filepath.Join(assetDir, "frame.manifest.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	playback := &Playback{Ready: true, FrameCount: 1, Frames: []PlaybackFrame{{
+		Fields: []string{"Mach"}, ManifestPath: "frame.manifest.json",
+	}}}
+	if _, err := store.Complete(job.ID, Index{Version: 5}, playback); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgraded, ok := restarted.Get(job.ID)
+	if !ok || upgraded.Report.IndexVersion != IndexVersion {
+		t.Fatalf("legacy report was not upgraded: %#v", upgraded.Report)
+	}
+	if bounds := upgraded.Report.Playback.Frames[0].FieldRanges["Mach"]; bounds != [2]float64{-2, 3} {
+		t.Fatalf("legacy frame range was not restored: %#v", bounds)
 	}
 }

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../../i18n'
 import {
   normalizeViewerFieldRange,
+  resolveViewerFieldDomain,
   ViewerFieldRangeControl,
   viewerFieldRangeGradient,
   viewerFieldRangeSliderPosition,
@@ -21,6 +22,12 @@ describe('ViewerFieldRangeControl', () => {
     expect(normalizeViewerFieldRange([8, 2], 0, 10)).toEqual([2, 8])
     expect(normalizeViewerFieldRange([-5, 20], 0, 10)).toEqual([0, 10])
     expect(normalizeViewerFieldRange([5, 5], 0, 10)).toEqual([0, 10])
+  })
+
+  it('keeps an explicit cross-frame domain outside the current frame extrema', () => {
+    expect(resolveViewerFieldDomain([-10, 20], 0, 1)).toEqual([-10, 20])
+    expect(resolveViewerFieldDomain([20, -10], 0, 1)).toEqual([-10, 20])
+    expect(resolveViewerFieldDomain(null, 0, 1)).toEqual([0, 1])
   })
 
   it('keeps logarithmic values finite at the field endpoints', () => {
