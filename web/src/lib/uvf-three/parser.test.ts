@@ -428,6 +428,20 @@ describe('Flow360 UVF Three.js library', () => {
       sampleCount: 3,
       bins: [{ min: 0, max: 0.5, count: 1 }, { min: 0.5, max: 1, count: 2 }],
     })
+    const pressureAttribute = (face as THREE.Mesh).geometry.getAttribute('pressure') as THREE.BufferAttribute
+    asset.fields[0].min = 1e-9
+    asset.fields[0].max = 1e-2
+    pressureAttribute.setX(0, 1e-9)
+    pressureAttribute.setX(1, 1e-4)
+    pressureAttribute.setX(2, 1e-2)
+    const logHistogram = createFieldHistogram(asset, 'pressure', 4, { scale: 'log' })!
+    expect(logHistogram.bins.map((bin) => bin.count)).toEqual([1, 0, 1, 1])
+    expect(logHistogram.bins[2].min).toBeCloseTo(10 ** -5.5)
+    asset.fields[0].min = 0
+    asset.fields[0].max = 1
+    pressureAttribute.setX(0, 0)
+    pressureAttribute.setX(1, 0.5)
+    pressureAttribute.setX(2, 1)
     applyFieldColoring(asset, 'pressure', 'grayscale', {
       range: [0.4, 0.6],
       outsideColor: [0.25, 0.25, 0.25],

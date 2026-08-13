@@ -5,7 +5,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { parseUVFManifest, resolveUVFBuffer, resolveUVFBufferLocations, resolveUVFLODLevel, safeUVFBufferPath } from './parser'
 import { DEFAULT_COLORMAP, sampleColormap, type ColormapName } from './colormap'
 import { normalizeFieldValue } from './fieldScale'
-import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldColorResult, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD, UVFVectorVisualizationOptions, UVFVectorVisualizationResult } from './types'
+import type { UVFAsset, UVFBuffer, UVFBufferLocation, UVFBufferSection, UVFEntityInfo, UVFEntry, UVFFieldColorOptions, UVFFieldColorResult, UVFFieldExtrema, UVFFieldFilter, UVFFieldFilterRule, UVFFieldHistogram, UVFFieldInfo, UVFFieldProbe, UVFLoadProgress, UVFLOD, UVFResolvedFieldScale, UVFVectorVisualizationOptions, UVFVectorVisualizationResult } from './types'
 
 // Case manifests carry result-field and boundary metadata in addition to the
 // render objects, so they can legitimately exceed the old 2 MiB cap.
@@ -704,24 +704,36 @@ export function createFieldHistogram(
   asset: UVFAsset,
   fieldName: string,
   binCount = 24,
+  options: {
+    domain?: [number, number] | null
+    entityIds?: string[] | null
+    scale?: UVFResolvedFieldScale
+  } = {},
 ): UVFFieldHistogram | null {
   const field = asset.fields.find((candidate) => candidate.name === fieldName)
   if (!field) return null
-  const values = collectFieldValues(asset, fieldName)
+  const values = collectFieldValues(asset, fieldName, options.entityIds)
   const count = Math.max(1, Math.floor(binCount))
-  const width = field.max - field.min
+  const domain = normalizeRange(options.domain) ?? [field.min, field.max]
+  const [domainMin, domainMax] = domain
+  const scale = options.scale ?? 'linear'
+  const normalizedBoundary = (position: number) => scale === 'log' && domainMin > 0
+    ? 10 ** (Math.log10(domainMin) + (Math.log10(domainMax) - Math.log10(domainMin)) * position)
+    : domainMin + (domainMax - domainMin) * position
   const bins = Array.from({ length: count }, (_, index) => ({
-    min: width === 0 ? field.min : field.min + width * index / count,
-    max: width === 0 ? field.max : field.min + width * (index + 1) / count,
+    min: domainMin === domainMax ? domainMin : normalizedBoundary(index / count),
+    max: domainMin === domainMax ? domainMax : normalizedBoundary((index + 1) / count),
     count: 0,
   }))
   for (const value of values) {
-    const index = width === 0
+    const index = domainMin === domainMax
       ? 0
-      : Math.min(count - 1, Math.max(0, Math.floor((value - field.min) / width * count)))
+      : Math.min(count - 1, Math.max(0, Math.floor(
+        normalizeFieldValue(value, domainMin, domainMax, scale) * count,
+      )))
     bins[index].count++
   }
-  return { field, sampleCount: values.length, bins }
+  return { field: { ...field, min: domainMin, max: domainMax }, sampleCount: values.length, bins }
 }
 
 export function probeFieldAtIntersection(
