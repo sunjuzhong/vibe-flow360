@@ -28,24 +28,22 @@ export function filterSurfaceBoundaries(
 
 export function SurfaceBoundaryInspector({
   inventory,
-  selectedId,
+  selectedIds,
   conflictCount,
   visibility,
   onSelect,
   onToggleVisibility,
   onShowAll,
   onHideAll,
-  onClearSelection,
 }: {
   inventory: SurfaceBoundaryRow[]
-  selectedId: string | null
+  selectedIds: string[]
   conflictCount: number
   visibility: Record<string, boolean>
-  onSelect: (groupId: string) => void
+  onSelect: (groupId: string, additive: boolean) => void
   onToggleVisibility: (groupId: string) => void
   onShowAll: () => void
   onHideAll: () => void
-  onClearSelection: () => void
 }) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
@@ -129,17 +127,18 @@ export function SurfaceBoundaryInspector({
         <div className="surface-boundary-list">
           {displayed.length > 0 ? displayed.map((row) => {
             const visible = visibility[row.id] !== false
+            const selected = selectedIds.includes(row.id)
             return (
             <div
               key={row.id}
-              className={`geometry-entity-row surface-boundary-row ${row.status} ${selectedId === row.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+              className={`geometry-entity-row surface-boundary-row ${row.status} ${selected ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
             >
               <button
                 type="button"
                 className="geometry-entity-select surface-boundary-select"
-                aria-pressed={selectedId === row.id}
+                aria-pressed={selected}
                 title={row.name}
-                onClick={() => selectedId === row.id ? onClearSelection() : onSelect(row.id)}
+                onClick={(event) => onSelect(row.id, event.shiftKey)}
               >
                 <span title={row.name}>{row.name}</span>
               </button>

@@ -19,9 +19,11 @@ vi.mock('../hooks/useResourcePreview', () => ({
 }))
 
 vi.mock('../hooks/useSurfaceMeshReview', () => ({
+  nextSurfaceSelection: vi.fn(),
   useSurfaceMeshReview: () => ({
     mode: surfaceReviewScenario.mode,
     selection: { groupId: surfaceReviewScenario.selected ? 'face-1' : null },
+    selectedBoundaryIds: surfaceReviewScenario.selected ? ['face-1'] : [],
     visibility: { 'face-1': true },
     qualityFields: [{ name: 'area', kind: 'scalar', dimension: 1, min: 1e-8, max: 1e-4 }],
     qualityFieldNames: ['area'],

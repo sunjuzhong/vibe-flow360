@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react'
+import type { ViewerSelection } from '../components/viewer/LazyViewer3D'
 import type {
   UVFFieldExtrema,
   UVFFieldHistogram,
@@ -18,7 +19,7 @@ type ReviewGroup = SurfaceGroup & { visible: boolean }
 
 export type SurfaceMeshReviewState = {
   mode: SurfaceViewMode
-  selection: { groupId: string | null }
+  selection: ViewerSelection
   visibility: Record<string, boolean>
   qualityFields: UVFFieldInfo[]
   selectedField: string | null
@@ -32,7 +33,7 @@ export type SurfaceMeshReviewState = {
 export type SurfaceMeshReviewAction =
   | { type: 'reset-groups'; groups: ReviewGroup[] }
   | { type: 'mode'; mode: SurfaceViewMode }
-  | { type: 'selection'; groupId: string | null }
+  | { type: 'selection'; groupId: string | null; groupIds?: string[] }
   | { type: 'visibility'; visibility: Record<string, boolean> }
   | { type: 'toggle-visibility'; groupId: string }
   | { type: 'fields'; fields: UVFFieldInfo[] }
@@ -56,6 +57,21 @@ export const initialSurfaceMeshReviewState: SurfaceMeshReviewState = {
   focusTarget: null,
 }
 
+export function nextSurfaceSelection(
+  selection: ViewerSelection,
+  groupId: string,
+  additive: boolean,
+): ViewerSelection {
+  if (!additive) return { groupId, groupIds: [groupId] }
+  const current = selection.groupIds?.length
+    ? selection.groupIds
+    : selection.groupId ? [selection.groupId] : []
+  const groupIds = current.includes(groupId)
+    ? current.filter((id) => id !== groupId)
+    : [...current, groupId]
+  return { groupId: groupIds.at(-1) ?? null, groupIds }
+}
+
 export function reduceSurfaceMeshReviewState(
   state: SurfaceMeshReviewState,
   action: SurfaceMeshReviewAction,
@@ -64,9 +80,14 @@ export function reduceSurfaceMeshReviewState(
     case 'reset-groups':
       return {
         ...state,
-        selection: action.groups.some((group) => group.id === state.selection.groupId)
-          ? state.selection
-          : { groupId: null },
+        selection: (() => {
+          const available = new Set(action.groups.map((group) => group.id))
+          const groupIds = (state.selection.groupIds ?? []).filter((id) => available.has(id))
+          const groupId = state.selection.groupId && available.has(state.selection.groupId)
+            ? state.selection.groupId
+            : groupIds.at(-1) ?? null
+          return { groupId, ...(groupIds.length ? { groupIds } : {}) }
+        })(),
         visibility: Object.fromEntries(action.groups.map((group) => [group.id, group.visible])),
         qualityFields: [],
         selectedField: null,
@@ -79,7 +100,13 @@ export function reduceSurfaceMeshReviewState(
     case 'mode':
       return { ...state, mode: action.mode, probe: action.mode === 'quality' ? state.probe : null }
     case 'selection':
-      return { ...state, selection: { groupId: action.groupId } }
+      return {
+        ...state,
+        selection: {
+          groupId: action.groupId,
+          ...(action.groupIds?.length ? { groupIds: action.groupIds } : {}),
+        },
+      }
     case 'visibility':
       return { ...state, visibility: action.visibility }
     case 'toggle-visibility':
@@ -154,6 +181,9 @@ export function useSurfaceMeshReview(
   )
   const selectedFieldInfo = state.qualityFields.find((field) => field.name === state.selectedField)
   const selectedBoundary = boundaryInventory.find((row) => row.id === state.selection.groupId)
+  const selectedBoundaryIds = state.selection.groupIds?.length
+    ? state.selection.groupIds
+    : state.selection.groupId ? [state.selection.groupId] : []
   const assignedBoundaryCount = boundaryInventory.filter((row) => row.status === 'assigned').length
   const boundaryConflictCount = boundaryInventory.filter((row) => row.status === 'conflict').length
 
@@ -163,7 +193,11 @@ export function useSurfaceMeshReview(
 
   const setMode = useCallback((mode: SurfaceViewMode) => dispatch({ type: 'mode', mode }), [])
   const setSelection = useCallback(
-    (selection: { groupId: string | null }) => dispatch({ type: 'selection', groupId: selection.groupId }),
+    (selection: ViewerSelection) => dispatch({
+      type: 'selection',
+      groupId: selection.groupId,
+      groupIds: selection.groupIds,
+    }),
     [],
   )
   const setVisibility = useCallback(
@@ -227,6 +261,7 @@ export function useSurfaceMeshReview(
     qualityFieldNames,
     selectedFieldInfo,
     selectedBoundary,
+    selectedBoundaryIds,
     assignedBoundaryCount,
     boundaryConflictCount,
     setMode,
