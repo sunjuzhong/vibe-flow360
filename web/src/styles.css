@@ -6538,62 +6538,10 @@ button { color: inherit; }
   font: 10px 'DM Mono';
 }
 .surface-boundary-row {
-  display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 30px;
-  margin: 1px 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
 }
-.surface-boundary-row.hidden { opacity: .58; background: transparent; }
-.surface-boundary-row:hover { background: #eeefe9; }
-.surface-boundary-row.selected { color: #34400f; background: #e4edc9; }
-.surface-boundary-row.unassigned { box-shadow: inset 3px 0 #c89b46; }
-.surface-boundary-row.conflict { box-shadow: inset 3px 0 #b86755; }
 .surface-boundary-select {
   min-width: 0;
-  padding: 6px 7px;
-  overflow: hidden;
-  border: 0;
-  color: #4c5548;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.surface-boundary-row-actions {
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-  border: 0;
-  border-left: 1px solid #e1e4dc;
-}
-.surface-boundary-row-actions button {
-  display: grid;
-  place-items: center;
-  border: 0;
-  color: #737c6e;
-  background: transparent;
-  cursor: pointer;
-}
-.surface-boundary-row-actions button + button { border-top: 1px solid #e1e4dc; }
-.surface-boundary-row-actions button:hover { color: #536c35; background: rgba(120, 149, 33, .1); }
-.surface-boundary-select span,
-.surface-boundary-select small,
-.surface-boundary-select em {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.surface-boundary-select span { font-size: 11px; font-weight: 650; }
-.surface-boundary-select small { margin-top: 2px; color: #848b7f; font: 10px 'DM Mono'; }
-.surface-boundary-select em {
-  margin-top: 3px;
-  color: #949b90;
-  font: 9px 'DM Mono';
-  font-style: normal;
-  text-transform: capitalize;
 }
 .surface-review-section > p,
 .surface-parameter-summary > p {

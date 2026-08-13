@@ -355,32 +355,19 @@
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-row {
-  min-height: 32px;
-  grid-template-columns: minmax(0, 1fr) 27px;
-  align-items: stretch;
+  min-height: 0;
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-select {
-  display: flex;
-  width: 100%;
   min-width: 0;
-  align-items: center;
-  margin: 0;
-  padding: 4px 8px 4px 10px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-select > span {
-  grid-area: name;
   min-width: 0;
-}
-
-.surface-review-workspace .resource-review-inventory .surface-boundary-row-actions button {
-  min-height: 30px;
-  padding: 0;
-}
-
-.surface-review-workspace .resource-review-inventory .surface-boundary-row-actions {
-  grid-template-rows: 1fr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .surface-boundary-filter-disclosure {
