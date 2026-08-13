@@ -54,6 +54,8 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).toContain('title="11/12 visible"')
     expect(markup).toContain('>11/12</span>')
     expect(markup).toContain('geometry-entity-row surface-boundary-row assigned selected')
+    expect(markup).toContain('class="geometry-entity-visibility"')
+    expect(markup).not.toContain('surface-boundary-row-actions')
     expect(markup).toContain('aria-pressed="true"')
     expect(markup).toContain('title="wing-9"')
     expect(markup).not.toContain('role="checkbox"')

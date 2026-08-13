@@ -142,17 +142,16 @@ export function SurfaceBoundaryInspector({
               >
                 <span title={row.name}>{row.name}</span>
               </button>
-              <div className="surface-boundary-row-actions">
-                <button
-                  type="button"
-                  aria-label={t(`${visible ? 'Hide' : 'Show'} ${row.name}`)}
-                  aria-pressed={!visible}
-                  title={t(`${visible ? 'Hide' : 'Show'} ${row.name}`)}
-                  onClick={() => onToggleVisibility(row.id)}
-                >
-                  {visible ? <Eye size={12} /> : <EyeOff size={12} />}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="geometry-entity-visibility"
+                aria-label={t(`${visible ? 'Hide' : 'Show'} ${row.name}`)}
+                aria-pressed={visible}
+                title={t(`${visible ? 'Hide' : 'Show'} ${row.name}`)}
+                onClick={() => onToggleVisibility(row.id)}
+              >
+                {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
             </div>
             )
           }) : (
