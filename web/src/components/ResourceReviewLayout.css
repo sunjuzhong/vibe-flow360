@@ -635,9 +635,16 @@
 }
 
 .case-surface-inventory,
+.case-parameter-entity-inventory,
 .case-result-inventory {
   min-height: 0;
   padding: 0 7px 8px;
+}
+
+.case-parameter-entity-inventory {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
 }
 
 .case-surface-inventory {
