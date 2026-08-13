@@ -28,7 +28,11 @@ vi.mock('../hooks/useSurfaceMeshReview', () => ({
     selectedField: 'area',
     selectedFieldInfo: { name: 'area', kind: 'scalar', dimension: 1, min: 1e-8, max: 1e-4 },
     range: [1e-8, 1e-4],
-    histogram: null,
+    histogram: {
+      field: { name: 'area', kind: 'scalar', dimension: 1, min: 1e-8, max: 1e-4 },
+      sampleCount: 12,
+      bins: [{ min: 1e-8, max: 1e-4, count: 12 }],
+    },
     extrema: null,
     probe: null,
     focusTarget: null,
@@ -111,8 +115,18 @@ vi.mock('../hooks/useWorkspaceViewerTools', () => ({
 }))
 
 vi.mock('./viewer/LazyViewer3D', () => ({
-  LazyViewer3D: ({ toolbar, topToolbar }: { toolbar?: ReactNode; topToolbar?: ReactNode }) => (
-    <div data-testid="viewer">{toolbar}{topToolbar}</div>
+  LazyViewer3D: ({ toolbar, topToolbar, fieldPanelExtra }: {
+    toolbar?: ReactNode
+    topToolbar?: ReactNode
+    fieldPanelExtra?: ReactNode | ((context: { field: { name: string; kind: 'scalar'; min: number; max: number }; range: [number, number] }) => ReactNode)
+  }) => (
+    <div data-testid="viewer">
+      {toolbar}
+      {topToolbar}
+      {typeof fieldPanelExtra === 'function'
+        ? fieldPanelExtra({ field: { name: 'area', kind: 'scalar', min: 1e-8, max: 1e-4 }, range: [1e-8, 1e-4] })
+        : fieldPanelExtra}
+    </div>
   ),
 }))
 
@@ -145,6 +159,7 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html).toContain('aria-label="Select Face 1"')
     expect(html).toContain('Mesh Quality')
     expect(html).toContain('surface-quality-filter-panel')
+    expect(html).toContain('viewer-field-diagnostics')
     expect(html).toContain('Rule 1 minimum area')
     expect(html).toContain('Review evidence')
     expect(html).toContain('aria-expanded="false"')

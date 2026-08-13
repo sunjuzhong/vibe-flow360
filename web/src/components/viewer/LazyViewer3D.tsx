@@ -42,7 +42,7 @@ export type ViewerToolbarProps = {
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
-  fieldPanelExtra?: React.ReactNode
+  fieldPanelExtra?: React.ReactNode | ((context: import('./Viewer3D').ViewerFieldPanelContext) => React.ReactNode)
   showVectorControls?: boolean
   showEntityLegend?: boolean
   showWarnings?: boolean
