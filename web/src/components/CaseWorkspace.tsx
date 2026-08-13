@@ -15,9 +15,10 @@ import {
   Eye,
   EyeOff,
   Film,
+  Folder,
   LoaderCircle,
 } from 'lucide-react'
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { resourceStatus } from './ResourceDetailPanel'
 import { api, type ResourceDetail, type SlicePlayerJob } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
@@ -167,8 +168,81 @@ export type CaseVisualizationGroup = {
 
 export type CaseVisualizationMember = MeshGroupData & {
   entityIds: string[]
+  /** GeometryGroup ancestors below the category root. */
+  folderPath?: string[]
   playbackKind?: CaseTimeSeriesArchiveKind
   source: 'manifest' | 'output' | 'archive'
+}
+
+export type CaseVisualizationTreeNode =
+  | { kind: 'folder'; id: string; name: string; members: CaseVisualizationMember[]; children: CaseVisualizationTreeNode[] }
+  | { kind: 'member'; id: string; member: CaseVisualizationMember }
+
+export function caseVisualizationMemberTree(members: CaseVisualizationMember[]): CaseVisualizationTreeNode[] {
+  const root: Extract<CaseVisualizationTreeNode, { kind: 'folder' }> = {
+    kind: 'folder', id: 'root', name: 'root', members: [], children: [],
+  }
+  for (const member of members) {
+    let parent = root
+    const pathParts: string[] = []
+    for (const folderName of member.folderPath ?? []) {
+      pathParts.push(folderName)
+      const folderID = `folder:${pathParts.map(normalizeManifestHint).join('/')}`
+      let folder = parent.children.find((node): node is Extract<CaseVisualizationTreeNode, { kind: 'folder' }> => (
+        node.kind === 'folder' && node.id === folderID
+      ))
+      if (!folder) {
+        folder = { kind: 'folder', id: folderID, name: folderName, members: [], children: [] }
+        parent.children.push(folder)
+      }
+      folder.members.push(member)
+      parent = folder
+    }
+    parent.children.push({ kind: 'member', id: member.id, member })
+  }
+  return root.children
+}
+
+function CaseVisualizationTreeRows({
+  nodes,
+  entityVisibility,
+  setVisibility,
+  renderMember,
+}: {
+  nodes: CaseVisualizationTreeNode[]
+  entityVisibility: Record<string, boolean>
+  setVisibility: (members: CaseVisualizationMember[], visible: boolean) => void
+  renderMember: (member: CaseVisualizationMember) => ReactNode
+}) {
+  return nodes.map((node) => {
+    if (node.kind === 'member') return renderMember(node.member)
+    const counts = caseVisualizationGroupCounts(node.members, entityVisibility)
+    const renderable = node.members.some((member) => member.entityIds.length > 0)
+    return (
+      <div className="case-manifest-folder" key={node.id}>
+        <ManifestMemberGroup
+          label={node.name}
+          memberLabel={node.name}
+          icon={<Folder size={12} aria-hidden="true" />}
+          total={counts.total}
+          visibleCount={counts.visible}
+          onHideAll={() => setVisibility(node.members, false)}
+          onShowAll={() => setVisibility(node.members, true)}
+          showVisibilityControl={renderable}
+          defaultExpanded
+        >
+          <div className="case-surface-list case-manifest-folder__children">
+            <CaseVisualizationTreeRows
+              nodes={node.children}
+              entityVisibility={entityVisibility}
+              setVisibility={setVisibility}
+              renderMember={renderMember}
+            />
+          </div>
+        </ManifestMemberGroup>
+      </div>
+    )
+  })
 }
 
 export function reconcileCaseVisualizationSelection(
@@ -260,21 +334,18 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
           : 'surfaces'
     return { category, group }
   })
-  const containerCounts = new Map<string, number>()
   for (const { category, group } of categorizedGroups) {
+    const relativePath = (group.path ?? []).slice(1)
+    const isFace = group.entity_type === 'Face'
+    const isSolidGeometry = group.entity_type === 'SolidGeometry'
     const containerName = group.path?.at(-1) || group.name
-    const key = `${category}\u0000${normalizeManifestHint(containerName)}`
-    containerCounts.set(key, (containerCounts.get(key) ?? 0) + 1)
-  }
-  for (const { category, group } of categorizedGroups) {
-    const containerName = group.path?.at(-1) || group.name
-    const containerKey = `${category}\u0000${normalizeManifestHint(containerName)}`
-    const expandContainer = category !== 'surfaces'
-      && group.entity_type === 'SolidGeometry'
-      && (containerCounts.get(containerKey) ?? 0) > 1
-    const memberName = expandContainer ? group.name : containerName
+    const memberName = isFace ? relativePath.at(-1) || group.name : isSolidGeometry ? group.name : containerName
+    const folderPath = isFace ? relativePath.slice(0, -1) : isSolidGeometry ? relativePath : []
     const members = categorized.get(category)!
-    const existing = expandContainer ? undefined : members.find((member) => member.name === memberName)
+    const memberKey = `${folderPath.map(normalizeManifestHint).join('/')}\u0000${normalizeManifestHint(memberName)}`
+    const existing = isSolidGeometry ? undefined : members.find((member) => (
+      `${(member.folderPath ?? []).map(normalizeManifestHint).join('/')}\u0000${normalizeManifestHint(member.name)}` === memberKey
+    ))
     if (existing) {
       existing.entityIds.push(group.id)
       existing.visible ||= group.visible
@@ -285,6 +356,7 @@ export function groupCaseVisualizationMembers(groups: MeshGroupData[]): CaseVisu
     members.push({
       ...group,
       name: memberName,
+      folderPath,
       entityIds: [group.id],
       source: 'manifest',
     })
@@ -824,6 +896,7 @@ export default function CaseWorkspace({
                 : t(caseVisualizationCategoryLabel(category))
               const categoryCounts = caseVisualizationGroupCounts(members, entityVisibility)
               const hasRenderableMembers = members.some((member) => member.entityIds.length > 0)
+              const memberTree = caseVisualizationMemberTree(members)
               const CategoryIcon = category === 'surfaces'
                 ? Layers
                 : category === 'slices'
@@ -845,7 +918,14 @@ export default function CaseWorkspace({
                   showVisibilityControl={hasRenderableMembers}
                 >
                   <div className="case-surface-list">
-                    {members.map((group) => {
+                    <CaseVisualizationTreeRows
+                      nodes={memberTree}
+                      entityVisibility={entityVisibility}
+                      setVisibility={(folderMembers, visible) => setEntityVisibility((current) => ({
+                        ...current,
+                        ...caseSurfaceVisibilityMap(folderMembers, visible),
+                      }))}
+                      renderMember={(group) => {
                       const visible = group.entityIds.some((entityId) => entityVisibility[entityId] ?? group.visible)
                       if (!group.entityIds.length) {
                         const loadingLayer = archiveLayerLoading === group.id
@@ -896,7 +976,7 @@ export default function CaseWorkspace({
                           </button>
                         </div>
                       )
-                    })}
+                    }} />
                   </div>
                 </ManifestMemberGroup>
               )
