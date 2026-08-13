@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { api } from '../api/client'
 import { I18nProvider } from '../i18n'
-import STEPLibraryModal, { conciseSTEPError } from './STEPLibraryModal'
+import STEPLibraryModal, { conciseSTEPError, resolveSTEPAssetSelection } from './STEPLibraryModal'
 
 describe('STEPLibraryModal', () => {
   it('presents independent upload, AI design, validation, and direct project creation', () => {
@@ -36,5 +36,15 @@ describe('STEPLibraryModal', () => {
 
   it('requests the current shaded technical thumbnail style', () => {
     expect(api.stepVersionThumbnailURL('asset 1', 'version 1')).toBe('/api/step-assets/asset%201/versions/version%201/thumbnail.svg?style=v2')
+  })
+
+  it('keeps the routed asset authoritative over the current folder selection', () => {
+    const assets = [
+      { id: 'car', folder_id: 'test', name: 'car', versions: [], created_at: '', updated_at: '' },
+      { id: 'wheel', folder_id: 'test', name: 'wheel', versions: [], created_at: '', updated_at: '' },
+    ]
+    expect(resolveSTEPAssetSelection('wheel', 'car', assets)).toBe('wheel')
+    expect(resolveSTEPAssetSelection('missing-route', 'car', assets)).toBe('missing-route')
+    expect(resolveSTEPAssetSelection('', 'car', assets)).toBe('car')
   })
 })
