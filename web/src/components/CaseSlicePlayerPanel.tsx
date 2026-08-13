@@ -55,6 +55,10 @@ export function sliceFrameAssetURL(caseId: string, jobId: string, frame: SlicePl
   return slicePlayerAssetURL(caseId, jobId, selectPlaybackAsset(frame).manifestPath)
 }
 
+export function slicePlaybackFrameKey(caseId: string, jobId: string, frames: SlicePlaybackFrame[]) {
+  return frames.map((frame) => sliceFrameAssetURL(caseId, jobId, frame)).join('|')
+}
+
 export function slicePlayerAssetURL(caseId: string, jobId: string, manifestPath: string) {
   const assetPath = manifestPath.split('/').map(encodeURIComponent).join('/')
   return `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(jobId)}/assets/${assetPath}`
@@ -183,10 +187,14 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
     [fallbackTrackName, playback?.frames, selectedTracks],
   )
   const assetCache = useMemo(() => new UVFAssetLRU(24), [])
-  const frameReadyRef = useRef(false)
+  const [readyFrameKey, setReadyFrameKey] = useState('')
   const timelineFrame = timeline[frameIndex]
   const frames = timelineFrame?.frames ?? []
   const frame = frames[0]
+  const frameAssetKey = useMemo(
+    () => slicePlaybackFrameKey(caseId, job.id, frames),
+    [caseId, frames, job.id],
+  )
 
   useEffect(() => {
     if (frame && !playing) onFrameChange?.(job, frame, frames)
@@ -197,17 +205,15 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   useEffect(() => {
     if (!playing || timeline.length < 2) return
     const timer = window.setInterval(() => {
-      if (!frameReadyRef.current) return
-      frameReadyRef.current = false
+      if (readyFrameKey !== frameAssetKey) return
       setFrameIndex((value) => (value + 1) % timeline.length)
     }, 1000 / fps)
     return () => window.clearInterval(timer)
-  }, [fps, playing, timeline.length])
+  }, [fps, frameAssetKey, playing, readyFrameKey, timeline.length])
 
   useEffect(() => {
     setFrameIndex(0)
     setPlaying(false)
-    frameReadyRef.current = false
   }, [selectedTracks])
 
   const timelineAssetURLs = useMemo(() => timeline.map((entry) => entry.frames.map((item) => (
@@ -224,6 +230,8 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
     playbackFrameManifest(caseId, job.id, item, archiveKind)
   )), [archiveKind, caseId, frames, job.id])
   const manifest = manifests[0] ?? null
+  const currentFrameKeyRef = useRef(frameAssetKey)
+  currentFrameKeyRef.current = frameAssetKey
   const selectedTrackFrames = useMemo(() => {
     const selected = new Set(selectedTracks)
     return (playback?.frames ?? []).filter((item) => selected.has(item.slice || fallbackTrackName))
@@ -242,16 +250,13 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   }, [selectedField, selectedFields])
 
   const handleAssetReady = useCallback((assetURL: string) => {
-    if (assetURL === manifest?.asset_url) frameReadyRef.current = true
-  }, [manifest?.asset_url])
+    if (assetURL === currentFrameKeyRef.current) setReadyFrameKey(assetURL)
+  }, [])
 
   if (!playback?.ready || !frame || !manifest) return null
   const move = (next: number) => {
     const target = Math.max(0, Math.min(timeline.length - 1, next))
-    setFrameIndex((current) => {
-      if (current !== target) frameReadyRef.current = false
-      return target
-    })
+    setFrameIndex(target)
   }
   return (
     <section className="slice-playback">
