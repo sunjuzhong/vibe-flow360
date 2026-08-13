@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, Eye, EyeOff, Layers3, Search, Square, SquareCheckBig } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff, Layers3, Search } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
 import { useI18n } from '../../i18n'
@@ -136,27 +136,12 @@ export function SurfaceBoundaryInspector({
             >
               <button
                 type="button"
-                className="surface-boundary-selection-toggle"
-                role="checkbox"
-                aria-checked={selectedId === row.id}
-                aria-label={t(selectedId === row.id ? 'Clear selection' : 'Select {name}').replace('{name}', row.name)}
-                onClick={() => selectedId === row.id ? onClearSelection() : onSelect(row.id)}
-              >
-                {selectedId === row.id ? <SquareCheckBig size={12} /> : <Square size={12} />}
-              </button>
-              <button
-                type="button"
                 className="geometry-entity-select surface-boundary-select"
                 aria-pressed={selectedId === row.id}
                 title={row.name}
-                onClick={() => onSelect(row.id)}
+                onClick={() => selectedId === row.id ? onClearSelection() : onSelect(row.id)}
               >
                 <span title={row.name}>{row.name}</span>
-                <small>
-                  {row.assignments.length > 0
-                    ? row.assignments.map((assignment) => `${assignment.modelName} · ${assignment.modelType}`).join(', ')
-                    : t('Unassigned')}
-                </small>
               </button>
               <div className="surface-boundary-row-actions">
                 <button
