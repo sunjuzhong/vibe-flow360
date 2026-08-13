@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
-import { UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, fieldCatalogForEntities, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, vectorArrowLengthFraction, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
+import { FIELD_FILTER_OVERLAY_WIDTH, UVFLoader, WIREFRAME_OVERLAY_WIDTH, accumulateUVFBufferBytes, applyFieldColoring, applyVectorVisualization, buildUVFAsset, collectFieldValues, createFieldHistogram, createScreenSpaceLIC, extractFieldCatalog, fieldCatalogForEntities, findFieldExtrema, parseUVFManifest, probeFieldAtIntersection, safeUVFBufferPath, setEntityVisibility, setFieldFilterOverlay, setWireframeOverlay, validateUVFBufferFileCount, vectorArrowLengthFraction, wireframeOpacityForScreenDensity, wireframeOpacityForTriangleCount, wireframeOverlayOpacity } from '.'
 
 describe('Flow360 UVF Three.js library', () => {
   it('keeps vector arrows compact and reduces their size for dense sampling', () => {
@@ -616,8 +616,10 @@ describe('Flow360 UVF Three.js library', () => {
       { id: 'b', fieldName: 'qualityB', min: 0.7, max: 1 },
     ]
     expect(setFieldFilterOverlay(asset, { enabled: true, operator: 'and', rules })).toBe(1)
-    let overlay = face.children.find((child) => child.userData.uvfFieldFilterOverlay) as THREE.LineSegments
-    expect(overlay.geometry.getIndex()?.count).toBe(6)
+    let overlay = face.children.find((child) => child.userData.uvfFieldFilterOverlay) as LineSegments2
+    expect(overlay).toBeInstanceOf(LineSegments2)
+    expect(overlay.geometry.getAttribute('instanceStart').count).toBe(3)
+    expect((overlay.material as LineMaterial).linewidth).toBe(FIELD_FILTER_OVERLAY_WIDTH)
 
     expect(setFieldFilterOverlay(asset, {
       enabled: true,
@@ -627,8 +629,8 @@ describe('Flow360 UVF Three.js library', () => {
         { id: 'b', fieldName: 'qualityB', min: 0.7, max: 1 },
       ],
     })).toBe(2)
-    overlay = face.children.find((child) => child.userData.uvfFieldFilterOverlay) as THREE.LineSegments
-    expect(overlay.geometry.getIndex()?.count).toBe(12)
+    overlay = face.children.find((child) => child.userData.uvfFieldFilterOverlay) as LineSegments2
+    expect(overlay.geometry.getAttribute('instanceStart').count).toBe(6)
     expect(setFieldFilterOverlay(asset, null)).toBe(0)
     expect(face.children.some((child) => child.userData.uvfFieldFilterOverlay)).toBe(false)
     asset.dispose()

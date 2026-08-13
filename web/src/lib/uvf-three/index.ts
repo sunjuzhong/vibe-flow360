@@ -13,6 +13,7 @@ export {
   probeFieldAtIntersection,
   setWireframeOverlay,
   WIREFRAME_OVERLAY_WIDTH,
+  FIELD_FILTER_OVERLAY_WIDTH,
   setFieldFilterOverlay,
   wireframeOpacityForTriangleCount,
   wireframeOverlayOpacity,
