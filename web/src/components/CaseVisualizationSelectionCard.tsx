@@ -1,6 +1,6 @@
 import { Eye, EyeOff, Info, LocateFixed, ScanLine, X } from 'lucide-react'
 import { useI18n } from '../i18n'
-import { ResourceReviewLaunchers, ResourceReviewToggle } from './ResourceReviewDialog'
+import { ResourceReviewToggle } from './ResourceReviewDialog'
 
 export type CaseVisualizationSelectionCardItem = {
   name: string
@@ -73,14 +73,12 @@ export function CaseVisualizationSelectionCard({
         )}
       </section>
       {fieldNames.length > 0 && (
-        <ResourceReviewLaunchers>
-          <ResourceReviewToggle
-            label={t('Field visualization')}
-            summary={t('{count} fields available').replace('{count}', String(fieldNames.length))}
-            checked={fieldVisualizationEnabled}
-            onChange={onFieldVisualizationChange}
-          />
-        </ResourceReviewLaunchers>
+        <ResourceReviewToggle
+          label={t('Field visualization')}
+          summary={t('{count} fields available').replace('{count}', String(fieldNames.length))}
+          checked={fieldVisualizationEnabled}
+          onChange={onFieldVisualizationChange}
+        />
       )}
     </section>
   )

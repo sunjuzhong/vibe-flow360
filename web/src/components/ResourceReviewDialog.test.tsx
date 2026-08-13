@@ -44,7 +44,7 @@ describe('ResourceReviewDialog', () => {
     expect(html).toContain('4 fields')
   })
 
-  it('renders an inline review option as a checkbox-like button', () => {
+  it('renders an inline review option as a compact stateful button', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
         <ResourceReviewToggle label="Cell quality" summary="6 fields" checked onChange={() => undefined} />
@@ -53,5 +53,7 @@ describe('ResourceReviewDialog', () => {
     expect(html).toContain('role="checkbox"')
     expect(html).toContain('aria-checked="true"')
     expect(html).toContain('Cell quality')
+    expect(html).toContain('6 fields')
+    expect(html).not.toContain('resource-review-launchers')
   })
 })

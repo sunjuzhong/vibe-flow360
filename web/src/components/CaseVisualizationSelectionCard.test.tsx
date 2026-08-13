@@ -29,6 +29,8 @@ describe('CaseVisualizationSelectionCard', () => {
     expect(markup).toContain('Isolate')
     expect(markup).toContain('Hide')
     expect(markup).toContain('Field visualization')
+    expect(markup).toContain('resource-review-toggle checked')
+    expect(markup).not.toContain('resource-review-launchers')
   })
 
   it('summarizes shared controls for multiple selected visualization objects', () => {

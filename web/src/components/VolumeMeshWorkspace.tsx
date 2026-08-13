@@ -394,16 +394,16 @@ export default function VolumeMeshWorkspace({
                   review.setMode('overview')
                 }}
               />
-              {contextualReviewCount > 0 ? (
+              {review.qualityFields.length > 0 && (
+                <ResourceReviewToggle
+                  label={t('Cell quality')}
+                  summary={t('{count} fields available').replace('{count}', String(review.qualityFields.length))}
+                  checked={review.mode === 'quality'}
+                  onChange={(checked) => review.setMode(checked ? 'quality' : 'overview')}
+                />
+              )}
+              {(selectedZoneHasBoundaryLayer || selectedZoneHasRefinement) && (
                 <ResourceReviewLaunchers>
-                  {review.qualityFields.length > 0 && (
-                    <ResourceReviewToggle
-                      label={t('Cell quality')}
-                      summary={t('{count} fields available').replace('{count}', String(review.qualityFields.length))}
-                      checked={review.mode === 'quality'}
-                      onChange={(checked) => review.setMode(checked ? 'quality' : 'overview')}
-                    />
-                  )}
                   {selectedZoneHasBoundaryLayer && (
                     <ResourceReviewLauncher
                       icon={<Layers size={14} />}
@@ -421,7 +421,8 @@ export default function VolumeMeshWorkspace({
                     />
                   )}
                 </ResourceReviewLaunchers>
-              ) : (
+              )}
+              {contextualReviewCount === 0 && (
                 <p className="volume-context-empty">{t('No additional review operations are available for this item.')}</p>
               )}
             </section>

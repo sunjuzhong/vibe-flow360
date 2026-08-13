@@ -114,7 +114,8 @@ export function ResourceReviewToggle({
       onClick={() => onChange(!checked)}
     >
       <span className="resource-review-toggle-box">{checked && <Check size={12} aria-hidden="true" />}</span>
-      <span><strong>{label}</strong><small>{summary}</small></span>
+      <strong>{label}</strong>
+      <small>{summary}</small>
     </button>
   )
 }
