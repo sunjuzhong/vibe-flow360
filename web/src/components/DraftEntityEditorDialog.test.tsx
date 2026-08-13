@@ -46,7 +46,9 @@ describe('DraftEntityEditorDialog', () => {
         />
       </I18nProvider>,
     )
-    expect(html).toContain('aria-label="Add Draft entity"')
+    expect(html).toContain('role="dialog"')
+    expect(html).toContain('aria-modal="true"')
+    expect(html).toContain('aria-labelledby=')
     expect(html).toContain('Entity type')
     expect(html).toContain('<option value="Box" selected="">Box</option>')
     expect(html).toContain('Entity ID')

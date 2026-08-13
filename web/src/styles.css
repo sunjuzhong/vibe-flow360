@@ -7585,20 +7585,34 @@ button { color: inherit; }
 .geometry-entity-edit:hover { color: #52651d; background: rgb(255 255 255 / 60%); }
 .parameter-entity-actions { display: flex; justify-content: flex-end; padding: 4px 5px; }
 .parameter-entity-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #d5d9cd; border-radius: 5px; color: #59634d; background: #fff; font-size: 8px; }
+.draft-entity-editor-backdrop {
+  z-index: 1000;
+  padding: clamp(16px, 4vh, 40px);
+  background: rgba(24, 28, 21, .5);
+  backdrop-filter: blur(3px);
+}
 .draft-entity-editor-dialog {
-  width: min(820px, calc(100vw - 32px));
-  height: min(760px, calc(100dvh - 32px));
-  max-height: calc(100dvh - 32px);
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 48px));
+  border-radius: 12px;
+  background: #fbfbf8;
+  box-shadow: 0 24px 72px rgba(20, 25, 15, .32), 0 3px 12px rgba(20, 25, 15, .12);
 }
 .draft-entity-editor-dialog > header,
 .draft-entity-editor-dialog > footer,
 .draft-entity-editor-dialog > .schema-form-error { flex: 0 0 auto; }
-.draft-entity-editor-dialog > header { position: relative; z-index: 2; }
+.draft-entity-editor-dialog > header {
+  position: relative;
+  z-index: 2;
+  padding: 18px 22px 16px;
+}
+.draft-entity-editor-dialog > header span { display: block; max-width: 580px; font-size: 9px; line-height: 1.5; }
 .draft-entity-editor-dialog .schema-form-body {
   display: grid;
   min-height: 0;
   align-content: start;
-  gap: 14px;
+  gap: 12px;
+  padding: 16px 22px 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -7619,8 +7633,8 @@ button { color: inherit; }
 }
 .draft-entity-field input:focus,
 .draft-entity-field select:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px rgba(149,173,75,.13); }
-.draft-entity-type-field { padding-bottom: 14px; border-bottom: 1px solid #e1e3dc; }
-.draft-entity-form-section { display: grid; gap: 14px; padding: 15px; border: 1px solid #dde0d7; border-radius: 9px; background: #fdfdfa; }
+.draft-entity-type-field { padding: 0 0 12px; border-bottom: 1px solid #e1e3dc; }
+.draft-entity-form-section { display: grid; gap: 12px; padding: 14px 16px 16px; border: 1px solid #dde0d7; border-radius: 9px; background: #fff; }
 .draft-entity-form-section > h3 { margin: 0; color: #4f574a; font-size: 13px; }
 .draft-entity-identity-grid { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); gap: 12px; }
 .draft-entity-geometry-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 18px; }
@@ -7641,12 +7655,13 @@ button { color: inherit; }
 .draft-entity-point-row > span { align-self: center; color: #8a9085; font: 11px 'DM Mono'; text-align: center; }
 .draft-entity-point-row .draft-entity-field > strong { display: none; }
 .draft-entity-point-row > .icon-button { margin-bottom: 3px; color: #8a7772; }
+.draft-entity-editor-actions { padding: 12px 22px !important; }
 .draft-entity-editor-actions > span { flex: 1; }
 .draft-entity-editor-actions button { display: inline-flex; align-items: center; gap: 5px; }
 .draft-entity-editor-actions button.danger { color: #a33f35; border-color: #e3c0bb; background: #fff8f6; }
 @media (max-width: 680px) {
-  .schema-form-backdrop:has(.draft-entity-editor-dialog) { place-items: start center; padding: 10px; }
-  .draft-entity-editor-dialog { width: 100%; height: calc(100dvh - 20px); max-height: calc(100dvh - 20px); }
+  .draft-entity-editor-backdrop { place-items: start center; padding: 10px; }
+  .draft-entity-editor-dialog { width: 100%; max-height: calc(100dvh - 20px); }
   .draft-entity-identity-grid,
   .draft-entity-geometry-grid { grid-template-columns: 1fr; }
 }
