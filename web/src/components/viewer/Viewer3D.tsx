@@ -250,6 +250,11 @@ export type ViewerState =
   | { status: 'ready' }
   | { status: 'error'; message: string }
 
+export type ViewerFieldPanelContext = {
+  field: UVFFieldInfo | undefined
+  range: [number, number] | null
+}
+
 export function shouldKeepPreviousAssetVisible(
   preserveCameraOnAssetChange: boolean,
   hasLoadedAsset: boolean,
@@ -293,7 +298,7 @@ type Props = {
   captureRequest?: number
   onCapture?: (dataUrl: string) => void
   showFieldPanel?: boolean
-  fieldPanelExtra?: React.ReactNode
+  fieldPanelExtra?: React.ReactNode | ((context: ViewerFieldPanelContext) => React.ReactNode)
   showVectorControls?: boolean
   showEntityLegend?: boolean
   showWarnings?: boolean
@@ -2018,12 +2023,12 @@ export function Viewer3D({
       {showFieldPanel && displayedFields.length > 0 && viewerReady && (
         <div className="viewer-field-panel">
           <label className="viewer-field-label">
-            Field:
+            {t('Field:')}
             <select
               value={selectedField ?? ''}
               onChange={(e) => selectField(e.target.value || null)}
             >
-              <option value="">None</option>
+              <option value="">{t('None')}</option>
               {displayedFields.map((f) => (
                 <option key={f.name} value={f.name}>
                   {f.name} ({f.kind}, {formatFieldRange(f.min, f.max).join('–')})
@@ -2031,7 +2036,6 @@ export function Viewer3D({
               ))}
             </select>
           </label>
-          {fieldPanelExtra}
           {selectedField && (
             <div className="viewer-field-controls">
               <label className="viewer-field-label">
@@ -2071,6 +2075,9 @@ export function Viewer3D({
               onChange={(range) => setFieldRangeOverride({ key: fieldRangeKey, range })}
             />
           )}
+          {typeof fieldPanelExtra === 'function'
+            ? fieldPanelExtra({ field: activeField, range: activeColorRange })
+            : fieldPanelExtra}
           {showVectorControls && activeField?.kind === 'vector' && (
             <div className="viewer-vector-controls" role="group" aria-label={t('Vector display')}>
               <span>{t('Vector display')}</span>

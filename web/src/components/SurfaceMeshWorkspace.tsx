@@ -18,6 +18,7 @@ import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
+import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useSurfaceMeshReview } from '../hooks/useSurfaceMeshReview'
 import { useSurfaceMeshAdvancedReview } from '../hooks/useSurfaceMeshAdvancedReview'
@@ -29,7 +30,6 @@ import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspector'
 import './surface-mesh/SurfaceBoundarySelection.css'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
-import { SurfaceQualityInspector } from './surface-mesh/SurfaceQualityInspector'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
@@ -50,6 +50,7 @@ import {
   buildSurfaceRemediationRecommendation,
   type SurfaceRemediationRecommendation,
 } from '../lib/surfaceMeshAdvanced'
+import { surfaceQualityRiskDirection } from '../lib/surfaceMeshReview'
 
 const noSurfaceGroups: [] = []
 
@@ -273,6 +274,18 @@ export default function SurfaceMeshWorkspace({
             `${detail?.id ?? 'surface-mesh'}-review.png`,
           )}
           showFieldPanel={review.mode === 'quality'}
+          fieldPanelExtra={review.mode === 'quality' ? ((fieldPanel) => (
+            <ViewerFieldDiagnostics
+              field={fieldPanel.field}
+              range={fieldPanel.range}
+              histogram={review.histogram}
+              extrema={review.extrema}
+              probe={review.probe}
+              entityNames={Object.fromEntries(review.boundaryInventory.map((row) => [row.id, row.name]))}
+              riskDirection={surfaceQualityRiskDirection(review.selectedFieldInfo?.name ?? '')}
+              onLocateExtreme={review.locateExtreme}
+            />
+          )) : undefined}
           showEntityLegend={false}
           toolbar={<SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />}
           topToolbar={(
@@ -337,29 +350,17 @@ export default function SurfaceMeshWorkspace({
                     : 'Plain mesh display'}
             </div>
             {review.mode === 'quality' ? (
-              <>
-                <SurfaceQualityInspector
-                  field={review.selectedFieldInfo}
-                  range={review.range}
-                  histogram={review.histogram}
-                  extrema={review.extrema}
-                  probe={review.probe}
-                  entityNames={Object.fromEntries(review.boundaryInventory.map((row) => [row.id, row.name]))}
-                  onRangeChange={review.setRange}
-                  onLocateExtreme={review.locateExtreme}
-                />
-                <SurfaceQualityFilterPanel
-                  fields={review.qualityFields}
-                  filter={qualityFilter.filter}
-                  matchCount={qualityFilter.matchCount}
-                  onAddRule={qualityFilter.addRule}
-                  onRemoveRule={qualityFilter.removeRule}
-                  onUpdateRule={qualityFilter.updateRule}
-                  onEnabledChange={qualityFilter.setEnabled}
-                  onOperatorChange={qualityFilter.setOperator}
-                  onReset={qualityFilter.reset}
-                />
-              </>
+              <SurfaceQualityFilterPanel
+                fields={review.qualityFields}
+                filter={qualityFilter.filter}
+                matchCount={qualityFilter.matchCount}
+                onAddRule={qualityFilter.addRule}
+                onRemoveRule={qualityFilter.removeRule}
+                onUpdateRule={qualityFilter.updateRule}
+                onEnabledChange={qualityFilter.setEnabled}
+                onOperatorChange={qualityFilter.setOperator}
+                onReset={qualityFilter.reset}
+              />
             ) : review.mode === 'boundaries' ? (
               review.selectedBoundary ? (
                 <>

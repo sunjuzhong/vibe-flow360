@@ -17,6 +17,7 @@ import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerSelection } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
+import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import { useVolumeMeshReview } from '../hooks/useVolumeMeshReview'
 import { useSurfaceQualityFilter } from '../hooks/useSurfaceQualityFilter'
@@ -37,11 +38,10 @@ import {
 import { useI18n } from '../i18n'
 import { createViewerContext, findLengthUnit } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
-import { assessVolumeMeshQuality, computeVolumeReadiness, selectedVolumeSliceVariantReview, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
+import { assessVolumeMeshQuality, computeVolumeReadiness, selectedVolumeSliceVariantReview, volumeQualityRiskDirection, volumeQualityRiskFilter } from '../lib/volumeMeshReview'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
 import { VolumeCapabilityPanel } from './volume-mesh/VolumeCapabilityPanel'
 import { VolumeParameterSummary } from './volume-mesh/VolumeParameterSummary'
-import { VolumeQualityInspector } from './volume-mesh/VolumeQualityInspector'
 import { VolumeSliceInspector, VolumeSliceVariantControl } from './volume-mesh/VolumeSliceInspector'
 import { VolumeZoneInspector } from './volume-mesh/VolumeZoneInspector'
 import { VolumeZoneSelectionCard } from './volume-mesh/VolumeZoneSelectionCard'
@@ -316,13 +316,25 @@ export default function VolumeMeshWorkspace({
             cameraCommand={cameraCommand}
             clipPlane={review.mode === 'slices' ? review.clipPlane : null}
             showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}
-            fieldPanelExtra={review.mode === 'quality' ? (
-              <VolumeSliceVariantControl
-                variants={selectedSliceVariants}
-                variant={review.sliceVariant}
-                onVariant={review.setSliceVariant}
-              />
-            ) : undefined}
+            fieldPanelExtra={review.mode === 'quality' ? ((fieldPanel) => (
+              <>
+                <VolumeSliceVariantControl
+                  variants={selectedSliceVariants}
+                  variant={review.sliceVariant}
+                  onVariant={review.setSliceVariant}
+                />
+                <ViewerFieldDiagnostics
+                  field={fieldPanel.field}
+                  range={fieldPanel.range}
+                  histogram={review.histogram}
+                  extrema={review.extrema}
+                  probe={review.probe}
+                  entityNames={entityNames}
+                  riskDirection={volumeQualityRiskDirection(review.selectedFieldInfo?.name ?? '')}
+                  onLocateExtreme={review.locateExtreme}
+                />
+              </>
+            )) : undefined}
             showEntityLegend={false}
             showWarnings={previewSource !== 'fallback'}
             projectId={projectId}
@@ -411,20 +423,6 @@ export default function VolumeMeshWorkspace({
                 </ResourceReviewLaunchers>
               ) : (
                 <p className="volume-context-empty">{t('No additional review operations are available for this item.')}</p>
-              )}
-              {review.mode === 'quality' && (
-                <VolumeQualityInspector
-                  fields={review.qualityFields}
-                  field={review.selectedFieldInfo}
-                  range={review.range}
-                  histogram={review.histogram}
-                  extrema={review.extrema}
-                  probe={review.probe}
-                  entityNames={entityNames}
-                  onFieldChange={review.setSelectedField}
-                  onRangeChange={(range) => review.setRange(range)}
-                  onLocateExtreme={review.locateExtreme}
-                />
               )}
             </section>
           )}

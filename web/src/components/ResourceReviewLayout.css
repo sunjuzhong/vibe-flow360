@@ -605,10 +605,6 @@
   margin-top: 6px;
 }
 
-.volume-context-panel > .volume-quality-field-selector {
-  margin-top: 4px;
-}
-
 .volume-review-workspace .volume-mesh-checks {
   grid-template-columns: minmax(0, 1fr);
 }
