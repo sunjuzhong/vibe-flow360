@@ -1000,10 +1000,9 @@ export default function CaseWorkspace({
                           </button>
                           <button type="button" className="geometry-entity-select" onClick={(event) => {
                             selectVisualizationMember(group, event.shiftKey || event.metaKey || event.ctrlKey)
-                          }} title={t('Select visualization object')}>
+                          }} title={group.name} aria-label={`${t('Select visualization object')}: ${group.name}`}>
                             <span className="viewer-color-swatch" style={{ background: group.color }} />
-                            <span>{group.name}</span>
-                            <small>{group.triangles !== undefined ? `${group.triangles.toLocaleString()} tris` : t('object')}</small>
+                            <span title={group.name}>{group.name}</span>
                           </button>
                           <button
                             type="button"
