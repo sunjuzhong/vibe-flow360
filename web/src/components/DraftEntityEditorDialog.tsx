@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { DynamicFormSchema } from '../api/client'
 import { useI18n } from '../i18n'
 import type { ParameterEntity, ParameterEntityType } from '../lib/draftEntities'
-import { hydrateSchemaValue, SchemaFormFields, serializeValue } from './SchemaForm'
+import { hydrateSchemaValue, serializeValue } from './SchemaForm'
 
 export const editableDraftEntityTypes: ParameterEntityType[] = [
   'Box', 'Cylinder', 'Point', 'Sphere', 'AxisymmetricBody', 'CustomVolume',
@@ -109,6 +109,206 @@ export function newDraftEntityValue(type: ParameterEntityType, unit = 'm'): Reco
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function fixedNumberArray(schema: DynamicFormSchema): number | null {
+  return schema.type === 'array'
+    && schema.items?.type === 'number'
+    && schema.minItems === schema.maxItems
+    && typeof schema.minItems === 'number'
+    ? schema.minItems
+    : null
+}
+
+function vectorLabels(length: number) {
+  return length === 2 ? ['X', 'Y'] : ['X', 'Y', 'Z'].slice(0, length)
+}
+
+function NumberVectorInput({
+  value,
+  length,
+  onChange,
+  label,
+}: {
+  value: unknown
+  length: number
+  onChange: (value: unknown) => void
+  label: string
+}) {
+  const vector = Array.isArray(value) ? value : Array.from({ length }, () => 0)
+  return (
+    <div className="draft-entity-vector" role="group" aria-label={label}>
+      {vectorLabels(length).map((axis, index) => (
+        <label key={axis}>
+          <span>{axis}</span>
+          <input
+            type="number"
+            step="any"
+            required
+            aria-label={`${label} ${axis}`}
+            value={String(vector[index] ?? '')}
+            onChange={(event) => onChange(Array.from({ length }, (_, itemIndex) => (
+              itemIndex === index ? event.target.value : vector[itemIndex] ?? 0
+            )))}
+          />
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function DraftEntityField({
+  schema,
+  value,
+  onChange,
+  t,
+}: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  t: Translate
+}) {
+  const title = schema.title ?? ''
+  const vectorLength = fixedNumberArray(schema)
+  if (vectorLength !== null) {
+    return (
+      <div className="draft-entity-field">
+        <strong>{title}</strong>
+        <NumberVectorInput value={value} length={vectorLength} onChange={onChange} label={title} />
+      </div>
+    )
+  }
+  if (schema.type === 'quantity') {
+    const quantityValue = record(value)
+    const units = schema.unit_options?.length ? schema.unit_options : [schema.unit ?? 'm']
+    return (
+      <label className="draft-entity-field">
+        <strong>{title}</strong>
+        <span className="draft-entity-quantity">
+          <input
+            type="number"
+            step="any"
+            required
+            min={schema.value_schema?.minimum}
+            value={String(quantityValue.value ?? '')}
+            onChange={(event) => onChange({ ...quantityValue, value: event.target.value })}
+          />
+          <select value={String(quantityValue.units ?? schema.unit ?? '')} onChange={(event) => onChange({ ...quantityValue, units: event.target.value })} aria-label={`${title} ${t('Units')}`}>
+            {units.map((unit) => <option value={unit} key={unit}>{unit}</option>)}
+          </select>
+        </span>
+      </label>
+    )
+  }
+  if (schema.type === 'object') {
+    const object = record(value)
+    const valueSchema = schema.properties?.value
+    const unitsSchema = schema.properties?.units
+    const quantityVectorLength = valueSchema ? fixedNumberArray(valueSchema) : null
+    if (quantityVectorLength !== null && unitsSchema?.type === 'enum') {
+      return (
+        <div className="draft-entity-field">
+          <strong>{title}</strong>
+          <div className="draft-entity-vector-with-unit">
+            <NumberVectorInput
+              value={object.value}
+              length={quantityVectorLength}
+              label={title}
+              onChange={(next) => onChange({ ...object, value: next })}
+            />
+            <select value={String(object.units ?? '')} onChange={(event) => onChange({ ...object, units: event.target.value })} aria-label={`${title} ${t('Units')}`}>
+              {(unitsSchema.options ?? []).map((unit) => <option value={String(unit)} key={String(unit)}>{String(unit)}</option>)}
+            </select>
+          </div>
+        </div>
+      )
+    }
+  }
+  if (schema.type === 'array' && schema.items) {
+    const array = Array.isArray(value) ? value : []
+    const itemVectorLength = fixedNumberArray(schema.items)
+    const fixedLength = schema.minItems === schema.maxItems && typeof schema.minItems === 'number'
+    if (fixedLength && itemVectorLength !== null) {
+      return (
+        <div className="draft-entity-field">
+          <strong>{title}</strong>
+          <div className="draft-entity-axis-list">
+            {array.map((item, index) => (
+              <div className="draft-entity-axis-row" key={index}>
+                <span>{t('Axis')} {index + 1}</span>
+                <NumberVectorInput
+                  value={item}
+                  length={itemVectorLength}
+                  label={`${title} ${index + 1}`}
+                  onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="draft-entity-field draft-entity-point-list">
+        <div className="draft-entity-field-heading">
+          <strong>{title}</strong>
+          <button type="button" onClick={() => onChange([...array, schema.items?.default ?? { value: [0, 0, 0], units: 'm' }])}><Plus size={13} />{t('Add point')}</button>
+        </div>
+        {array.map((item, index) => (
+          <div className="draft-entity-point-row" key={index}>
+            <span>{index + 1}</span>
+            <DraftEntityField schema={{ ...schema.items!, title: `${title} ${index + 1}` }} value={item} onChange={(next) => onChange(array.map((entry, itemIndex) => itemIndex === index ? next : entry))} t={t} />
+            <button type="button" className="icon-button" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`${t('Remove point')} ${index + 1}`}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (schema.type === 'enum') {
+    return <label className="draft-entity-field"><strong>{title}</strong><select value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>{(schema.options ?? []).map((option) => <option key={String(option)} value={String(option)}>{String(option)}</option>)}</select></label>
+  }
+  return (
+    <label className="draft-entity-field">
+      <strong>{title}</strong>
+      <input
+        type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
+        step={schema.type === 'integer' ? 1 : 'any'}
+        min={schema.minimum}
+        required={schema.required === true}
+        value={String(value ?? '')}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  )
+}
+
+function DraftEntityFields({ schema, value, onChange, t }: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  t: Translate
+}) {
+  const object = record(value)
+  const properties = schema.properties ?? {}
+  const update = (key: string, next: unknown) => onChange({ ...object, [key]: next })
+  const identity = ['private_attribute_id', 'name'].filter((key) => properties[key])
+  const geometry = Object.keys(properties).filter((key) => !identity.includes(key))
+  return (
+    <>
+      <section className="draft-entity-form-section">
+        <h3>{t('Identity')}</h3>
+        <div className="draft-entity-identity-grid">
+          {identity.map((key) => <DraftEntityField key={key} schema={properties[key]} value={object[key]} onChange={(next) => update(key, next)} t={t} />)}
+        </div>
+      </section>
+      <section className="draft-entity-form-section">
+        <h3>{t('Geometry')}</h3>
+        <div className="draft-entity-geometry-grid">
+          {geometry.map((key) => <DraftEntityField key={key} schema={properties[key]} value={object[key]} onChange={(next) => update(key, next)} t={t} />)}
+        </div>
+      </section>
+    </>
+  )
 }
 
 function editableEntityValue(entity: ParameterEntity | undefined, type: ParameterEntityType, unit: string) {
@@ -279,13 +479,13 @@ export default function DraftEntityEditorDialog({
           <button type="button" className="icon-button" onClick={onClose} aria-label={t('Close Draft entity editor')}><X size={18} /></button>
         </header>
         <div className="schema-form-body">
-          <label className="schema-field">
-            <span>{t('Entity type')}</span>
+          <label className="draft-entity-field draft-entity-type-field">
+            <strong>{t('Entity type')}</strong>
             <select value={type} onChange={(event) => changeType(event.target.value as ParameterEntityType)}>
               {editableDraftEntityTypes.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
-          <SchemaFormFields schema={schema} value={value} onChange={setValue} showAll />
+          <DraftEntityFields schema={schema} value={value} onChange={setValue} t={t} />
         </div>
         {error && <div className="schema-form-error" role="alert"><AlertCircle size={13} />{t(error)}</div>}
         <footer className="draft-entity-editor-actions">

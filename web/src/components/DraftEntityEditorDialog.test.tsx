@@ -35,7 +35,7 @@ describe('DraftEntityEditorDialog', () => {
     expect(validateDraftEntityValue('Box', { ...value, size: { value: [1, 0, 3], units: 'm' } })).toContain('size values must be greater than zero.')
   })
 
-  it('renders add controls from the dynamic schema', () => {
+  it('renders fixed vectors as compact components instead of mutable array cards', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
         <DraftEntityEditorDialog
@@ -50,6 +50,11 @@ describe('DraftEntityEditorDialog', () => {
     expect(html).toContain('Entity type')
     expect(html).toContain('<option value="Box" selected="">Box</option>')
     expect(html).toContain('Entity ID')
+    expect(html).toContain('class="draft-entity-vector"')
+    expect(html).toContain('aria-label="Principal axes 1 X"')
+    expect(html).toContain('aria-label="Center Units"')
+    expect(html).not.toContain('Add item')
+    expect(html).not.toContain('Remove Principal axes')
     expect(html).toContain('Save entity')
   })
 })
