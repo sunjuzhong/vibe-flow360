@@ -1,8 +1,42 @@
 import { describe, expect, it } from 'vitest'
 import {
   initialVolumeMeshReviewState,
+  isolatedVolumeZoneVisibility,
   reduceVolumeMeshReviewState,
 } from './useVolumeMeshReview'
+
+describe('VolumeMesh zone isolation', () => {
+  const zones = [
+    { id: 'volumeMesh', name: 'Volume mesh', color: '#aaa', visible: true },
+    { id: 'fluid', name: 'Fluid', color: '#bbb', visible: true, path: ['volumeMesh'] },
+    { id: 'farfield', name: 'Farfield', color: '#ccc', visible: true, path: ['volumeMesh', 'fluid'] },
+    { id: 'wall', name: 'Wall', color: '#ddd', visible: true, path: ['volumeMesh', 'fluid'] },
+    { id: 'periodic', name: 'Periodic', color: '#eee', visible: true, path: ['volumeMesh', 'fluid'] },
+    { id: 'slices', name: 'Slices', color: '#fff', visible: true },
+  ]
+
+  it('keeps every selected item and its required ancestors visible', () => {
+    expect(isolatedVolumeZoneVisibility(zones, ['farfield', 'wall', 'periodic'])).toEqual({
+      volumeMesh: true,
+      fluid: true,
+      farfield: true,
+      wall: true,
+      periodic: true,
+      slices: false,
+    })
+  })
+
+  it('keeps descendants visible when a parent item is isolated', () => {
+    expect(isolatedVolumeZoneVisibility(zones, ['fluid'])).toEqual({
+      volumeMesh: true,
+      fluid: true,
+      farfield: true,
+      wall: true,
+      periodic: true,
+      slices: false,
+    })
+  })
+})
 
 describe('VolumeMesh review store', () => {
   it('discovers only volume-quality fields and waits for explicit selection', () => {
