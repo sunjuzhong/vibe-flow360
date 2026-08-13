@@ -14,7 +14,6 @@ import {
   Plus,
   Ruler,
   ScanLine,
-  Scissors,
   Search,
   Shapes,
   Sparkles,
@@ -77,7 +76,6 @@ import {
   LazyViewer3D,
   type ViewerAssetStats,
   type ViewerCameraCommand,
-  type ViewerClipPlane,
   type ViewerSelection,
 } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
@@ -299,51 +297,6 @@ export function GeometryPreflightHelp() {
   )
 }
 
-export function GeometryClipPopover({
-  axis,
-  position,
-  onAxisChange,
-  onPositionChange,
-  onClose,
-}: {
-  axis: 'x' | 'y' | 'z'
-  position: number
-  onAxisChange: (axis: 'x' | 'y' | 'z') => void
-  onPositionChange: (position: number) => void
-  onClose: () => void
-}) {
-  return (
-    <section className="geometry-clip-popover" role="dialog" aria-label="Inspection tools">
-      <header>
-        <strong><Scissors size={13} /> Inspection tools</strong>
-        <button type="button" onClick={onClose} aria-label="Close inspection tools" title="Close inspection tools">
-          <X size={13} />
-        </button>
-      </header>
-      <div className="geometry-clip-controls">
-        <label>Clip axis
-          <select value={axis} onChange={(event) => onAxisChange(event.target.value as 'x' | 'y' | 'z')}>
-            <option value="x">X plane</option>
-            <option value="y">Y plane</option>
-            <option value="z">Z plane</option>
-          </select>
-        </label>
-        <label>Position
-          <input
-            aria-label="Geometry clipping plane position"
-            type="range"
-            min="-1"
-            max="1"
-            step="0.01"
-            value={position}
-            onChange={(event) => onPositionChange(Number(event.target.value))}
-          />
-        </label>
-      </div>
-    </section>
-  )
-}
-
 function downloadDataUrl(dataUrl: string, fileName: string) {
   const link = document.createElement('a')
   link.href = dataUrl
@@ -411,9 +364,6 @@ export default function GeometryWorkspace({
   const [entitySearch, setEntitySearch] = useState('')
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
-  const [clipEnabled, setClipEnabled] = useState(false)
-  const [clipAxis, setClipAxis] = useState<'x' | 'y' | 'z'>('x')
-  const [clipPosition, setClipPosition] = useState(0)
   const [showNormals, setShowNormals] = useState(false)
   const [captureRequest, setCaptureRequest] = useState(0)
   const [bodyIntent, setBodyIntent] = useState<GeometryBodyIntent>('undecided')
@@ -469,13 +419,6 @@ export default function GeometryWorkspace({
     : selectedEdge ? [selectedEdge.id] : []
   const selectedEntitiesVisible = selectedEntityIds.every((id) => entityVisibility[id] !== false)
   const resourceKey = resourceId ?? detail?.id ?? ''
-  const clipPlane = useMemo<ViewerClipPlane | null>(() => {
-    if (!clipEnabled) return null
-    const normal: [number, number, number] = clipAxis === 'x'
-      ? [1, 0, 0]
-      : clipAxis === 'y' ? [0, 1, 0] : [0, 0, 1]
-    return { normal, constant: -clipPosition }
-  }, [clipAxis, clipEnabled, clipPosition])
   const filteredGroups = useMemo(() => {
     const query = entitySearch.trim().toLowerCase()
     if (!query) return manifest?.groups ?? []
@@ -1056,7 +999,6 @@ export default function GeometryWorkspace({
           parameterEntities={parameterEntities}
           parameterEntityVisibility={parameterEntityVisibility}
           entityAppearances={entityAppearances}
-          clipPlane={clipPlane}
           projectId={projectId}
           resourceRef={resourceRef}
           toolInput={tools.toolInput}
@@ -1072,23 +1014,8 @@ export default function GeometryWorkspace({
           showFieldPanel={false}
           cameraCommand={cameraCommand}
           onAssetStatsChange={setViewerAssetStats}
-          floatingPanel={clipEnabled && (
-            <GeometryClipPopover
-              axis={clipAxis}
-              position={clipPosition}
-              onAxisChange={setClipAxis}
-              onPositionChange={setClipPosition}
-              onClose={() => setClipEnabled(false)}
-            />
-          )}
           topToolbar={(
               <div className="geometry-camera-toolbar" aria-label="Geometry actions">
-                <button
-                  className={clipEnabled ? 'active' : ''}
-                  aria-pressed={clipEnabled}
-                  onClick={() => setClipEnabled((enabled) => !enabled)}
-                  title="Toggle clipping plane"
-                ><Scissors size={13} /> Clip</button>
                 <ViewerToolsDock model={tools} />
                 <button
                   className={showNormals ? 'active' : ''}

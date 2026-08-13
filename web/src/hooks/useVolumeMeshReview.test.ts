@@ -18,11 +18,12 @@ describe('VolumeMesh review store', () => {
     expect(next.selectedField).toBeNull()
   })
 
-  it('enables clipping only in section mode', () => {
+  it('switches section mode without owning shared viewer clipping state', () => {
     const section = reduceVolumeMeshReviewState(initialVolumeMeshReviewState, { type: 'mode', mode: 'slices' })
     const zones = reduceVolumeMeshReviewState(section, { type: 'mode', mode: 'zones' })
-    expect(section.clipEnabled).toBe(true)
-    expect(zones.clipEnabled).toBe(false)
+    expect(section.mode).toBe('slices')
+    expect(zones.mode).toBe('zones')
+    expect(section).not.toHaveProperty('clipEnabled')
   })
 
   it('locates the risky extreme and synchronizes entity selection', () => {

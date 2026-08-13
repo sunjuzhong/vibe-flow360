@@ -301,7 +301,6 @@ export default function SurfaceMeshWorkspace({
           onAssetStatsChange={setViewerAssetStats}
           focusTarget={review.focusTarget}
           cameraCommand={cameraCommand}
-          clipPlane={advanced.clipPlane}
           projectId={projectId}
           resourceRef={resourceRef}
           toolInput={tools.toolInput}
@@ -329,8 +328,6 @@ export default function SurfaceMeshWorkspace({
           topToolbar={(
                 <div className="surface-combined-toolbar">
                   <SurfaceAdvancedToolbar
-                    clipping={advanced.clipEnabled}
-                    onToggleClipping={() => advanced.setClipEnabled(!advanced.clipEnabled)}
                     onCapture={advanced.requestCapture}
                   />
                   <ViewerToolsDock model={tools} />
@@ -489,7 +486,7 @@ export default function SurfaceMeshWorkspace({
             <ResourceReviewLauncher
               icon={<Settings2 size={14} />}
               label={t('Advanced review')}
-              summary={t('Compare · Clip · Export · AI patch')}
+              summary={t('Compare · Export · AI patch')}
               onClick={() => setActiveReviewDialog('advanced')}
             />
           </ResourceReviewLaunchers>
@@ -534,7 +531,7 @@ export default function SurfaceMeshWorkspace({
           {activeReviewDialog === 'advanced' && (
             <ResourceReviewDialog
               title={t('Advanced review')}
-              subtitle={t('Compare · Clip · Export · AI patch')}
+              subtitle={t('Compare · Export · AI patch')}
               icon={<Settings2 size={18} />}
               onClose={() => setActiveReviewDialog(null)}
             >
@@ -549,17 +546,11 @@ export default function SurfaceMeshWorkspace({
                 baselineHistogram={review.histogram}
                 comparisonHistogram={advanced.comparison?.histogram ?? null}
                 qualityError={advanced.comparison?.qualityError}
-                clipEnabled={advanced.clipEnabled}
-                clipAxis={advanced.clipAxis}
-                clipPosition={advanced.clipPosition}
                 field={review.selectedFieldInfo}
                 probe={review.probe}
                 remediationBusy={advanced.remediationBusy}
                 remediationError={advanced.remediationError}
                 onCompareId={advanced.setCompareId}
-                onClipEnabled={advanced.setClipEnabled}
-                onClipAxis={advanced.setClipAxis}
-                onClipPosition={advanced.setClipPosition}
                 onCreateRemediation={() => {
                   if (!review.selectedFieldInfo || !review.probe) return
                   const recommendation = buildSurfaceRemediationRecommendation({

@@ -52,6 +52,7 @@ import { normalizeViewerFieldRange, resolveViewerFieldDomain, ViewerFieldRangeCo
 import { viewerLoadingLabel, type ViewerLoadingState } from './viewerLoading'
 import { useI18n } from '../../i18n'
 import { createParameterEntityGroup, setParameterEntityVisibility, type ParameterEntity } from '../../lib/draftEntities'
+import { createViewerClipPlane, ViewerClipButton, ViewerClipPopover, viewerClipBounds, type ViewerClipAxis } from './ViewerClipTool'
 
 export type MeshGroupData = {
   id: string
@@ -471,6 +472,9 @@ export function Viewer3D({
   } | null>(null)
 
   const [wireframeOn, setWireframeOn] = useState(false)
+  const [viewerClipEnabled, setViewerClipEnabled] = useState(false)
+  const [viewerClipAxis, setViewerClipAxis] = useState<ViewerClipAxis>('x')
+  const [viewerClipPosition, setViewerClipPosition] = useState(0)
   const onFieldsDiscoveredRef = useRef(onFieldsDiscovered)
   const onEntitiesDiscoveredRef = useRef(onEntitiesDiscovered)
   const onAssetReadyRef = useRef(onAssetReady)
@@ -486,6 +490,13 @@ export function Viewer3D({
   useEffect(() => {
     onCameraStateChangeRef.current = onCameraStateChange
   }, [onCameraStateChange])
+
+  useEffect(() => {
+    const bounds = viewerClipBounds(displayManifest?.bounding_box, 'x')
+    setViewerClipEnabled(false)
+    setViewerClipAxis('x')
+    setViewerClipPosition((bounds[0] + bounds[1]) / 2)
+  }, [displayManifest?.asset_url, displayManifest?.bounding_box])
 
   const emitCameraState = useCallback(() => {
     cameraStateTimeoutRef.current = null
@@ -540,6 +551,15 @@ export function Viewer3D({
       : baseFieldRange
     : null, [activeField, baseFieldRange, fieldDomain, fieldRangeKey, fieldRangeOverride])
   const effectiveWireframe = wireframe ?? wireframeOn
+  const clipBounds = useMemo(
+    () => viewerClipBounds(displayManifest?.bounding_box, viewerClipAxis),
+    [displayManifest?.bounding_box, viewerClipAxis],
+  )
+  const internalClipPlane = useMemo(
+    () => createViewerClipPlane(viewerClipEnabled, viewerClipAxis, viewerClipPosition),
+    [viewerClipAxis, viewerClipEnabled, viewerClipPosition],
+  )
+  const effectiveClipPlane = clipPlane === undefined ? internalClipPlane : clipPlane
   const vectorArrowLimit = vectorArrowDensity === 'sparse' ? 120 : vectorArrowDensity === 'dense' ? 480 : 260
   const framePresentationRef = useRef({ selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled, vectorArrowLimit })
   framePresentationRef.current = { selectedField, colormap, fieldRange: activeColorRange, fieldScale, fieldEntityIds, wireframe: effectiveWireframe, vectorLICEnabled, vectorArrowsEnabled, vectorArrowLimit }
@@ -1026,7 +1046,7 @@ export function Viewer3D({
   useEffect(() => invalidateViewer(), [
     activeColorRange,
     assetState.status,
-    clipPlane,
+    effectiveClipPlane,
     colormap,
     effectiveWireframe,
     entityAppearances,
@@ -1262,8 +1282,8 @@ export function Viewer3D({
   }, [assetState.status, parameterEntityVisibility])
 
   useEffect(() => {
-    const clipping = clipPlane
-      ? [new THREE.Plane(new THREE.Vector3(...clipPlane.normal).normalize(), clipPlane.constant)]
+    const clipping = effectiveClipPlane
+      ? [new THREE.Plane(new THREE.Vector3(...effectiveClipPlane.normal).normalize(), effectiveClipPlane.constant)]
       : []
     const applyClipping = (root: THREE.Object3D | null) => root?.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return
@@ -1276,7 +1296,7 @@ export function Viewer3D({
     })
     applyClipping(assetRef.current)
     applyClipping(parameterEntityGroupRef.current)
-  }, [assetState.status, clipPlane])
+  }, [assetState.status, effectiveClipPlane])
 
   useEffect(() => {
     const layer = annotationOverlayRef.current
@@ -2055,6 +2075,12 @@ export function Viewer3D({
                 <Crosshair size={14} /> <span>{t('Probe')}</span>
               </button>
             )}
+            {clipPlane === undefined && (
+              <ViewerClipButton
+                enabled={viewerClipEnabled}
+                onToggle={() => setViewerClipEnabled((enabled) => !enabled)}
+              />
+            )}
             {topToolbar}
           </ViewerToolbar>
         </>
@@ -2174,6 +2200,22 @@ export function Viewer3D({
       {floatingPanel && viewerReady && (
         <div className="viewer-field-panel viewer-floating-panel">
           {floatingPanel}
+        </div>
+      )}
+      {clipPlane === undefined && viewerClipEnabled && viewerReady && (
+        <div className="viewer-field-panel viewer-floating-panel">
+          <ViewerClipPopover
+            axis={viewerClipAxis}
+            position={viewerClipPosition}
+            bounds={clipBounds}
+            onAxisChange={(axis) => {
+              const bounds = viewerClipBounds(displayManifest?.bounding_box, axis)
+              setViewerClipAxis(axis)
+              setViewerClipPosition((bounds[0] + bounds[1]) / 2)
+            }}
+            onPositionChange={setViewerClipPosition}
+            onClose={() => setViewerClipEnabled(false)}
+          />
         </div>
       )}
       {showEntityLegend && displayManifest && (

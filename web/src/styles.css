@@ -7937,7 +7937,7 @@ button { color: inherit; }
 }
 .geometry-panel-intent strong { color: #424b3e; font-size: 9px; }
 
-.geometry-clip-controls {
+.viewer-clip-controls {
   display: grid;
   grid-template-columns: 90px minmax(0, 1fr);
   gap: 7px;
@@ -7953,21 +7953,21 @@ button { color: inherit; }
   backdrop-filter: blur(12px);
 }
 
-.geometry-clip-popover { min-width: 0; }
-.geometry-clip-popover > header {
+.viewer-clip-popover { min-width: 0; }
+.viewer-clip-popover > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.geometry-clip-popover > header strong {
+.viewer-clip-popover > header strong {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: #444c3f;
   font-size: 9px;
 }
-.geometry-clip-popover > header button {
+.viewer-clip-popover > header button {
   display: grid;
   width: 24px;
   height: 24px;
@@ -7979,14 +7979,14 @@ button { color: inherit; }
   background: transparent;
   cursor: pointer;
 }
-.geometry-clip-popover > header button:hover,
-.geometry-clip-popover > header button:focus-visible {
+.viewer-clip-popover > header button:hover,
+.viewer-clip-popover > header button:focus-visible {
   border-color: #d8dcd2;
   color: #35402b;
   background: #eff2e9;
 }
 
-.geometry-clip-controls label,
+.viewer-clip-controls label,
 .geometry-semantic-field {
   display: grid;
   gap: 4px;
@@ -7994,7 +7994,7 @@ button { color: inherit; }
   font-size: 7px;
 }
 
-.geometry-clip-controls select,
+.viewer-clip-controls select,
 .geometry-semantic-field select {
   width: 100%;
   min-width: 0;
@@ -8007,7 +8007,7 @@ button { color: inherit; }
   font-size: 8px;
 }
 
-.geometry-clip-controls input { width: 100%; margin: 4px 0 0; }
+.viewer-clip-controls input { width: 100%; margin: 4px 0 0; }
 
 .geometry-measurement-result {
   display: grid;
@@ -8583,9 +8583,9 @@ button { color: inherit; }
 .geometry-review-workspace .geometry-selection-card dd,
 .geometry-review-workspace .geometry-disclosure-card > summary > span,
 .geometry-review-workspace .geometry-panel-intent,
-.geometry-review-workspace .geometry-clip-controls label,
+.geometry-review-workspace .viewer-clip-controls label,
 .geometry-review-workspace .geometry-semantic-field,
-.geometry-review-workspace .geometry-clip-controls select,
+.geometry-review-workspace .viewer-clip-controls select,
 .geometry-review-workspace .geometry-semantic-field select,
 .geometry-review-workspace .geometry-measurement-result,
 .geometry-review-workspace .geometry-semantic-actions button,

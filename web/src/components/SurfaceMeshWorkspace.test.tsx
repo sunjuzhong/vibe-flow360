@@ -108,17 +108,10 @@ vi.mock('../hooks/useSurfaceMeshAdvancedReview', () => ({
     comparison: null,
     comparisonLoading: false,
     comparisonError: '',
-    clipEnabled: false,
-    clipAxis: 'x',
-    clipPosition: 0,
-    clipPlane: null,
     captureRequest: 0,
     remediationBusy: false,
     remediationError: '',
     setCompareId: vi.fn(),
-    setClipEnabled: vi.fn(),
-    setClipAxis: vi.fn(),
-    setClipPosition: vi.fn(),
     requestCapture: vi.fn(),
     runRemediation: vi.fn(),
   }),
@@ -195,8 +188,7 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html).toContain('data-surface-opacity="1"')
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('Advanced review')
-    expect(html).toContain('Compare · Clip · Export · AI patch')
-    expect(html).toContain('Toggle clipping plane')
+    expect(html).toContain('Compare · Export · AI patch')
     expect(html).toContain('Export PNG')
     expect(html).toContain('Tools')
     expect(html).toContain('Create Draft')
