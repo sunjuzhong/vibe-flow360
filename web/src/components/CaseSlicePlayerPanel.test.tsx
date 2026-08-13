@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -66,6 +66,21 @@ describe('CaseSlicePlayerPanel', () => {
     })).toBe('/api/flow360/resources/Case/case%2F1/slice-player/jobs/job%201/assets/slice%20frame/1.manifest.json')
     expect(slicePlayerAssetURL('case/1', 'job 1', 'surface frame/1.preview.manifest.json'))
       .toBe('/api/flow360/resources/Case/case%2F1/slice-player/jobs/job%201/assets/surface%20frame/1.preview.manifest.json')
+  })
+
+  it('keys frame readiness by every selected slice asset', () => {
+    const bounds = [[0, 0, 0], [1, 1, 1]] as [[number, number, number], [number, number, number]]
+    const frame = (slice: string, path: string) => ({
+      slice, fields: [], manifest_path: path, vertices: 1, triangles: 1, bounds,
+    })
+    const first = frame('a', 'a-100.json')
+    const second = frame('b', 'b-100.json')
+    expect(slicePlaybackFrameKey('case-1', 'job-1', [first, second])).toBe([
+      '/api/flow360/resources/Case/case-1/slice-player/jobs/job-1/assets/a-100.json',
+      '/api/flow360/resources/Case/case-1/slice-player/jobs/job-1/assets/b-100.json',
+    ].join('|'))
+    expect(slicePlaybackFrameKey('case-1', 'job-1', [first, second]))
+      .not.toBe(slicePlaybackFrameKey('case-1', 'job-1', [first]))
   })
 
   it('groups named slices and synchronizes multiple selections by common steps', () => {
