@@ -7,13 +7,14 @@ import {
   EyeOff,
   Grid3X3,
   LocateFixed,
+  Palette,
   Ruler,
   ScanLine,
   Settings2,
   Triangle,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
 import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
@@ -51,6 +52,7 @@ import {
   type SurfaceRemediationRecommendation,
 } from '../lib/surfaceMeshAdvanced'
 import { surfaceQualityRiskDirection } from '../lib/surfaceMeshReview'
+import { applySurfaceOpacity, buildSurfaceAppearances } from '../lib/surfaceAppearance'
 
 const noSurfaceGroups: [] = []
 
@@ -124,6 +126,7 @@ export default function SurfaceMeshWorkspace({
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'parameters' | 'advanced' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
+  const [surfaceOpacityOverrides, setSurfaceOpacityOverrides] = useState<Record<string, number>>({})
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'SurfaceMesh' : null,
     resourceId ?? detail?.id ?? null,
@@ -202,6 +205,32 @@ export default function SurfaceMeshWorkspace({
   const selectedBoundaryTriangles = review.selectedBoundaries.every((boundary) => boundary.triangles !== undefined)
     ? review.selectedBoundaries.reduce((total, boundary) => total + (boundary.triangles ?? 0), 0)
     : undefined
+  const boundaryIds = review.boundaryInventory.map((boundary) => boundary.id)
+  const surfaceOpacityTargetIds = review.selectedBoundaryIds.length > 0
+    ? review.selectedBoundaryIds
+    : boundaryIds
+  const surfaceOpacityValues = surfaceOpacityTargetIds.map((id) => surfaceOpacityOverrides[id] ?? 1)
+  const surfaceOpacity = surfaceOpacityValues.length > 0
+    ? surfaceOpacityValues.reduce((total, value) => total + value, 0) / surfaceOpacityValues.length
+    : 1
+  const surfaceOpacityMixed = surfaceOpacityValues.some((value) => Math.abs(value - surfaceOpacity) > 0.001)
+  const surfaceAppearances = useMemo(() => buildSurfaceAppearances(
+    boundaryIds,
+    Object.fromEntries((manifest?.groups ?? []).map((group) => [group.id, group.color])),
+    surfaceOpacityOverrides,
+  ), [boundaryIds.join('\u0000'), manifest?.groups, surfaceOpacityOverrides])
+
+  useEffect(() => {
+    setSurfaceOpacityOverrides({})
+  }, [detail?.id, resourceId])
+
+  const updateSurfaceOpacity = (opacity: number) => {
+    setSurfaceOpacityOverrides((current) => applySurfaceOpacity(
+      current,
+      surfaceOpacityTargetIds,
+      opacity,
+    ))
+  }
   const requestSelectionFocus = () => {
     setCameraCommand((current) => ({ type: 'fit-selection', nonce: (current?.nonce ?? 0) + 1 }))
   }
@@ -254,6 +283,7 @@ export default function SurfaceMeshWorkspace({
           onSelectionChange={review.setSelection}
           entityVisibility={review.visibility}
           onEntityVisibilityChange={review.setVisibility}
+          entityAppearances={surfaceAppearances}
           parameterEntities={parameterEntities}
           parameterEntityVisibility={parameterEntityVisibility}
           selectedField={review.mode === 'quality' ? review.selectedField : null}
@@ -344,6 +374,31 @@ export default function SurfaceMeshWorkspace({
               )}
             </div>
           </details>
+
+          <section className="geometry-selection-card surface-appearance-card">
+            <div className="geometry-section-title"><Palette size={13} /> {t('Surface appearance')}</div>
+            <div className="surface-opacity-heading">
+              <span>
+                {review.selectedBoundaryIds.length > 0
+                  ? t('Selected boundaries · {count}').replace('{count}', String(review.selectedBoundaryIds.length))
+                  : t('All Surface boundaries')}
+              </span>
+              <strong>
+                {Math.round(surfaceOpacity * 100)}%{surfaceOpacityMixed ? ` · ${t('Mixed')}` : ''}
+              </strong>
+            </div>
+            <input
+              type="range"
+              min="0.05"
+              max="1"
+              step="0.05"
+              value={surfaceOpacity}
+              disabled={surfaceOpacityTargetIds.length === 0}
+              aria-label={t('Surface opacity')}
+              onInput={(event) => updateSurfaceOpacity(Number(event.currentTarget.value))}
+            />
+            <p>{t('Adjust transparency to inspect internal mesh details.')}</p>
+          </section>
 
           {review.selectedBoundaries.length > 0 && (
             <section className="geometry-selection-card surface-boundary-selection-card">

@@ -8415,6 +8415,22 @@ button { color: inherit; }
   line-height: 1.5;
 }
 
+.surface-opacity-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  color: #7b8276;
+  font-size: 8px;
+}
+.surface-opacity-heading strong { color: #596154; font: 8px 'DM Mono'; }
+.surface-appearance-card > input[type='range'] {
+  width: 100%;
+  margin: 8px 0 0;
+  accent-color: #789521;
+}
+
 .geometry-selection-card dl { margin: 7px 0 0; }
 .geometry-selection-card dl > div {
   display: grid;

@@ -11,7 +11,11 @@ const surfaceReviewScenario = vi.hoisted(() => ({
 
 vi.mock('../hooks/useResourcePreview', () => ({
   useResourcePreview: () => ({
-    manifest: { asset_url: '/surface/manifest.json', format: 'flow360-uvf', groups: [] },
+    manifest: {
+      asset_url: '/surface/manifest.json',
+      format: 'flow360-uvf',
+      groups: [{ id: 'face-1', name: 'Face 1', color: '#6f8790', visible: true }],
+    },
     state: { status: 'ready' },
     source: 'primary',
     primaryError: '',
@@ -125,12 +129,17 @@ vi.mock('../hooks/useWorkspaceViewerTools', () => ({
 }))
 
 vi.mock('./viewer/LazyViewer3D', () => ({
-  LazyViewer3D: ({ toolbar, topToolbar, fieldPanelExtra }: {
+  LazyViewer3D: ({ toolbar, topToolbar, fieldPanelExtra, entityAppearances }: {
     toolbar?: ReactNode
     topToolbar?: ReactNode
     fieldPanelExtra?: ReactNode | ((context: { field: { name: string; kind: 'scalar'; min: number; max: number }; range: [number, number] }) => ReactNode)
+    entityAppearances?: Record<string, { color: string; opacity: number }>
   }) => (
     <div data-testid="viewer">
+      <span
+        data-surface-color={entityAppearances?.['face-1']?.color}
+        data-surface-opacity={entityAppearances?.['face-1']?.opacity}
+      />
       {toolbar}
       {topToolbar}
       {typeof fieldPanelExtra === 'function'
@@ -178,6 +187,11 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html).toContain('viewer-field-diagnostics')
     expect(html).toContain('Rule 1 minimum area')
     expect(html).toContain('Review evidence')
+    expect(html).toContain('Surface appearance')
+    expect(html).toContain('All Surface boundaries')
+    expect(html).toContain('aria-label="Surface opacity"')
+    expect(html).toContain('data-surface-color="#a9b7bc"')
+    expect(html).toContain('data-surface-opacity="1"')
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('Advanced review')
     expect(html).toContain('Compare · Clip · Export · AI patch')
@@ -210,6 +224,7 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     )
 
     expect(html).toContain('surface-boundary-selection-card')
+    expect(html).toContain('Selected boundaries · 1')
     expect(html).toContain('body00001_face00001_full_boundary_name')
     expect(html).toContain('Selection actions')
     expect(html).toContain('Focus')
