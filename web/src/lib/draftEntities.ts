@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-export type DraftEntityType =
+export type ParameterEntityType =
   | 'Box'
   | 'Cylinder'
   | 'Point'
@@ -11,18 +11,28 @@ export type DraftEntityType =
   | 'PointArray'
   | 'PointArray2D'
   | 'Slice'
+  | 'GhostSphere'
+  | 'GhostCircularPlane'
+  | 'WindTunnelGhostSurface'
 
-export type DraftEntity = {
+export type ParameterEntity = {
   id: string
+  key: string
   name: string
-  type: DraftEntityType
+  type: ParameterEntityType
+  source: 'draft' | 'ghost'
+  renderable: boolean
   raw: Record<string, unknown>
   lengthUnit?: string
 }
 
-const supportedTypes = new Set<DraftEntityType>([
+const supportedDraftTypes = new Set<ParameterEntityType>([
   'Box', 'Cylinder', 'Point', 'Sphere', 'AxisymmetricBody', 'CustomVolume',
   'SeedpointVolume', 'PointArray', 'PointArray2D', 'Slice',
+])
+
+const supportedGhostTypes = new Set<ParameterEntityType>([
+  'GhostSphere', 'GhostCircularPlane', 'WindTunnelGhostSurface',
 ])
 
 const unitMetres: Record<string, number> = {
@@ -46,32 +56,48 @@ function quantityUnit(value: unknown): string | undefined {
   return typeof unit === 'string' && unit.trim() ? unit.trim() : undefined
 }
 
-export function parseDraftEntities(params: unknown): DraftEntity[] {
+function parseEntityCollection(
+  params: unknown,
+  collectionName: 'draft_entities' | 'ghost_entities',
+  supportedTypes: Set<ParameterEntityType>,
+  source: ParameterEntity['source'],
+): ParameterEntity[] {
   const cache = record(record(params).private_attribute_asset_cache)
   const info = record(cache.project_entity_info)
-  const candidates = Array.isArray(info.draft_entities)
-    ? info.draft_entities
-    : Array.isArray(cache.draft_entities) ? cache.draft_entities : []
+  const candidates = Array.isArray(info[collectionName])
+    ? info[collectionName] as unknown[]
+    : Array.isArray(cache[collectionName]) ? cache[collectionName] as unknown[] : []
   const projectUnit = quantityUnit(cache.project_length_unit)
   const seen = new Set<string>()
   return candidates.flatMap((candidate, index) => {
     const raw = record(candidate)
     const typeValue = raw.private_attribute_entity_type_name ?? raw.type_name ?? raw.type
-    if (typeof typeValue !== 'string' || !supportedTypes.has(typeValue as DraftEntityType)) return []
+    if (typeof typeValue !== 'string' || !supportedTypes.has(typeValue as ParameterEntityType)) return []
     const idValue = raw.private_attribute_id ?? raw.id
     const id = typeof idValue === 'string' && idValue.trim()
       ? idValue.trim()
-      : `draft-entity-${typeValue}-${index}`
+      : `${source}-entity-${typeValue}-${index}`
     if (seen.has(id)) return []
     seen.add(id)
     return [{
       id,
+      key: `${source}:${id}`,
       name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : `${typeValue} ${index + 1}`,
-      type: typeValue as DraftEntityType,
+      type: typeValue as ParameterEntityType,
+      source,
+      renderable: typeValue !== 'WindTunnelGhostSurface',
       raw,
       lengthUnit: projectUnit,
     }]
   })
+}
+
+export function parseDraftEntities(params: unknown): ParameterEntity[] {
+  return parseEntityCollection(params, 'draft_entities', supportedDraftTypes, 'draft')
+}
+
+export function parseGhostEntities(params: unknown): ParameterEntity[] {
+  return parseEntityCollection(params, 'ghost_entities', supportedGhostTypes, 'ghost')
 }
 
 function quantity(value: unknown, targetUnit?: string): number | number[] | null {
@@ -149,9 +175,9 @@ function pointsObject(points: Array<[number, number, number]>, color: number, po
   return new THREE.Points(geometry, material)
 }
 
-function entityObject(entity: DraftEntity, contextSize: number): THREE.Object3D {
+function entityObject(entity: ParameterEntity, contextSize: number): THREE.Object3D {
   const { raw, lengthUnit: unit } = entity
-  const color = 0x0ea5a8
+  const color = entity.source === 'ghost' ? 0x8b5cf6 : 0x0ea5a8
   const center = vector(raw.center, unit)
   let object: THREE.Object3D
   switch (entity.type) {
@@ -177,6 +203,21 @@ function entityObject(entity: DraftEntity, contextSize: number): THREE.Object3D 
     case 'Sphere': {
       object = edgedMesh(new THREE.SphereGeometry(Math.abs(scalar(raw.radius, unit, contextSize * 0.15)), 32, 20), color)
       object.position.set(...center)
+      break
+    }
+    case 'GhostSphere': {
+      object = edgedMesh(new THREE.SphereGeometry(Math.abs(scalar(raw.max_radius, unit, contextSize * 0.5)), 40, 24), color)
+      object.position.set(...center)
+      break
+    }
+    case 'GhostCircularPlane': {
+      object = edgedMesh(new THREE.CircleGeometry(Math.abs(scalar(raw.max_radius, unit, contextSize * 0.5)), 64), color)
+      object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction(raw.normal_axis, [0, 0, 1]))
+      object.position.set(...center)
+      break
+    }
+    case 'WindTunnelGhostSurface': {
+      object = new THREE.Group()
       break
     }
     case 'Point': {
@@ -246,30 +287,30 @@ function entityObject(entity: DraftEntity, contextSize: number): THREE.Object3D 
     }
   }
   object.name = entity.name
-  object.userData.entityId = entity.id
-  object.userData.groupId = entity.id
-  object.userData.draftEntity = true
+  object.userData.entityId = entity.key
+  object.userData.groupId = entity.key
+  object.userData.parameterEntity = true
   object.visible = false
   object.traverse((child) => {
-    child.userData.entityId = entity.id
-    child.userData.groupId = entity.id
-    child.userData.draftEntity = true
+    child.userData.entityId = entity.key
+    child.userData.groupId = entity.key
+    child.userData.parameterEntity = true
   })
   return object
 }
 
-export function createDraftEntityGroup(entities: DraftEntity[], bounds: THREE.Box3): THREE.Group {
+export function createParameterEntityGroup(entities: ParameterEntity[], bounds: THREE.Box3): THREE.Group {
   const group = new THREE.Group()
-  group.name = 'Draft entities'
-  group.userData.draftEntities = true
+  group.name = 'Parameter entities'
+  group.userData.parameterEntities = true
   const size = bounds.getSize(new THREE.Vector3()).length()
   const contextSize = Number.isFinite(size) && size > 0 ? size : 1
   for (const entity of entities) group.add(entityObject(entity, contextSize))
   return group
 }
 
-export function setDraftEntityVisibility(root: THREE.Object3D | null, visibility: Record<string, boolean>) {
+export function setParameterEntityVisibility(root: THREE.Object3D | null, visibility: Record<string, boolean>) {
   root?.traverse((object) => {
-    if (object.userData.draftEntity === true) object.visible = visibility[String(object.userData.entityId)] ?? false
+    if (object.userData.parameterEntity === true) object.visible = visibility[String(object.userData.entityId)] ?? false
   })
 }

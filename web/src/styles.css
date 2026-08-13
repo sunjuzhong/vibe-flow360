@@ -7644,6 +7644,7 @@ button { color: inherit; }
 .geometry-entity-row.hidden { opacity: .58; }
 .draft-entity-label { cursor: default; }
 .draft-entity-swatch { background: #0ea5a8; }
+.ghost-entity-swatch { background: #8b5cf6; }
 
 .geometry-entity-select {
   display: grid;

@@ -25,7 +25,7 @@ import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
 import { useWorkspaceViewerTools } from '../hooks/useWorkspaceViewerTools'
 import { ViewerToolPanel, ViewerToolsDock } from '../lib/viewer-tools/ViewerToolsUI'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
-import { DraftEntityInventory, useDraftEntities, useDraftEntityVisibility } from './DraftEntityInventory'
+import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityVisibility } from './DraftEntityInventory'
 import ResourceCreateDraftAction from './ResourceCreateDraftAction'
 import {
   ResourceReviewDialog,
@@ -128,8 +128,10 @@ export default function VolumeMeshWorkspace({
   onPlanCase: () => Promise<void>
   onShowLogs?: () => void
 }) {
-  const [draftEntityVisibility, setDraftEntityVisibility] = useDraftEntityVisibility(detail?.simulation_params)
+  const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
   const draftEntities = useDraftEntities(detail?.simulation_params)
+  const ghostEntities = useGhostEntities(detail?.simulation_params)
+  const parameterEntities = useMemo(() => [...draftEntities, ...ghostEntities], [draftEntities, ghostEntities])
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'preflight' | 'quality' | 'parameters' | null>(null)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
@@ -254,7 +256,7 @@ export default function VolumeMeshWorkspace({
               <span>{previewSource === 'fallback' ? 'CONTEXT' : 'REGIONS'}</span>
               <strong>{previewSource === 'fallback' ? 'Geometry inventory' : 'Domain inventory'}</strong>
             </div>
-            <span className="geometry-count-badge">{review.zones.length + draftEntities.length}</span>
+            <span className="geometry-count-badge">{review.zones.length + parameterEntities.length}</span>
           </div>
           <VolumeZoneInspector
             inventory={review.zones}
@@ -267,10 +269,17 @@ export default function VolumeMeshWorkspace({
             })}
             contextOnly={previewSource === 'fallback'}
           />
-          <DraftEntityInventory
+          <ParameterEntityInventory
             entities={draftEntities}
-            visibility={draftEntityVisibility}
-            onVisibilityChange={setDraftEntityVisibility}
+            visibility={parameterEntityVisibility}
+            onVisibilityChange={setParameterEntityVisibility}
+            source="draft"
+          />
+          <ParameterEntityInventory
+            entities={ghostEntities}
+            visibility={parameterEntityVisibility}
+            onVisibilityChange={setParameterEntityVisibility}
+            source="ghost"
           />
         </>
       )}
@@ -283,8 +292,8 @@ export default function VolumeMeshWorkspace({
             onSelectionChange={review.setSelection}
             entityVisibility={review.visibility}
             onEntityVisibilityChange={review.setVisibility}
-            draftEntities={draftEntities}
-            draftEntityVisibility={draftEntityVisibility}
+            parameterEntities={parameterEntities}
+            parameterEntityVisibility={parameterEntityVisibility}
             selectedField={review.mode === 'quality' || review.mode === 'boundary-layer' ? review.selectedField : null}
             onSelectedFieldChange={review.setSelectedField}
             onFieldsDiscovered={review.handleFieldsDiscovered}
