@@ -16,6 +16,7 @@ import {
   zoomCameraRigToAnchor,
 } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
+import { adaptiveViewerPixelRatio, createViewerRenderScheduler, type ViewerRenderScheduler } from '../../lib/viewerRenderScheduler'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
 import { ViewerNavCubeController, type NavCubeOrientation } from '../../lib/viewerNavCube'
 import {
@@ -366,6 +367,7 @@ export function Viewer3D({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const renderSchedulerRef = useRef<ViewerRenderScheduler | null>(null)
   const assetBoundsSphereRef = useRef<THREE.Sphere | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
@@ -449,6 +451,7 @@ export function Viewer3D({
   const selectedField = controlledSelectedField === undefined
     ? internalSelectedField
     : controlledSelectedField
+  const invalidateViewer = useCallback(() => renderSchedulerRef.current?.invalidate(), [])
 
   useEffect(() => {
     onCameraStateChangeRef.current = onCameraStateChange
@@ -625,14 +628,20 @@ export function Viewer3D({
     camera.position.set(3, 2.5, 4)
     camera.lookAt(0, 0, 0)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false })
     renderer.localClippingEnabled = true
     renderer.setSize(width, height, false)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    const navigatorWithMemory = navigator as Navigator & { deviceMemory?: number }
+    renderer.setPixelRatio(adaptiveViewerPixelRatio(
+      window.devicePixelRatio,
+      navigator.hardwareConcurrency,
+      navigatorWithMemory.deviceMemory,
+    ))
     container.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
     configureCFDNavigationControls(controls)
     controls.addEventListener('change', () => {
+      renderSchedulerRef.current?.invalidate()
       if (applyingCameraStateRef.current || cameraStateFrameRef.current !== null) return
       cameraStateFrameRef.current = requestAnimationFrame(() => {
         cameraStateFrameRef.current = null
@@ -887,9 +896,7 @@ export function Viewer3D({
     const annotationOverlay = new ViewerOverlayLayer(scene, { layer: VIEWER_OVERLAY_LAYER })
     annotationOverlayRef.current = annotationOverlay
 
-    let rafId: number
-    const animate = () => {
-      rafId = requestAnimationFrame(animate)
+    const scheduler = createViewerRenderScheduler(() => {
       const camera = cameraRef.current
       const controls = controlsRef.current
       controls?.update()
@@ -913,11 +920,13 @@ export function Viewer3D({
         navCube.update(camera, controls?.target ?? new THREE.Vector3())
         navCube.renderOverlay()
       }
-    }
-    animate()
+    })
+    renderSchedulerRef.current = scheduler
+    scheduler.invalidate()
 
     return () => {
-      cancelAnimationFrame(rafId)
+      scheduler.dispose()
+      if (renderSchedulerRef.current === scheduler) renderSchedulerRef.current = null
       if (cameraStateFrameRef.current !== null) cancelAnimationFrame(cameraStateFrameRef.current)
       cameraStateFrameRef.current = null
       if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
@@ -944,6 +953,10 @@ export function Viewer3D({
       }
     }
   }, [createScene, navigateFromNavCube])
+
+  // React state and prop changes may mutate materials, visibility, overlays, or
+  // tools. Coalesce them into a single frame instead of maintaining an idle loop.
+  useEffect(() => invalidateViewer())
 
   const fitAssetToViewport = useCallback(() => {
     const asset = assetRef.current
