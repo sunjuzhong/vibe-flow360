@@ -165,6 +165,9 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     )
 
     expect(html).toContain('Surface boundaries')
+    expect(html).not.toContain('>Plain</button>')
+    expect(html).not.toContain('>Boundaries</button>')
+    expect(html).not.toContain('Surface mesh display mode')
     expect(html).toContain('aria-label="Hide Face 1"')
     expect(html).toContain('title="Face 1"')
     expect(html.match(/role="checkbox"/g)).toHaveLength(1)

@@ -31,7 +31,6 @@ import { SurfaceBoundaryInspector } from './surface-mesh/SurfaceBoundaryInspecto
 import './surface-mesh/SurfaceBoundarySelection.css'
 import { SurfaceParameterSummary } from './surface-mesh/SurfaceParameterSummary'
 import { SurfaceQualityFilterPanel } from './surface-mesh/SurfaceQualityFilterPanel'
-import { SurfaceViewModeToolbar } from './surface-mesh/SurfaceViewModeToolbar'
 import { ResourceReviewLayout } from './ResourceReviewLayout'
 import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
 import type { DraftEntityMutation } from '../lib/draftEntities'
@@ -295,7 +294,6 @@ export default function SurfaceMeshWorkspace({
             />
           )) : undefined}
           showEntityLegend={false}
-          toolbar={<SurfaceViewModeToolbar mode={review.mode} onChange={review.setMode} />}
           topToolbar={(
                 <div className="surface-combined-toolbar">
                   <SurfaceAdvancedToolbar
@@ -403,15 +401,6 @@ export default function SurfaceMeshWorkspace({
                 onOperatorChange={qualityFilter.setOperator}
                 onReset={qualityFilter.reset}
               />
-            </section>
-          )}
-
-          {review.mode === 'plain' && (
-            <section className="geometry-selection-card surface-active-review">
-              <div className="geometry-section-title"><ScanLine size={13} /> {t('Plain mesh display')}</div>
-              <p>
-                {t('Plain mode shows the unclassified surface discretization without boundary colors or diagnostic fields. Use it to inspect silhouette, feature capture, and local element density.')}
-              </p>
             </section>
           )}
 

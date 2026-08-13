@@ -14,7 +14,7 @@ import {
 } from '../lib/surfaceMeshReview'
 import { isolatedManifestVisibility } from '../lib/manifestVisibility'
 
-export type SurfaceViewMode = 'plain' | 'boundaries' | 'quality'
+export type SurfaceViewMode = 'boundaries' | 'quality'
 
 type ReviewGroup = SurfaceGroup & { visible: boolean }
 

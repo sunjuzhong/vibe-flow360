@@ -6120,13 +6120,7 @@ button { color: inherit; }
 .cfd-stage-viewer .viewer-tool-panel { right: 178px; }
 .cfd-stage-viewer .cfd-decision-panel { transition: opacity .16s ease, transform .16s ease; }
 .cfd-stage-viewer.tool-panel-open .cfd-decision-panel { opacity: 0; pointer-events: none; transform: translateX(10px); }
-.surface-mode-plain .cfd-decision-panel,
 .surface-mode-quality .cfd-decision-panel { right: 18px; }
-
-.surface-view-modes {
-  display: flex;
-  gap: 4px;
-}
 
 .volume-zone-tools {
   display: grid;
@@ -6470,11 +6464,6 @@ button { color: inherit; }
 .boundary-layer-probe { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 6px; margin-top: 5px; padding: 6px; border-radius: 5px; background: #f2eee6; color: #5c5347; font-size: 8px; }
 .boundary-layer-probe small { grid-column: 1 / -1; color: #887e71; font-family: 'DM Mono'; }
 .surface-combined-toolbar { display: flex; gap: 4px; }
-.surface-view-modes button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
 .surface-advanced-toolbar {
   display: flex;
   gap: 4px;
