@@ -339,53 +339,22 @@
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-row {
   min-height: 32px;
-  grid-template-columns: 20px minmax(0, 1fr) 27px;
+  grid-template-columns: minmax(0, 1fr) 27px;
   align-items: stretch;
 }
 
-.surface-boundary-selection-toggle {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  color: #879083;
-  background: transparent;
-  cursor: pointer;
-}
-
-.surface-boundary-row.selected .surface-boundary-selection-toggle { color: #60781d; }
-
-.surface-boundary-selection-toggle:hover,
-.surface-boundary-selection-toggle:focus-visible {
-  color: #52651d;
-  background: rgba(255, 255, 255, .7);
-  outline: none;
-}
-
 .surface-review-workspace .resource-review-inventory .surface-boundary-select {
-  display: grid;
+  display: flex;
   width: 100%;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-  grid-template-areas: 'name assignment';
-  align-content: center;
   align-items: center;
-  gap: 4px;
   margin: 0;
-  padding: 4px 5px;
+  padding: 4px 8px 4px 10px;
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-select > span {
   grid-area: name;
   min-width: 0;
-}
-
-.surface-review-workspace .resource-review-inventory .surface-boundary-select > small {
-  grid-area: assignment;
-  max-width: 58px;
-  margin: 0;
-  text-align: right;
 }
 
 .surface-review-workspace .resource-review-inventory .surface-boundary-row-actions button {
