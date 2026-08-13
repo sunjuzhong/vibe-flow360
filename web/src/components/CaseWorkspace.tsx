@@ -16,8 +16,6 @@ import {
   EyeOff,
   Film,
   Folder,
-  Square,
-  SquareCheckBig,
   ChevronDown,
   LoaderCircle,
 } from 'lucide-react'
@@ -1006,19 +1004,9 @@ export default function CaseWorkspace({
                       }
                       return (
                         <div className={`geometry-entity-row case-visualization-row ${selectedVisualizationIds.includes(group.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`} data-entity-id={group.id} key={group.id}>
-                          <button
-                            type="button"
-                            className="case-visualization-selection-toggle"
-                            role="checkbox"
-                            aria-checked={selectedVisualizationIds.includes(group.id)}
-                            aria-label={t(selectedVisualizationIds.includes(group.id) ? 'Remove {name} from selection' : 'Add {name} to selection').replace('{name}', group.name)}
-                            onClick={() => selectVisualizationMember(group, true)}
-                          >
-                            {selectedVisualizationIds.includes(group.id) ? <SquareCheckBig size={12} /> : <Square size={12} />}
-                          </button>
                           <button type="button" className="geometry-entity-select" onClick={(event) => {
                             selectVisualizationMember(group, event.shiftKey || event.metaKey || event.ctrlKey)
-                          }} title={group.name} aria-label={`${t('Select visualization object')}: ${group.name}`}>
+                          }} title={t('Select; Shift, Ctrl, or Cmd-click to add or remove')} aria-label={`${t('Select visualization object')}: ${group.name}`}>
                             <span className="viewer-color-swatch" style={{ background: group.color }} />
                             <span title={group.name}>{group.name}</span>
                           </button>
@@ -1043,20 +1031,24 @@ export default function CaseWorkspace({
             )}
             {archiveLayerError && <div className="slice-player-error" role="alert"><AlertCircle size={13} />{archiveLayerError}</div>}
           </div>
-          <ParameterEntityInventory
-            entities={draftEntities}
-            visibility={parameterEntityVisibility}
-            onVisibilityChange={setParameterEntityVisibility}
-            source="draft"
-            unit={parameterEntityUnit}
-            onMutate={onMutateDraftEntity}
-          />
-          <ParameterEntityInventory
-            entities={ghostEntities}
-            visibility={parameterEntityVisibility}
-            onVisibilityChange={setParameterEntityVisibility}
-            source="ghost"
-          />
+          {(draftEntities.length > 0 || ghostEntities.length > 0 || Boolean(onMutateDraftEntity)) && (
+            <div className="case-parameter-entity-inventory">
+              <ParameterEntityInventory
+                entities={draftEntities}
+                visibility={parameterEntityVisibility}
+                onVisibilityChange={setParameterEntityVisibility}
+                source="draft"
+                unit={parameterEntityUnit}
+                onMutate={onMutateDraftEntity}
+              />
+              <ParameterEntityInventory
+                entities={ghostEntities}
+                visibility={parameterEntityVisibility}
+                onVisibilityChange={setParameterEntityVisibility}
+                source="ghost"
+              />
+            </div>
+          )}
           <div className="case-result-inventory">
             <ManifestMemberGroup
               label={t('Result artifacts')}
