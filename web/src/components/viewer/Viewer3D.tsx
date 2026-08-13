@@ -1886,7 +1886,11 @@ export function Viewer3D({
   useEffect(() => {
     if (uvfAssetRef.current) {
       onFieldHistogramChangeRef.current?.(
-        selectedField ? createFieldHistogram(uvfAssetRef.current, selectedField) : null,
+        selectedField ? createFieldHistogram(uvfAssetRef.current, selectedField, 24, {
+          domain: activeField ? [activeField.min, activeField.max] : null,
+          entityIds: fieldEntityIds,
+          scale: resolvedFieldScale,
+        }) : null,
       )
       onFieldExtremaChangeRef.current?.(
         selectedField ? findFieldExtrema(uvfAssetRef.current, selectedField) : null,
@@ -1895,7 +1899,9 @@ export function Viewer3D({
       onFieldHistogramChangeRef.current?.(null)
       onFieldExtremaChangeRef.current?.(null)
     }
-  }, [assetState.status, selectedField])
+  // fieldEntityScopeKey avoids repeating histogram work when callers recreate an equivalent ID array.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetState.status, selectedField, activeField, fieldEntityScopeKey, resolvedFieldScale])
 
   useEffect(() => {
     const asset = uvfAssetRef.current
