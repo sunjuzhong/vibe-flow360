@@ -8431,6 +8431,23 @@ button { color: inherit; }
   accent-color: #789521;
 }
 
+.surface-review-workspace .resource-review-inventory .surface-entity-tree {
+  padding-top: 0;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-entity-tree .surface-boundary-inspector,
+.surface-review-workspace .resource-review-inventory .surface-entity-tree .surface-boundary-inspector > .manifest-member-group,
+.surface-review-workspace .resource-review-inventory .surface-entity-tree .surface-boundary-inspector > .manifest-member-group > .manifest-member-group__content:not([hidden]) {
+  display: block;
+  min-height: auto;
+  overflow: visible;
+}
+
+.surface-review-workspace .resource-review-inventory .surface-entity-tree .surface-boundary-list {
+  min-height: auto;
+  overflow: visible;
+}
+
 .geometry-selection-card dl { margin: 7px 0 0; }
 .geometry-selection-card dl > div {
   display: grid;
