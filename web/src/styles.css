@@ -6108,7 +6108,7 @@ button { color: inherit; }
   display: grid;
   min-width: 0;
   grid-template-columns: 9px minmax(0, 1fr);
-  gap: 2px 6px;
+  gap: 6px;
   padding: 7px 3px;
   border: 0;
   color: #534d42;
@@ -6131,11 +6131,8 @@ button { color: inherit; }
 }
 .volume-zone-visibility-toggle:hover,
 .volume-zone-visibility-toggle:focus-visible { background-color: rgba(118, 147, 31, .12); }
-.volume-zone-select .viewer-color-swatch { grid-row: 1 / 4; align-self: center; }
-.volume-zone-select strong,
-.volume-zone-select small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.volume-zone-select strong { font-size: 11px; }
-.volume-zone-select small { color: #827b70; font: 9px 'DM Mono'; }
+.volume-zone-select .viewer-color-swatch { align-self: center; }
+.volume-zone-select strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .volume-quality-field,
 .volume-field-distribution,
 .volume-slice-inspector,

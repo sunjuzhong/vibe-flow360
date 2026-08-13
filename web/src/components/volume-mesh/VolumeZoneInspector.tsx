@@ -110,7 +110,6 @@ export function VolumeZoneInspector({
                       >
                         <span className="viewer-color-swatch" style={{ background: zone.color }} />
                         <strong>{zone.name}</strong>
-                        <small>{zone.triangles?.toLocaleString() ?? '—'} {t('rendered elements')}</small>
                       </button>
                       <button
                         type="button"
