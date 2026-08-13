@@ -46,6 +46,11 @@ function findFolder(root: FolderNode | null, id: string): FolderNode | null {
   return null
 }
 
+export function resolveSTEPAssetSelection(assetId: string, current: string, assets: STEPAsset[]) {
+  if (assetId) return assetId
+  return assets.some((asset) => asset.id === current) ? current : ''
+}
+
 export default function STEPLibraryModal({ folder = null, onClose, onCreated, onUseInAICreate, embedded = false, assetId = '' }: {
   folder?: FolderNode | null
   onClose?: () => void
@@ -96,7 +101,7 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
       setFolderRoot(response.folder_root)
       const routedAsset = assetId ? response.assets.find((asset) => asset.id === assetId) : undefined
       setSelectedFolderId((current) => routedAsset?.folder_id || (findFolder(response.folder_root, current) ? current : response.folder_root.id))
-      setSelectedAssetId((current) => routedAsset?.id || (response.assets.some((asset) => asset.id === current) ? current : ''))
+      setSelectedAssetId((current) => resolveSTEPAssetSelection(assetId, current, response.assets))
       setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -105,7 +110,15 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    if (assetId) {
+      setSelectedAssetId(assetId)
+      setSelectedVersionId('')
+      setPreview(null)
+      setPreviewError('')
+    }
+    void load()
+  }, [assetId])
   const selectFolder = (folderId: string) => {
     setSelectedFolderId(folderId)
     writeSTEPFolderSelection(folderId, typeof window === 'undefined' ? undefined : window.sessionStorage)
@@ -114,7 +127,8 @@ export default function STEPLibraryModal({ folder = null, onClose, onCreated, on
     writeSTEPFolderSelection(selectedFolderId, typeof window === 'undefined' ? undefined : window.sessionStorage)
   }, [selectedFolderId])
   useEffect(() => {
-    if (embedded && !assetId) { setSelectedAssetId(''); setSelectedVersionId(''); return }
+    if (assetId) return
+    if (embedded) { setSelectedAssetId(''); setSelectedVersionId(''); return }
     if (selectedAsset && (selectedAsset.folder_id || 'step-root') === selectedFolderId) return
     const next = folderAssets[0]
     setSelectedAssetId(next?.id ?? '')

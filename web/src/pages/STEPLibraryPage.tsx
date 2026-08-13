@@ -14,6 +14,6 @@ export default function STEPLibraryPage() {
 
   return <div className="step-library-route">
     <TopBar status={status} title="STEP geometry library" />
-    <STEPLibraryModal embedded assetId={assetId} />
+    <STEPLibraryModal key={assetId || 'step-library'} embedded assetId={assetId} />
   </div>
 }
