@@ -799,6 +799,7 @@ Object.assign(messages, {
   Selection: '选择集',
   'Geometry inventory': '几何清单',
   'Surface inventory': '表面清单',
+  'Mesh quality': '网格质量',
   MESH: '网格',
   'SurfaceMesh boundary inventory': '表面网格边界清单',
   'SurfaceMesh engineering review': '表面网格工程审查',
