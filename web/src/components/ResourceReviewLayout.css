@@ -580,33 +580,6 @@
   background: #f2f6e8;
 }
 
-.volume-active-review-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px solid #dce4c7;
-  border-radius: 7px;
-  background: #f4f7eb;
-}
-
-.volume-active-review-banner span,
-.volume-active-review-banner strong { display: block; }
-.volume-active-review-banner span { color: #7b856e; font-size: 8px; text-transform: uppercase; }
-.volume-active-review-banner strong { margin-top: 2px; color: #4f6035; font-size: 11px; }
-.volume-active-review-banner button {
-  min-height: 26px;
-  padding: 4px 7px;
-  border: 1px solid #d4dcc2;
-  border-radius: 5px;
-  color: #66734f;
-  background: #fff;
-  font-size: 9px;
-  cursor: pointer;
-}
-
 .volume-context-empty {
   margin: 10px 0 0;
   color: #7d8677;
