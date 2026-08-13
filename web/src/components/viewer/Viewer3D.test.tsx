@@ -66,6 +66,15 @@ describe('Viewer3D layout state', () => {
     expect(html).not.toContain('viewer-controls-rail')
   })
 
+  it('isolates canvas navigation gestures from page scrolling and rubber-band behavior', () => {
+    const html = renderViewer(
+      <Viewer3D manifest={null} state={{ status: 'loading' }} />,
+    )
+
+    expect(html).toContain('touch-action:none')
+    expect(html).toContain('overscroll-behavior:contain')
+  })
+
   it('allows resource pages to suppress a duplicate manifest warning', () => {
     const manifest = {
       format: 'flow360-uvf',

@@ -1703,7 +1703,7 @@ export function Viewer3D({
     setHoveredGroup(null)
   }
 
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+  const handleWheel = useCallback((event: WheelEvent) => {
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (!camera || !controls || !controls.enabled || event.deltaY === 0) return
@@ -1713,6 +1713,7 @@ export function Viewer3D({
     wheelAnchorRef.current = anchor
     event.preventDefault()
     event.stopPropagation()
+    event.stopImmediatePropagation()
     const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
       ? 16
       : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
@@ -1736,7 +1737,18 @@ export function Viewer3D({
       wheelAnchorRef.current = null
       setNavigationActive(false)
     }, 120)
-  }
+  }, [pointerNavigationAnchor, setNavigationActive])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    // React delegates wheel events from the root and browsers may treat that
+    // listener as passive. A native non-passive capture listener guarantees
+    // that trackpad/wheel gestures over the viewer never reach page scrolling
+    // or platform rubber-band navigation.
+    container.addEventListener('wheel', handleWheel, { passive: false, capture: true })
+    return () => container.removeEventListener('wheel', handleWheel, { capture: true })
+  }, [handleWheel])
 
   useEffect(() => {
     if (uvfAssetRef.current) {
@@ -1839,7 +1851,6 @@ export function Viewer3D({
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
-        onWheelCapture={handleWheel}
         onDoubleClick={handleDoubleClick}
         onKeyDown={handleViewerKeyDown}
         onContextMenu={(event) => event.preventDefault()}
@@ -1853,6 +1864,7 @@ export function Viewer3D({
         role="img"
         aria-label="3D geometry viewer"
         tabIndex={0}
+        style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
       />
       {pivotFeedback && (
         <span
