@@ -24,6 +24,13 @@ vi.mock('../hooks/useSurfaceMeshReview', () => ({
     mode: surfaceReviewScenario.mode,
     selection: { groupId: surfaceReviewScenario.selected ? 'face-1' : null },
     selectedBoundaryIds: surfaceReviewScenario.selected ? ['face-1'] : [],
+    selectedBoundaries: surfaceReviewScenario.selected ? [{
+      id: 'face-1',
+      name: 'body00001_face00001_full_boundary_name',
+      status: 'unassigned',
+      triangles: 12,
+      assignments: [],
+    }] : [],
     visibility: { 'face-1': true },
     qualityFields: [{ name: 'area', kind: 'scalar', dimension: 1, min: 1e-8, max: 1e-4 }],
     qualityFieldNames: ['area'],
@@ -207,5 +214,29 @@ describe('SurfaceMeshWorkspace capabilities', () => {
     expect(html).toContain('Hide')
     expect(html).toContain('Show all')
     expect(html).toContain('Clear')
+  })
+
+  it('keeps selection properties visible while quality review is active', () => {
+    surfaceReviewScenario.mode = 'quality'
+    surfaceReviewScenario.selected = true
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <SurfaceMeshWorkspace
+          detail={null}
+          resourceId="surface-1"
+          projectId="project-1"
+          resourceRef={{ id: 'surface-1', type: 'SurfaceMesh' }}
+          annotationsModel={{} as never}
+          versions={[]}
+          onCreateRemediationPlan={async () => undefined}
+          onPlanVolumeMesh={async () => undefined}
+        />
+      </I18nProvider>,
+    )
+
+    expect(html).toContain('Selection properties')
+    expect(html).toContain('body00001_face00001_full_boundary_name')
+    expect(html).toContain('Mesh quality · 1 fields')
+    expect(html.indexOf('Selection properties')).toBeLessThan(html.indexOf('Mesh quality · 1 fields'))
   })
 })

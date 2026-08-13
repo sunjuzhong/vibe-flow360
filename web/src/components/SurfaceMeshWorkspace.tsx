@@ -196,6 +196,13 @@ export default function SurfaceMeshWorkspace({
       : 'Review processing state, missing evidence, and unassigned boundaries before proceeding.'
   const selectedBoundaryVisible = review.selectedBoundaryIds.length > 0
     && review.selectedBoundaryIds.every((id) => review.visibility[id] !== false)
+  const selectedBoundaryAssignments = [...new Set(review.selectedBoundaries.flatMap((boundary) =>
+    boundary.assignments.map((assignment) => `${assignment.modelName} · ${assignment.modelType}`),
+  ))]
+  const selectedBoundaryStatuses = [...new Set(review.selectedBoundaries.map((boundary) => boundary.status))]
+  const selectedBoundaryTriangles = review.selectedBoundaries.every((boundary) => boundary.triangles !== undefined)
+    ? review.selectedBoundaries.reduce((total, boundary) => total + (boundary.triangles ?? 0), 0)
+    : undefined
   const requestSelectionFocus = () => {
     setCameraCommand((current) => ({ type: 'fit-selection', nonce: (current?.nonce ?? 0) + 1 }))
   }
@@ -340,17 +347,51 @@ export default function SurfaceMeshWorkspace({
             </div>
           </details>
 
-          {(review.mode !== 'boundaries' || review.selectedBoundary) && (
-          <section className="geometry-selection-card surface-active-review surface-boundary-selection-card">
-            <div className="geometry-section-title">
-              <ScanLine size={13} />
-                {review.mode === 'quality'
-                  ? `Mesh quality · ${review.qualityFields.length} fields`
-                  : review.mode === 'boundaries'
-                    ? 'Selection properties'
-                    : 'Plain mesh display'}
-            </div>
-            {review.mode === 'quality' ? (
+          {review.selectedBoundaries.length > 0 && (
+            <section className="geometry-selection-card surface-boundary-selection-card">
+              <div className="geometry-section-title"><ScanLine size={13} /> {t('Selection properties')}</div>
+              <dl>
+                {review.selectedBoundaries.length > 1 ? (
+                  <div><dt>{t('Selection')}</dt><dd>{t('{count} items selected').replace('{count}', String(review.selectedBoundaries.length))}</dd></div>
+                ) : (
+                  <>
+                    <div><dt>{t('Name')}</dt><dd>{review.selectedBoundary?.name}</dd></div>
+                    <div><dt>ID</dt><dd title={review.selectedBoundary?.id}>{review.selectedBoundary?.id}</dd></div>
+                  </>
+                )}
+                <div><dt>{t('Rendered elements')}</dt><dd>{selectedBoundaryTriangles?.toLocaleString() ?? t('Not reported')}</dd></div>
+                <div><dt>{t('Status')}</dt><dd>{selectedBoundaryStatuses.map(t).join(', ')}</dd></div>
+                <div><dt>{t('Assignment')}</dt><dd>{selectedBoundaryAssignments.join(', ') || t('Unassigned')}</dd></div>
+              </dl>
+              <div className="surface-selection-actions" aria-label={t('Selection actions')}>
+                <button type="button" onClick={requestSelectionFocus}>
+                  <LocateFixed size={12} /> {t('Focus')}
+                </button>
+                <button type="button" onClick={() => review.isolateBoundaries(review.selectedBoundaryIds)}>
+                  <ScanLine size={12} /> {t('Isolate')}
+                </button>
+                <button type="button" onClick={() => review.setVisibility({
+                  ...review.visibility,
+                  ...Object.fromEntries(review.selectedBoundaryIds.map((id) => [id, !selectedBoundaryVisible])),
+                })}>
+                  {selectedBoundaryVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                  {t(selectedBoundaryVisible ? 'Hide' : 'Show')}
+                </button>
+                <button type="button" onClick={review.showAllBoundaries}>
+                  <Eye size={12} /> {t('Show all')}
+                </button>
+                <button type="button" onClick={() => review.setSelection({ groupId: null })}>
+                  <X size={12} /> {t('Clear')}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {review.mode === 'quality' && (
+            <section className="geometry-selection-card surface-active-review">
+              <div className="geometry-section-title">
+                <ScanLine size={13} /> {t('Mesh quality · {count} fields').replace('{count}', String(review.qualityFields.length))}
+              </div>
               <SurfaceQualityFilterPanel
                 fields={review.qualityFields}
                 filter={qualityFilter.filter}
@@ -362,50 +403,16 @@ export default function SurfaceMeshWorkspace({
                 onOperatorChange={qualityFilter.setOperator}
                 onReset={qualityFilter.reset}
               />
-            ) : review.mode === 'boundaries' ? (
-              review.selectedBoundary ? (
-                <>
-                  <dl>
-                    <div><dt>Name</dt><dd>{review.selectedBoundary.name}</dd></div>
-                    <div><dt>ID</dt><dd title={review.selectedBoundary.id}>{review.selectedBoundary.id}</dd></div>
-                    <div><dt>Triangles</dt><dd>{review.selectedBoundary.triangles?.toLocaleString() ?? 'Not reported'}</dd></div>
-                    <div><dt>Status</dt><dd>{review.selectedBoundary.status}</dd></div>
-                    <div><dt>Assignment</dt><dd>
-                      {review.selectedBoundary.assignments
-                        .map((assignment) => `${assignment.modelName} · ${assignment.modelType}`)
-                        .join(', ') || 'Unassigned'}
-                    </dd></div>
-                  </dl>
-                  <div className="surface-selection-actions" aria-label={t('Selection actions')}>
-                    <button type="button" onClick={requestSelectionFocus}>
-                      <LocateFixed size={12} /> {t('Focus')}
-                    </button>
-                    <button type="button" onClick={() => review.isolateBoundaries(review.selectedBoundaryIds)}>
-                      <ScanLine size={12} /> {t('Isolate')}
-                    </button>
-                    <button type="button" onClick={() => review.setVisibility({
-                      ...review.visibility,
-                      ...Object.fromEntries(review.selectedBoundaryIds.map((id) => [id, !selectedBoundaryVisible])),
-                    })}>
-                      {selectedBoundaryVisible ? <EyeOff size={12} /> : <Eye size={12} />}
-                      {t(selectedBoundaryVisible ? 'Hide' : 'Show')}
-                    </button>
-                    <button type="button" onClick={review.showAllBoundaries}>
-                      <Eye size={12} /> {t('Show all')}
-                    </button>
-                    <button type="button" onClick={() => review.setSelection({ groupId: null })}>
-                      <X size={12} /> {t('Clear')}
-                    </button>
-                  </div>
-                </>
-              ) : null
-            ) : (
+            </section>
+          )}
+
+          {review.mode === 'plain' && (
+            <section className="geometry-selection-card surface-active-review">
+              <div className="geometry-section-title"><ScanLine size={13} /> {t('Plain mesh display')}</div>
               <p>
-                Plain mode shows the unclassified surface discretization without boundary colors or diagnostic fields.
-                Use it to inspect silhouette, feature capture, and local element density.
+                {t('Plain mode shows the unclassified surface discretization without boundary colors or diagnostic fields. Use it to inspect silhouette, feature capture, and local element density.')}
               </p>
-            )}
-          </section>
+            </section>
           )}
 
           <ResourceReviewLaunchers>

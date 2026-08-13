@@ -1748,6 +1748,7 @@ Object.assign(messages, {
   'Zone type': '区域类型',
   'Type evidence': '类型证据',
   'Rendered elements': '渲染单元',
+  'Mesh quality · {count} fields': '网格质量 · {count} 个字段',
   'Manifest item': 'Manifest 项',
   'Select an item': '选择一个项目',
   'No matching manifest item in this Case.': '此算例中没有匹配的 Manifest 项。',
