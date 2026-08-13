@@ -667,6 +667,32 @@
   padding-left: 7px;
 }
 
+.case-surface-list .case-visualization-row {
+  grid-template-columns: 22px minmax(0, 1fr) 28px;
+}
+
+.case-visualization-selection-toggle {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #879083;
+  background: transparent;
+  cursor: pointer;
+}
+
+.case-visualization-row.selected .case-visualization-selection-toggle {
+  color: #60781d;
+}
+
+.case-visualization-selection-toggle:hover,
+.case-visualization-selection-toggle:focus-visible {
+  color: #52651d;
+  background: rgba(255, 255, 255, .7);
+  outline: none;
+}
+
 .case-surface-list .case-archive-entity-icon {
   display: inline-flex;
   width: 12px;
