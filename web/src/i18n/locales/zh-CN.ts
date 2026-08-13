@@ -791,6 +791,7 @@ Object.assign(messages, {
   '3D view navigation': '3D 视图导航',
   'NavCube orientation controls': '导航立方体方向控件',
   'Selection properties': '选择属性',
+  'Review evidence': '审查依据',
   Selection: '选择集',
   'Geometry inventory': '几何清单',
   'Surface inventory': '表面清单',
