@@ -11,7 +11,9 @@ import {
   configurePerspectiveCameraForBounds,
   fitPerspectiveCameraToObject,
   interpolateCameraPivot,
+  rotateCameraRigAroundPivot,
   updatePerspectiveCameraClipping,
+  zoomCameraRigToAnchor,
 } from '../../lib/viewerCamera'
 import { useViewerViewport } from '../../hooks/useViewerViewport'
 import { resolveViewerMaterialStyle } from '../../lib/viewerMaterial'
@@ -382,6 +384,19 @@ export function Viewer3D({
   const navCubeRef = useRef<ViewerNavCubeController | null>(null)
   const navCubeAnimationRef = useRef<number | null>(null)
   const pivotFeedbackTimeoutRef = useRef<number | null>(null)
+  const wheelNavigationTimeoutRef = useRef<number | null>(null)
+  const wheelAnchorRef = useRef<THREE.Vector3 | null>(null)
+  const lastSurfacePivotRef = useRef<THREE.Vector3 | null>(null)
+  const navigationDragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    lastX: number
+    lastY: number
+    pivot: THREE.Vector3
+    surface: boolean
+    moved: boolean
+  } | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
   const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
@@ -553,6 +568,7 @@ export function Viewer3D({
     object: THREE.Object3D,
   ) => {
     const fit = fitPerspectiveCameraToObject(camera, controls, object)
+    if (fit) lastSurfacePivotRef.current = fit.center.clone()
     assetBoundsSphereRef.current = fit
       ? new THREE.Sphere(fit.center.clone(), fit.radius)
       : null
@@ -908,6 +924,10 @@ export function Viewer3D({
       navCubeAnimationRef.current = null
       if (pivotFeedbackTimeoutRef.current !== null) window.clearTimeout(pivotFeedbackTimeoutRef.current)
       pivotFeedbackTimeoutRef.current = null
+      if (wheelNavigationTimeoutRef.current !== null) window.clearTimeout(wheelNavigationTimeoutRef.current)
+      wheelNavigationTimeoutRef.current = null
+      wheelAnchorRef.current = null
+      navigationDragRef.current = null
       navCube.dispose()
       if (navCubeRef.current === navCube) navCubeRef.current = null
       annotationOverlay.dispose()
@@ -1370,6 +1390,58 @@ export function Viewer3D({
     altKey: event.altKey,
   })
 
+  const setNavigationActive = useCallback((active: boolean) => {
+    cameraNavigatingRef.current = active
+    setCameraNavigating(active)
+  }, [])
+
+  const cancelViewerInteraction = useCallback((pointerId?: number) => {
+    const container = containerRef.current
+    const navigationPointer = navigationDragRef.current?.pointerId
+    const toolPointer = draggedControlPointRef.current?.pointerId
+    if (pointerId === undefined || navigationPointer === pointerId) navigationDragRef.current = null
+    if (pointerId === undefined || toolPointer === pointerId) {
+      draggedControlPointRef.current = null
+      setDraggingControlPoint(null)
+    }
+    for (const capturedPointer of [navigationPointer, toolPointer]) {
+      if (capturedPointer === undefined || (pointerId !== undefined && capturedPointer !== pointerId)) continue
+      if (container?.hasPointerCapture(capturedPointer)) container.releasePointerCapture(capturedPointer)
+    }
+    navCubeRef.current?.handlePointerCancel()
+    inputControllerRef.current?.cancelPointer()
+    inputControllerRef.current = null
+    if (controlsRef.current) controlsRef.current.enabled = true
+    setNavigationActive(false)
+  }, [setNavigationActive])
+
+  const pointerNavigationAnchor = useCallback((
+    clientX: number,
+    clientY: number,
+    blankAtPointerDepth: boolean,
+  ): { point: THREE.Vector3; surface: boolean } | null => {
+    const container = containerRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    const asset = assetRef.current
+    if (!container || !camera || !controls || !asset) return null
+    const raycaster = buildPointerRay({ clientX, clientY }, camera, container.getBoundingClientRect())
+    const intersection = pickScene(raycaster, [asset])
+    if (intersection) {
+      lastSurfacePivotRef.current = intersection.point.clone()
+      return { point: intersection.point.clone(), surface: true }
+    }
+    if (!blankAtPointerDepth) return { point: controls.target.clone(), surface: false }
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+      camera.getWorldDirection(new THREE.Vector3()),
+      controls.target,
+    )
+    return {
+      point: raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? controls.target.clone(),
+      surface: false,
+    }
+  }, [])
+
   const animatePivotTo = useCallback((nextTarget: THREE.Vector3) => {
     const camera = cameraRef.current
     const controls = controlsRef.current
@@ -1419,14 +1491,16 @@ export function Viewer3D({
       clientY: event.clientY,
     }, camera, container.getBoundingClientRect())
     const intersection = pickScene(raycaster, [asset])
+    if (intersection) lastSurfacePivotRef.current = intersection.point.clone()
     const nextTarget = intersection?.point.clone()
-      ?? new THREE.Box3().setFromObject(asset).getCenter(new THREE.Vector3())
+      ?? lastSurfacePivotRef.current?.clone()
+      ?? controlsRef.current?.target.clone()
+    if (!nextTarget) return
     animatePivotTo(nextTarget)
     if (intersection) showPivotFeedback(event.clientX, event.clientY)
   }
 
   const handleViewerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (toolInput?.isActive?.() ?? false) return
     const key = event.key.toLowerCase()
     if (key === 'escape') {
       if (probeToolActive) {
@@ -1436,12 +1510,12 @@ export function Viewer3D({
       }
       if (navCubeAnimationRef.current !== null) cancelAnimationFrame(navCubeAnimationRef.current)
       navCubeAnimationRef.current = null
-      inputControllerRef.current?.cancelPointer()
-      inputControllerRef.current = null
+      cancelViewerInteraction()
       setPivotFeedback(null)
       event.preventDefault()
       return
     }
+    if (toolInput?.isActive?.() ?? false) return
     if (key === 'f') {
       applyCameraCommand('fit')
       event.preventDefault()
@@ -1465,6 +1539,12 @@ export function Viewer3D({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [toolInput])
 
+  useEffect(() => {
+    const handleWindowBlur = () => cancelViewerInteraction()
+    window.addEventListener('blur', handleWindowBlur)
+    return () => window.removeEventListener('blur', handleWindowBlur)
+  }, [cancelViewerInteraction])
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.focus({ preventScroll: true })
     if (navCubeRef.current?.handlePointerDown(event.nativeEvent)) {
@@ -1473,13 +1553,16 @@ export function Viewer3D({
       event.stopPropagation()
       return
     }
-    const controlPointIndex = nearestControlPointIndex(
-      toolInput?.controlPoints,
-      event.clientX,
-      event.clientY,
-      cameraRef.current,
-      containerRef.current?.getBoundingClientRect(),
-    )
+    const toolIsActive = toolInput?.isActive?.() ?? false
+    const controlPointIndex = toolIsActive
+      ? nearestControlPointIndex(
+        toolInput?.controlPoints,
+        event.clientX,
+        event.clientY,
+        cameraRef.current,
+        containerRef.current?.getBoundingClientRect(),
+      )
+      : null
     if (controlPointIndex !== null && toolInput?.onControlPointChange) {
       draggedControlPointRef.current = { index: controlPointIndex, pointerId: event.pointerId }
       setDraggingControlPoint(controlPointIndex)
@@ -1493,6 +1576,23 @@ export function Viewer3D({
     const controller = createInputController()
     inputControllerRef.current = controller
     controller.onPointerDown(pointerEvent(event))
+    if (event.pointerType !== 'touch') {
+      const anchor = pointerNavigationAnchor(event.clientX, event.clientY, false)
+      const controls = controlsRef.current
+      if (anchor && controls) {
+        navigationDragRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          lastX: event.clientX,
+          lastY: event.clientY,
+          pivot: anchor.point,
+          surface: anchor.surface,
+          moved: false,
+        }
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }
+    }
   }
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1520,6 +1620,17 @@ export function Viewer3D({
       event.preventDefault()
       return
     }
+    const navigation = navigationDragRef.current
+    if (navigation?.pointerId === event.pointerId) {
+      navigationDragRef.current = null
+      if (navigation.moved) setNavigationActive(false)
+      inputControllerRef.current?.onPointerUp(pointerEvent(event))
+      inputControllerRef.current = null
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      return
+    }
     if (event.button !== 0) return
     inputControllerRef.current?.onPointerUp(pointerEvent(event))
     inputControllerRef.current = null
@@ -1540,6 +1651,44 @@ export function Viewer3D({
       event.preventDefault()
       return
     }
+    const navigation = navigationDragRef.current
+    if (navigation?.pointerId === event.pointerId) {
+      if ((event.buttons & 1) === 0) {
+        cancelViewerInteraction(event.pointerId)
+        return
+      }
+      const camera = cameraRef.current
+      const controls = controlsRef.current
+      const container = containerRef.current
+      if (!camera || !controls || !container) return
+      const dx = event.clientX - navigation.lastX
+      const dy = event.clientY - navigation.lastY
+      inputControllerRef.current?.onPointerMove(pointerEvent(event))
+      if (!navigation.moved) {
+        if (Math.hypot(
+          event.clientX - navigation.startX,
+          event.clientY - navigation.startY,
+        ) < 4) return
+        navigation.moved = true
+        setNavigationActive(true)
+        if (navigation.surface) showPivotFeedback(navigation.startX, navigation.startY)
+      }
+      navigation.lastX = event.clientX
+      navigation.lastY = event.clientY
+      if (dx === 0 && dy === 0) return
+      const radiansPerPixel = (Math.PI * 2 / Math.max(container.clientHeight, 1)) * controls.rotateSpeed
+      rotateCameraRigAroundPivot(
+        camera,
+        controls.target,
+        navigation.pivot,
+        -dx * radiansPerPixel,
+        -dy * radiansPerPixel,
+      )
+      controls.update()
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     if (event.buttons !== 0) return
     const controller = inputControllerRef.current ?? createInputController()
     inputControllerRef.current = controller
@@ -1552,6 +1701,41 @@ export function Viewer3D({
     inputControllerRef.current?.onPointerLeave()
     inputControllerRef.current = null
     setHoveredGroup(null)
+  }
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls || !controls.enabled || event.deltaY === 0) return
+    const anchor = wheelAnchorRef.current
+      ?? pointerNavigationAnchor(event.clientX, event.clientY, true)?.point
+    if (!anchor) return
+    wheelAnchorRef.current = anchor
+    event.preventDefault()
+    event.stopPropagation()
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? Math.max(containerRef.current?.clientHeight ?? 1, 1)
+        : 1
+    const delta = THREE.MathUtils.clamp(event.deltaY * unit, -240, 240)
+    const scale = Math.exp(delta * 0.0015 * controls.zoomSpeed)
+    if (!zoomCameraRigToAnchor(
+      camera,
+      controls.target,
+      anchor,
+      scale,
+      controls.minDistance,
+      controls.maxDistance,
+    )) return
+    controls.update()
+    setNavigationActive(true)
+    if (wheelNavigationTimeoutRef.current !== null) window.clearTimeout(wheelNavigationTimeoutRef.current)
+    wheelNavigationTimeoutRef.current = window.setTimeout(() => {
+      wheelNavigationTimeoutRef.current = null
+      wheelAnchorRef.current = null
+      setNavigationActive(false)
+    }, 120)
   }
 
   useEffect(() => {
@@ -1655,16 +1839,16 @@ export function Viewer3D({
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
+        onWheelCapture={handleWheel}
         onDoubleClick={handleDoubleClick}
         onKeyDown={handleViewerKeyDown}
         onContextMenu={(event) => event.preventDefault()}
-        onPointerCancel={() => {
-          navCubeRef.current?.handlePointerCancel()
-          draggedControlPointRef.current = null
-          setDraggingControlPoint(null)
-          if (controlsRef.current) controlsRef.current.enabled = true
-          inputControllerRef.current?.cancelPointer()
-          inputControllerRef.current = null
+        onPointerCancel={(event) => cancelViewerInteraction(event.pointerId)}
+        onLostPointerCapture={(event) => {
+          if (
+            navigationDragRef.current?.pointerId === event.pointerId
+            || draggedControlPointRef.current?.pointerId === event.pointerId
+          ) cancelViewerInteraction(event.pointerId)
         }}
         role="img"
         aria-label="3D geometry viewer"

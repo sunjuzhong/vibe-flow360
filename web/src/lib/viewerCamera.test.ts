@@ -4,9 +4,11 @@ import {
   configureCFDNavigationControls,
   fitPerspectiveCameraToObject,
   interpolateCameraPivot,
+  rotateCameraRigAroundPivot,
   resizePerspectiveViewport,
   updatePerspectiveCameraClipping,
   visibleObjectBounds,
+  zoomCameraRigToAnchor,
 } from './viewerCamera'
 
 function createFixture(aspect: number) {
@@ -49,14 +51,53 @@ describe('responsive viewer camera framing', () => {
     expect(controls.enableDamping).toBe(true)
     expect(controls.enablePan).toBe(true)
     expect(controls.enableZoom).toBe(true)
-    expect(controls.zoomToCursor).toBe(true)
+    expect(controls.zoomToCursor).toBe(false)
     expect(controls.mouseButtons).toEqual({
-      LEFT: THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.PAN,
+      LEFT: null,
+      MIDDLE: THREE.MOUSE.DOLLY,
       RIGHT: THREE.MOUSE.PAN,
     })
     expect(controls.touches).toEqual({ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN })
     expect(controls.rotateSpeed).toBeLessThan(1)
+  })
+
+  it('rotates around a picked surface pivot without moving it on screen', () => {
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+    camera.position.set(0, 1, 8)
+    const target = new THREE.Vector3(0, 0, 0)
+    camera.lookAt(target)
+    camera.updateMatrixWorld()
+    const pivot = new THREE.Vector3(1.25, 0.4, 0.2)
+    const before = pivot.clone().project(camera)
+
+    expect(rotateCameraRigAroundPivot(camera, target, pivot, -0.35, 0.2)).toBe(true)
+    const after = pivot.clone().project(camera)
+
+    expect(after.x).toBeCloseTo(before.x, 8)
+    expect(after.y).toBeCloseTo(before.y, 8)
+    expect(camera.position.distanceTo(pivot)).toBeCloseTo(
+      new THREE.Vector3(0, 1, 8).distanceTo(pivot),
+      8,
+    )
+  })
+
+  it('zooms around the pointer anchor without changing its screen position or heading', () => {
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+    camera.position.set(0, 1, 8)
+    const target = new THREE.Vector3(0, 0, 0)
+    camera.lookAt(target)
+    camera.updateMatrixWorld()
+    const anchor = new THREE.Vector3(1.25, 0.4, 0.2)
+    const before = anchor.clone().project(camera)
+    const heading = target.clone().sub(camera.position).normalize()
+
+    expect(zoomCameraRigToAnchor(camera, target, anchor, 0.7, 0.1, 100)).toBe(true)
+    const after = anchor.clone().project(camera)
+
+    expect(after.x).toBeCloseTo(before.x, 8)
+    expect(after.y).toBeCloseTo(before.y, 8)
+    expect(target.clone().sub(camera.position).normalize().distanceTo(heading)).toBeLessThan(1e-10)
+    expect(camera.position.distanceTo(target)).toBeCloseTo(new THREE.Vector3(0, 1, 8).length() * 0.7)
   })
 
   it('recenters a pivot without changing camera direction or distance', () => {
