@@ -51,6 +51,7 @@ import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import type { UVFEntityInfo } from '../lib/uvf-three'
 import { meshGroupManifestHints, normalizeManifestHint } from '../lib/manifestGroups'
 import { ManifestMemberGroup } from './ManifestMemberGroup'
+import { DraftEntityInventory, useDraftEntities, useDraftEntityVisibility } from './DraftEntityInventory'
 
 function formatConvergenceStatus(status: string): string {
   switch (status) {
@@ -636,6 +637,8 @@ export default function CaseWorkspace({
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [selectedVisualizationIds, setSelectedVisualizationIds] = useState<string[]>([])
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
+  const [draftEntityVisibility, setDraftEntityVisibility] = useDraftEntityVisibility(detail?.simulation_params)
+  const draftEntities = useDraftEntities(detail?.simulation_params)
   const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
   const [fieldVisualizationEnabled, setFieldVisualizationEnabled] = useState(false)
@@ -919,7 +922,7 @@ export default function CaseWorkspace({
               <span>{previewSource === 'fallback' ? 'CONTEXT' : 'SOLUTION'}</span>
               <strong>{previewSource === 'fallback' ? t('Geometry context') : t('Visualization objects')}</strong>
             </div>
-            <span className="geometry-count-badge">{visualizationGroups.reduce((total, group) => total + group.members.length, 0)}</span>
+            <span className="geometry-count-badge">{visualizationGroups.reduce((total, group) => total + group.members.length, 0) + draftEntities.length}</span>
           </div>
           <div className="case-surface-inventory">
             {visualizationGroups.map(({ category, members }) => {
@@ -1026,6 +1029,11 @@ export default function CaseWorkspace({
             )}
             {archiveLayerError && <div className="slice-player-error" role="alert"><AlertCircle size={13} />{archiveLayerError}</div>}
           </div>
+          <DraftEntityInventory
+            entities={draftEntities}
+            visibility={draftEntityVisibility}
+            onVisibilityChange={setDraftEntityVisibility}
+          />
           <div className="case-result-inventory">
             <ManifestMemberGroup
               label={t('Result artifacts')}
@@ -1090,6 +1098,8 @@ export default function CaseWorkspace({
             onSelectionChange={handleViewerSelection}
             entityVisibility={entityVisibility}
             onEntityVisibilityChange={setEntityVisibility}
+            draftEntities={draftEntities}
+            draftEntityVisibility={draftEntityVisibility}
             selectedField={fieldVisualizationEnabled ? activeField : null}
             onSelectedFieldChange={setActiveField}
             fieldNames={selectedFieldNames}
