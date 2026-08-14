@@ -467,6 +467,10 @@ export default function WorkspacePage() {
   if (projectId) {
     navigate(`/projects/${encodeURIComponent(projectId)}`)
   }
+}} onSTEPProjectCreated={(result) => {
+  setImportOpen(false)
+  void loadProjects(selectedFolder)
+  navigate(`/projects/${encodeURIComponent(result.project_id)}`)
 }} />}
       {selectedFolder && aiCreateOpen && <AICreateModal
         folder={selectedFolder}
