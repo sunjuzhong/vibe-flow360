@@ -294,7 +294,11 @@ function entityObject(entity: ParameterEntity, contextSize: number): THREE.Objec
       break
     }
     case 'Point': {
-      object = pointsObject([vector(raw.location, unit)], color, contextSize * 0.025)
+      object = new THREE.Mesh(
+        new THREE.SphereGeometry(contextSize * 0.012, 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0x000000 }),
+      )
+      object.position.set(...vector(raw.location, unit))
       break
     }
     case 'PointArray': {

@@ -32,7 +32,7 @@ describe('draft entities', () => {
     expect(group.children.map((child) => child.visible)).toEqual([true, false])
   })
 
-  it('converts entity lengths into the project unit', () => {
+  it('renders Point as a small black sphere at the unit-converted location', () => {
     const [entity] = parseDraftEntities({ private_attribute_asset_cache: {
       project_length_unit: { value: 1, units: 'mm' },
       project_entity_info: { draft_entities: [{
@@ -42,8 +42,12 @@ describe('draft entities', () => {
       }] },
     } })
     const group = createParameterEntityGroup([entity], new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(1, 1, 1)))
-    const positions = (group.children[0] as THREE.Points).geometry.getAttribute('position')
-    expect([positions.getX(0), positions.getY(0), positions.getZ(0)]).toEqual([1000, 2000, 3000])
+    const point = group.children[0] as THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>
+    expect(point).toBeInstanceOf(THREE.Mesh)
+    expect(point.geometry).toBeInstanceOf(THREE.SphereGeometry)
+    expect(point.geometry.parameters.radius).toBeCloseTo(Math.sqrt(3) * 0.012)
+    expect(point.material.color.getHex()).toBe(0x000000)
+    expect(point.position.toArray()).toEqual([1000, 2000, 3000])
   })
 
   it('creates a drawable object for every supported entity type', () => {
