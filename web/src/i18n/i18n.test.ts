@@ -44,6 +44,23 @@ describe('language settings', () => {
     expect(translate('Settings', 'en')).toBe('Settings')
   })
 
+  it('covers the new Project source selector in Chinese', () => {
+    const messages = [
+      'Project source method',
+      'Upload files',
+      'STEP geometry library',
+      'Version',
+      'Choose STEP geometry',
+      'Validated STEP geometry',
+      'Geometry type and length unit come from the selected immutable version.',
+      'No validated STEP versions are available.',
+      'Review project',
+      'Reviewed STEP geometry',
+    ]
+
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
   it('covers the dynamic VolumeMesh engineering review in Chinese', () => {
     const messages = [
       'VOLUME MESH REVIEW',
