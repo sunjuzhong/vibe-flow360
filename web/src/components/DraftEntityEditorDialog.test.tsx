@@ -40,6 +40,7 @@ describe('DraftEntityEditorDialog', () => {
       <I18nProvider>
         <DraftEntityEditorDialog
           unit="m"
+          initialType="Sphere"
           saving={false}
           onSave={async () => undefined}
           onClose={() => undefined}
@@ -50,11 +51,12 @@ describe('DraftEntityEditorDialog', () => {
     expect(html).toContain('aria-modal="true"')
     expect(html).toContain('aria-labelledby=')
     expect(html).toContain('Entity type')
-    expect(html).toContain('<option value="Box" selected="">Box</option>')
+    expect(html).toContain('<output aria-label="Entity type" aria-readonly="true">Sphere</output>')
     expect(html).toContain('Entity ID')
+    expect(html).toContain('readOnly="" aria-readonly="true"')
     expect(html).toContain('class="draft-entity-vector"')
-    expect(html).toContain('aria-label="Principal axes 1 X"')
     expect(html).toContain('aria-label="Center Units"')
+    expect(html).not.toContain('<select aria-label="Entity type"')
     expect(html).not.toContain('Add item')
     expect(html).not.toContain('Remove Principal axes')
     expect(html).toContain('Save entity')

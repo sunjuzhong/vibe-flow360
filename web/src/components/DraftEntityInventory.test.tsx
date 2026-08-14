@@ -54,6 +54,9 @@ describe('ParameterEntityInventory', () => {
       </I18nProvider>,
     )
     expect(html).toContain('Draft entities')
-    expect(html).toContain('Add entity')
+    expect(html).toContain('aria-label="Add entity"')
+    expect(html).toContain('<option value="" disabled="" selected="">Add entity…</option>')
+    expect(html).toContain('<option value="Box">Box</option>')
+    expect(html).toContain('<option value="Slice">Slice</option>')
   })
 })

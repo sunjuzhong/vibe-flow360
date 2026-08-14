@@ -1129,6 +1129,7 @@ Object.assign(messages, {
   'Metadata only': '仅元数据',
   'Spatial geometry is unavailable': '空间几何信息不可用',
   'Add entity': '新增实体',
+  'Add entity…': '新增实体…',
   'Add Draft entity': '新增草稿实体',
   'Edit Draft entity': '编辑草稿实体',
   'Edit Draft entity {name}': '编辑草稿实体 {name}',

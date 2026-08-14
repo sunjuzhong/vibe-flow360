@@ -163,11 +163,13 @@ function DraftEntityField({
   value,
   onChange,
   t,
+  readOnly = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
   onChange: (value: unknown) => void
   t: Translate
+  readOnly?: boolean
 }) {
   const title = schema.title ?? ''
   const vectorLength = fixedNumberArray(schema)
@@ -276,6 +278,8 @@ function DraftEntityField({
         step={schema.type === 'integer' ? 1 : 'any'}
         min={schema.minimum}
         required={schema.required === true}
+        readOnly={readOnly || undefined}
+        aria-readonly={readOnly || undefined}
         value={String(value ?? '')}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -299,7 +303,7 @@ function DraftEntityFields({ schema, value, onChange, t }: {
       <section className="draft-entity-form-section">
         <h3>{t('Identity')}</h3>
         <div className="draft-entity-identity-grid">
-          {identity.map((key) => <DraftEntityField key={key} schema={properties[key]} value={object[key]} onChange={(next) => update(key, next)} t={t} />)}
+          {identity.map((key) => <DraftEntityField key={key} schema={properties[key]} value={object[key]} onChange={(next) => update(key, next)} t={t} readOnly={key === 'private_attribute_id'} />)}
         </div>
       </section>
       <section className="draft-entity-form-section">
@@ -407,6 +411,7 @@ export function normalizeDraftEntity(
 
 export default function DraftEntityEditorDialog({
   entity,
+  initialType = 'Box',
   unit = 'm',
   saving,
   onSave,
@@ -414,6 +419,7 @@ export default function DraftEntityEditorDialog({
   onClose,
 }: {
   entity?: ParameterEntity
+  initialType?: ParameterEntityType
   unit?: string
   saving: boolean
   onSave: (entity: Record<string, unknown>) => Promise<void>
@@ -421,31 +427,18 @@ export default function DraftEntityEditorDialog({
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const [type, setType] = useState<ParameterEntityType>(entity?.type ?? 'Box')
+  const type = entity?.type ?? initialType
   const schema = useMemo(() => draftEntitySchema(type, unit, t), [t, type, unit])
   const [value, setValue] = useState<unknown>(() => hydrateSchemaValue(schema, editableEntityValue(entity, type, unit)))
   const [error, setError] = useState('')
   const titleId = useId()
 
   useEffect(() => {
-    const nextType = entity?.type ?? 'Box'
+    const nextType = entity?.type ?? initialType
     const nextSchema = draftEntitySchema(nextType, unit, t)
-    setType(nextType)
     setValue(hydrateSchemaValue(nextSchema, editableEntityValue(entity, nextType, unit)))
     setError('')
-  }, [entity, t, unit])
-
-  const changeType = (nextType: ParameterEntityType) => {
-    setType(nextType)
-    const nextSchema = draftEntitySchema(nextType, unit, t)
-    const common = record(value)
-    setValue(hydrateSchemaValue(nextSchema, {
-      ...newDraftEntityValue(nextType, unit),
-      private_attribute_id: common.private_attribute_id,
-      name: common.name || nextType,
-    }))
-    setError('')
-  }
+  }, [entity, initialType, t, unit])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -499,9 +492,7 @@ export default function DraftEntityEditorDialog({
         <div className="schema-form-body">
           <label className="draft-entity-field draft-entity-type-field">
             <strong>{t('Entity type')}</strong>
-            <select value={type} onChange={(event) => changeType(event.target.value as ParameterEntityType)}>
-              {editableDraftEntityTypes.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            <output aria-label={t('Entity type')} aria-readonly="true">{type}</output>
           </label>
           <DraftEntityFields schema={schema} value={value} onChange={setValue} t={t} />
         </div>

@@ -3,7 +3,11 @@ import { useMemo, useState } from 'react'
 import { useI18n } from '../i18n'
 import { parameterEntityLengthUnit, parseDraftEntities, parseGhostEntities, type DraftEntityMutation, type ParameterEntity } from '../lib/draftEntities'
 import { ManifestMemberGroup } from './ManifestMemberGroup'
-import DraftEntityEditorDialog from './DraftEntityEditorDialog'
+import DraftEntityEditorDialog, { editableDraftEntityTypes } from './DraftEntityEditorDialog'
+
+type DraftEntityEditorState =
+  | { mode: 'new'; entityType: ParameterEntity['type'] }
+  | { mode: 'edit'; entity: ParameterEntity }
 
 export function useDraftEntities(params: unknown) {
   return useMemo(() => parseDraftEntities(params), [params])
@@ -42,7 +46,7 @@ export function ParameterEntityInventory({
   onMutate?: (mutation: DraftEntityMutation) => Promise<void>
 }) {
   const { t } = useI18n()
-  const [editor, setEditor] = useState<ParameterEntity | 'new' | null>(null)
+  const [editor, setEditor] = useState<DraftEntityEditorState | null>(null)
   const [saving, setSaving] = useState(false)
   if (!entities.length && !(source === 'draft' && onMutate)) return null
   const label = source === 'ghost' ? t('Ghost entities') : t('Draft entities')
@@ -65,7 +69,19 @@ export function ParameterEntityInventory({
     >
       {source === 'draft' && onMutate && (
         <div className="parameter-entity-actions">
-          <button type="button" onClick={() => setEditor('new')}><Plus size={12} />{t('Add entity')}</button>
+          <div className="parameter-entity-create">
+            <Plus size={12} aria-hidden="true" />
+            <select
+              aria-label={t('Add entity')}
+              value=""
+              onChange={(event) => {
+                if (event.target.value) setEditor({ mode: 'new', entityType: event.target.value as ParameterEntity['type'] })
+              }}
+            >
+              <option value="" disabled>{t('Add entity…')}</option>
+              {editableDraftEntityTypes.map((type) => <option value={type} key={type}>{type}</option>)}
+            </select>
+          </div>
         </div>
       )}
       {entities.map((entity) => {
@@ -80,7 +96,7 @@ export function ParameterEntityInventory({
               </span>
             </div>
             {source === 'draft' && onMutate && (
-              <button type="button" className="geometry-entity-edit" onClick={() => setEditor(entity)} aria-label={t('Edit Draft entity {name}').replace('{name}', entity.name)} title={t('Edit Draft entity')}>
+              <button type="button" className="geometry-entity-edit" onClick={() => setEditor({ mode: 'edit', entity })} aria-label={t('Edit Draft entity {name}').replace('{name}', entity.name)} title={t('Edit Draft entity')}>
                 <Pencil size={12} />
               </button>
             )}
@@ -102,23 +118,24 @@ export function ParameterEntityInventory({
       })}
       {editor && source === 'draft' && onMutate && (
         <DraftEntityEditorDialog
-          entity={editor === 'new' ? undefined : editor}
+          entity={editor.mode === 'edit' ? editor.entity : undefined}
+          initialType={editor.mode === 'new' ? editor.entityType : editor.entity.type}
           unit={unit}
           saving={saving}
           onClose={() => setEditor(null)}
           onSave={async (entity) => {
             setSaving(true)
             try {
-              await onMutate({ type: 'upsert', previousId: editor === 'new' ? undefined : editor.id, entity })
+              await onMutate({ type: 'upsert', previousId: editor.mode === 'new' ? undefined : editor.entity.id, entity })
               setEditor(null)
             } finally {
               setSaving(false)
             }
           }}
-          onDelete={editor === 'new' ? undefined : async () => {
+          onDelete={editor.mode === 'new' ? undefined : async () => {
             setSaving(true)
             try {
-              await onMutate({ type: 'delete', id: editor.id })
+              await onMutate({ type: 'delete', id: editor.entity.id })
               setEditor(null)
             } finally {
               setSaving(false)

@@ -7560,6 +7560,9 @@ button { color: inherit; }
 .geometry-entity-edit:hover { color: #52651d; background: rgb(255 255 255 / 60%); }
 .parameter-entity-actions { display: flex; justify-content: flex-end; padding: 4px 5px; }
 .parameter-entity-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #d5d9cd; border-radius: 5px; color: #59634d; background: #fff; font-size: 8px; }
+.parameter-entity-create { position: relative; display: inline-flex; align-items: center; color: #59634d; }
+.parameter-entity-create > svg { position: absolute; z-index: 1; left: 7px; pointer-events: none; }
+.parameter-entity-create select { min-height: 28px; padding: 4px 24px 4px 23px; border: 1px solid #d5d9cd; border-radius: 5px; color: #59634d; background: #fff; font-size: 9px; cursor: pointer; }
 .draft-entity-editor-backdrop {
   z-index: 1000;
   padding: clamp(16px, 4vh, 40px);
@@ -7608,6 +7611,18 @@ button { color: inherit; }
 }
 .draft-entity-field input:focus,
 .draft-entity-field select:focus { border-color: #95ad4b; box-shadow: 0 0 0 3px rgba(149,173,75,.13); }
+.draft-entity-field output {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #d8dbd2;
+  border-radius: 7px;
+  color: #636a5f;
+  background: #f0f2ec;
+  font: 12px 'DM Mono';
+}
+.draft-entity-field input[readonly] { color: #636a5f; background: #f0f2ec; cursor: default; }
 .draft-entity-type-field { padding: 0 0 12px; border-bottom: 1px solid #e1e3dc; }
 .draft-entity-form-section { display: grid; gap: 12px; padding: 14px 16px 16px; border: 1px solid #dde0d7; border-radius: 9px; background: #fff; }
 .draft-entity-form-section > h3 { margin: 0; color: #4f574a; font-size: 13px; }
