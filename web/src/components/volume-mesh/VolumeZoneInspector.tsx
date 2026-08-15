@@ -3,6 +3,7 @@ import { Eye, EyeOff, Search, Volume2 } from 'lucide-react'
 import type { VolumeZoneRow, VolumeZoneType } from '../../lib/volumeMeshReview'
 import { useI18n } from '../../i18n'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
+import { ResourceSelectionToolbar } from '../ResourceSelectionToolbar'
 
 export type VolumeZoneFilter = 'all' | VolumeZoneType
 
@@ -42,6 +43,7 @@ export function VolumeZoneInspector({
   selectedIds,
   visibility,
   onSelect,
+  onSelectionChange,
   onSetVisibility,
   contextOnly = false,
 }: {
@@ -49,6 +51,7 @@ export function VolumeZoneInspector({
   selectedIds: string[]
   visibility: Record<string, boolean>
   onSelect: (groupId: string, additive: boolean) => void
+  onSelectionChange: (groupIds: string[]) => void
   onSetVisibility: (groupIds: string[], visible: boolean) => void
   contextOnly?: boolean
 }) {
@@ -74,6 +77,13 @@ export function VolumeZoneInspector({
             />
           </label>
           {query && <span>{t('{count} matching regions').replace('{count}', String(filtered.length))}</span>}
+          <ResourceSelectionToolbar
+            allIds={inventory.map((zone) => zone.id)}
+            resultIds={filtered.map((zone) => zone.id)}
+            selectedIds={selectedIds}
+            filtered={query.trim().length > 0}
+            onSelectionChange={onSelectionChange}
+          />
         </div>
       )}
       <div className="volume-zone-groups">

@@ -267,6 +267,10 @@ export default function VolumeMeshWorkspace({
             selectedIds={selectedZoneIds}
             visibility={review.visibility}
             onSelect={selectZone}
+            onSelectionChange={(groupIds) => review.setSelection({
+              groupId: groupIds.at(-1) ?? null,
+              groupIds,
+            })}
             onSetVisibility={(groupIds, visible) => review.setVisibility({
               ...review.visibility,
               ...Object.fromEntries(groupIds.map((groupId) => [groupId, visible])),

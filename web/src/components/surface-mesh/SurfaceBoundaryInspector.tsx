@@ -3,6 +3,7 @@ import { ChevronDown, Eye, EyeOff, Layers3, Search } from 'lucide-react'
 import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
 import { useI18n } from '../../i18n'
+import { ResourceSelectionToolbar } from '../ResourceSelectionToolbar'
 
 export type SurfaceBoundaryFilter = 'all' | SurfaceBoundaryRow['status']
 
@@ -32,6 +33,7 @@ export function SurfaceBoundaryInspector({
   conflictCount,
   visibility,
   onSelect,
+  onSelectionChange,
   onToggleVisibility,
   onShowAll,
   onHideAll,
@@ -41,6 +43,7 @@ export function SurfaceBoundaryInspector({
   conflictCount: number
   visibility: Record<string, boolean>
   onSelect: (groupId: string, additive: boolean) => void
+  onSelectionChange: (groupIds: string[]) => void
   onToggleVisibility: (groupId: string) => void
   onShowAll: () => void
   onHideAll: () => void
@@ -121,6 +124,13 @@ export function SurfaceBoundaryInspector({
               <span>{t('{shown} of {total} matching faces')
                 .replace('{shown}', String(displayed.length))
                 .replace('{total}', String(filtered.length))}</span>
+              <ResourceSelectionToolbar
+                allIds={inventory.map((row) => row.id)}
+                resultIds={filtered.map((row) => row.id)}
+                selectedIds={selectedIds}
+                filtered={query.trim().length > 0 || filter !== 'all'}
+                onSelectionChange={onSelectionChange}
+              />
             </div>
           </details>
         )}

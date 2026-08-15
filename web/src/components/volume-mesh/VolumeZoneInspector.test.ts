@@ -39,6 +39,7 @@ describe('VolumeZoneInspector filters', () => {
         selectedIds: ['fluid-1'],
         visibility: { 'fluid-1': true, 'rotor-1': true, 'zone-3': true },
         onSelect: () => undefined,
+        onSelectionChange: () => undefined,
         onSetVisibility: () => undefined,
       }),
     ))

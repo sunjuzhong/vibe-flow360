@@ -7394,6 +7394,54 @@ button { color: inherit; }
 
 .geometry-selection-tools button:disabled { opacity: .4; cursor: not-allowed; }
 
+.resource-selection-toolbar {
+  display: grid;
+  gap: 5px;
+  margin: 0 10px 7px;
+}
+
+.surface-boundary-tools .resource-selection-toolbar,
+.volume-zone-tools .resource-selection-toolbar {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.resource-selection-toolbar > span {
+  overflow: hidden;
+  color: #697061;
+  font: 9px 'DM Mono';
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-selection-toolbar > div {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+}
+
+.resource-selection-toolbar button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 7px;
+  overflow: hidden;
+  border: 1px solid #d9dbd3;
+  border-radius: 5px;
+  color: #5e6658;
+  background: #fff;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.resource-selection-toolbar button:first-child { flex: 1; }
+.resource-selection-toolbar button:disabled { opacity: .4; cursor: not-allowed; }
+.resource-selection-toolbar button[aria-pressed='true'] { border-color: #9db744; color: #62731e; background: #f3f6e8; }
+
 .geometry-entity-tree {
   min-height: 0;
   flex: 1;

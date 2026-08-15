@@ -89,6 +89,7 @@ import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGrou
 import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
 import type { DraftEntityMutation } from '../lib/draftEntities'
 import { VirtualizedManifestRows } from './VirtualizedManifestRows'
+import { ResourceSelectionToolbar } from './ResourceSelectionToolbar'
 import { UVFAssetLRU } from '../lib/uvf-three'
 import './GeometryWorkspace.css'
 
@@ -855,13 +856,13 @@ export default function GeometryWorkspace({
             aria-label="Search geometry entities"
           />
         </label>
-        <div className="geometry-selection-tools">
-          <strong>{`${selectedGroups.length} ${selectedGroups.length === 1 ? 'face' : 'faces'} selected`}</strong>
-          <button type="button" onClick={() => chooseGroups(filteredGroups.map((group) => group.id))}>
-            Select filtered
-          </button>
-          <button type="button" disabled={selectedGroupIds.length === 0} onClick={() => chooseGroups([])}>Clear</button>
-        </div>
+        <ResourceSelectionToolbar
+          allIds={(manifest?.groups ?? []).map((group) => group.id)}
+          resultIds={filteredGroups.map((group) => group.id)}
+          selectedIds={selectedGroupIds}
+          filtered={entitySearch.trim().length > 0}
+          onSelectionChange={chooseGroups}
+        />
         <div ref={entityTreeRef} className="geometry-entity-tree">
           <ManifestMemberGroup
             label="Geometry bodies"

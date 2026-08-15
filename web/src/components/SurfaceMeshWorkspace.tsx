@@ -255,6 +255,10 @@ export default function SurfaceMeshWorkspace({
               onSelect={(groupId, additive) => review.setSelection(
                 nextSurfaceSelection(review.selection, groupId, additive),
               )}
+              onSelectionChange={(groupIds) => review.setSelection({
+                groupId: groupIds.at(-1) ?? null,
+                groupIds,
+              })}
               onToggleVisibility={review.toggleBoundaryVisibility}
               onShowAll={review.showAllBoundaries}
               onHideAll={review.hideAllBoundaries}
