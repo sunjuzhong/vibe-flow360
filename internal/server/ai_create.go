@@ -71,20 +71,36 @@ type aiCreateSession struct {
 }
 
 type aiCreateSessionSummary struct {
-	ID             string                        `json:"id"`
-	Intent         string                        `json:"intent"`
-	FolderID       string                        `json:"folder_id"`
-	Phase          string                        `json:"phase"`
-	ProjectID      string                        `json:"project_id,omitempty"`
-	RootResourceID string                        `json:"root_resource_id,omitempty"`
-	DraftID        string                        `json:"draft_id,omitempty"`
-	Round          int                           `json:"round"`
-	Messages       []aiCreateSessionMessage      `json:"messages,omitempty"`
-	Pending        []aicreate.ClarificationField `json:"pending,omitempty"`
-	LastError      string                        `json:"last_error,omitempty"`
-	CreatedAt      time.Time                     `json:"created_at"`
-	UpdatedAt      time.Time                     `json:"updated_at"`
-	CompletedAt    *time.Time                    `json:"completed_at,omitempty"`
+	ID              string                        `json:"id"`
+	Intent          string                        `json:"intent"`
+	OriginalRequest string                        `json:"original_request"`
+	FolderID        string                        `json:"folder_id"`
+	Phase           string                        `json:"phase"`
+	ProjectID       string                        `json:"project_id,omitempty"`
+	RootResourceID  string                        `json:"root_resource_id,omitempty"`
+	DraftID         string                        `json:"draft_id,omitempty"`
+	Round           int                           `json:"round"`
+	Messages        []aiCreateSessionMessage      `json:"messages,omitempty"`
+	History         []aiCreateHistoryRound        `json:"history,omitempty"`
+	Checkpoints     aiCreateCheckpointSummary     `json:"checkpoints"`
+	Pending         []aicreate.ClarificationField `json:"pending,omitempty"`
+	LastError       string                        `json:"last_error,omitempty"`
+	CreatedAt       time.Time                     `json:"created_at"`
+	UpdatedAt       time.Time                     `json:"updated_at"`
+	CompletedAt     *time.Time                    `json:"completed_at,omitempty"`
+}
+
+type aiCreateHistoryRound struct {
+	Round   int                           `json:"round"`
+	Fields  []aicreate.ClarificationField `json:"fields"`
+	Answers map[string]any                `json:"answers"`
+}
+
+type aiCreateCheckpointSummary struct {
+	CADValidated        bool `json:"cad_validated"`
+	ProjectCreated      bool `json:"project_created"`
+	ParametersValidated bool `json:"parameters_validated"`
+	DraftConfigured     bool `json:"draft_configured"`
 }
 
 type aiCreateCADCheckpoint struct {

@@ -1,8 +1,9 @@
-import { AlertCircle, CheckCircle2, Clock3, ExternalLink, Loader2, MessageSquare, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clock3, ExternalLink, Folder, Loader2, MessageSquare, RefreshCw, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, type AICreateResult, type AICreateSession, type Flow360Status } from '../api/client'
 import AICreateModal from '../components/AICreateModal'
+import AICreateSessionContext from '../components/AICreateSessionContext'
 import TopBar from '../components/TopBar'
 import { useI18n } from '../i18n'
 import './AICreateSessionsPage.css'
@@ -60,22 +61,21 @@ export default function AICreateSessionsPage() {
         <aside aria-label={t('AI Create session list')}>
           {sessions.map((session) => <Link key={session.id} className={session.id === selected?.id ? 'active' : ''} to={`/sessions/${encodeURIComponent(session.id)}`}>
             <span className={`ai-session-state ${phaseTone(session.phase)}`}>{session.phase === 'completed' ? <CheckCircle2 size={13} /> : session.phase === 'failed' ? <AlertCircle size={13} /> : <Clock3 size={13} />}</span>
-            <span><strong>{session.messages?.[0]?.content || session.intent}</strong><small>{t(session.phase.replaceAll('_', ' '))} · {new Date(session.updated_at).toLocaleString()}</small></span>
+            <span><strong>{session.original_request || session.messages?.[0]?.content || session.intent}</strong><small>{t(session.phase.replaceAll('_', ' '))} · {new Date(session.updated_at).toLocaleString()}</small></span>
           </Link>)}
         </aside>
         <section className="ai-session-detail">
           {!selected && <div className="ai-session-empty"><MessageSquare size={24} /><strong>{t('Select a session')}</strong><p>{t('Review its conversation, checkpoint status, and linked Project.')}</p></div>}
           {selected && <>
-            <div className="ai-session-detail-heading"><div><p className="eyebrow">{t('AI CREATE SESSION')}</p><h2>{selected.messages?.[0]?.content || selected.intent}</h2><small>{selected.id}</small></div><span className={`ai-session-phase ${phaseTone(selected.phase)}`}>{t(selected.phase.replaceAll('_', ' '))}</span></div>
-            <dl>
-              <div><dt>{t('Last checkpoint')}</dt><dd>{t(selected.phase.replaceAll('_', ' '))}</dd></div>
-              <div><dt>{t('Updated')}</dt><dd>{new Date(selected.updated_at).toLocaleString()}</dd></div>
-              <div><dt>{t('Destination folder')}</dt><dd>{selected.folder_id}</dd></div>
-              {selected.project_id && <div><dt>{t('Project')}</dt><dd><Link to={`/projects/${encodeURIComponent(selected.project_id)}`}>{selected.project_id} <ExternalLink size={11} /></Link></dd></div>}
-              {selected.draft_id && <div><dt>{t('Draft')}</dt><dd>{selected.draft_id}</dd></div>}
-            </dl>
+            <div className="ai-session-detail-heading"><div><p className="eyebrow">{t('AI CREATE SESSION')}</p><h2>{selected.original_request || selected.messages?.[0]?.content || selected.intent}</h2><small>{selected.id}</small></div><span className={`ai-session-phase ${phaseTone(selected.phase)}`}>{t(selected.phase.replaceAll('_', ' '))}</span></div>
+            <div className="ai-session-meta">
+              <span><Clock3 size={12} /><small>{t('Updated')}</small><strong>{new Date(selected.updated_at).toLocaleString()}</strong></span>
+              <span><Folder size={12} /><small>{t('Destination folder')}</small><strong>{selected.folder_id}</strong></span>
+              {selected.project_id && <Link to={`/projects/${encodeURIComponent(selected.project_id)}`}><ExternalLink size={12} /><small>{t('Project')}</small><strong>{selected.project_id}</strong></Link>}
+              {selected.draft_id && <span><CheckCircle2 size={12} /><small>{t('Draft')}</small><strong>{selected.draft_id}</strong></span>}
+            </div>
             {selected.last_error && <div className="ai-session-error"><AlertCircle size={15} /><span><strong>{t('The last run stopped')}</strong>{t(selected.last_error)}</span></div>}
-            <div className="ai-session-transcript">{(selected.messages ?? []).map((message, index) => <div className={message.role} key={`${message.created_at}-${index}`}><span>{message.role === 'user' ? t('You') : t('Agent')}</span><p>{t(message.content)}</p></div>)}</div>
+            <AICreateSessionContext session={selected} />
             <footer>
               {selected.project_id && <button className="secondary" type="button" onClick={() => openProject(selected.project_id!)}>{t('Open Project')} <ExternalLink size={13} /></button>}
               <button type="button" onClick={() => setOpenSession(selected)}><Sparkles size={14} /> {t(selected.phase === 'completed' ? 'Continue conversation' : 'Resume session')}</button>

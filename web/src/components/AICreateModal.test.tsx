@@ -72,6 +72,45 @@ describe('AICreateModal', () => {
     expect(markup).toContain('disabled=""')
   })
 
+  it('restores saved history and explains the next action before resuming', () => {
+    const markup = renderWithI18n(<AICreateModal
+      folder={{ id: 'folder-1', name: 'Experiments', subfolders: [] }}
+      initialSession={{
+        id: 'aic-resume', intent: 'Create a drop-body case', original_request: 'Create a drop-body case',
+        folder_id: 'folder-1', phase: 'needs_input', round: 2,
+        messages: [{ role: 'user', content: 'Create a drop-body case', created_at: '2026-08-15T00:00:00Z' }],
+        history: [{ round: 1, fields: [{ id: 'mach', label: 'Mach number', type: 'number', required: true }], answers: { mach: 0.8 } }],
+        pending: [{ id: 'altitude', label: 'Flight altitude', type: 'number', unit: 'm', required: true }],
+        checkpoints: { cad_validated: true, project_created: true, parameters_validated: false, draft_configured: false },
+        created_at: '2026-08-15T00:00:00Z', updated_at: '2026-08-15T00:05:00Z',
+      }}
+      onClose={() => undefined}
+      onCreated={() => undefined}
+    />)
+    expect(markup).toContain('Continue this simulation')
+    expect(markup).toContain('Review the saved request, decisions, and checkpoints')
+    expect(markup).toContain('Conversation history')
+    expect(markup).toContain('Mach number')
+    expect(markup).toContain('Flight altitude')
+    expect(markup).toContain('Clarification round 2')
+  })
+
+  it('offers to reconstruct questions for a legacy needs-input session', () => {
+    const markup = renderWithI18n(<AICreateModal
+      folder={{ id: 'folder-1', name: 'Experiments', subfolders: [] }}
+      initialSession={{
+        id: 'aic-legacy', intent: 'Create a drop-body case', original_request: 'Create a drop-body case',
+        folder_id: 'folder-1', phase: 'needs_input', round: 2, messages: [], history: [], pending: [],
+        checkpoints: { cad_validated: false, project_created: false, parameters_validated: false, draft_configured: false },
+        created_at: '2026-08-15T00:00:00Z', updated_at: '2026-08-15T00:05:00Z',
+      }}
+      onClose={() => undefined}
+      onCreated={() => undefined}
+    />)
+    expect(markup).toContain('Pending questions need recovery')
+    expect(markup).toContain('Restore pending questions')
+  })
+
   it('renders agent clarification fields as an engineering form', () => {
     const markup = renderWithI18n(
       <AICreateClarificationForm

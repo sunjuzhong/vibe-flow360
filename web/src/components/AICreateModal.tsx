@@ -12,6 +12,7 @@ import {
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import Flow360IdLink from './Flow360IdLink'
+import AICreateSessionContext from './AICreateSessionContext'
 import './AICreateSession.css'
 
 export const AI_CREATE_INTENT_MAX_CHARACTERS = 4000
@@ -392,8 +393,8 @@ export default function AICreateModal({
           <span className="ai-create-icon"><WandSparkles size={19} /></span>
           <div>
             <p className="eyebrow">{t('AI CREATE')}</p>
-            <h2 id="ai-create-title">{t(hasStarted ? 'Let’s define the simulation' : 'Describe the simulation you want')}</h2>
-            <p>{t('This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.')}</p>
+            <h2 id="ai-create-title">{t(initialSession ? 'Continue this simulation' : hasStarted ? 'Let’s define the simulation' : 'Describe the simulation you want')}</h2>
+            <p>{t(initialSession ? 'Review the saved request, decisions, and checkpoints before you continue.' : 'This session checkpoints exact CAD, the Flow360 Project, validated parameters, and the Draft independently. You can minimize it and continue working.')}</p>
           </div>
         </div>
 
@@ -434,7 +435,9 @@ export default function AICreateModal({
           </form>
         )}
 
-        {transcript.length > 0 && (
+        {initialSession && <AICreateSessionContext session={initialSession} compact />}
+
+        {!initialSession && transcript.length > 0 && (
           <div className="ai-create-conversation" aria-live="polite">
             {transcript.map((item, index) => (
               <div className={`ai-create-message ${item.role}`} key={`${item.role}-${index}`}>
@@ -444,6 +447,8 @@ export default function AICreateModal({
             ))}
           </div>
         )}
+
+        {initialSession?.last_error && !error && <div className="ai-create-error" role="status"><strong>{t('The previous run stopped.')}</strong> {t(initialSession.last_error)}</div>}
 
         {sessionId && fields.length > 0 && (
           <AICreateClarificationForm
@@ -468,7 +473,7 @@ export default function AICreateModal({
               aria-label={t('Continue this AI Create session')}
             />
             <div>
-              {initialSession?.phase === 'failed' && !intent.trim() && <button className="secondary" type="button" onClick={() => void runCreate()}><RotateCcw size={14} /> {t('Resume last checkpoint')}</button>}
+              {(initialSession?.phase === 'failed' || (initialSession?.phase === 'needs_input' && (initialSession.pending ?? []).length === 0)) && !intent.trim() && <button className="secondary" type="button" onClick={() => void runCreate()}><RotateCcw size={14} /> {t(initialSession.phase === 'needs_input' ? 'Restore pending questions' : 'Resume last checkpoint')}</button>}
               <button type="submit" disabled={!intent.trim()}><Sparkles size={14} /> {t('Continue session')}</button>
             </div>
           </form>

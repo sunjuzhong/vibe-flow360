@@ -1445,7 +1445,7 @@ button { color: inherit; }
 
 .ai-create-modal {
   position: relative;
-  width: min(780px, 94vw);
+  width: min(780px, 100%);
   max-height: 90vh;
   padding: 22px;
   overflow: auto;

@@ -163,6 +163,7 @@ export type AICreateProgress = {
 export type AICreateSession = {
   id: string
   intent: string
+  original_request: string
   folder_id: string
   phase: 'understanding' | 'needs_input' | 'cad_validated' | 'geometry_imported' | 'parameters_validated' | 'completed' | 'failed' | string
   project_id?: string
@@ -170,6 +171,17 @@ export type AICreateSession = {
   draft_id?: string
   round: number
   messages?: Array<{ role: 'user' | 'assistant'; content: string; created_at: string }>
+  history?: Array<{
+    round: number
+    fields: AICreateClarificationField[]
+    answers: Record<string, unknown>
+  }>
+  checkpoints: {
+    cad_validated: boolean
+    project_created: boolean
+    parameters_validated: boolean
+    draft_configured: boolean
+  }
   pending?: AICreateClarificationField[]
   last_error?: string
   created_at: string

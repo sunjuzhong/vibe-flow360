@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sunjuzhong/vibe-flow360/internal/aicreate"
 )
 
 func TestAICreateSessionSummaryIncludesProjectAndConversation(t *testing.T) {
@@ -35,6 +36,33 @@ func TestAICreateSessionSummaryIncludesProjectAndConversation(t *testing.T) {
 	}
 	if len(body.Sessions) != 1 || body.Sessions[0].ProjectID != "prj-session" || body.Sessions[0].Messages[0].Content != "Create cylinder flow" {
 		t.Fatalf("unexpected session summary: %#v", body.Sessions)
+	}
+}
+
+func TestAICreateSessionSummaryReconstructsLegacyHistoryAndCheckpoints(t *testing.T) {
+	now := time.Now().UTC()
+	session := aiCreateSession{
+		ID: "aic-legacy", Intent: "Create a drop-body case", FolderID: "folder-legacy", Phase: "needs_input",
+		Rounds: []aicreate.ClarificationRound{{
+			Fields:  []aicreate.ClarificationField{{ID: "mach", Label: "Mach number", Type: "number", Unit: "", Required: true}},
+			Answers: map[string]any{"mach": 0.8},
+		}},
+		Pending:    []aicreate.ClarificationField{{ID: "altitude", Label: "Flight altitude", Type: "number", Unit: "m", Required: true}},
+		CAD:        &aiCreateCADCheckpoint{},
+		Prepared:   &aiCreatePrepared{ProjectID: "prj-legacy", RootResourceID: "geo-legacy"},
+		Parameters: &aiCreateParameterCheckpoint{},
+		CreatedAt:  now, UpdatedAt: now,
+	}
+
+	summary := summarizeAICreateSession(session)
+	if summary.OriginalRequest != session.Intent || len(summary.Messages) != 1 || summary.Messages[0].Content != session.Intent {
+		t.Fatalf("legacy original request was not reconstructed: %#v", summary)
+	}
+	if len(summary.History) != 1 || summary.History[0].Fields[0].Label != "Mach number" || summary.History[0].Answers["mach"] != 0.8 {
+		t.Fatalf("legacy clarification history was not exposed: %#v", summary.History)
+	}
+	if !summary.Checkpoints.CADValidated || !summary.Checkpoints.ProjectCreated || !summary.Checkpoints.ParametersValidated || summary.Checkpoints.DraftConfigured {
+		t.Fatalf("unexpected checkpoint summary: %#v", summary.Checkpoints)
 	}
 }
 
