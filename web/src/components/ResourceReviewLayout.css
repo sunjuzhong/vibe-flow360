@@ -726,6 +726,12 @@
   padding-left: 7px;
 }
 
+.case-surface-list .case-visualization-row {
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+}
+
 .case-surface-list .case-archive-entity-icon {
   display: inline-flex;
   width: 12px;
