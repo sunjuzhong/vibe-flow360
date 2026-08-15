@@ -73,6 +73,24 @@ func (f *fakeProjectSyncClient) ResourceVisualizationAsset(_ context.Context, _,
 	return flow360.VisualizationFile{Path: path}, nil
 }
 
+func (f *fakeProjectSyncClient) ResourceResult(_ context.Context, resourceType, resourceID, relative string) ([]byte, string, error) {
+	if resourceType != "Case" || resourceID == "" {
+		return nil, "", errors.New("invalid result resource")
+	}
+	f.mu.Lock()
+	if f.calls == nil {
+		f.calls = map[string]int{}
+	}
+	f.calls["result/"+relative]++
+	f.mu.Unlock()
+	return []byte("iteration,residual\n1,0.1\n"), "text/plain; charset=utf-8", nil
+}
+
+func (f *fakeProjectSyncClient) ResourceResultPreview(ctx context.Context, resourceType, resourceID, relative string) ([]byte, error) {
+	payload, _, err := f.ResourceResult(ctx, resourceType, resourceID, relative)
+	return payload, err
+}
+
 func (f *fakeProjectSyncClient) ProjectInfo(context.Context, string) (json.RawMessage, error) {
 	return json.RawMessage(`{"id":"prj-1","name":"Test","root_item":{"id":"geo-1","type":"Geometry"}}`), nil
 }
@@ -352,7 +370,7 @@ func TestStartProjectSyncReusesFreshCompletedMirror(t *testing.T) {
 	}
 }
 
-func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
+func TestResourceMeshPreviewReusesVisualizationUnlessForced(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, resource := range []struct{ type_, id string }{{"Geometry", "geo-1"}, {"Case", "case-1"}} {
 		t.Run(resource.type_, func(t *testing.T) {
@@ -366,10 +384,14 @@ func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 			app := newProjectSyncTestServer(t, client)
 			app.syncProject(t.Context(), "prj-1", client)
 
-			requestPreview := func() *httptest.ResponseRecorder {
+			requestPreview := func(force bool) *httptest.ResponseRecorder {
 				recorder := httptest.NewRecorder()
 				requestContext, _ := gin.CreateTestContext(recorder)
-				requestContext.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/flow360/resources/%s/%s/preview-mesh", resource.type_, resource.id), nil)
+				path := fmt.Sprintf("/api/flow360/resources/%s/%s/preview-mesh", resource.type_, resource.id)
+				if force {
+					path += "?force=true"
+				}
+				requestContext.Request = httptest.NewRequest(http.MethodGet, path, nil)
 				requestContext.Params = gin.Params{
 					{Key: "resource_type", Value: resource.type_},
 					{Key: "resource_id", Value: resource.id},
@@ -377,18 +399,74 @@ func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 				app.flow360ResourceMeshPreview(requestContext)
 				return recorder
 			}
-			if first := requestPreview(); first.Code != http.StatusOK {
+			if first := requestPreview(false); first.Code != http.StatusOK {
 				t.Fatalf("first preview got %d: %s", first.Code, first.Body)
 			}
-			if second := requestPreview(); second.Code != http.StatusOK {
+			if second := requestPreview(false); second.Code != http.StatusOK {
 				t.Fatalf("cached preview got %d: %s", second.Code, second.Body)
+			}
+			if forced := requestPreview(true); forced.Code != http.StatusOK {
+				t.Fatalf("forced preview got %d: %s", forced.Code, forced.Body)
 			}
 			client.mu.Lock()
 			defer client.mu.Unlock()
-			if client.visualizationCalls != 1 {
-				t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+			if client.visualizationCalls != 2 {
+				t.Fatalf("visualization downloaded %d times, want initial and forced downloads", client.visualizationCalls)
 			}
 		})
+	}
+}
+
+func TestResourceResultReusesLocalFileUnlessForced(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+			"Case/case-1": {
+				ID: "case-1", Type: "Case", Info: json.RawMessage(`{"project_id":"prj-1"}`), Errors: map[string]string{},
+			},
+		},
+		failures: map[string]error{},
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+
+	requestPreview := func(force bool) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		requestContext, _ := gin.CreateTestContext(recorder)
+		path := "/api/flow360/resources/Case/case-1/preview?path=results%2Fresidual.csv"
+		if force {
+			path += "&force=true"
+		}
+		requestContext.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		requestContext.Params = gin.Params{
+			{Key: "resource_type", Value: "Case"},
+			{Key: "resource_id", Value: "case-1"},
+		}
+		app.flow360ResourcePreview(requestContext)
+		return recorder
+	}
+	if response := requestPreview(false); response.Code != http.StatusOK {
+		t.Fatalf("initial result preview got %d: %s", response.Code, response.Body)
+	}
+	downloadRecorder := httptest.NewRecorder()
+	downloadContext, _ := gin.CreateTestContext(downloadRecorder)
+	downloadContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-1/download?path=results%2Fresidual.csv", nil)
+	downloadContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Case"},
+		{Key: "resource_id", Value: "case-1"},
+	}
+	app.flow360ResourceDownload(downloadContext)
+	if downloadRecorder.Code != http.StatusOK {
+		t.Fatalf("cached result download got %d: %s", downloadRecorder.Code, downloadRecorder.Body)
+	}
+	if response := requestPreview(true); response.Code != http.StatusOK {
+		t.Fatalf("forced result preview got %d: %s", response.Code, response.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if calls := client.calls["result/results/residual.csv"]; calls != 2 {
+		t.Fatalf("result downloaded %d times, want initial and forced downloads", calls)
 	}
 }
 
@@ -609,13 +687,21 @@ func TestResourceVisualizationAssetDownloadsMissingLODOnDemand(t *testing.T) {
 	if assetRecorder.Code != http.StatusOK || !bytes.Equal(assetRecorder.Body.Bytes(), []byte{4, 5, 6}) {
 		t.Fatalf("high precision asset got %d: %v", assetRecorder.Code, assetRecorder.Body.Bytes())
 	}
+	forcedRecorder := httptest.NewRecorder()
+	forcedContext, _ := gin.CreateTestContext(forcedRecorder)
+	forcedContext.Request = httptest.NewRequest(http.MethodGet, "/asset?force=true", nil)
+	forcedContext.Params = assetContext.Params
+	app.flow360ResourceVisualizationAsset(forcedContext)
+	if forcedRecorder.Code != http.StatusOK || !bytes.Equal(forcedRecorder.Body.Bytes(), []byte{4, 5, 6}) {
+		t.Fatalf("forced high precision asset got %d: %v", forcedRecorder.Code, forcedRecorder.Body.Bytes())
+	}
 	if payload, err := app.mirror.ResourceVisualizationFile("Geometry", "geo-1", "body-high.bin"); err != nil || len(payload) == 0 {
 		t.Fatalf("high precision LOD was not repaired: payload=%v err=%v", payload, err)
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if client.visualizationCalls != 0 || client.visualizationAssetCalls != 1 {
-		t.Fatalf("downloads: visualization=%d asset=%d, want 0 and 1", client.visualizationCalls, client.visualizationAssetCalls)
+	if client.visualizationCalls != 0 || client.visualizationAssetCalls != 2 {
+		t.Fatalf("downloads: visualization=%d asset=%d, want 0 and 2", client.visualizationCalls, client.visualizationAssetCalls)
 	}
 }
 

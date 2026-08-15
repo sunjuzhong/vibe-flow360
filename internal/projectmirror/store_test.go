@@ -354,3 +354,36 @@ func TestStorePutResourceVisualizationFilesCopiesDiskBackedBuffers(t *testing.T)
 		t.Fatalf("copied size = %d, want 5", info.Size())
 	}
 }
+
+func TestStoreResourceResultRoundTrip(t *testing.T) {
+	store, err := New(t.TempDir(), "production-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutResource(
+		"prj-1", "Case", "case-1", json.RawMessage(`{"id":"case-1","type":"Case"}`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("iteration,residual\n1,0.1\n")
+	if err := store.PutResourceResult("prj-1", "Case", "case-1", "results/history/residual.csv", want); err != nil {
+		t.Fatal(err)
+	}
+	file, info, err := store.OpenResourceResult("Case", "case-1", "results/history/residual.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	got := make([]byte, info.Size())
+	if _, err := file.Read(got); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("cached result = %q, want %q", got, want)
+	}
+	for _, unsafe := range []string{"../results/a.csv", "/results/a.csv", `results\\a.csv`, "other/a.csv"} {
+		if err := store.PutResourceResult("prj-1", "Case", "case-1", unsafe, want); err == nil {
+			t.Fatalf("unsafe result path %q was accepted", unsafe)
+		}
+	}
+}

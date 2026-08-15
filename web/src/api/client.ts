@@ -1226,9 +1226,9 @@ export const api = {
   },
   planExecution: (planId: string, tail = 120) =>
     json<PlanExecutionSnapshot>(`/api/plans/${encodeURIComponent(planId)}/execution?tail=${tail}`),
-  downloadResult: async (resourceType: string, resourceId: string, resultPath: string) => {
+  downloadResult: async (resourceType: string, resourceId: string, resultPath: string, force = false) => {
     const response = await fetch(
-      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/download?path=${encodeURIComponent(resultPath)}`,
+      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/download?path=${encodeURIComponent(resultPath)}${force ? '&force=true' : ''}`,
     )
     if (!response.ok) throw await responseError(response)
     const blob = await response.blob()
@@ -1239,9 +1239,9 @@ export const api = {
     a.click()
     URL.revokeObjectURL(url)
   },
-  previewResult: async (resourceType: string, resourceId: string, resultPath: string) => {
+  previewResult: async (resourceType: string, resourceId: string, resultPath: string, force = false) => {
     const response = await fetch(
-      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/preview?path=${encodeURIComponent(resultPath)}`,
+      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/preview?path=${encodeURIComponent(resultPath)}${force ? '&force=true' : ''}`,
     )
     if (!response.ok) throw await responseError(response)
     return response.text()

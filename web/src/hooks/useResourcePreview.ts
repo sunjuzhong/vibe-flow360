@@ -22,6 +22,7 @@ export function useResourcePreview(
     id: string,
     alternateType: string | null,
     alternateId: string | null,
+    force = false,
   ) => {
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -31,7 +32,7 @@ export function useResourcePreview(
     setPrimaryError('')
 
     const fetchManifest = async (previewType: string, previewId: string) => {
-      const url = `/api/flow360/resources/${encodeURIComponent(previewType)}/${encodeURIComponent(previewId)}/preview-mesh`
+      const url = `/api/flow360/resources/${encodeURIComponent(previewType)}/${encodeURIComponent(previewId)}/preview-mesh${force ? '?force=true' : ''}`
       const response = await fetch(url, { signal: controller.signal })
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
@@ -96,6 +97,6 @@ export function useResourcePreview(
     state,
     source,
     primaryError,
-    refetch: () => resourceType && resourceId && load(resourceType, resourceId, fallbackType, fallbackId),
+    refetch: (force = false) => resourceType && resourceId && load(resourceType, resourceId, fallbackType, fallbackId, force),
   }
 }

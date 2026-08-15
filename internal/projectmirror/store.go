@@ -226,6 +226,64 @@ func (s *Store) PutResourceVisualizationAsset(resourceType, resourceID, relative
 	return copyRegularFile(target, source)
 }
 
+// PutResourceResult stores an immutable result payload under the owning
+// resource. Result artifacts are addressed by their Flow360 relative path so
+// subsequent previews and downloads can reuse the same local file.
+func (s *Store) PutResourceResult(projectID, resourceType, resourceID, relative string, payload []byte) error {
+	if err := validateID(projectID); err != nil {
+		return err
+	}
+	if !validResourceType(resourceType) {
+		return errors.New("unsupported resource type")
+	}
+	if err := validateID(resourceID); err != nil {
+		return err
+	}
+	clean, err := validateResultPath(relative)
+	if err != nil {
+		return err
+	}
+	target := filepath.Join(
+		s.projectDir(projectID), "resources", resourceType, resourceID, "files", filepath.FromSlash(clean),
+	)
+	return s.writeBytes(target, payload)
+}
+
+// OpenResourceResult opens a previously synchronized immutable result file.
+func (s *Store) OpenResourceResult(resourceType, resourceID, relative string) (*os.File, os.FileInfo, error) {
+	if !validResourceType(resourceType) {
+		return nil, nil, errors.New("unsupported resource type")
+	}
+	if err := validateID(resourceID); err != nil {
+		return nil, nil, err
+	}
+	clean, err := validateResultPath(relative)
+	if err != nil {
+		return nil, nil, err
+	}
+	projectID, err := s.ResourceProjectID(resourceType, resourceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	target := filepath.Join(
+		s.projectDir(projectID), "resources", resourceType, resourceID, "files", filepath.FromSlash(clean),
+	)
+	file, err := os.Open(target)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		file.Close()
+		return nil, nil, errors.New("resource result must be a regular file")
+	}
+	return file, info, nil
+}
+
 func (s *Store) putResourceVisualization(
 	projectID string,
 	resourceType string,
@@ -634,6 +692,24 @@ func validateVisualizationPath(value, extension string) (string, error) {
 		clean != "manifest.json" &&
 		!strings.HasSuffix(strings.ToLower(clean), ".bin") {
 		return "", errors.New("unsupported visualization asset")
+	}
+	return clean, nil
+}
+
+func validateResultPath(value string) (string, error) {
+	if strings.Contains(value, "\\") {
+		return "", errors.New("result path must use forward slashes")
+	}
+	value = strings.TrimSpace(value)
+	clean := filepath.ToSlash(filepath.Clean(value))
+	if value == "" || clean != value || strings.HasPrefix(clean, "/") || strings.Contains(clean, "..") {
+		return "", errors.New("unsafe result path")
+	}
+	if clean != "results" && !strings.HasPrefix(clean, "results/") {
+		return "", errors.New("result path must be within results")
+	}
+	if clean == "results" {
+		return "", errors.New("result path must identify a file")
 	}
 	return clean, nil
 }

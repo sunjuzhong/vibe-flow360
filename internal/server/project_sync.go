@@ -29,6 +29,8 @@ type projectSyncClient interface {
 	ResourceDetail(context.Context, string, string) (flow360.ResourceDetail, error)
 	ResourceVisualization(context.Context, string, string) (flow360.ResourceVisualization, error)
 	ResourceVisualizationAsset(context.Context, string, string, string) (flow360.VisualizationFile, error)
+	ResourceResult(context.Context, string, string, string) ([]byte, string, error)
+	ResourceResultPreview(context.Context, string, string, string) ([]byte, error)
 }
 
 type projectSyncItem struct {

@@ -1835,11 +1835,10 @@ func (s *Server) flow360ResourceDownload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path query parameter is required"})
 		return
 	}
-	output, contentType, err := s.flow360.ResourceResult(
-		c.Request.Context(),
-		c.Param("resource_type"),
-		c.Param("resource_id"),
-		resultPath,
+	resourceType := c.Param("resource_type")
+	resourceID := c.Param("resource_id")
+	output, contentType, err := s.resourceResult(
+		c.Request.Context(), resourceType, resourceID, resultPath, forceResourceFileSync(c), false,
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1855,11 +1854,13 @@ func (s *Server) flow360ResourcePreview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path query parameter is required"})
 		return
 	}
-	output, err := s.flow360.ResourceResultPreview(
-		c.Request.Context(),
-		c.Param("resource_type"),
-		c.Param("resource_id"),
-		resultPath,
+	ext := strings.ToLower(filepath.Ext(resultPath))
+	if ext != ".csv" && ext != ".txt" && ext != ".dat" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "preview is only available for text files (.csv, .txt, .dat)"})
+		return
+	}
+	output, _, err := s.resourceResult(
+		c.Request.Context(), c.Param("resource_type"), c.Param("resource_id"), resultPath, forceResourceFileSync(c), true,
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1868,9 +1869,71 @@ func (s *Server) flow360ResourcePreview(c *gin.Context) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", output)
 }
 
+func forceResourceFileSync(c *gin.Context) bool {
+	return strings.EqualFold(strings.TrimSpace(c.Query("force")), "true")
+}
+
+func resultContentType(resultPath string) string {
+	switch strings.ToLower(filepath.Ext(resultPath)) {
+	case ".csv", ".txt", ".dat":
+		return "text/plain; charset=utf-8"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func (s *Server) resourceResult(
+	ctx context.Context,
+	resourceType string,
+	resourceID string,
+	resultPath string,
+	force bool,
+	preview bool,
+) ([]byte, string, error) {
+	if err := flow360.ValidateResourcePath(resourceType, resourceID); err != nil {
+		return nil, "", err
+	}
+	if !force && s.mirror != nil {
+		file, _, err := s.mirror.OpenResourceResult(resourceType, resourceID, resultPath)
+		if err == nil {
+			defer file.Close()
+			payload, readErr := io.ReadAll(file)
+			return payload, resultContentType(resultPath), readErr
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, "", err
+		}
+	}
+	if s.projectSyncClient == nil {
+		return nil, "", errors.New("Flow360 result synchronization is unavailable")
+	}
+	var (
+		payload     []byte
+		contentType = resultContentType(resultPath)
+		err         error
+	)
+	if preview {
+		payload, err = s.projectSyncClient.ResourceResultPreview(ctx, resourceType, resourceID, resultPath)
+	} else {
+		payload, contentType, err = s.projectSyncClient.ResourceResult(ctx, resourceType, resourceID, resultPath)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if s.mirror != nil {
+		if projectID, identityErr := s.ensureResourceMirrorIdentity(ctx, resourceType, resourceID); identityErr == nil {
+			if persistErr := s.mirror.PutResourceResult(projectID, resourceType, resourceID, resultPath, payload); persistErr != nil {
+				return nil, "", persistErr
+			}
+		}
+	}
+	return payload, contentType, nil
+}
+
 func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	resourceType := c.Param("resource_type")
 	resourceID := c.Param("resource_id")
+	force := forceResourceFileSync(c)
 	var visualizationErr error
 
 	if err := flow360.ValidateResourcePath(resourceType, resourceID); err != nil {
@@ -1894,7 +1957,7 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 				if !manifestChanged {
 					cachedPreview = &preview
 				}
-				if !manifestChanged && visualizationManifestBrowserSafe(manifest) && s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
+				if !force && !manifestChanged && visualizationManifestBrowserSafe(manifest) && s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
 					c.Header("Cache-Control", "private, max-age=60")
 					c.JSON(http.StatusOK, preview)
 					return
@@ -2230,13 +2293,18 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 		return
 	}
 	file, info, err := s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, relative)
-	if errors.Is(err, os.ErrNotExist) && relative != "manifest.json" && s.projectSyncClient != nil && s.visualizationReferencesAsset(resourceType, resourceID, relative) {
+	force := forceResourceFileSync(c)
+	shouldDownload := (errors.Is(err, os.ErrNotExist) || force) && relative != "manifest.json" && s.projectSyncClient != nil && s.visualizationReferencesAsset(resourceType, resourceID, relative)
+	if shouldDownload {
 		downloaded, downloadErr := s.projectSyncClient.ResourceVisualizationAsset(
 			c.Request.Context(), resourceType, resourceID, relative,
 		)
 		if downloadErr == nil {
 			defer downloaded.Close()
 			if persistErr := s.mirror.PutResourceVisualizationAsset(resourceType, resourceID, relative, downloaded.Path); persistErr == nil {
+				if file != nil {
+					_ = file.Close()
+				}
 				file, info, err = s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, relative)
 			}
 		}
