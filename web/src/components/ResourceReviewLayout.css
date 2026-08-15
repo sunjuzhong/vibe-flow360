@@ -485,7 +485,7 @@
 }
 
 .volume-review-workspace .resource-review-inventory .volume-zone-row {
-  min-height: 62px;
+  min-height: 34px;
 }
 
 .volume-review-workspace .volume-zone-select strong {
@@ -724,12 +724,6 @@
 .case-surface-list .geometry-entity-select {
   grid-template-columns: auto minmax(0, 1fr);
   padding-left: 7px;
-}
-
-.case-surface-list .case-visualization-row {
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
 }
 
 .case-surface-list .case-archive-entity-icon {
