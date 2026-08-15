@@ -99,6 +99,27 @@ describe('picking engine', () => {
     expect(result?.entityId).toBe('geometry-body')
   })
 
+  it('resolves BatchedMesh intersections back to the source entity', () => {
+    const source = triangle(true).geometry
+    const batch = new THREE.BatchedMesh(1, 3, 3, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+    const geometryId = batch.addGeometry(source)
+    const instanceId = batch.addInstance(geometryId)
+    batch.userData.uvfBatchEntityByInstance = ['batched-body']
+    batch.setMatrixAt(instanceId, new THREE.Matrix4())
+    batch.updateMatrixWorld(true)
+    const candidate = pickScene(
+      new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1)),
+      [batch],
+    )
+    const result = resolvePickCandidate(candidate, {
+      projectId: 'project-1', resourceRef, assetRoot: batch,
+    })
+
+    expect(candidate?.batchId).toBe(instanceId)
+    expect(result?.entityId).toBe('batched-body')
+    batch.dispose()
+  })
+
   it('skips hidden, wireframe, UVF wire, and annotation overlay meshes', () => {
     const valid = triangle(true)
     valid.userData.entityId = 'valid'

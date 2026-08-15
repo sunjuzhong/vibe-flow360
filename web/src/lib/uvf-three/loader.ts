@@ -14,6 +14,7 @@ const maxBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_BUFFER_B
 const maxBufferFiles = 256
 const maxConcurrentBufferLoads = 4
 const maxTotalBufferBytes = configuredByteLimit(import.meta.env.VITE_UVF_MAX_TOTAL_BUFFER_BYTES)
+const minBatchedSolidCount = 64
 
 const STRUCTURAL_SECTIONS = new Set(['indices', 'position', 'normal', 'edgePosition'])
 export const WIREFRAME_OVERLAY_WIDTH = 2.2
@@ -23,6 +24,31 @@ type LoadOptions = {
   signal?: AbortSignal
   lodLevel?: number
   onProgress?: (progress: UVFLoadProgress) => void
+}
+
+type BatchedSolidCandidate = {
+  entityId: string
+  entityObject: THREE.Object3D
+  geometry: THREE.BufferGeometry
+  color: THREE.Color
+}
+
+type BatchedEntityReference = {
+  mesh: THREE.BatchedMesh
+  instanceId: number
+  bounds: THREE.Box3
+}
+
+type BatchedBoundsEntry = {
+  instanceId: number
+  bounds: THREE.Box3
+}
+
+type BatchedBoundsNode = {
+  bounds: THREE.Box3
+  left?: BatchedBoundsNode
+  right?: BatchedBoundsNode
+  instances?: BatchedBoundsEntry[]
 }
 
 export class UVFLoader {
@@ -141,6 +167,8 @@ export function buildUVFAsset(
   root.name = 'UVF Scene'
   const byID = indexEntries(entries)
   const { objectByID, parentByID } = buildContainerHierarchy(entries, root)
+  const batchedSolidCandidates: BatchedSolidCandidate[] = []
+  const batchedEntities = new Map<string, BatchedEntityReference>()
   let faces = 0
   let edges = 0
   let vertices = 0
@@ -269,20 +297,12 @@ export function buildUVFAsset(
       for (const [name, attribute] of fieldAttributes) geometry.setAttribute(name, attribute)
       if (elementGroupIds) geometry.setAttribute('elementGroupId', new THREE.BufferAttribute(elementGroupIds, 1))
       const opacity = solid.properties?.alpha ?? 1
-      const material = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(faceColor(solid.properties?.color, faces)),
-        side: THREE.DoubleSide,
-        transparent: opacity < 1,
-        opacity,
-        shininess: 35,
-        vertexColors: false,
-      })
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.name = solid.name || solid.id
-      mesh.userData.entityId = solid.id
-      mesh.userData.groupId = solid.id
-      mesh.userData.uvfType = 'SolidGeometry'
-      solidObject.add(mesh)
+      const color = new THREE.Color(faceColor(solid.properties?.color, faces))
+      if (indices && opacity === 1 && fieldAttributes.size === 0) {
+        batchedSolidCandidates.push({ entityId: solid.id, entityObject: solidObject, geometry, color })
+      } else {
+        addSolidMesh(solidObject, geometry, solid.id, solid.name, color, opacity)
+      }
       faces++
       triangles += indices ? Math.floor(indices.length / 3) : Math.floor(positions.length / 9)
     }
@@ -321,6 +341,7 @@ export function buildUVFAsset(
       }
     }
   }
+  materializeSolidCandidates(root, batchedSolidCandidates, batchedEntities)
   if (!faces) throw new Error('UVF manifest produced no renderable faces')
   const fields = Array.from(catalog.values())
     .map((field) => {
@@ -341,9 +362,26 @@ export function buildUVFAsset(
     entityLODs,
     entities,
     getEntityObject: (entityId) => objectByID.get(entityId),
+    getEntityBounds: (entityId) => batchedEntities.get(entityId)?.bounds.clone(),
+    setEntityVisibility: (entityId, visible) => {
+      const batched = batchedEntities.get(entityId)
+      if (batched) batched.mesh.setVisibleAt(batched.instanceId, visible)
+      const object = objectByID.get(entityId)
+      if (object) object.visible = visible
+    },
+    setEntityColor: (entityId, color, opacity = 1) => {
+      const batched = batchedEntities.get(entityId)
+      if (batched) {
+        const resolved = new THREE.Color(color)
+        batched.mesh.setColorAt(batched.instanceId, new THREE.Vector4(resolved.r, resolved.g, resolved.b, opacity))
+      }
+    },
     dispose: () => {
       root.traverse((object) => {
-        if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
+        if (object instanceof THREE.BatchedMesh) {
+          object.dispose()
+          object.material.dispose()
+        } else if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
           object.geometry.dispose()
           const materials = Array.isArray(object.material) ? object.material : [object.material]
           materials.forEach((material) => material.dispose())
@@ -355,6 +393,170 @@ export function buildUVFAsset(
       })
     },
   }
+}
+
+function addSolidMesh(
+  parent: THREE.Object3D,
+  geometry: THREE.BufferGeometry,
+  entityId: string,
+  name: string | undefined,
+  color: THREE.Color,
+  opacity: number,
+) {
+  const material = new THREE.MeshPhongMaterial({
+    color,
+    side: THREE.DoubleSide,
+    transparent: opacity < 1,
+    opacity,
+    shininess: 35,
+    vertexColors: false,
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = name || entityId
+  mesh.userData.entityId = entityId
+  mesh.userData.groupId = entityId
+  mesh.userData.uvfType = 'SolidGeometry'
+  parent.add(mesh)
+}
+
+function materializeSolidCandidates(
+  root: THREE.Group,
+  candidates: BatchedSolidCandidate[],
+  entities: Map<string, BatchedEntityReference>,
+) {
+  if (candidates.length < minBatchedSolidCount) {
+    for (const candidate of candidates) {
+      addSolidMesh(candidate.entityObject, candidate.geometry, candidate.entityId, candidate.entityObject.name, candidate.color, 1)
+    }
+    return
+  }
+
+  const vertexCount = candidates.reduce((total, candidate) =>
+    total + candidate.geometry.getAttribute('position').count, 0)
+  const indexCount = candidates.reduce((total, candidate) =>
+    total + (candidate.geometry.index?.count ?? 0), 0)
+  const material = new THREE.MeshPhongMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 1,
+    shininess: 35,
+    vertexColors: false,
+  })
+  const mesh = new THREE.BatchedMesh(candidates.length, vertexCount, indexCount, material)
+  mesh.name = 'UVF batched solid geometry'
+  mesh.userData.uvfType = 'BatchedSolidGeometry'
+  mesh.userData.uvfBatchEntityByInstance = [] as string[]
+  mesh.perObjectFrustumCulled = false
+  mesh.sortObjects = false
+  const batchedBounds: BatchedBoundsEntry[] = []
+
+  root.updateMatrixWorld(true)
+  const inverseRoot = root.matrixWorld.clone().invert()
+  for (const candidate of candidates) {
+    candidate.entityObject.updateWorldMatrix(true, false)
+    const matrix = inverseRoot.clone().multiply(candidate.entityObject.matrixWorld)
+    candidate.geometry.computeBoundingBox()
+    const bounds = candidate.geometry.boundingBox?.clone().applyMatrix4(matrix) ?? new THREE.Box3()
+    const geometryId = mesh.addGeometry(candidate.geometry)
+    const instanceId = mesh.addInstance(geometryId)
+    mesh.setMatrixAt(instanceId, matrix)
+    mesh.setColorAt(instanceId, new THREE.Vector4(candidate.color.r, candidate.color.g, candidate.color.b, 1))
+    mesh.userData.uvfBatchEntityByInstance[instanceId] = candidate.entityId
+    candidate.entityObject.userData.uvfBatchInstanceId = instanceId
+    entities.set(candidate.entityId, { mesh, instanceId, bounds })
+    batchedBounds.push({ instanceId, bounds })
+    candidate.entityObject.removeFromParent()
+    candidate.geometry.dispose()
+  }
+  mesh.computeBoundingBox()
+  mesh.computeBoundingSphere()
+  accelerateBatchedRaycast(mesh, batchedBounds)
+  root.add(mesh)
+}
+
+function accelerateBatchedRaycast(mesh: THREE.BatchedMesh, entries: BatchedBoundsEntry[]) {
+  const tree = buildBatchedBoundsTree(entries)
+  const localRay = new THREE.Ray()
+  const inverseWorld = new THREE.Matrix4()
+  const instanceMatrix = new THREE.Matrix4()
+  const proxy = new THREE.Mesh(mesh.geometry, mesh.material)
+  const proxyBounds = new THREE.Box3()
+  const proxySphere = new THREE.Sphere()
+  const localIntersections: THREE.Intersection[] = []
+
+  mesh.userData.uvfAcceleratedRaycast = true
+  mesh.raycast = (raycaster, intersections) => {
+    inverseWorld.copy(mesh.matrixWorld).invert()
+    localRay.copy(raycaster.ray).applyMatrix4(inverseWorld)
+    const candidates: BatchedBoundsEntry[] = []
+    collectBatchedRayCandidates(tree, localRay, candidates)
+
+    const geometry = mesh.geometry
+    const previousRange = { ...geometry.drawRange }
+    const previousBox = geometry.boundingBox
+    const previousSphere = geometry.boundingSphere
+    try {
+      for (const candidate of candidates) {
+        if (!mesh.getVisibleAt(candidate.instanceId)) continue
+        const geometryId = mesh.getGeometryIdAt(candidate.instanceId)
+        const range = mesh.getGeometryRangeAt(geometryId)
+        if (!range) continue
+        mesh.getMatrixAt(candidate.instanceId, instanceMatrix)
+        proxy.matrixWorld.multiplyMatrices(mesh.matrixWorld, instanceMatrix)
+        mesh.getBoundingBoxAt(geometryId, proxyBounds)
+        mesh.getBoundingSphereAt(geometryId, proxySphere)
+        geometry.setDrawRange(range.start, range.count)
+        geometry.boundingBox = proxyBounds
+        geometry.boundingSphere = proxySphere
+        localIntersections.length = 0
+        THREE.Mesh.prototype.raycast.call(proxy, raycaster, localIntersections)
+        for (const intersection of localIntersections) {
+          intersection.object = mesh
+          intersection.batchId = candidate.instanceId
+          ;(intersection as THREE.Intersection & { uvfBatchMatrix?: THREE.Matrix4 }).uvfBatchMatrix = instanceMatrix.clone()
+          intersections.push(intersection)
+        }
+      }
+    } finally {
+      geometry.setDrawRange(previousRange.start, previousRange.count)
+      geometry.boundingBox = previousBox
+      geometry.boundingSphere = previousSphere
+    }
+  }
+}
+
+function buildBatchedBoundsTree(entries: BatchedBoundsEntry[]): BatchedBoundsNode {
+  const bounds = entries.reduce((box, entry) => box.union(entry.bounds), new THREE.Box3())
+  if (entries.length <= 8) return { bounds, instances: entries }
+  const size = bounds.getSize(new THREE.Vector3())
+  const axis: 'x' | 'y' | 'z' = size.x >= size.y && size.x >= size.z
+    ? 'x'
+    : size.y >= size.z ? 'y' : 'z'
+  const center = (entry: BatchedBoundsEntry) => (entry.bounds.min[axis] + entry.bounds.max[axis]) / 2
+  entries.sort((left, right) => center(left) - center(right))
+  const middle = Math.floor(entries.length / 2)
+  return {
+    bounds,
+    left: buildBatchedBoundsTree(entries.slice(0, middle)),
+    right: buildBatchedBoundsTree(entries.slice(middle)),
+  }
+}
+
+function collectBatchedRayCandidates(
+  node: BatchedBoundsNode,
+  ray: THREE.Ray,
+  candidates: BatchedBoundsEntry[],
+) {
+  if (!ray.intersectsBox(node.bounds)) return
+  if (node.instances) {
+    for (const candidate of node.instances) {
+      if (ray.intersectsBox(candidate.bounds)) candidates.push(candidate)
+    }
+    return
+  }
+  if (node.left) collectBatchedRayCandidates(node.left, ray, candidates)
+  if (node.right) collectBatchedRayCandidates(node.right, ray, candidates)
 }
 
 function deriveRenderNormals(
@@ -848,6 +1050,12 @@ export function findFieldExtrema(asset: UVFAsset, fieldName: string): UVFFieldEx
 export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
   const faces: THREE.Mesh[] = []
   asset.object.traverse((object) => {
+    if (object instanceof THREE.BatchedMesh && object.userData.uvfType === 'BatchedSolidGeometry') {
+      const material = object.material as THREE.MeshPhongMaterial
+      material.wireframe = visible
+      material.needsUpdate = true
+      return
+    }
     if (isUVFSurfaceMesh(object)) faces.push(object)
   })
 
@@ -1069,6 +1277,10 @@ export function updateWireframeOverlayForCamera(
 }
 
 export function setEntityVisibility(asset: UVFAsset, entityId: string, visible: boolean): void {
+  if (asset.setEntityVisibility) {
+    asset.setEntityVisibility(entityId, visible)
+    return
+  }
   asset.object.traverse((object) => {
     if ((object.userData.entityId ?? object.userData.groupId) !== entityId) return
     object.visible = visible

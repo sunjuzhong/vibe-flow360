@@ -7494,6 +7494,23 @@ button { color: inherit; }
 .manifest-member-group__visibility:disabled { opacity: .38; cursor: not-allowed; }
 .manifest-member-group__content[hidden] { display: none; }
 
+.virtualized-manifest-rows {
+  position: relative;
+  min-width: 0;
+}
+
+.virtualized-manifest-row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  contain: layout paint style;
+}
+
+.virtualized-manifest-row > .geometry-entity-row {
+  height: calc(100% - 2px);
+}
+
 .geometry-review-workspace .manifest-member-group__toggle { font-size: 10px; }
 .geometry-review-workspace .manifest-member-group__toggle > span { font-size: 9px; }
 

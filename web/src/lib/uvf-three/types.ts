@@ -163,5 +163,8 @@ export type UVFAsset = {
   entityLODs: Record<string, { levels: number; current: number }>
   entities: UVFEntityInfo[]
   getEntityObject: (entityId: string) => import('three').Object3D | undefined
+  getEntityBounds?: (entityId: string) => import('three').Box3 | undefined
+  setEntityVisibility?: (entityId: string, visible: boolean) => void
+  setEntityColor?: (entityId: string, color: import('three').ColorRepresentation, opacity?: number) => void
   dispose: () => void
 }

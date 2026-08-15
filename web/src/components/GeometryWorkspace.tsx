@@ -88,6 +88,8 @@ import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
 import { ManifestMemberGroup, manifestVisibilityMap } from './ManifestMemberGroup'
 import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
 import type { DraftEntityMutation } from '../lib/draftEntities'
+import { VirtualizedManifestRows } from './VirtualizedManifestRows'
+import { UVFAssetLRU } from '../lib/uvf-three'
 import './GeometryWorkspace.css'
 
 const readinessCopy = {
@@ -357,6 +359,8 @@ export default function GeometryWorkspace({
   onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
 }) {
   const { t, language } = useI18n()
+  const entityTreeRef = useRef<HTMLDivElement>(null)
+  const viewerAssetCache = useMemo(() => new UVFAssetLRU(2), [])
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>({ groupId: null })
   const [entityVisibility, setEntityVisibility] = useState<Record<string, boolean>>({})
   const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
@@ -528,6 +532,10 @@ export default function GeometryWorkspace({
     : selectedSurfaceOverrideIds.every(Boolean) && selectedSurfaceOverrideIdSet.size === 1
       ? [...selectedSurfaceOverrideIdSet][0]
       : '__mixed__'
+
+  useEffect(() => {
+    return () => viewerAssetCache.dispose()
+  }, [viewerAssetCache])
 
   useEffect(() => {
     setViewerSelection({ groupId: null })
@@ -854,7 +862,7 @@ export default function GeometryWorkspace({
           </button>
           <button type="button" disabled={selectedGroupIds.length === 0} onClick={() => chooseGroups([])}>Clear</button>
         </div>
-        <div className="geometry-entity-tree">
+        <div ref={entityTreeRef} className="geometry-entity-tree">
           <ManifestMemberGroup
             label="Geometry bodies"
             memberLabel="surfaces"
@@ -870,7 +878,10 @@ export default function GeometryWorkspace({
               ...manifestVisibilityMap(manifest?.groups ?? [], true),
             }))}
           >
-            {filteredGroups.map((group) => {
+            <VirtualizedManifestRows
+              items={filteredGroups}
+              scrollContainerRef={entityTreeRef}
+              renderRow={(group) => {
               const visible = entityIsVisible(group.id)
               return (
               <div
@@ -913,7 +924,8 @@ export default function GeometryWorkspace({
                 </button>
               </div>
               )
-            })}
+            }}
+            />
           </ManifestMemberGroup>
           <ManifestMemberGroup
             label="CAD edges"
@@ -999,6 +1011,7 @@ export default function GeometryWorkspace({
           parameterEntities={parameterEntities}
           parameterEntityVisibility={parameterEntityVisibility}
           entityAppearances={entityAppearances}
+          uvfAssetCache={viewerAssetCache}
           projectId={projectId}
           resourceRef={resourceRef}
           toolInput={tools.toolInput}

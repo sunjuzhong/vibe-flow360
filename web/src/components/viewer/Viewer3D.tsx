@@ -393,6 +393,10 @@ export function Viewer3D({
     [additionalManifests, manifest],
   )
   const displayManifest = useMemo(() => mergeViewerManifestMetadata(activeManifests), [activeManifests])
+  const displayGroupById = useMemo(
+    () => new Map((displayManifest?.groups ?? []).map((group) => [group.id, group])),
+    [displayManifest],
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -401,6 +405,7 @@ export function Viewer3D({
   const assetBoundsSphereRef = useRef<THREE.Sphere | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
+  const entityMeshesRef = useRef<Map<string, THREE.Mesh[]>>(new Map())
   const assetRef = useRef<THREE.Object3D | null>(null)
   const parameterEntityGroupRef = useRef<THREE.Group | null>(null)
   const loadedAssetURLRef = useRef<string | null>(null)
@@ -409,6 +414,14 @@ export function Viewer3D({
   const licRendererRef = useRef<UVFScreenSpaceLIC | null>(null)
   const annotationOverlayRef = useRef<ViewerOverlayLayer | null>(null)
   const inputControllerRef = useRef<ViewerInputController | null>(null)
+  const pendingHoverEventRef = useRef<ViewerPointerEvent | null>(null)
+  const hoverFrameRef = useRef<number | null>(null)
+  const appliedVisibilityRef = useRef<Map<string, boolean>>(new Map())
+  const appliedVisibilityAssetRef = useRef<UVFAsset | null>(null)
+  const styledSelectionRef = useRef<Set<string>>(new Set())
+  const styledAppearancesRef = useRef(entityAppearances)
+  const styledManifestRef = useRef<ViewerManifest | null>(null)
+  const styledAssetRef = useRef<UVFAsset | null>(null)
   const draggedControlPointRef = useRef<{ index: number; pointerId: number } | null>(null)
   const snapResolverRef = useRef(new DefaultSnapResolver())
   const snapCycleRef = useRef<SnapCycleState>(createSnapCycleState())
@@ -593,12 +606,12 @@ export function Viewer3D({
     ...(displayManifest?.groups ?? []).map((group) => [group.id, group.visible] as const),
     ...(displayManifest?.edges ?? []).map((edge) => [edge.id, true] as const),
   ], [displayManifest])
-  const effectiveGroupVisibility = Object.fromEntries(
+  const effectiveGroupVisibility = useMemo(() => Object.fromEntries(
     manifestEntityVisibility.map(([entityId, defaultVisible]) => [
       entityId,
       entityVisibility?.[entityId] ?? groupVisibility[entityId] ?? defaultVisible,
     ]),
-  )
+  ), [entityVisibility, groupVisibility, manifestEntityVisibility])
 
   useEffect(() => {
     onFieldsDiscoveredRef.current = onFieldsDiscovered
@@ -791,6 +804,9 @@ export function Viewer3D({
       assetDisposeRef.current = null
       uvfAssetRef.current = null
       meshesRef.current.clear()
+      entityMeshesRef.current.clear()
+      appliedVisibilityRef.current.clear()
+      appliedVisibilityAssetRef.current = null
       if (previousRoot) scene.remove(previousRoot)
       if (previousParameterGroup) scene.remove(previousParameterGroup)
       assetRef.current = null
@@ -815,6 +831,7 @@ export function Viewer3D({
     let nextPrecisionInfo = { levels: 1, currentLevel: 0 }
     const nextFieldMap = new Map<string, UVFFieldInfo>()
     const nextMeshes = new Map<string, THREE.Mesh>()
+    const nextEntityMeshes = new Map<string, THREE.Mesh[]>()
     try {
       for (let manifestIndex = 0; manifestIndex < loadableManifests.length; manifestIndex += 1) {
         const layerManifest = loadableManifests[manifestIndex]
@@ -862,14 +879,24 @@ export function Viewer3D({
           disposers.push(() => disposeObject(layerRoot))
         }
         const fallbackGroup = layerManifest.groups[0]
+        const groupById = new Map(layerManifest.groups.map((group) => [group.id, group]))
+        const groupByName = new Map(layerManifest.groups.map((group) => [group.name.toLowerCase(), group]))
         layerRoot.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return
+          if (object instanceof THREE.BatchedMesh && Array.isArray(object.userData.uvfBatchEntityByInstance)) {
+            nextMeshes.set(`batch-${object.uuid}`, object)
+            for (const rawEntityId of object.userData.uvfBatchEntityByInstance as string[]) {
+              const entityId = `${layerManifest.entity_id_prefix ?? ''}${rawEntityId}`
+              nextEntityMeshes.set(entityId, [object])
+            }
+            return
+          }
           const embeddedEntityID = String(object.userData.entityId ?? object.userData.groupId ?? '')
           const embeddedGroupID = embeddedEntityID
             ? `${layerManifest.entity_id_prefix ?? ''}${embeddedEntityID}`
             : ''
-          const group = layerManifest.groups.find((candidate) => candidate.id === embeddedGroupID)
-            ?? layerManifest.groups.find((candidate) => object.name.toLowerCase().includes(candidate.name.toLowerCase()))
+          const group = groupById.get(embeddedGroupID)
+            ?? groupByName.get(object.name.toLowerCase())
             ?? fallbackGroup
           const groupId = group?.id ?? embeddedGroupID ?? object.uuid
           object.userData.entityId = embeddedGroupID || groupId
@@ -886,6 +913,9 @@ export function Viewer3D({
             })
           }
           nextMeshes.set(`${groupId}-${object.uuid}`, object)
+          const entityMeshes = nextEntityMeshes.get(groupId) ?? []
+          entityMeshes.push(object)
+          nextEntityMeshes.set(groupId, entityMeshes)
         })
         root.add(layerRoot)
       }
@@ -926,6 +956,32 @@ export function Viewer3D({
             }
           }
           return undefined
+        },
+        getEntityBounds: (entityId) => {
+          for (const asset of uvfAssets) {
+            const prefix = uvfAssetPrefixes.get(asset) ?? ''
+            if (!prefix || entityId.startsWith(prefix)) {
+              const bounds = asset.getEntityBounds?.(prefix ? entityId.slice(prefix.length) : entityId)
+              if (bounds) return bounds.applyMatrix4(asset.object.matrixWorld)
+            }
+          }
+          return undefined
+        },
+        setEntityVisibility: (entityId, visible) => {
+          for (const asset of uvfAssets) {
+            const prefix = uvfAssetPrefixes.get(asset) ?? ''
+            if (!prefix || entityId.startsWith(prefix)) {
+              asset.setEntityVisibility?.(prefix ? entityId.slice(prefix.length) : entityId, visible)
+            }
+          }
+        },
+        setEntityColor: (entityId, color, opacity) => {
+          for (const asset of uvfAssets) {
+            const prefix = uvfAssetPrefixes.get(asset) ?? ''
+            if (!prefix || entityId.startsWith(prefix)) {
+              asset.setEntityColor?.(prefix ? entityId.slice(prefix.length) : entityId, color, opacity)
+            }
+          }
         },
         dispose: () => disposers.forEach((dispose) => dispose()),
       }
@@ -982,6 +1038,9 @@ export function Viewer3D({
     assetDisposeRef.current = nextDispose
     uvfAssetRef.current = nextUVFAsset
     meshesRef.current = nextMeshes
+    entityMeshesRef.current = nextEntityMeshes
+    appliedVisibilityRef.current.clear()
+    appliedVisibilityAssetRef.current = nextUVFAsset
     setAssetStats(nextAssetStats)
     setPrecisionInfo(nextPrecisionInfo)
     setAvailableFields(nextFields)
@@ -1063,6 +1122,9 @@ export function Viewer3D({
       if (navCubeRef.current === navCube) navCubeRef.current = null
       annotationOverlay.dispose()
       if (annotationOverlayRef.current === annotationOverlay) annotationOverlayRef.current = null
+      if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current)
+      hoverFrameRef.current = null
+      pendingHoverEventRef.current = null
       inputControllerRef.current = null
       renderer.dispose()
       licRendererRef.current?.dispose()
@@ -1127,11 +1189,20 @@ export function Viewer3D({
     if (type === 'fit-selection' && selection?.groupId) {
       const selectedIds = selection.groupIds?.length ? selection.groupIds : [selection.groupId]
       for (const groupId of selectedIds) {
+        const selectedBounds = uvfAssetRef.current?.getEntityBounds?.(groupId)
+        if (selectedBounds && !selectedBounds.isEmpty()) {
+          box.union(selectedBounds)
+          continue
+        }
         const selectedEntity = uvfAssetRef.current?.getEntityObject(groupId)
         if (selectedEntity?.visible) box.expandByObject(selectedEntity)
       }
-      for (const mesh of meshesRef.current.values()) {
-        if (selectedIds.includes(mesh.userData.groupId) && mesh.visible) box.expandByObject(mesh)
+      if (box.isEmpty()) {
+        for (const groupId of selectedIds) {
+          for (const mesh of entityMeshesRef.current.get(groupId) ?? []) {
+            if (mesh.visible) box.expandByObject(mesh)
+          }
+        }
       }
     }
     if (box.isEmpty()) box.setFromObject(asset)
@@ -1236,82 +1307,100 @@ export function Viewer3D({
   }, [activeManifests, displayManifest, preserveCameraOnAssetChange, requestedLODLevel, state.status, updateGeometry])
 
   useEffect(() => {
-    if (!selection) return
-    const selectedIds = new Set(selection.groupIds?.length ? selection.groupIds : [selection.groupId])
-    for (const [, mesh] of meshesRef.current) {
-      const groupId = String(mesh.userData.groupId ?? '')
-      const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
+    const asset = uvfAssetRef.current
+    const selectedIds = new Set(
+      (selection?.groupIds?.length ? selection.groupIds : [selection?.groupId])
+        .filter((groupId): groupId is string => Boolean(groupId)),
+    )
+    const previousSelectedIds = styledSelectionRef.current
+    const restyleAll = styledAssetRef.current !== asset
+      || styledAppearancesRef.current !== entityAppearances
+      || styledManifestRef.current !== displayManifest
+    const entityIds = restyleAll
+      ? [...displayGroupById.keys()]
+      : [...new Set([...previousSelectedIds, ...selectedIds])]
+
+    for (const groupId of entityIds) {
       const appearance = entityAppearances[groupId]
-      const defaultColor = displayManifest?.groups.find((group) => group.id === groupId)?.color ?? '#6f8790'
+      const defaultColor = displayGroupById.get(groupId)?.color ?? '#6f8790'
       const style = resolveViewerMaterialStyle(
         defaultColor,
         appearance,
         selectedIds.has(groupId),
         effectiveGroupVisibility[groupId] !== false,
       )
-      mat.color.set(mat.vertexColors ? 0xffffff : style.color)
-      mat.opacity = style.opacity
-      mat.transparent = style.opacity < 1
-      mat.depthWrite = style.opacity >= 1
-      if (mat instanceof THREE.MeshPhongMaterial) {
-        mat.emissive.set(style.emissive)
-        mat.emissiveIntensity = style.emissiveIntensity
+      if (asset?.setEntityColor) {
+        const color = new THREE.Color(style.color)
+        if (selectedIds.has(groupId)) color.lerp(new THREE.Color(style.emissive), 0.28)
+        asset.setEntityColor(groupId, color, style.opacity)
       }
-      mat.needsUpdate = true
+      for (const mesh of entityMeshesRef.current.get(groupId) ?? []) {
+        if (mesh instanceof THREE.BatchedMesh) continue
+        const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
+        mat.color.set(mat.vertexColors ? 0xffffff : style.color)
+        mat.opacity = style.opacity
+        mat.transparent = style.opacity < 1
+        mat.depthWrite = style.opacity >= 1
+        if (mat instanceof THREE.MeshPhongMaterial) {
+          mat.emissive.set(style.emissive)
+          mat.emissiveIntensity = style.emissiveIntensity
+        }
+        mat.needsUpdate = true
+      }
     }
-    const asset = uvfAssetRef.current
-    if (!asset) return
-    asset.object.traverse((object) => {
-      if (object.userData.parameterEntity === true) return
-      if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
-      if (object.userData.uvfFieldFilterOverlay === true) return
-      if (object.userData.uvfVectorVisualizationOverlay === true) return
-      if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = false
-      const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
-      const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
-      materials.forEach((material) => {
-        const lineMaterial = material as THREE.LineBasicMaterial
-        if (!(lineMaterial.color instanceof THREE.Color)) return
-        lineMaterial.color.set(0x30352d)
-        material.opacity = wireframeOverlayOpacity(object) ?? 0.72
-        material.needsUpdate = true
+
+    const updateWireframeSelection = (groupId: string, selected: boolean) => {
+      asset?.getEntityObject(groupId)?.traverse((object) => {
+        if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
+        if (object.userData.uvfFieldFilterOverlay === true || object.userData.uvfVectorVisualizationOverlay === true) return
+        if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = selected
+        const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
+        const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
+        materials.forEach((material) => {
+          const lineMaterial = material as THREE.LineBasicMaterial
+          if (!(lineMaterial.color instanceof THREE.Color)) return
+          lineMaterial.color.set(selected ? 0xd59a2d : 0x30352d)
+          material.opacity = wireframeOverlayOpacity(object, selected) ?? (selected ? 1 : 0.72)
+          material.needsUpdate = true
+        })
       })
-    })
-    asset.getEntityObject(selection.groupId ?? '')?.traverse((object) => {
-      if (!(object instanceof THREE.Line) && object.userData.uvfWireframeOverlay !== true) return
-      if (object.userData.uvfFieldFilterOverlay === true) return
-      if (object.userData.uvfVectorVisualizationOverlay === true) return
-      if (object.userData.uvfWireframeOverlay === true) object.userData.uvfWireframeSelected = true
-      const lineObject = object as THREE.Object3D & { material: THREE.Material | THREE.Material[] }
-      const materials = Array.isArray(lineObject.material) ? lineObject.material : [lineObject.material]
-      materials.forEach((material) => {
-        const lineMaterial = material as THREE.LineBasicMaterial
-        if (!(lineMaterial.color instanceof THREE.Color)) return
-        lineMaterial.color.set(0xd59a2d)
-        material.opacity = wireframeOverlayOpacity(object, true) ?? 1
-        material.needsUpdate = true
-      })
-    })
-  }, [assetState.status, selection, displayManifest, entityVisibility, groupVisibility, entityAppearances])
+    }
+    for (const groupId of previousSelectedIds) {
+      if (!selectedIds.has(groupId)) updateWireframeSelection(groupId, false)
+    }
+    for (const groupId of selectedIds) updateWireframeSelection(groupId, true)
+
+    styledSelectionRef.current = selectedIds
+    styledAppearancesRef.current = entityAppearances
+    styledManifestRef.current = displayManifest
+    styledAssetRef.current = asset
+  }, [assetState.status, displayGroupById, displayManifest, effectiveGroupVisibility, entityAppearances, selection])
 
   useEffect(() => {
     if (!displayManifest) return
+    const asset = uvfAssetRef.current
+    if (appliedVisibilityAssetRef.current !== asset) {
+      appliedVisibilityRef.current.clear()
+      appliedVisibilityAssetRef.current = asset
+    }
     const entityIds = [
       ...displayManifest.groups.map((group) => group.id),
       ...(displayManifest.edges ?? []).map((edge) => edge.id),
     ]
+    let changed = false
     for (const entityId of entityIds) {
       const visible = effectiveGroupVisibility[entityId] !== false
-      if (uvfAssetRef.current) {
-        setEntityVisibility(uvfAssetRef.current, entityId, visible)
+      if (appliedVisibilityRef.current.get(entityId) === visible) continue
+      appliedVisibilityRef.current.set(entityId, visible)
+      changed = true
+      if (asset) {
+        setEntityVisibility(asset, entityId, visible)
       } else {
-        assetRef.current?.traverse((object) => {
-          if (object.userData.groupId === entityId) object.visible = visible
-        })
+        for (const mesh of entityMeshesRef.current.get(entityId) ?? []) mesh.visible = visible
       }
     }
-    recenterOnVisibleEntities()
-  }, [assetState.status, displayManifest, entityVisibility, groupVisibility, recenterOnVisibleEntities])
+    if (changed) recenterOnVisibleEntities()
+  }, [assetState.status, displayManifest, effectiveGroupVisibility, recenterOnVisibleEntities])
 
   useEffect(() => {
     setParameterEntityVisibility(parameterEntityGroupRef.current, parameterEntityVisibility)
@@ -1366,7 +1455,7 @@ export function Viewer3D({
     const overlay = new THREE.Group()
     overlay.name = '__normals__'
     for (const mesh of meshesRef.current.values()) {
-      if (!mesh.visible || mesh.userData.groupId === '__wireframe__') continue
+      if (!mesh.visible || mesh instanceof THREE.BatchedMesh || mesh.userData.groupId === '__wireframe__') continue
       const helper = new VertexNormalsHelper(mesh, 0.035, 0x3366cc)
       helper.renderOrder = 18
       overlay.add(helper)
@@ -1397,12 +1486,11 @@ export function Viewer3D({
     const next = { ...effectiveGroupVisibility, [groupId]: visible }
     setGroupVisibilityState(next)
     onEntityVisibilityChange?.(next)
+    appliedVisibilityRef.current.set(groupId, visible)
     if (uvfAssetRef.current) {
       setEntityVisibility(uvfAssetRef.current, groupId, visible)
     } else {
-      assetRef.current?.traverse((object) => {
-        if (object.userData.groupId === groupId) object.visible = visible
-      })
+      for (const mesh of entityMeshesRef.current.get(groupId) ?? []) mesh.visible = visible
     }
   }
 
@@ -1473,10 +1561,7 @@ export function Viewer3D({
 
   const meshForEntity = (entityId: string | undefined) => {
     if (!entityId) return undefined
-    return Array.from(meshesRef.current.values()).find((mesh) =>
-      String(mesh.userData.entityId ?? '') === entityId ||
-      String(mesh.userData.groupId ?? '') === entityId,
-    )
+    return entityMeshesRef.current.get(entityId)?.[0]
   }
 
   const createInputController = () => {
@@ -1520,8 +1605,7 @@ export function Viewer3D({
             setHoveredGroup(null)
             return true
           }
-          const mesh = meshForEntity(pick.entityId)
-          const groupId = String(mesh?.userData.groupId ?? pick.entityId ?? '')
+          const groupId = String(pick.entityId ?? '')
           if (!groupId) return false
           const additive = Boolean(event.ctrlKey || event.metaKey || event.shiftKey)
           onSelectionChange?.(nextViewerSelection(selection, groupId, additive))
@@ -1530,8 +1614,7 @@ export function Viewer3D({
         },
       },
       onHover: (pick) => {
-        const mesh = meshForEntity(pick?.entityId)
-        setHoveredGroup(mesh ? String(mesh.userData.groupId ?? '') || null : null)
+        setHoveredGroup(pick?.entityId ? String(pick.entityId) : null)
       },
     })
   }
@@ -1568,6 +1651,9 @@ export function Viewer3D({
     navCubeRef.current?.handlePointerCancel()
     inputControllerRef.current?.cancelPointer()
     inputControllerRef.current = null
+    pendingHoverEventRef.current = null
+    if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current)
+    hoverFrameRef.current = null
     if (controlsRef.current) controlsRef.current.enabled = true
     setNavigationActive(false)
   }, [setNavigationActive])
@@ -1826,7 +1912,15 @@ export function Viewer3D({
     if (event.buttons !== 0) return
     const controller = inputControllerRef.current ?? createInputController()
     inputControllerRef.current = controller
-    controller.onPointerMove(pointerEvent(event))
+    pendingHoverEventRef.current = pointerEvent(event)
+    if (hoverFrameRef.current === null) {
+      hoverFrameRef.current = requestAnimationFrame(() => {
+        hoverFrameRef.current = null
+        const pending = pendingHoverEventRef.current
+        pendingHoverEventRef.current = null
+        if (pending) inputControllerRef.current?.onPointerMove(pending)
+      })
+    }
   }
 
   const handlePointerLeave = () => {
@@ -1834,6 +1928,9 @@ export function Viewer3D({
     if (draggedControlPointRef.current) return
     inputControllerRef.current?.onPointerLeave()
     inputControllerRef.current = null
+    pendingHoverEventRef.current = null
+    if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current)
+    hoverFrameRef.current = null
     setHoveredGroup(null)
   }
 

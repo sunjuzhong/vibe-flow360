@@ -76,7 +76,7 @@ export function resolvePickCandidate(
   const worldPosition = candidate.point.clone()
   options.assetRoot.updateWorldMatrix(true, false)
   const localPosition = options.assetRoot.worldToLocal(worldPosition.clone())
-  const metadata = findEntityMetadata(mesh)
+  const metadata = findEntityMetadata(mesh, candidate.batchId)
   const normal = resolveWorldNormal(candidate, mesh)
 
   return {
@@ -121,7 +121,13 @@ export function resolveFreePoint(
   }
 }
 
-function findEntityMetadata(object: THREE.Object3D): { entityId: string } {
+function findEntityMetadata(object: THREE.Object3D, batchId?: number): { entityId: string } {
+  if (batchId !== undefined) {
+    const entityId = object.userData.uvfBatchEntityByInstance?.[batchId]
+    if (entityId !== undefined && entityId !== null && String(entityId)) {
+      return { entityId: String(entityId) }
+    }
+  }
   let current: THREE.Object3D | null = object
   while (current) {
     const entityId = current.userData.entityId ?? current.userData.groupId
@@ -138,12 +144,15 @@ function resolveWorldNormal(
   mesh: THREE.Mesh,
 ): THREE.Vector3 | null {
   const geometry = mesh.geometry
+  const objectMatrix = mesh.matrixWorld.clone()
+  const batchMatrix = (candidate as PickCandidate & { uvfBatchMatrix?: THREE.Matrix4 }).uvfBatchMatrix
+  if (batchMatrix) objectMatrix.multiply(batchMatrix)
   const normalAttribute = geometry.getAttribute('normal')
   let localNormal: THREE.Vector3 | null = null
 
   if (normalAttribute && candidate.face) {
     const barycentric = THREE.Triangle.getBarycoord(
-      candidate.point.clone().applyMatrix4(mesh.matrixWorld.clone().invert()),
+      candidate.point.clone().applyMatrix4(objectMatrix.clone().invert()),
       vertex(geometry, candidate.face.a),
       vertex(geometry, candidate.face.b),
       vertex(geometry, candidate.face.c),
@@ -163,7 +172,7 @@ function resolveWorldNormal(
   if (!localNormal && candidate.normal) localNormal = candidate.normal.clone()
   if (!localNormal) return null
 
-  return localNormal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize()
+  return localNormal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(objectMatrix)).normalize()
 }
 
 function vertex(geometry: THREE.BufferGeometry, index: number): THREE.Vector3 {

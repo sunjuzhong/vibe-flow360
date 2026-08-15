@@ -979,4 +979,44 @@ describe('Flow360 UVF Three.js library', () => {
     expect(asset.getEntityObject('entity-1')?.visible).toBe(true)
     asset.dispose()
   })
+
+  it('batches large unpacked solid inventories while preserving entity controls', () => {
+    const entries = Array.from({ length: 64 }, (_, index) => ({
+      id: `body-${index}`,
+      type: 'SolidGeometry' as const,
+      resources: {
+        buffers: {
+          type: 'buffers' as const,
+          path: 'bodies.bin',
+          sections: [
+            { name: 'indices', dType: 'uint32' as const, dimension: 1, offset: 0, length: 12 },
+            { name: 'position', dType: 'float32' as const, dimension: 3, offset: 12, length: 36 },
+          ],
+        },
+      },
+    }))
+    const data = new ArrayBuffer(48)
+    new Uint32Array(data, 0, 3).set([0, 1, 2])
+    new Float32Array(data, 12, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    const asset = buildUVFAsset(parseUVFManifest(entries), new Map([['bodies.bin', data]]))
+    let batch: import('three').BatchedMesh | null = null
+    asset.object.traverse((object) => {
+      if (object instanceof THREE.BatchedMesh) batch = object
+    })
+
+    expect(batch).not.toBeNull()
+    expect(batch!.instanceCount).toBe(64)
+    expect(batch!.userData.uvfAcceleratedRaycast).toBe(true)
+    expect(batch!.userData.uvfBatchEntityByInstance[7]).toBe('body-7')
+    setEntityVisibility(asset, 'body-7', false)
+    expect(batch!.getVisibleAt(7)).toBe(false)
+    setEntityVisibility(asset, 'body-7', true)
+    expect(batch!.getVisibleAt(7)).toBe(true)
+    expect(asset.getEntityBounds?.('body-7')?.isEmpty()).toBe(false)
+    setWireframeOverlay(asset, true)
+    expect((batch!.material as THREE.MeshPhongMaterial).wireframe).toBe(true)
+    setWireframeOverlay(asset, false)
+    expect((batch!.material as THREE.MeshPhongMaterial).wireframe).toBe(false)
+    asset.dispose()
+  })
 })
