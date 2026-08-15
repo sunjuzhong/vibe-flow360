@@ -168,6 +168,7 @@ export type AICreateSession = {
   project_id?: string
   root_resource_id?: string
   draft_id?: string
+  round: number
   messages?: Array<{ role: 'user' | 'assistant'; content: string; created_at: string }>
   pending?: AICreateClarificationField[]
   last_error?: string
