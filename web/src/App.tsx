@@ -11,6 +11,7 @@ import './route.css'
 const TutorialLibraryPage = lazy(() => importLazyRoute(() => import('./pages/TutorialLibraryPage')))
 const TutorialPage = lazy(() => importLazyRoute(() => import('./pages/TutorialPage')))
 const STEPLibraryPage = lazy(() => importLazyRoute(() => import('./pages/STEPLibraryPage')))
+const AICreateSessionsPage = lazy(() => importLazyRoute(() => import('./pages/AICreateSessionsPage')))
 
 type RouteErrorBoundaryProps = {
   children: ReactNode
@@ -59,6 +60,8 @@ function AppRoutes() {
           <Route path="/tutorials" element={<TutorialLibraryPage />} />
           <Route path="/step-library" element={<STEPLibraryPage />} />
           <Route path="/step-library/:assetId" element={<STEPLibraryPage />} />
+          <Route path="/sessions" element={<AICreateSessionsPage />} />
+          <Route path="/sessions/:sessionId" element={<AICreateSessionsPage />} />
           <Route path="/tutorials/:tutorialId" element={<TutorialPage />} />
           <Route path="/projects/:projectId/compare" element={<ComparePage />} />
           <Route path="/compares" element={<CompareWorkspaceListPage />} />

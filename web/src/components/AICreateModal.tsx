@@ -6,6 +6,7 @@ import {
   type AICreateClarificationField,
   type AICreateProgress,
   type AICreateResult,
+  type AICreateSession,
   type FolderNode,
 } from '../api/client'
 import { useI18n } from '../i18n'
@@ -223,6 +224,8 @@ export default function AICreateModal({
   onCreated,
   onOpenSTEPLibrary,
   stepSource,
+  initialSession,
+  onOpenProject,
 }: {
   folder: FolderNode | null
   environment?: string
@@ -230,19 +233,25 @@ export default function AICreateModal({
   onCreated: (result: AICreateResult) => void
   onOpenSTEPLibrary?: () => void
   stepSource?: { asset_id: string; version_id: string; label: string }
+  initialSession?: AICreateSession
+  onOpenProject?: (projectId: string) => void
 }) {
   const { t } = useI18n()
   const [intent, setIntent] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<AICreateProgress | null>(null)
-  const [sessionId, setSessionId] = useState('')
-  const [round, setRound] = useState(0)
-  const [fields, setFields] = useState<AICreateClarificationField[]>([])
-  const [answers, setAnswers] = useState<Record<string, unknown>>({})
-  const [transcript, setTranscript] = useState<TranscriptItem[]>([])
+  const [sessionId, setSessionId] = useState(initialSession?.id ?? '')
+  const [round, setRound] = useState(initialSession?.round ?? 0)
+  const [fields, setFields] = useState<AICreateClarificationField[]>(initialSession?.pending ?? [])
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => initialAICreateAnswers(initialSession?.pending ?? []))
+  const [transcript, setTranscript] = useState<TranscriptItem[]>(() => (initialSession?.messages ?? []).map((message) => ({
+    role: message.role === 'assistant' ? 'agent' : 'user',
+    text: message.content,
+  })))
   const [minimized, setMinimized] = useState(false)
   const [completedResult, setCompletedResult] = useState<AICreateResult | null>(null)
+  const [continued, setContinued] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const closeWhenIdle = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
   const modalRef = useFocusTrap<HTMLDivElement>(true, closeWhenIdle, 'textarea,input,select,button')
@@ -256,13 +265,13 @@ export default function AICreateModal({
   const intentLimit = useMemo(() => aiCreateIntentLimit(intent), [intent])
 
   const runCreate = async (submittedAnswers?: Record<string, unknown>) => {
-    if (!folder || !intent.trim() || busy || intentLimit.overLimit) return
-    setTranscript((current) => appendSubmittedAICreateTurn(
-      current,
-      intent,
-      submittedAnswers ? answerSummary : '',
+    const followUp = Boolean(sessionId && intent.trim() && !submittedAnswers)
+    if (!folder || busy || intentLimit.overLimit || (!sessionId && !intent.trim())) return
+    if (intent.trim() || submittedAnswers) setTranscript((current) => appendSubmittedAICreateTurn(
+      current, intent, submittedAnswers ? answerSummary : '',
     ))
     setBusy(true)
+    if (followUp) setContinued(true)
     setError('')
     setProgress(null)
     let progressID = newAICreateProgressID()
@@ -323,9 +332,10 @@ export default function AICreateModal({
     }
     const timer = window.setInterval(() => { void refreshProgress() }, 800)
     try {
-      const result = await api.aiCreate(intent.trim(), folder.id, sessionId || undefined, submittedAnswers, progressID, stepSource)
+      const result = await api.aiCreate(followUp || !sessionId ? intent.trim() : '', folder.id, sessionId || undefined, submittedAnswers, progressID, stepSource, followUp)
       await refreshProgress()
       acceptResult(result)
+      if (followUp) setIntent('')
     } catch (cause) {
       const message = errorMessage(cause)
       if (/failed to fetch|network/i.test(message)) {
@@ -446,7 +456,23 @@ export default function AICreateModal({
           />
         )}
 
-        {!busy && !intent && <p className="ai-create-example">{t('Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.')}</p>}
+        {!busy && !hasStarted && !intent && <p className="ai-create-example">{t('Start with the engineering goal. The Agent will collect missing dimensions and operating decisions step by step.')}</p>}
+        {hasStarted && fields.length === 0 && !busy && (
+          <form className="ai-create-follow-up" onSubmit={submit}>
+            <textarea
+              value={intent}
+              onChange={(event) => setIntent(event.target.value)}
+              rows={2}
+              maxLength={AI_CREATE_INTENT_MAX_CHARACTERS}
+              placeholder={t('Continue with a correction, a parameter change, or another Case design request…')}
+              aria-label={t('Continue this AI Create session')}
+            />
+            <div>
+              {initialSession?.phase === 'failed' && !intent.trim() && <button className="secondary" type="button" onClick={() => void runCreate()}><RotateCcw size={14} /> {t('Resume last checkpoint')}</button>}
+              <button type="submit" disabled={!intent.trim()}><Sparkles size={14} /> {t('Continue session')}</button>
+            </div>
+          </form>
+        )}
         {!hasStarted && stepSource && <p className="ai-create-example"><Database size={14} /> {t('Geometry source')}: {stepSource.label}. {t('AI CAD generation will be skipped.')}</p>}
         {!hasStarted && onOpenSTEPLibrary && <button className="ai-create-library-link" type="button" onClick={onOpenSTEPLibrary}><Database size={14} /> {t(stepSource ? 'Change STEP geometry source' : 'Use a validated STEP from the geometry library')}</button>}
         {busy && !progress && <div className="ai-create-progress-starting"><Loader2 className="spin" size={14} />{t('Connecting to the AI Create backend…')}</div>}
@@ -465,6 +491,13 @@ export default function AICreateModal({
               <p>{t('The validated checkpoints remain in this session. Opening the Project is now an explicit action.')}</p>
             </div>
             <button type="button" onClick={() => onCreated(completedResult)}>{t('Open Project')} <ExternalLink size={14} /></button>
+          </section>
+        )}
+        {!continued && !completedResult && initialSession?.phase === 'completed' && initialSession.project_id && (
+          <section className="ai-create-session-complete" aria-live="polite">
+            <CheckCircle2 size={20} />
+            <div><strong>{t('Project and Draft are ready')}</strong><p>{t('Continue the conversation above or open the linked Project.')}</p></div>
+            <button type="button" onClick={() => onOpenProject?.(initialSession.project_id!)}>{t('Open Project')} <ExternalLink size={14} /></button>
           </section>
         )}
         <p className="ai-create-safety">{t('The session creates a reviewable configuration only. Paid remote meshing and solving still require approval.')}</p>

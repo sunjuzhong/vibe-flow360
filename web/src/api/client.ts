@@ -83,6 +83,7 @@ export type ChatSession = {
 export type AICreateResult = {
   project_id: string
   draft_id?: string
+  round: number
   root_resource_id: string
   root_resource_type: string
   blueprint: {
@@ -157,6 +158,22 @@ export type AICreateProgress = {
   response?: AICreateResult | AICreateClarification
   started_at: string
   updated_at: string
+}
+
+export type AICreateSession = {
+  id: string
+  intent: string
+  folder_id: string
+  phase: 'understanding' | 'needs_input' | 'cad_validated' | 'geometry_imported' | 'parameters_validated' | 'completed' | 'failed' | string
+  project_id?: string
+  root_resource_id?: string
+  draft_id?: string
+  messages?: Array<{ role: 'user' | 'assistant'; content: string; created_at: string }>
+  pending?: AICreateClarificationField[]
+  last_error?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
 }
 
 export type STEPValidationReport = {
@@ -1414,11 +1431,11 @@ export const api = {
       `/api/step-assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/create-project`,
       { folder_id: folderId, name },
     ),
-  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string, stepSource?: { asset_id: string; version_id: string }) => {
+  aiCreate: async (intent: string, folderId: string, sessionId?: string, answers?: Record<string, unknown>, requestId?: string, stepSource?: { asset_id: string; version_id: string }, followUp = false) => {
     const response = await fetch('/api/ai-create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers, request_id: requestId, step_asset_id: stepSource?.asset_id, step_version_id: stepSource?.version_id }),
+      body: JSON.stringify({ intent, folder_id: folderId, session_id: sessionId, answers, request_id: requestId, step_asset_id: stepSource?.asset_id, step_version_id: stepSource?.version_id, follow_up: followUp }),
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
@@ -1429,6 +1446,8 @@ export const api = {
   },
   aiCreateProgress: (requestId: string) =>
     json<AICreateProgress>(`/api/ai-create/progress/${encodeURIComponent(requestId)}`),
+  aiCreateSessions: () => json<{ sessions: AICreateSession[] }>('/api/ai-create/sessions'),
+  aiCreateSession: (sessionId: string) => json<AICreateSession>(`/api/ai-create/sessions/${encodeURIComponent(sessionId)}`),
   abortImport: async (id: string) => {
     const response = await fetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' })
     const body = await response.json().catch(() => ({}))

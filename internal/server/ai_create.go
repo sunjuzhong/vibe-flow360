@@ -41,6 +41,13 @@ type aiCreateRequest struct {
 	Answers       map[string]any `json:"answers,omitempty"`
 	STEPAssetID   string         `json:"step_asset_id,omitempty"`
 	STEPVersionID string         `json:"step_version_id,omitempty"`
+	FollowUp      bool           `json:"follow_up,omitempty"`
+}
+
+type aiCreateSessionMessage struct {
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type aiCreateSession struct {
@@ -56,9 +63,28 @@ type aiCreateSession struct {
 	Prepared      *aiCreatePrepared             `json:"prepared,omitempty"`
 	Parameters    *aiCreateParameterCheckpoint  `json:"parameters,omitempty"`
 	DraftID       string                        `json:"draft_id,omitempty"`
+	Messages      []aiCreateSessionMessage      `json:"messages,omitempty"`
+	LastError     string                        `json:"last_error,omitempty"`
 	CreatedAt     time.Time                     `json:"created_at"`
 	UpdatedAt     time.Time                     `json:"updated_at"`
 	CompletedAt   *time.Time                    `json:"completed_at,omitempty"`
+}
+
+type aiCreateSessionSummary struct {
+	ID             string                        `json:"id"`
+	Intent         string                        `json:"intent"`
+	FolderID       string                        `json:"folder_id"`
+	Phase          string                        `json:"phase"`
+	ProjectID      string                        `json:"project_id,omitempty"`
+	RootResourceID string                        `json:"root_resource_id,omitempty"`
+	DraftID        string                        `json:"draft_id,omitempty"`
+	Round          int                           `json:"round"`
+	Messages       []aiCreateSessionMessage      `json:"messages,omitempty"`
+	Pending        []aicreate.ClarificationField `json:"pending,omitempty"`
+	LastError      string                        `json:"last_error,omitempty"`
+	CreatedAt      time.Time                     `json:"created_at"`
+	UpdatedAt      time.Time                     `json:"updated_at"`
+	CompletedAt    *time.Time                    `json:"completed_at,omitempty"`
 }
 
 type aiCreateCADCheckpoint struct {
@@ -174,6 +200,11 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	defer func() {
+		if c.Writer.Status() >= http.StatusBadRequest {
+			s.markAICreateSessionFailed(session.ID, "AI Create stopped before this run finished. Reopen the session to revise the request or resume from its last checkpoint.")
+		}
+	}()
 	s.bindAICreateProgressSession(request.ProgressID, session.ID)
 	if session.Prepared != nil {
 		s.updateAICreateProgress(request.ProgressID, 3, "The existing Flow360 Project and Geometry are ready; loading the active parameter schemas.")
@@ -187,6 +218,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		if errors.As(err, &missing) {
 			s.finishAICreateProgress(request.ProgressID, "needs_input", "The Geometry Agent needs an engineering decision before CAD generation can continue.", "", "")
 			s.setAICreateSessionPending(session.ID, missing.Fields)
+			s.appendAICreateSessionMessage(session.ID, "assistant", "I need a few engineering decisions before I can create reliable CAD and complete Flow360 parameters.")
 			response := aiCreateClarificationResponse{
 				Status: "needs_input", SessionID: session.ID,
 				Message: "I need a few engineering decisions before I can create reliable CAD and complete Flow360 parameters.",
@@ -342,6 +374,7 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		}
 		s.finishAICreateProgress(progressID, "needs_input", "The parameter Agent needs an engineering decision before it can complete the schema-valid setup.", prepared.ProjectID, prepared.RootResourceID)
 		s.setAICreateSessionPending(session.ID, fields)
+		s.appendAICreateSessionMessage(session.ID, "assistant", assisted.Action.Message)
 		response := aiCreateClarificationResponse{
 			Status: "needs_input", SessionID: session.ID,
 			Message: assisted.Action.Message,
@@ -737,6 +770,7 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 			ID: strings.Replace(identifier, "sub-", "aic-", 1), Intent: request.Intent, FolderID: request.FolderID,
 			STEPAssetID: request.STEPAssetID, STEPVersionID: request.STEPVersionID,
 			Phase: "understanding", CreatedAt: now, UpdatedAt: now,
+			Messages: []aiCreateSessionMessage{{Role: "user", Content: request.Intent, CreatedAt: now}},
 		}
 		s.aiCreateSessions[session.ID] = session
 		s.persistAICreateSessionsLocked()
@@ -745,6 +779,30 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 	session, ok := s.aiCreateSessions[request.SessionID]
 	if !ok {
 		return aiCreateSession{}, errors.New("AI Create session expired; start again with the original request")
+	}
+	if request.FollowUp {
+		if request.Intent == "" {
+			return aiCreateSession{}, errors.New("a follow-up message is required")
+		}
+		now := time.Now().UTC()
+		session.Intent = strings.TrimSpace(session.Intent + "\n\nFollow-up request: " + request.Intent)
+		session.Messages = append(session.Messages, aiCreateSessionMessage{Role: "user", Content: request.Intent, CreatedAt: now})
+		session.Pending = nil
+		session.Parameters = nil
+		session.DraftID = ""
+		session.CompletedAt = nil
+		session.LastError = ""
+		if session.Prepared != nil {
+			session.Phase = "geometry_imported"
+		} else if session.CAD != nil {
+			session.Phase = "cad_validated"
+		} else {
+			session.Phase = "understanding"
+		}
+		session.UpdatedAt = now
+		s.aiCreateSessions[session.ID] = session
+		s.persistAICreateSessionsLocked()
+		return session, nil
 	}
 	if len(session.Pending) == 0 {
 		return session, nil
@@ -760,6 +818,9 @@ func (s *Server) advanceAICreateSession(request aiCreateRequest) (aiCreateSessio
 		return aiCreateSession{}, err
 	}
 	session.Rounds = append(session.Rounds, aicreate.ClarificationRound{Fields: session.Pending, Answers: answers})
+	if payload, marshalErr := json.Marshal(answers); marshalErr == nil {
+		session.Messages = append(session.Messages, aiCreateSessionMessage{Role: "user", Content: string(payload), CreatedAt: time.Now().UTC()})
+	}
 	session.Pending = nil
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[session.ID] = session
@@ -881,7 +942,45 @@ func (s *Server) completeAICreateSession(sessionID, draftID string) {
 	now := time.Now().UTC()
 	session.Phase = "completed"
 	session.DraftID = strings.TrimSpace(draftID)
+	session.LastError = ""
+	session.Messages = append(session.Messages, aiCreateSessionMessage{Role: "assistant", Content: "The Project and configured Draft are ready for review. You can continue this session with another design request.", CreatedAt: now})
 	session.CompletedAt = &now
+	session.UpdatedAt = now
+	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
+}
+
+func (s *Server) appendAICreateSessionMessage(sessionID, role, content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	if last := len(session.Messages) - 1; last >= 0 && session.Messages[last].Role == role && session.Messages[last].Content == content {
+		return
+	}
+	session.Messages = append(session.Messages, aiCreateSessionMessage{Role: role, Content: content, CreatedAt: now})
+	session.UpdatedAt = now
+	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
+}
+
+func (s *Server) markAICreateSessionFailed(sessionID, detail string) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok || session.Phase == "completed" || session.Phase == "needs_input" {
+		return
+	}
+	now := time.Now().UTC()
+	session.Phase = "failed"
+	session.LastError = strings.TrimSpace(detail)
 	session.UpdatedAt = now
 	s.aiCreateSessions[sessionID] = session
 	s.persistAICreateSessionsLocked()

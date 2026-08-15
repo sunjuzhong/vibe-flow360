@@ -50,6 +50,7 @@
 .ai-create-session-complete strong { font-size: 12px; }
 .ai-create-session-complete p { margin: 0; color: #6f795c; font-size: 10px; line-height: 1.45; }
 .ai-create-session-complete button { min-height: 38px; padding: 0 14px; background: #bde836; }
+.ai-create-follow-up{display:grid;gap:8px;padding:12px;border:1px solid #d8ddcc;border-radius:10px;background:#fafbf7}.ai-create-follow-up textarea{box-sizing:border-box;width:100%;min-height:68px;padding:10px;border:1px solid #ccd3bd;border-radius:8px;background:#fff;resize:vertical}.ai-create-follow-up>div{display:flex;justify-content:flex-end;gap:7px}.ai-create-follow-up button{display:inline-flex;min-height:34px;align-items:center;gap:6px;padding:0 11px;border:1px solid #9fb950;border-radius:8px;color:#30400d;background:#dfff87;font-size:10px;font-weight:700;cursor:pointer}.ai-create-follow-up button.secondary{border-color:#d0d5c8;color:#596253;background:#fff}.ai-create-follow-up button:disabled{opacity:.45;cursor:not-allowed}
 
 @media (max-width: 720px) {
   .ai-create-session-dock { right: 16px; bottom: 16px; }

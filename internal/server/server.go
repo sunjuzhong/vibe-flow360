@@ -411,6 +411,8 @@ func (s *Server) routes() {
 		api.GET("/step-assets/:asset_id/versions/:version_id/thumbnail.svg", s.thumbnailSTEPAssetVersion)
 		api.POST("/step-assets/:asset_id/versions/:version_id/create-project", s.createProjectFromSTEPAsset)
 		api.POST("/ai-create", s.aiCreateProject)
+		api.GET("/ai-create/sessions", s.listAICreateSessions)
+		api.GET("/ai-create/sessions/:session_id", s.getAICreateSession)
 		api.GET("/ai-create/progress/:request_id", s.aiCreateProgressStatus)
 		api.GET("/agent/state", func(c *gin.Context) {
 			c.JSON(http.StatusOK, s.agent.State())
