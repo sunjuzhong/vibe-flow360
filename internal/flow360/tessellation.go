@@ -84,6 +84,7 @@ const (
 	VisualizationTimeout     VisualizationErrorKind = "timeout"
 	VisualizationDownload    VisualizationErrorKind = "download"
 	VisualizationMalformed   VisualizationErrorKind = "malformed"
+	VisualizationTooLarge    VisualizationErrorKind = "too_large"
 )
 
 type VisualizationError struct {
@@ -451,7 +452,7 @@ func (c *Client) ResourceVisualization(
 			message = err.Error()
 		}
 		return ResourceVisualization{}, visualizationError(
-			VisualizationDownload,
+			visualizationFailureKind(message, VisualizationDownload),
 			resourceType,
 			errors.New(compactOutput([]byte(message))),
 		)
@@ -461,7 +462,7 @@ func (c *Client) ResourceVisualization(
 	manifest, err := readLimitedRegularFile(manifestPath, maxTessellationManifestSize)
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(
-			VisualizationMalformed,
+			visualizationFailureKind(err.Error(), VisualizationMalformed),
 			resourceType,
 			fmt.Errorf("read manifest: %w", err),
 		)
@@ -472,7 +473,9 @@ func (c *Client) ResourceVisualization(
 		manifest, err = NormalizeVisualizationManifest(manifest)
 	}
 	if err != nil {
-		return ResourceVisualization{}, visualizationError(VisualizationMalformed, resourceType, err)
+		return ResourceVisualization{}, visualizationError(
+			visualizationFailureKind(err.Error(), VisualizationMalformed), resourceType, err,
+		)
 	}
 	binPaths, err := TessellationDefaultBinPaths(manifest)
 	if err != nil {
@@ -509,6 +512,21 @@ func (c *Client) ResourceVisualization(
 		Catalog:  catalog,
 		cleanup:  func() { _ = os.RemoveAll(staging) },
 	}, nil
+}
+
+func visualizationFailureKind(message string, fallback VisualizationErrorKind) VisualizationErrorKind {
+	normalized := strings.ToLower(message)
+	for _, marker := range []string{
+		"exceeds the 512 mib remote limit",
+		"exceeds 8388608 byte limit",
+		"exceeds the size limit",
+		"invalid entry count",
+	} {
+		if strings.Contains(normalized, marker) {
+			return VisualizationTooLarge
+		}
+	}
+	return fallback
 }
 
 // Some Case manifests contain placeholder SolidGeometry records without a
@@ -1031,8 +1049,39 @@ manifest_remote = "visualize/manifest/manifest.json"
 manifest_local = root / "manifest.json"
 api.download_file(manifest_remote, to_file=str(manifest_local), overwrite=True)
 
+# Flow360 Geometry manifests can contain hundreds of thousands of Face and
+# Edge records even though every body references the same packed render
+# buffer. Sending that full topology inventory to a browser is both wasteful
+# and unsafe. Keep the remote download bounded, then degrade oversized
+# manifests to body-level selection while preserving every renderable body,
+# transform, bound, buffer descriptor, and GeometryGroup hierarchy.
+manifest_size = manifest_local.stat().st_size
+if manifest_size > 512 * 1024 * 1024:
+    raise ValueError("visualization manifest exceeds the 512 MiB remote limit")
+
 with manifest_local.open("r", encoding="utf-8") as stream:
     entries = json.load(stream)
+
+if resource_type == "Geometry" and (manifest_size > 8 * 1024 * 1024 or len(entries) > 100000):
+    compact_entries = []
+    for entry in entries:
+        entry_type = entry.get("type")
+        if entry_type == "GeometryGroup":
+            compact_entries.append(entry)
+            continue
+        if entry_type != "SolidGeometry":
+            continue
+        attributions = entry.get("attributions")
+        if isinstance(attributions, dict):
+            attributions.pop("faces", None)
+            attributions.pop("edges", None)
+            attributions.pop("vertices", None)
+            if not attributions:
+                entry.pop("attributions", None)
+        compact_entries.append(entry)
+    entries = compact_entries
+    with manifest_local.open("w", encoding="utf-8") as stream:
+        json.dump(entries, stream, separators=(",", ":"))
 
 paths = set()
 for entry in entries:

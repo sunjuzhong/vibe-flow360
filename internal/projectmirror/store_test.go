@@ -95,6 +95,9 @@ func TestStoreWritesAndReadsGeometryVisualizationAtomically(t *testing.T) {
 	if !reflect.DeepEqual(gotValue, wantValue) {
 		t.Fatalf("manifest changed: %s", gotManifest)
 	}
+	if bytes.Contains(gotManifest, []byte("\n")) {
+		t.Fatalf("UVF manifest was pretty-printed instead of stored compactly: %s", gotManifest)
+	}
 	gotBin, err := store.GeometryVisualizationFile("geo-1", "nested/body.bin")
 	if err != nil {
 		t.Fatal(err)

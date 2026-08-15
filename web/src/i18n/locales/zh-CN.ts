@@ -1054,6 +1054,8 @@ Object.assign(messages, {
   'Configured for this item': '已为此项目配置',
   'No additional review operations are available for this item.': '此项目没有其他可用的审查操作。',
   'Preparing 3D preview…': '正在准备 3D 预览…',
+  'This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support.': '该模型超出当前浏览器预览能力，请联系软件开发人员调整大型模型可视化支持。',
+  'Preview unavailable (HTTP {status})': '三维预览不可用（HTTP {status}）',
   'Configure Case Draft': '配置算例草稿',
   'readiness checks passed': '项就绪检查已通过',
   Drafts: '草稿',

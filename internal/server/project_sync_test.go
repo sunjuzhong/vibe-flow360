@@ -392,6 +392,89 @@ func TestResourceMeshPreviewDownloadsVisualizationOnDemandOnce(t *testing.T) {
 	}
 }
 
+func TestResourceMeshPreviewReturnsVisualizationErrorWithoutLegacyDetailFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+		},
+		failures:             map[string]error{},
+		visualizationFailure: errors.New("manifest exceeds the supported size"),
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
+	requestContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "geo-1"},
+	}
+	app.flow360ResourceMeshPreview(requestContext)
+
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "manifest exceeds") {
+		t.Fatalf("unexpected preview error %d: %s", recorder.Code, recorder.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.calls["Geometry/geo-1"] != 1 {
+		t.Fatalf("legacy detail fallback was called %d times, want sync metadata only", client.calls["Geometry/geo-1"])
+	}
+}
+
+func TestResourceMeshPreviewReturnsFriendlyCapacityError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	technical := &flow360.VisualizationError{
+		Kind:         flow360.VisualizationTooLarge,
+		ResourceType: "Geometry",
+		Err:          errors.New("visualization manifest exceeds the 512 MiB remote limit"),
+	}
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {ID: "geo-1", Type: "Geometry", Errors: map[string]string{}},
+		},
+		failures:             map[string]error{},
+		visualizationFailure: technical,
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
+	requestContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Geometry"},
+		{Key: "resource_id", Value: "geo-1"},
+	}
+	app.flow360ResourceMeshPreview(requestContext)
+
+	var response map[string]any
+	if json.Unmarshal(recorder.Body.Bytes(), &response) != nil {
+		t.Fatalf("invalid response: %s", recorder.Body)
+	}
+	if recorder.Code != http.StatusServiceUnavailable || response["code"] != "visualization_too_large" {
+		t.Fatalf("unexpected capacity response %d: %s", recorder.Code, recorder.Body)
+	}
+	if !strings.Contains(response["error"].(string), "contact the software development team") ||
+		!strings.Contains(response["technical_error"].(string), "512 MiB") {
+		t.Fatalf("friendly and technical errors were not separated: %#v", response)
+	}
+}
+
+func TestVisualizationManifestBrowserSafe(t *testing.T) {
+	if !visualizationManifestBrowserSafe(json.RawMessage(strings.Repeat(" ", browserVisualizationManifestLimit) + `[]`)) {
+		t.Fatal("compact manifest with large formatting whitespace was rejected")
+	}
+	large, err := json.Marshal(strings.Repeat("x", browserVisualizationManifestLimit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if visualizationManifestBrowserSafe(large) {
+		t.Fatal("manifest over the browser limit was accepted")
+	}
+}
+
 func TestResourceMeshPreviewRefreshesManifestWithDanglingGroupReferences(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	client := &fakeProjectSyncClient{

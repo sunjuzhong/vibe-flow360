@@ -194,6 +194,22 @@ func TestResourceVisualizationRejectsUnsupportedTypeWithTypedError(t *testing.T)
 	}
 }
 
+func TestVisualizationFailureKindClassifiesCapacityErrors(t *testing.T) {
+	for _, message := range []string{
+		"visualization manifest exceeds the 512 MiB remote limit",
+		"visualization asset exceeds 8388608 byte limit",
+		"normalized visualization manifest exceeds the size limit",
+		"visualization manifest has an invalid entry count",
+	} {
+		if got := visualizationFailureKind(message, VisualizationMalformed); got != VisualizationTooLarge {
+			t.Fatalf("message %q classified as %q", message, got)
+		}
+	}
+	if got := visualizationFailureKind("manifest JSON is malformed", VisualizationMalformed); got != VisualizationMalformed {
+		t.Fatalf("ordinary malformed error classified as %q", got)
+	}
+}
+
 func TestResourceVisualizationAssetRejectsUnsafePathBeforeDownload(t *testing.T) {
 	client := &Client{}
 	for _, path := range []string{"../secret.bin", "/tmp/body.bin", "body.json", `nested\body.bin`} {

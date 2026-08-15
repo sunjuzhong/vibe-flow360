@@ -2057,7 +2057,7 @@ func TestGeometryVisualizationAssetServesOnlyManifestAndBins(t *testing.T) {
 	if _, err := mirror.PutGeometryVisualization(
 		"prj-1",
 		"geo-1",
-		json.RawMessage(`[{"type":"Face"}]`),
+		json.RawMessage(`[{"id":"body","type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"nested/body.bin","sections":[{"name":"position","length":36}]}}}]`),
 		map[string][]byte{"nested/body.bin": {1, 2, 3}},
 	); err != nil {
 		t.Fatal(err)

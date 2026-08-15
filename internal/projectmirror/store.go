@@ -257,7 +257,10 @@ func (s *Store) putResourceVisualization(
 	}
 	defer os.RemoveAll(staging)
 	manifestDir := filepath.Join(staging, "manifest")
-	if err := s.writeRawJSON(filepath.Join(manifestDir, "manifest.json"), manifest); err != nil {
+	// UVF manifests are machine-consumed protocol assets, not hand-edited
+	// mirror metadata. Keep them compact: pretty-printing a large body-level
+	// manifest can push an otherwise bounded asset over the browser limit.
+	if err := s.writeCompactRawJSON(filepath.Join(manifestDir, "manifest.json"), manifest); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -508,6 +511,21 @@ func (s *Store) writeRawJSON(target string, value json.RawMessage) error {
 		return err
 	}
 	return s.writeJSON(target, decoded)
+}
+
+func (s *Store) writeCompactRawJSON(target string, value json.RawMessage) error {
+	if !json.Valid(value) {
+		return errors.New("project mirror data must be valid JSON")
+	}
+	var decoded any
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(decoded)
+	if err != nil {
+		return err
+	}
+	return s.writeBytes(target, payload)
 }
 
 func (s *Store) writeJSON(target string, value any) error {

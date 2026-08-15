@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ViewerManifest, ViewerState } from '../components/viewer/LazyViewer3D'
+import { useI18n } from '../i18n'
+
+const previewCapacityMessage = 'This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support.'
 
 export function useResourcePreview(
   resourceType: string | null,
@@ -7,6 +10,7 @@ export function useResourcePreview(
   fallbackType: string | null = null,
   fallbackId: string | null = null,
 ) {
+  const { t } = useI18n()
   const [manifest, setManifest] = useState<ViewerManifest | null>(null)
   const [state, setState] = useState<ViewerState>({ status: 'idle' })
   const [source, setSource] = useState<'primary' | 'fallback' | null>(null)
@@ -22,7 +26,7 @@ export function useResourcePreview(
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
-    setState({ status: 'loading', message: 'Preparing 3D preview…' })
+    setState({ status: 'loading', message: t('Preparing 3D preview…') })
     setSource(null)
     setPrimaryError('')
 
@@ -31,7 +35,9 @@ export function useResourcePreview(
       const response = await fetch(url, { signal: controller.signal })
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
-        throw new Error(body.error || `Preview unavailable (HTTP ${response.status})`)
+        throw new Error(body.code === 'visualization_too_large'
+          ? t(previewCapacityMessage)
+          : body.error || t('Preview unavailable (HTTP {status})').replace('{status}', String(response.status)))
       }
       return response.json() as Promise<ViewerManifest>
     }
@@ -68,7 +74,7 @@ export function useResourcePreview(
       setSource(null)
       setState({ status: 'error', message })
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     if (!resourceType || !resourceId) {

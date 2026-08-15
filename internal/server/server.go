@@ -86,6 +86,8 @@ type Server struct {
 	aiCreateProgress    map[string]aiCreateProgress
 }
 
+const browserVisualizationManifestLimit = 8 * 1024 * 1024
+
 var allowedImportExtensions = map[string][]string{
 	"geometry":     {".step", ".stp", ".igs", ".iges", ".brep", ".csm", ".cax", ".catpart", ".catproduct"},
 	"surface-mesh": {".cgns", ".dat", ".key", ".k", ".msh", ".nas", ".bdf", ".inp", ".vtk", ".vtu"},
@@ -1892,7 +1894,7 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 				if !manifestChanged {
 					cachedPreview = &preview
 				}
-				if !manifestChanged && s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
+				if !manifestChanged && visualizationManifestBrowserSafe(manifest) && s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
 					c.Header("Cache-Control", "private, max-age=60")
 					c.JSON(http.StatusOK, preview)
 					return
@@ -1941,13 +1943,21 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 			return
 		}
 	}
-	if resourceType == "Case" && visualizationErr != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
+	if visualizationErr != nil {
+		response := gin.H{
+			"code":     "visualization_unavailable",
 			"error":    visualizationErr.Error(),
 			"format":   resourceType,
 			"groups":   []any{},
-			"warnings": []string{"Case visualization could not be prepared"},
-		})
+			"warnings": []string{resourceType + " visualization could not be prepared"},
+		}
+		var typedErr *flow360.VisualizationError
+		if errors.As(visualizationErr, &typedErr) && typedErr.Kind == flow360.VisualizationTooLarge {
+			response["code"] = "visualization_too_large"
+			response["error"] = "This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support."
+			response["technical_error"] = visualizationErr.Error()
+		}
+		c.JSON(http.StatusServiceUnavailable, response)
 		return
 	}
 
@@ -1971,6 +1981,11 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func visualizationManifestBrowserSafe(manifest json.RawMessage) bool {
+	var compact bytes.Buffer
+	return json.Compact(&compact, manifest) == nil && compact.Len() <= browserVisualizationManifestLimit
 }
 
 func visualizationManifestURL(resourceType, resourceID string, manifest json.RawMessage) string {
@@ -2185,6 +2200,35 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 		return
 	}
 	relative := strings.TrimPrefix(c.Param("asset_path"), "/")
+	if relative == "manifest.json" {
+		manifest, err := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "visualization asset is unavailable"})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if resourceType == "Case" {
+			manifest, err = flow360.NormalizeCaseVisualizationManifest(manifest)
+		} else {
+			manifest, err = flow360.NormalizeVisualizationManifest(manifest)
+		}
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, manifest); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "visualization manifest is invalid"})
+			return
+		}
+		c.Header("Cache-Control", "private, no-cache")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Data(http.StatusOK, "application/json; charset=utf-8", compact.Bytes())
+		return
+	}
 	file, info, err := s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, relative)
 	if errors.Is(err, os.ErrNotExist) && relative != "manifest.json" && s.projectSyncClient != nil && s.visualizationReferencesAsset(resourceType, resourceID, relative) {
 		downloaded, downloadErr := s.projectSyncClient.ResourceVisualizationAsset(
@@ -2207,14 +2251,7 @@ func (s *Server) flow360ResourceVisualizationAsset(c *gin.Context) {
 	}
 	defer file.Close()
 	contentType := "application/octet-stream"
-	if relative == "manifest.json" {
-		contentType = "application/json; charset=utf-8"
-	}
-	if relative == "manifest.json" {
-		c.Header("Cache-Control", "private, no-cache")
-	} else {
-		c.Header("Cache-Control", "private, max-age=3600")
-	}
+	c.Header("Cache-Control", "private, max-age=3600")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Type", contentType)
 	http.ServeContent(c.Writer, c.Request, relative, info.ModTime(), file)
