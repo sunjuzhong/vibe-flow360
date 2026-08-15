@@ -1014,9 +1014,21 @@ describe('Flow360 UVF Three.js library', () => {
     expect(batch!.getVisibleAt(7)).toBe(true)
     expect(asset.getEntityBounds?.('body-7')?.isEmpty()).toBe(false)
     setWireframeOverlay(asset, true)
-    expect((batch!.material as THREE.MeshPhongMaterial).wireframe).toBe(true)
+    expect((batch!.material as THREE.MeshPhongMaterial).wireframe).toBe(false)
+    const overlay = batch!.children.find((child) => child.userData.uvfWireframeOverlay === true) as THREE.Mesh
+    expect(overlay).toBeInstanceOf(THREE.Mesh)
+    expect(overlay.visible).toBe(true)
+    expect((overlay.material as THREE.MeshBasicMaterial).wireframe).toBe(true)
+    expect(overlay.geometry.getAttribute('position').count).toBe(192)
+    setEntityVisibility(asset, 'body-7', false)
+    const positions = overlay.geometry.getAttribute('position').array
+    const range = overlay.userData.uvfBatchedWireframeRanges[7]
+    expect(Number.isNaN(positions[range.offset])).toBe(true)
+    setEntityVisibility(asset, 'body-7', true)
+    expect(Number.isFinite(positions[range.offset])).toBe(true)
     setWireframeOverlay(asset, false)
     expect((batch!.material as THREE.MeshPhongMaterial).wireframe).toBe(false)
+    expect(overlay.visible).toBe(false)
     asset.dispose()
   })
 })

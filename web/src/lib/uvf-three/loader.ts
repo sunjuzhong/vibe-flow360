@@ -51,6 +51,11 @@ type BatchedBoundsNode = {
   instances?: BatchedBoundsEntry[]
 }
 
+type BatchedWireframeRange = {
+  offset: number
+  length: number
+}
+
 export class UVFLoader {
   async load(manifestURL: string, options: LoadOptions = {}): Promise<UVFAsset> {
     const resolvedManifestURL = new URL(manifestURL, window.location.href)
@@ -365,7 +370,10 @@ export function buildUVFAsset(
     getEntityBounds: (entityId) => batchedEntities.get(entityId)?.bounds.clone(),
     setEntityVisibility: (entityId, visible) => {
       const batched = batchedEntities.get(entityId)
-      if (batched) batched.mesh.setVisibleAt(batched.instanceId, visible)
+      if (batched) {
+        batched.mesh.setVisibleAt(batched.instanceId, visible)
+        setBatchedWireframeInstanceVisibility(batched.mesh, batched.instanceId, visible)
+      }
       const object = objectByID.get(entityId)
       if (object) object.visible = visible
     },
@@ -473,6 +481,96 @@ function materializeSolidCandidates(
   mesh.computeBoundingSphere()
   accelerateBatchedRaycast(mesh, batchedBounds)
   root.add(mesh)
+}
+
+function batchedWireframeInstancePositions(mesh: THREE.BatchedMesh, instanceId: number): Float32Array {
+  const geometryId = mesh.getGeometryIdAt(instanceId)
+  const range = mesh.getGeometryRangeAt(geometryId)
+  const position = mesh.geometry.getAttribute('position')
+  if (!range || !(position instanceof THREE.BufferAttribute)) return new Float32Array()
+
+  const index = mesh.geometry.getIndex()
+  const matrix = mesh.getMatrixAt(instanceId, new THREE.Matrix4())
+  const point = new THREE.Vector3()
+  const vertexCount = index ? range.indexCount : range.vertexCount
+  const result = new Float32Array(vertexCount * 3)
+  for (let cursor = 0; cursor < vertexCount; cursor++) {
+    const vertex = index
+      ? index.getX(range.indexStart + cursor)
+      : range.vertexStart + cursor
+    point.fromBufferAttribute(position, vertex).applyMatrix4(matrix)
+    point.toArray(result, cursor * 3)
+  }
+  return result
+}
+
+function createBatchedWireframeOverlay(mesh: THREE.BatchedMesh): THREE.Mesh {
+  const ranges: BatchedWireframeRange[] = []
+  let totalLength = 0
+  for (let instanceId = 0; instanceId < mesh.instanceCount; instanceId++) {
+    const geometryRange = mesh.getGeometryRangeAt(mesh.getGeometryIdAt(instanceId))
+    const length = (mesh.geometry.getIndex()
+      ? geometryRange?.indexCount
+      : geometryRange?.vertexCount) ?? 0
+    ranges[instanceId] = { offset: totalLength, length: length * 3 }
+    totalLength += length * 3
+  }
+
+  const positions = new Float32Array(totalLength)
+  for (let instanceId = 0; instanceId < mesh.instanceCount; instanceId++) {
+    const range = ranges[instanceId]
+    positions.set(batchedWireframeInstancePositions(mesh, instanceId), range.offset)
+  }
+  const triangleCount = Math.floor((mesh.geometry.getIndex()?.count
+    ?? mesh.geometry.getAttribute('position')?.count
+    ?? 0) / 3)
+  const overlayOpacity = wireframeOpacityForTriangleCount(triangleCount)
+  const overlayGeometry = new THREE.BufferGeometry()
+  overlayGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  overlayGeometry.computeBoundingBox()
+  overlayGeometry.computeBoundingSphere()
+  const overlay = new THREE.Mesh(
+    overlayGeometry,
+    new THREE.MeshBasicMaterial({
+      color: 0x30352d,
+      wireframe: true,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: overlayOpacity,
+      depthWrite: false,
+    }),
+  )
+  overlay.name = `${mesh.name || mesh.uuid} wire overlay`
+  overlay.userData.uvfWireframeOverlay = true
+  overlay.userData.uvfWireframeEnabled = true
+  overlay.userData.uvfWireframeOpacity = overlayOpacity
+  overlay.userData.uvfWireframeTriangleCount = triangleCount
+  overlay.userData.uvfBatchedWireframeRanges = ranges
+  overlay.userData.uvfBatchedWireframe = true
+  overlay.userData.uvfType = 'WireframeOverlay'
+  overlay.renderOrder = mesh.renderOrder + 1
+  overlay.raycast = () => {}
+  for (let instanceId = 0; instanceId < mesh.instanceCount; instanceId++) {
+    if (!mesh.getVisibleAt(instanceId)) setBatchedWireframeInstanceVisibility(mesh, instanceId, false, overlay)
+  }
+  return overlay
+}
+
+function setBatchedWireframeInstanceVisibility(
+  mesh: THREE.BatchedMesh,
+  instanceId: number,
+  visible: boolean,
+  target?: THREE.Object3D,
+): void {
+  const overlay = target ?? mesh.children.find((child) => child.userData.uvfWireframeOverlay === true)
+  if (!(overlay instanceof THREE.Mesh) || overlay.userData.uvfBatchedWireframe !== true) return
+  const range = (overlay.userData.uvfBatchedWireframeRanges as BatchedWireframeRange[] | undefined)?.[instanceId]
+  const attribute = overlay.geometry.getAttribute('position')
+  if (!range || !(attribute instanceof THREE.BufferAttribute)) return
+  const positions = attribute.array as Float32Array
+  if (visible) positions.set(batchedWireframeInstancePositions(mesh, instanceId), range.offset)
+  else positions.fill(Number.NaN, range.offset, range.offset + range.length)
+  attribute.needsUpdate = true
 }
 
 function accelerateBatchedRaycast(mesh: THREE.BatchedMesh, entries: BatchedBoundsEntry[]) {
@@ -1052,7 +1150,41 @@ export function setWireframeOverlay(asset: UVFAsset, visible: boolean): void {
   asset.object.traverse((object) => {
     if (object instanceof THREE.BatchedMesh && object.userData.uvfType === 'BatchedSolidGeometry') {
       const material = object.material as THREE.MeshPhongMaterial
-      material.wireframe = visible
+      // WebGLRenderer expands an indexed geometry when material.wireframe is true,
+      // but BatchedMesh multi-draw still uses the original triangle offsets/counts.
+      // Render one non-indexed overlay instead so every batch range remains visible.
+      material.wireframe = false
+      const existing = object.children.find((child) => child.userData.uvfWireframeOverlay === true)
+      if (visible) {
+        const overlay = existing instanceof THREE.Mesh ? existing : createBatchedWireframeOverlay(object)
+        overlay.userData.uvfWireframeEnabled = true
+        overlay.visible = true
+        if (!existing) object.add(overlay)
+        material.userData.uvfWirePolygonOffset ??= {
+          enabled: material.polygonOffset,
+          factor: material.polygonOffsetFactor,
+          units: material.polygonOffsetUnits,
+        }
+        material.polygonOffset = true
+        material.polygonOffsetFactor = 1
+        material.polygonOffsetUnits = 1
+      } else {
+        if (existing) {
+          existing.userData.uvfWireframeEnabled = false
+          existing.visible = false
+        }
+        const previous = material.userData.uvfWirePolygonOffset as {
+          enabled: boolean
+          factor: number
+          units: number
+        } | undefined
+        if (previous) {
+          material.polygonOffset = previous.enabled
+          material.polygonOffsetFactor = previous.factor
+          material.polygonOffsetUnits = previous.units
+          delete material.userData.uvfWirePolygonOffset
+        }
+      }
       material.needsUpdate = true
       return
     }
@@ -1255,6 +1387,10 @@ export function updateWireframeOverlayForCamera(
   asset.object.updateMatrixWorld(true)
   asset.object.traverse((object) => {
     if (!(object instanceof LineSegments2) || object.userData.uvfWireframeOverlay !== true) return
+    if (object.userData.uvfWireframeEnabled === false) {
+      object.visible = false
+      return
+    }
     const triangleCount = Number(object.userData.uvfWireframeTriangleCount)
     if (!Number.isFinite(triangleCount) || triangleCount <= 0) return
     if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere()
