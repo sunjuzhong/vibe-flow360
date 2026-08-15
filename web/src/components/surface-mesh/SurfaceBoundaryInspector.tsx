@@ -165,7 +165,7 @@ export function SurfaceBoundaryInspector({
             </div>
             )
           }) : (
-            <p>{t(inventory.length > 0 ? 'No faces match the current search and status filter.' : 'No Face entities are present in the current render asset.')}</p>
+            <p className="surface-boundary-empty">{t(inventory.length > 0 ? 'No faces match the current search and status filter.' : 'No Face entities are present in the current render asset.')}</p>
           )}
         </div>
         {visibleCount < filtered.length && (

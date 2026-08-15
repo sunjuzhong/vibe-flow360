@@ -87,4 +87,25 @@ describe('SurfaceBoundaryInspector', () => {
     expect(markup).not.toMatch(/aria-label="Hide all boundaries"[^>]*disabled=""/)
     expect(markup).not.toContain('surface-boundary-selection-tools')
   })
+
+  it('uses compact panel typography for the empty state', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <SurfaceBoundaryInspector
+          inventory={[]}
+          selectedIds={[]}
+          conflictCount={0}
+          visibility={{}}
+          onSelect={vi.fn()}
+          onSelectionChange={vi.fn()}
+          onToggleVisibility={vi.fn()}
+          onShowAll={vi.fn()}
+          onHideAll={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+
+    expect(markup).toContain('class="surface-boundary-empty"')
+    expect(markup).toContain('No Face entities are present in the current render asset.')
+  })
 })

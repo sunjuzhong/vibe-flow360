@@ -6544,6 +6544,12 @@ button { color: inherit; }
 .surface-boundary-select {
   min-width: 0;
 }
+.surface-boundary-empty {
+  margin: 8px 7px;
+  color: #858c81;
+  font-size: 10px;
+  line-height: 1.5;
+}
 .surface-review-section > p,
 .surface-parameter-summary > p {
   margin: 6px 0 0;
