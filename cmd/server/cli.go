@@ -189,15 +189,21 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		dataDir = filepath.Join(filepath.Dir(envPath), dataDir)
 	}
 	updates := map[string]string{
-		"FLOW360_APIKEY":                apiKey,
-		"VIBESIM_AGENT_PROVIDER":        firstValue(existing["VIBESIM_AGENT_PROVIDER"], "builtin"),
-		"VIBESIM_CAD_OFFLINE":           firstValue(existing["VIBESIM_CAD_OFFLINE"], "false"),
-		"VIBESIM_CAD_PYTHON":            bootstrap.DefaultPythonVersion,
-		"VIBESIM_CAD_TIMEOUT_SECONDS":   firstValue(existing["VIBESIM_CAD_TIMEOUT_SECONDS"], "90"),
-		"VIBESIM_DATA_DIR":              dataDir,
-		"VIBESIM_FLOW360_BINARY":        result.Flow360Binary,
-		"VIBESIM_FLOW360_ENV":           selectedEnvironment,
-		"VIBESIM_FLOW360_PROFILE":       selectedProfile,
+		"FLOW360_APIKEY":              apiKey,
+		"VIBESIM_AGENT_PROVIDER":      firstValue(existing["VIBESIM_AGENT_PROVIDER"], "builtin"),
+		"VIBESIM_CAD_OFFLINE":         firstValue(existing["VIBESIM_CAD_OFFLINE"], "false"),
+		"VIBESIM_CAD_PYTHON":          bootstrap.DefaultPythonVersion,
+		"VIBESIM_CAD_TIMEOUT_SECONDS": firstValue(existing["VIBESIM_CAD_TIMEOUT_SECONDS"], "90"),
+		"VIBESIM_DATA_DIR":            dataDir,
+		"VIBESIM_FLOW360_BINARY":      result.Flow360Binary,
+		"VIBESIM_FLOW360_ENV":         selectedEnvironment,
+		"VIBESIM_FLOW360_PROFILE":     selectedProfile,
+		"VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS": firstValue(
+			existing["VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS"], "1800",
+		),
+		"VIBESIM_FLOW360_RESOURCE_RETRIES": firstValue(
+			existing["VIBESIM_FLOW360_RESOURCE_RETRIES"], "3",
+		),
 		"VIBESIM_UV_BINARY":             result.UVBinary,
 		"VIBESIM_UV_CACHE_DIR":          result.CacheDir,
 		"VIBESIM_UV_PYTHON_INSTALL_DIR": result.PythonDir,

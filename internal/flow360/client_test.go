@@ -97,6 +97,33 @@ func TestResolveFlow360BinaryPreservesNormalPathExecutable(t *testing.T) {
 	}
 }
 
+func TestNewClientUsesConfigurableResourceTimeout(t *testing.T) {
+	t.Setenv("VIBESIM_FLOW360_TIMEOUT_SECONDS", "45")
+	t.Setenv("VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS", "900")
+	t.Setenv("VIBESIM_FLOW360_RESOURCE_RETRIES", "5")
+	client := NewClient()
+	if client.Timeout != 45*time.Second {
+		t.Fatalf("command timeout = %s, want 45s", client.Timeout)
+	}
+	if client.ResourceTimeout != 15*time.Minute {
+		t.Fatalf("resource timeout = %s, want 15m", client.ResourceTimeout)
+	}
+	if client.ResourceRetries != 5 {
+		t.Fatalf("resource retries = %d, want 5", client.ResourceRetries)
+	}
+}
+
+func TestNewClientRejectsInvalidTimeoutOverrides(t *testing.T) {
+	t.Setenv("VIBESIM_FLOW360_TIMEOUT_SECONDS", "invalid")
+	t.Setenv("VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS", "0")
+	t.Setenv("VIBESIM_FLOW360_RESOURCE_RETRIES", "99")
+	client := NewClient()
+	if client.Timeout != defaultCommandTimeout || client.ResourceTimeout != defaultResourceTimeout ||
+		client.ResourceRetries != defaultResourceRetries {
+		t.Fatalf("invalid overrides changed defaults: %#v", client)
+	}
+}
+
 func TestCommandArgsPutGlobalOptionsBeforeSubcommand(t *testing.T) {
 	client := &Client{Profile: "secondary", Environment: "uat"}
 	got := client.commandArgs("project", "list")
@@ -563,6 +590,100 @@ esac
 	}
 	if _, wrapped := params["simulation_params"]; wrapped || params["meshing"] == nil {
 		t.Fatalf("expected canonical SimulationParams, got %s", detail.SimulationParams)
+	}
+}
+
+func TestResourceDetailFetchesSimulationParamsOnceAndBuildsSummaryLocally(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "flow360-args.txt")
+	bridgeArgsPath := filepath.Join(dir, "bridge-args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	flowScript := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+case "$*" in
+  *" info "*) printf '{"id":"geo-1","status":"processed"}' ;;
+  *" state "*) printf '{"status":"processed"}' ;;
+  *) printf '{"unexpected":true}' ;;
+esac
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(flowScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pythonPath := filepath.Join(dir, "python")
+	pythonScript := fmt.Sprintf(`#!/bin/sh
+printf '%%s %%s %%s\n' "$3" "$4" "$6" >> %q
+printf '%%s' '{"simulation_params":{"meshing":{"defaults":{"surface_edge_growth_rate":1.2}}},"summary":{"id":"geo-1","summary":{"model_count":2}}}'
+`, bridgeArgsPath)
+	if err := os.WriteFile(pythonPath, []byte(pythonScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := (&Client{
+		Binary:          binaryPath,
+		Timeout:         time.Second,
+		ResourceTimeout: 2 * time.Second,
+	}).ResourceDetail(context.Background(), "Geometry", "geo-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Errors) != 0 {
+		t.Fatalf("unexpected detail errors: %#v", detail.Errors)
+	}
+	if !strings.Contains(string(detail.SimulationParams), "surface_edge_growth_rate") ||
+		!strings.Contains(string(detail.Summary), "model_count") {
+		t.Fatalf("unexpected combined detail: %#v", detail)
+	}
+	flowArgs, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(flowArgs), "simulation-params") || strings.Contains(string(flowArgs), "summary") {
+		t.Fatalf("Flow360 CLI fetched SimulationParams more than once: %s", flowArgs)
+	}
+	bridgeArgs, err := os.ReadFile(bridgeArgsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(bridgeArgs)) != "Geometry geo-1 4" {
+		t.Fatalf("unexpected bridge calls: %q", bridgeArgs)
+	}
+}
+
+func TestResourceMetadataSkipsLargeDetailEndpoints(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "flow360-args.txt")
+	binaryPath := filepath.Join(dir, "flow360")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+case "$*" in
+  *" info "*) printf '{"id":"case-1","project_id":"prj-1"}' ;;
+  *" state "*) printf '{"status":"completed"}' ;;
+  *) printf '{"unexpected":true}' ;;
+esac
+`, argsPath)
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := (&Client{Binary: binaryPath, Timeout: time.Second}).ResourceMetadata(
+		context.Background(), "Case", "case-1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Errors) != 0 || len(detail.Info) == 0 || len(detail.State) == 0 {
+		t.Fatalf("unexpected metadata: %#v", detail)
+	}
+	if len(detail.SimulationParams) > 0 || len(detail.Summary) > 0 || len(detail.Results) > 0 {
+		t.Fatalf("metadata request fetched heavy fields: %#v", detail)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := string(args)
+	if strings.Contains(commands, "simulation-params") || strings.Contains(commands, "summary") || strings.Contains(commands, "results") {
+		t.Fatalf("metadata request called a large endpoint: %s", commands)
 	}
 }
 

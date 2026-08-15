@@ -1730,11 +1730,11 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// ResourceDetail is assembled from several Flow360 CLI calls. The client
-	// intentionally returns partial data with HTTP success when one or more of
-	// those calls fail, so treat that result as degraded: prefer the last
-	// complete snapshot and never overwrite it with partial data.
-	if len(detail.Errors) > 0 {
+	// ResourceDetail is assembled from several Flow360 calls. A locally derived
+	// summary is optional; preserve fresh remote metadata and SimulationParams
+	// when only summary generation fails. Critical partial data still falls back
+	// to the last complete snapshot and never overwrites it.
+	if criticalErrors := flow360.CriticalResourceDetailErrors(detail.Errors); len(criticalErrors) > 0 {
 		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
 			return
 		}
@@ -1742,7 +1742,7 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error":         "Flow360 resource detail is unavailable",
 			"partial":       detail,
-			"operation_err": detail.Errors,
+			"operation_err": criticalErrors,
 		})
 		return
 	}

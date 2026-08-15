@@ -121,7 +121,11 @@ esac
 		t.Fatal(err)
 	}
 	preflightScript := `#!/bin/sh
-printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{}},"VolumeMesh":{"type":"object","properties":{}},"Case":{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"max_steps":{"type":"integer","title":"Maximum steps"}}}}}}}'
+if [ "$3" = "Geometry" ] && [ "$4" = "geometry-ai-1" ]; then
+  printf '%s' '{"simulation_params":{"version":"25.10.17","unit_system":{"name":"SI"},"meshing":{"defaults":{}},"models":[{"type":"Wall","entities":{"stored_entities":[{"name":"*"}]}},{"type":"Freestream"},{"type":"Fluid"}],"private_attribute_asset_cache":{"project_entity_info":{"face_group_tag":"faceId","grouped_faces":[[{"name":"cylinder-side","private_attribute_id":"face-1","private_attribute_tag_key":"faceId","private_attribute_entity_type_name":"Surface","private_attribute_sub_components":["face-1"]}],[{"name":"cylinder-side","private_attribute_id":"cylinder-side","private_attribute_tag_key":"builtinName","private_attribute_entity_type_name":"Surface"}]]}}},"summary":{"id":"geometry-ai-1","summary":{}}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{},"required":[]},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{}},"VolumeMesh":{"type":"object","properties":{}},"Case":{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"max_steps":{"type":"integer","title":"Maximum steps"}}}}}}}'
+fi
 `
 	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
 		t.Fatal(err)

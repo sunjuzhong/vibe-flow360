@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -85,6 +86,21 @@ func (f *fakeProjectSyncClient) ProjectItems(context.Context, string) (json.RawM
 }
 
 func (f *fakeProjectSyncClient) ResourceDetail(_ context.Context, resourceType, resourceID string) (flow360.ResourceDetail, error) {
+	return f.resource(resourceType, resourceID)
+}
+
+func (f *fakeProjectSyncClient) ResourceMetadata(_ context.Context, resourceType, resourceID string) (flow360.ResourceDetail, error) {
+	detail, err := f.resource(resourceType, resourceID)
+	if err != nil {
+		return detail, err
+	}
+	detail.Summary = nil
+	detail.SimulationParams = nil
+	detail.Results = nil
+	return detail, nil
+}
+
+func (f *fakeProjectSyncClient) resource(resourceType, resourceID string) (flow360.ResourceDetail, error) {
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
@@ -177,13 +193,13 @@ func TestSyncProjectWritesEveryResourceAndCompatibilityCache(t *testing.T) {
 	}
 }
 
-func TestSyncProjectDoesNotOverwriteSuccessfulResourceWithPartialData(t *testing.T) {
+func TestSyncProjectDoesNotOverwriteSuccessfulResourceWithCriticalPartialData(t *testing.T) {
 	client := &fakeProjectSyncClient{
 		details: map[string]flow360.ResourceDetail{
 			"Geometry/geo-1": {
 				ID:     "geo-1",
 				Type:   "Geometry",
-				Errors: map[string]string{"summary": "summary is unavailable"},
+				Errors: map[string]string{"simulation_params": "request timed out"},
 			},
 			"Case/case-1": {
 				ID:     "case-1",
@@ -217,6 +233,45 @@ func TestSyncProjectDoesNotOverwriteSuccessfulResourceWithPartialData(t *testing
 	}
 	if got["summary"].(map[string]any)["complete"] != true {
 		t.Fatalf("previous complete mirror was overwritten: %s", payload)
+	}
+}
+
+func TestSyncProjectKeepsResourceWhenOnlySummaryIsUnavailable(t *testing.T) {
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Geometry/geo-1": {
+				ID:               "geo-1",
+				Type:             "Geometry",
+				Info:             json.RawMessage(`{"status":"processed"}`),
+				State:            json.RawMessage(`{"status":"processed"}`),
+				SimulationParams: json.RawMessage(`{"meshing":{"defaults":{}}}`),
+				Errors:           map[string]string{"summary": "25.11 schema is not installed"},
+			},
+			"Case/case-1": {
+				ID:               "case-1",
+				Type:             "Case",
+				SimulationParams: json.RawMessage(`{"models":[]}`),
+				Errors:           map[string]string{},
+			},
+		},
+		failures: map[string]error{},
+	}
+	app := newProjectSyncTestServer(t, client)
+
+	manifest := app.syncProject(t.Context(), "prj-1", client)
+	if manifest.Status != projectmirror.StatusPartial || manifest.SyncedResources != 2 || manifest.FailedResources != 0 {
+		t.Fatalf("unexpected manifest %#v", manifest)
+	}
+	status := manifest.Resources["Geometry/geo-1"]
+	if status.Status != "partial" || !strings.Contains(status.Error, "25.11 schema is not installed") {
+		t.Fatalf("summary degradation was not retained: %#v", status)
+	}
+	payload, _, err := app.mirror.ResourceDetail("Geometry", "geo-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte(`"simulation_params"`)) {
+		t.Fatalf("metadata-only synchronization retained SimulationParams: %s", payload)
 	}
 }
 

@@ -15,6 +15,9 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 )
 
+// Project synchronization fetches only lightweight resource metadata. Keep a
+// small amount of concurrency so large inventories finish promptly without
+// overwhelming Flow360's API.
 const projectSyncWorkerCount = 3
 const projectSyncFreshness = 5 * time.Minute
 
@@ -22,6 +25,7 @@ type projectSyncClient interface {
 	ProjectInfo(context.Context, string) (json.RawMessage, error)
 	ProjectTree(context.Context, string) (json.RawMessage, error)
 	ProjectItems(context.Context, string) (json.RawMessage, error)
+	ResourceMetadata(context.Context, string, string) (flow360.ResourceDetail, error)
 	ResourceDetail(context.Context, string, string) (flow360.ResourceDetail, error)
 	ResourceVisualization(context.Context, string, string) (flow360.ResourceVisualization, error)
 	ResourceVisualizationAsset(context.Context, string, string, string) (flow360.VisualizationFile, error)
@@ -227,14 +231,10 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 				persist()
 				manifestMu.Unlock()
 
-				detail, err := client.ResourceDetail(ctx, item.Type, item.ID)
-				if err == nil && len(detail.Errors) > 0 {
-					keys := make([]string, 0, len(detail.Errors))
-					for operation := range detail.Errors {
-						keys = append(keys, operation)
-					}
-					sort.Strings(keys)
-					err = fmt.Errorf("partial Flow360 detail: %s", strings.Join(keys, ", "))
+				detail, err := client.ResourceMetadata(ctx, item.Type, item.ID)
+				criticalErrors := flow360.CriticalResourceDetailErrors(detail.Errors)
+				if err == nil && len(criticalErrors) > 0 {
+					err = fmt.Errorf("partial Flow360 detail: %s", resourceDetailErrorSummary(criticalErrors))
 				}
 				var raw json.RawMessage
 				if err == nil {
@@ -256,6 +256,11 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 					manifest.FailedResources++
 				} else {
 					status.Status = "completed"
+					if len(detail.Errors) > 0 {
+						status.Status = "partial"
+						status.Error = "optional Flow360 detail unavailable: " + resourceDetailErrorSummary(detail.Errors)
+						manifest.Failures[key] = status.Error
+					}
 					status.SyncedAt = time.Now().UTC()
 					manifest.SyncedResources++
 				}
@@ -286,4 +291,22 @@ func (s *Server) syncProject(ctx context.Context, projectID string, client proje
 	persist()
 	manifestMu.Unlock()
 	return manifest
+}
+
+func resourceDetailErrorSummary(operationErrors map[string]string) string {
+	operations := make([]string, 0, len(operationErrors))
+	for operation := range operationErrors {
+		operations = append(operations, operation)
+	}
+	sort.Strings(operations)
+	parts := make([]string, 0, len(operations))
+	for _, operation := range operations {
+		message := strings.TrimSpace(operationErrors[operation])
+		if message == "" {
+			parts = append(parts, operation)
+			continue
+		}
+		parts = append(parts, operation+": "+message)
+	}
+	return strings.Join(parts, "; ")
 }

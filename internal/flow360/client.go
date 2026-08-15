@@ -16,11 +16,13 @@ import (
 )
 
 type Client struct {
-	Binary      string
-	Timeout     time.Duration
-	Profile     string
-	Environment string
-	APIKey      string
+	Binary          string
+	Timeout         time.Duration
+	ResourceTimeout time.Duration
+	ResourceRetries int
+	Profile         string
+	Environment     string
+	APIKey          string
 }
 
 type Status struct {
@@ -46,11 +48,13 @@ type ResourceDetail struct {
 
 func NewClient() *Client {
 	return &Client{
-		Binary:      resolveFlow360Binary(),
-		Timeout:     20 * time.Second,
-		Profile:     firstNonEmpty(os.Getenv("VIBESIM_FLOW360_PROFILE"), "default"),
-		Environment: strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_ENV")),
-		APIKey:      firstNonEmpty(os.Getenv("VIBESIM_FLOW360_API_KEY"), os.Getenv("FLOW360_APIKEY")),
+		Binary:          resolveFlow360Binary(),
+		Timeout:         timeoutFromEnv("VIBESIM_FLOW360_TIMEOUT_SECONDS", defaultCommandTimeout),
+		ResourceTimeout: timeoutFromEnv("VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS", defaultResourceTimeout),
+		ResourceRetries: intFromEnv("VIBESIM_FLOW360_RESOURCE_RETRIES", defaultResourceRetries, 1, 10),
+		Profile:         firstNonEmpty(os.Getenv("VIBESIM_FLOW360_PROFILE"), "default"),
+		Environment:     strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_ENV")),
+		APIKey:          firstNonEmpty(os.Getenv("VIBESIM_FLOW360_API_KEY"), os.Getenv("FLOW360_APIKEY")),
 	}
 }
 
@@ -294,11 +298,11 @@ func isFlow360NotFoundError(err error) bool {
 }
 
 func (c *Client) ProjectTree(ctx context.Context, projectID string) (json.RawMessage, error) {
-	return c.jsonCommand(ctx, "project", "tree", projectID)
+	return c.jsonCommandWithTimeout(ctx, c.resourceCommandTimeout(), "project", "tree", projectID)
 }
 
 func (c *Client) ProjectItems(ctx context.Context, projectID string) (json.RawMessage, error) {
-	return c.jsonCommand(ctx, "project", "items", projectID)
+	return c.jsonCommandWithTimeout(ctx, c.resourceCommandTimeout(), "project", "items", projectID)
 }
 
 // ProjectDrafts lists the editable Flow360 Draft configurations associated
@@ -459,9 +463,88 @@ func unwrapSimulationParamsPayload(raw json.RawMessage) json.RawMessage {
 }
 
 func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID string) (ResourceDetail, error) {
-	command, normalizedType, err := resourceCommand(resourceType)
+	detail, command, normalizedType, err := c.resourceMetadata(ctx, resourceType, resourceID)
 	if err != nil {
 		return ResourceDetail{}, err
+	}
+
+	type operation struct {
+		name    string
+		args    []string
+		timeout time.Duration
+		set     func(json.RawMessage)
+	}
+	operations := []operation{}
+	if command == "case" {
+		operations = append(operations, operation{
+			name:    "results",
+			args:    []string{"case", "results", "list", resourceID},
+			timeout: c.resourceCommandTimeout(),
+			set:     func(raw json.RawMessage) { detail.Results = raw },
+		})
+	}
+
+	var (
+		wait sync.WaitGroup
+		mu   sync.Mutex
+	)
+	for _, item := range operations {
+		item := item
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			raw, commandErr := c.jsonCommandWithTimeout(ctx, item.timeout, item.args...)
+			mu.Lock()
+			defer mu.Unlock()
+			if commandErr != nil {
+				detail.Errors[item.name] = commandErr.Error()
+				return
+			}
+			item.set(raw)
+		}()
+	}
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		var params, summary json.RawMessage
+		var summaryErr, commandErr error
+		if command == "draft" {
+			params, commandErr = c.jsonCommandWithTimeout(
+				ctx, c.resourceCommandTimeout(), command, "simulation-params", "get", resourceID,
+			)
+			params = unwrapSimulationParamsPayload(params)
+		} else {
+			params, summary, summaryErr, commandErr = c.resourceSimulationData(ctx, normalizedType, resourceID)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if commandErr != nil {
+			detail.Errors["simulation_params"] = commandErr.Error()
+			return
+		}
+		detail.SimulationParams = params
+		detail.Summary = summary
+		if summaryErr != nil {
+			detail.Errors["summary"] = summaryErr.Error()
+		}
+	}()
+	wait.Wait()
+	return detail, nil
+}
+
+// ResourceMetadata deliberately limits Project synchronization to the small,
+// stable identity and state endpoints. SimulationParams and Case results can
+// be tens of megabytes and are loaded only when a user explicitly needs the
+// full resource detail.
+func (c *Client) ResourceMetadata(ctx context.Context, resourceType, resourceID string) (ResourceDetail, error) {
+	detail, _, _, err := c.resourceMetadata(ctx, resourceType, resourceID)
+	return detail, err
+}
+
+func (c *Client) resourceMetadata(ctx context.Context, resourceType, resourceID string) (ResourceDetail, string, string, error) {
+	command, normalizedType, err := resourceCommand(resourceType)
+	if err != nil {
+		return ResourceDetail{}, "", "", err
 	}
 	detail := ResourceDetail{
 		ID:     resourceID,
@@ -477,24 +560,6 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 	operations := []operation{
 		{name: "info", args: []string{command, "info", resourceID}, set: func(raw json.RawMessage) { detail.Info = raw }},
 		{name: "state", args: []string{command, "state", resourceID}, set: func(raw json.RawMessage) { detail.State = raw }},
-		{
-			name: "simulation_params",
-			args: []string{command, "simulation-params", "get", resourceID},
-			set:  func(raw json.RawMessage) { detail.SimulationParams = unwrapSimulationParamsPayload(raw) },
-		},
-	}
-	if command != "draft" {
-		operations = append(operations, operation{
-			name: "summary", args: []string{command, "summary", resourceID},
-			set: func(raw json.RawMessage) { detail.Summary = raw },
-		})
-	}
-	if command == "case" {
-		operations = append(operations, operation{
-			name: "results",
-			args: []string{"case", "results", "list", resourceID},
-			set:  func(raw json.RawMessage) { detail.Results = raw },
-		})
 	}
 
 	var (
@@ -506,18 +571,18 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			raw, commandErr := c.jsonCommand(ctx, item.args...)
+			raw, commandErr := c.jsonCommandWithTimeout(ctx, c.commandTimeout(), item.args...)
 			mu.Lock()
 			defer mu.Unlock()
 			if commandErr != nil {
-				detail.Errors[item.name] = item.name + " is unavailable"
+				detail.Errors[item.name] = commandErr.Error()
 				return
 			}
 			item.set(raw)
 		}()
 	}
 	wait.Wait()
-	return detail, nil
+	return detail, command, normalizedType, nil
 }
 
 func (c *Client) ResourceLogs(ctx context.Context, resourceType, resourceID string, tail int) ([]byte, error) {
@@ -1001,7 +1066,11 @@ func resourceCommand(resourceType string) (command, normalizedType string, err e
 }
 
 func (c *Client) jsonCommand(ctx context.Context, args ...string) (json.RawMessage, error) {
-	output, err := c.run(ctx, args...)
+	return c.jsonCommandWithTimeout(ctx, c.commandTimeout(), args...)
+}
+
+func (c *Client) jsonCommandWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (json.RawMessage, error) {
+	output, err := c.runWithTimeout(ctx, timeout, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1040,11 +1109,7 @@ func compactOutput(data []byte) string {
 }
 
 func (c *Client) run(parent context.Context, args ...string) ([]byte, error) {
-	timeout := c.Timeout
-	if timeout <= 0 {
-		timeout = 20 * time.Second
-	}
-	return c.runWithTimeout(parent, timeout, args...)
+	return c.runWithTimeout(parent, c.commandTimeout(), args...)
 }
 
 func (c *Client) runWithTimeout(parent context.Context, timeout time.Duration, args ...string) ([]byte, error) {
@@ -1060,7 +1125,7 @@ func (c *Client) runWithTimeout(parent context.Context, timeout time.Duration, a
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, fmt.Errorf("flow360 command timed out")
+		return nil, fmt.Errorf("flow360 command timed out after %s", timeout)
 	}
 	if err != nil {
 		message := strings.TrimSpace(stderr.String())
