@@ -212,6 +212,73 @@ func TestAICreateCompletionStagesKeepCreatedProjectInAgentRecovery(t *testing.T)
 	}
 }
 
+func TestAICreateProjectCheckpointPreventsDuplicateCreateAfterParamsFailure(t *testing.T) {
+	root := t.TempDir()
+	createMarker := filepath.Join(root, "project-created")
+	paramsReady := filepath.Join(root, "params-ready")
+	fakeFlow360 := filepath.Join(root, "flow360")
+	script := `#!/bin/sh
+case " $* " in
+  *" project create "*)
+    if [ -e "` + createMarker + `" ]; then exit 42; fi
+    : > "` + createMarker + `"
+    printf '%s' '{"project_id":"prj-idempotent-1"}'
+    ;;
+  *" project items prj-idempotent-1 "*)
+    printf '%s' '{"items":[{"id":"geo-idempotent-1","name":"Body","parent_id":null,"type":"Geometry"}]}'
+    ;;
+  *" geometry simulation-params get geo-idempotent-1 "*)
+    if [ -e "` + paramsReady + `" ]; then
+      printf '%s' '{"simulation_params":{"version":"25.10.17","models":[{"type":"Fluid"}],"private_attribute_asset_cache":{"project_entity_info":{}}}}'
+    else
+      printf '%s' '{}'
+    fi
+    ;;
+  *" geometry info geo-idempotent-1 "*|*" geometry state geo-idempotent-1 "*|*" geometry summary geo-idempotent-1 "*)
+    printf '%s' '{}'
+    ;;
+  *) exit 8 ;;
+esac
+`
+	if err := os.WriteFile(fakeFlow360, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	geometryPath := filepath.Join(root, "body.step")
+	if err := os.WriteFile(geometryPath, []byte("ISO-10303-21;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blueprint := aicreate.Blueprint{ProjectName: "Idempotent Body", Geometry: validTestFlow360Geometry("idempotent-body")}
+	now := time.Now().UTC()
+	session := aiCreateSession{ID: "aic-idempotent", FolderID: "folder-1", CreatedAt: now, UpdatedAt: now}
+	app := &Server{
+		flow360: &flow360.Client{Binary: fakeFlow360, Timeout: time.Second}, workDir: root,
+		aiCreateSessions: map[string]aiCreateSession{session.ID: session},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	first, err := app.loadAICreateGeometry(ctx, session, blueprint, geometryPath, "body", "")
+	if err == nil || first.ProjectID != "prj-idempotent-1" || first.RootResourceID != "geo-idempotent-1" {
+		t.Fatalf("expected the first parameter load to fail after Project creation: result=%#v err=%v", first, err)
+	}
+	checkpoint := app.aiCreateSessions[session.ID].Prepared
+	if checkpoint == nil || checkpoint.ProjectID != first.ProjectID || checkpoint.RootResourceID != first.RootResourceID || aiCreatePreparedReady(*checkpoint) {
+		t.Fatalf("Project identity was not durably checkpointed before parameters became ready: %#v", checkpoint)
+	}
+	if err := os.WriteFile(paramsReady, []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &Server{flow360: &flow360.Client{Binary: fakeFlow360, Timeout: time.Second}, workDir: root}
+	restarted.loadAICreateState()
+	resumedSession := restarted.aiCreateSessions[session.ID]
+	resumed, err := restarted.loadAICreateGeometry(context.Background(), resumedSession, blueprint, geometryPath, "body", "")
+	if err != nil {
+		t.Fatalf("existing Project did not resume: %v", err)
+	}
+	if resumed.ProjectID != first.ProjectID || resumed.RootResourceID != first.RootResourceID || !aiCreateSimulationParamsReady(resumed.Baseline) {
+		t.Fatalf("resume did not reuse the original Project: %#v", resumed)
+	}
+}
+
 func TestNormalizeAICreateResultRetriesUntilAsyncRootAppears(t *testing.T) {
 	lookups := 0
 	lookup := func(_ context.Context, projectID string) (json.RawMessage, error) {

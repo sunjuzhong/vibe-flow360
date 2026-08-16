@@ -222,7 +222,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		}
 	}()
 	s.bindAICreateProgressSession(request.ProgressID, session.ID)
-	if session.Prepared != nil {
+	if session.Prepared != nil && aiCreatePreparedReady(*session.Prepared) {
 		s.updateAICreateProgress(request.ProgressID, 3, "The existing Flow360 Project and Geometry are ready; loading the active parameter schemas.")
 		s.finishAICreateParameters(c, session, *session.Prepared)
 		return
@@ -258,7 +258,7 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 		generator = aicreate.NewCadQueryGenerator()
 	}
 
-	remote, err := s.importAICreateGeometry(c.Request.Context(), session.FolderID, blueprint, geometryPath, request.ProgressID)
+	remote, err := s.loadAICreateGeometry(c.Request.Context(), session, blueprint, geometryPath, geometryName, request.ProgressID)
 	if err != nil {
 		payload := gin.H{"error": err.Error()}
 		if remote.ProjectID != "" {
@@ -310,9 +310,10 @@ func (s *Server) aiCreateProject(c *gin.Context) {
 			})
 			return
 		}
+		s.clearAICreateSessionPrepared(session.ID)
 		blueprint = repaired
 		s.setAICreateSessionCAD(session.ID, aiCreateCADCheckpoint{GeometryName: geometryName, GeometryPath: geometryPath, Blueprint: repaired, Validation: validation})
-		remote, err = s.importAICreateGeometry(c.Request.Context(), session.FolderID, blueprint, geometryPath, request.ProgressID)
+		remote, err = s.importAICreateGeometry(c.Request.Context(), session, blueprint, geometryPath, geometryName, request.ProgressID)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "project_id": remote.ProjectID})
 			return
@@ -482,13 +483,26 @@ func aiCreateConfirmedInputPayload(rounds []aicreate.ClarificationRound) json.Ra
 	return payload
 }
 
-func (s *Server) importAICreateGeometry(ctx context.Context, folderID string, blueprint aicreate.Blueprint, geometryPath, progressID string) (aiCreateImportedGeometry, error) {
+func aiCreatePreparedReady(prepared aiCreatePrepared) bool {
+	return strings.TrimSpace(prepared.ProjectID) != "" && strings.TrimSpace(prepared.RootResourceID) != "" &&
+		len(bytes.TrimSpace(prepared.Baseline)) > 0 && len(bytes.TrimSpace(prepared.BoundaryPatch)) > 0
+}
+
+func (s *Server) loadAICreateGeometry(ctx context.Context, session aiCreateSession, blueprint aicreate.Blueprint, geometryPath, geometryName, progressID string) (aiCreateImportedGeometry, error) {
+	if session.Prepared != nil && strings.TrimSpace(session.Prepared.ProjectID) != "" {
+		s.updateAICreateProgress(progressID, 2, "Reusing the Flow360 Project already created by this session and continuing Geometry parameter loading.")
+		return s.resumeAICreateGeometry(ctx, session.ID, *session.Prepared, progressID)
+	}
+	return s.importAICreateGeometry(ctx, session, blueprint, geometryPath, geometryName, progressID)
+}
+
+func (s *Server) importAICreateGeometry(ctx context.Context, session aiCreateSession, blueprint aicreate.Blueprint, geometryPath, geometryName, progressID string) (aiCreateImportedGeometry, error) {
 	result := aiCreateImportedGeometry{}
 	projectCreateStartedAt := time.Now().UTC()
 	s.updateAICreateProgress(progressID, 2, "Flow360 is uploading the exact STEP and processing the Project root Geometry (--sync).")
 	rawResult, err := s.flow360.CreateProjectSync(
 		ctx, []string{geometryPath}, "geometry", blueprint.ProjectName,
-		blueprint.Geometry.Unit, "standard", "", folderID, []string{"ai-create", "agent-cad-v1"},
+		blueprint.Geometry.Unit, "standard", "", session.FolderID, []string{"ai-create", "agent-cad-v1"},
 	)
 	if err != nil {
 		return result, errors.New(humanizeAICreateProjectError(err))
@@ -498,7 +512,7 @@ func (s *Server) importAICreateGeometry(ctx context.Context, folderID string, bl
 			ctx, rawResult, blueprint.ProjectName, "geometry",
 			projectCreateStartedAt.Add(-30*time.Second),
 			func(ctx context.Context, name, sourceType string, notBefore time.Time) (json.RawMessage, error) {
-				return s.flow360.FindProjectByName(ctx, folderID, name, sourceType, notBefore)
+				return s.flow360.FindProjectByName(ctx, session.FolderID, name, sourceType, notBefore)
 			},
 			aiCreateProjectReconcileAttempts, aiCreateProjectReconcileDelay,
 		)
@@ -509,6 +523,12 @@ func (s *Server) importAICreateGeometry(ctx context.Context, folderID string, bl
 		}
 	}
 	result.ProjectID = findProjectIDFromRaw(rawResult)
+	if result.ProjectID != "" {
+		s.setAICreateSessionPrepared(session.ID, aiCreatePrepared{
+			ProjectID: result.ProjectID, GeometryName: geometryName, Blueprint: blueprint,
+			STEPAssetID: session.STEPAssetID, STEPVersionID: session.STEPVersionID,
+		})
+	}
 	normalized, err := s.normalizeAICreateResult(ctx, rawResult, "geometry")
 	if err != nil {
 		return result, err
@@ -521,12 +541,49 @@ func (s *Server) importAICreateGeometry(ctx context.Context, folderID string, bl
 		return result, errors.New("could not read the AI-created project result")
 	}
 	result.ProjectID, result.RootResourceID = remote.ProjectID, remote.RootResourceID
+	s.setAICreateSessionPrepared(session.ID, aiCreatePrepared{
+		ProjectID: result.ProjectID, RootResourceID: result.RootResourceID,
+		GeometryName: geometryName, Blueprint: blueprint,
+		STEPAssetID: session.STEPAssetID, STEPVersionID: session.STEPVersionID,
+	})
 	s.bindAICreateProgressResources(progressID, result.ProjectID, result.RootResourceID)
 	s.updateAICreateProgress(progressID, 3, "Flow360 Project processing completed; querying Geometry state, canonical SimulationParams, and imported boundary entities.")
 	result.Baseline, err = s.waitForAICreateSimulationParams(ctx, result.RootResourceID, progressID)
 	if err != nil {
 		return result, errors.New("Project was created, but Flow360 did not finish preparing its simulation parameters")
 	}
+	return result, nil
+}
+
+func (s *Server) resumeAICreateGeometry(ctx context.Context, sessionID string, prepared aiCreatePrepared, progressID string) (aiCreateImportedGeometry, error) {
+	result := aiCreateImportedGeometry{ProjectID: strings.TrimSpace(prepared.ProjectID), RootResourceID: strings.TrimSpace(prepared.RootResourceID)}
+	if result.ProjectID == "" {
+		return result, errors.New("the saved AI Create Project checkpoint has no Project ID")
+	}
+	if result.RootResourceID == "" {
+		raw, _ := json.Marshal(map[string]string{"project_id": result.ProjectID})
+		normalized, err := s.normalizeAICreateResult(ctx, raw, "geometry")
+		if err != nil {
+			return result, fmt.Errorf("the saved Flow360 Project exists, but its root Geometry is not available yet: %w", err)
+		}
+		var remote struct {
+			ProjectID      string `json:"project_id"`
+			RootResourceID string `json:"root_resource_id"`
+		}
+		if err := json.Unmarshal(normalized, &remote); err != nil || strings.TrimSpace(remote.RootResourceID) == "" {
+			return result, errors.New("the saved Flow360 Project exists, but its root Geometry could not be resolved")
+		}
+		result.ProjectID, result.RootResourceID = remote.ProjectID, remote.RootResourceID
+		prepared.ProjectID, prepared.RootResourceID = result.ProjectID, result.RootResourceID
+		s.setAICreateSessionPrepared(sessionID, prepared)
+	}
+	s.bindAICreateProgressResources(progressID, result.ProjectID, result.RootResourceID)
+	s.updateAICreateProgress(progressID, 3, "The existing Flow360 Project is ready; continuing canonical SimulationParams loading.")
+	baseline, err := s.waitForAICreateSimulationParams(ctx, result.RootResourceID, progressID)
+	if err != nil {
+		return result, errors.New("The existing Project was preserved, but Flow360 did not finish preparing its simulation parameters")
+	}
+	result.Baseline = baseline
 	return result, nil
 }
 
@@ -938,6 +995,21 @@ func (s *Server) setAICreateSessionPrepared(sessionID string, prepared aiCreateP
 	copy.BoundaryPatch = append(json.RawMessage(nil), prepared.BoundaryPatch...)
 	session.Prepared = &copy
 	session.Phase = "geometry_imported"
+	session.UpdatedAt = time.Now().UTC()
+	s.aiCreateSessions[sessionID] = session
+	s.persistAICreateSessionsLocked()
+}
+
+func (s *Server) clearAICreateSessionPrepared(sessionID string) {
+	s.aiCreateMu.Lock()
+	defer s.aiCreateMu.Unlock()
+	session, ok := s.aiCreateSessions[sessionID]
+	if !ok {
+		return
+	}
+	session.Prepared = nil
+	session.Parameters = nil
+	session.Phase = "cad_validated"
 	session.UpdatedAt = time.Now().UTC()
 	s.aiCreateSessions[sessionID] = session
 	s.persistAICreateSessionsLocked()
