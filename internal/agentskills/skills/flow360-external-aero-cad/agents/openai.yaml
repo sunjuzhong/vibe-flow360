@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flow360 External Aero CAD"
+  short_description: "Build robust external-flow CAD and fluid domains"
+  default_prompt: "Use $flow360-external-aero-cad to design a robust exact external-aerodynamics domain."

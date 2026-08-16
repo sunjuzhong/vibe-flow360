@@ -29,18 +29,40 @@ var stepPreviewScript []byte
 var stepThumbnailScript []byte
 
 type GeometryValidation struct {
-	SolidCount           int       `json:"solid_count"`
-	FaceCount            int       `json:"face_count"`
-	Volume               float64   `json:"volume"`
-	Bounds               []float64 `json:"bounds"`
-	Kernel               string    `json:"kernel"`
-	LengthUnit           string    `json:"length_unit,omitempty"`
-	BodyNames            []string  `json:"body_names,omitempty"`
-	FaceNames            []string  `json:"face_names,omitempty"`
-	FaceCoverageChecked  bool      `json:"face_coverage_checked,omitempty"`
-	NamedFaceCount       int       `json:"named_face_count,omitempty"`
-	UnnamedFaceCount     int       `json:"unnamed_face_count,omitempty"`
-	OverlappingFaceCount int       `json:"overlapping_face_count,omitempty"`
+	SolidCount           int                   `json:"solid_count"`
+	FaceCount            int                   `json:"face_count"`
+	Volume               float64               `json:"volume"`
+	Bounds               []float64             `json:"bounds"`
+	Kernel               string                `json:"kernel"`
+	LengthUnit           string                `json:"length_unit,omitempty"`
+	BodyNames            []string              `json:"body_names,omitempty"`
+	FaceNames            []string              `json:"face_names,omitempty"`
+	FaceCoverageChecked  bool                  `json:"face_coverage_checked,omitempty"`
+	NamedFaceCount       int                   `json:"named_face_count,omitempty"`
+	UnnamedFaceCount     int                   `json:"unnamed_face_count,omitempty"`
+	OverlappingFaceCount int                   `json:"overlapping_face_count,omitempty"`
+	OperationDiagnostics []OperationDiagnostic `json:"operation_diagnostics,omitempty"`
+}
+
+type OperationDiagnostic struct {
+	ID         string    `json:"id"`
+	Operation  string    `json:"operation"`
+	Valid      bool      `json:"valid"`
+	SolidCount int       `json:"solid_count"`
+	FaceCount  int       `json:"face_count"`
+	Volume     float64   `json:"volume"`
+	Bounds     []float64 `json:"bounds,omitempty"`
+}
+
+type CADDiagnostic struct {
+	Code               string                         `json:"code"`
+	OperationID        string                         `json:"operation_id"`
+	Operation          string                         `json:"operation"`
+	Message            string                         `json:"message"`
+	DomainRelationship string                         `json:"domain_relationship,omitempty"`
+	AxisRelationships  []string                       `json:"axis_relationships,omitempty"`
+	Result             *OperationDiagnostic           `json:"result,omitempty"`
+	Operands           map[string]OperationDiagnostic `json:"operands,omitempty"`
 }
 
 type Generator interface {
@@ -74,11 +96,19 @@ const (
 )
 
 type GenerationError struct {
-	Kind GenerationFailureKind
-	Err  error
+	Kind       GenerationFailureKind
+	Err        error
+	Diagnostic *CADDiagnostic
 }
 
-func (e *GenerationError) Error() string { return e.Err.Error() }
+func (e *GenerationError) Error() string {
+	if e.Diagnostic != nil {
+		if payload, err := json.Marshal(e.Diagnostic); err == nil {
+			return "CAD_DIAGNOSTIC " + string(payload)
+		}
+	}
+	return e.Err.Error()
+}
 func (e *GenerationError) Unwrap() error { return e.Err }
 
 func GenerationFailure(err error) GenerationFailureKind {
@@ -87,6 +117,14 @@ func GenerationFailure(err error) GenerationFailureKind {
 		return generationError.Kind
 	}
 	return GenerationGeometryFailure
+}
+
+func GenerationDiagnostic(err error) *CADDiagnostic {
+	var generationError *GenerationError
+	if errors.As(err, &generationError) {
+		return generationError.Diagnostic
+	}
+	return nil
 }
 
 type CadQueryGenerator struct {
@@ -189,7 +227,10 @@ func (g *CadQueryGenerator) Generate(ctx context.Context, geometry Geometry, out
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("CAD generation timed out after %s", g.Timeout)}
 		}
-		return validation, &GenerationError{Kind: classifyCADExecutionFailure(stderr.String()), Err: fmt.Errorf("CAD generation failed: %s", truncateOutput(stderr.Bytes(), 1200))}
+		return validation, &GenerationError{
+			Kind: classifyCADExecutionFailure(stderr.String()), Err: fmt.Errorf("CAD generation failed: %s", truncateOutput(stderr.Bytes(), 1200)),
+			Diagnostic: parseCADDiagnostic(stderr.String()),
+		}
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &validation); err != nil {
 		return validation, &GenerationError{Kind: GenerationTemporaryFailure, Err: fmt.Errorf("CAD generator returned invalid validation data: %w: %s", err, truncateOutput(stdout.Bytes(), 600))}
@@ -453,6 +494,24 @@ func classifyCADExecutionFailure(stderr string) GenerationFailureKind {
 	default:
 		return GenerationGeometryFailure
 	}
+}
+
+func parseCADDiagnostic(stderr string) *CADDiagnostic {
+	const marker = "CAD_DIAGNOSTIC "
+	index := strings.LastIndex(stderr, marker)
+	if index < 0 {
+		return nil
+	}
+	payload := stderr[index+len(marker):]
+	if newline := strings.IndexByte(payload, '\n'); newline >= 0 {
+		payload = payload[:newline]
+	}
+	payload = strings.TrimSpace(payload)
+	var diagnostic CADDiagnostic
+	if payload == "" || json.Unmarshal([]byte(payload), &diagnostic) != nil || diagnostic.Code == "" {
+		return nil
+	}
+	return &diagnostic
 }
 
 func firstConfigured(values ...string) string {

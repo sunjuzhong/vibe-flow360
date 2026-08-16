@@ -627,6 +627,17 @@ type aiCreateCADRepairExhaustedError struct {
 	Diagnostic string
 }
 
+type aiCreateCADAttemptRecord struct {
+	Attempt    int                         `json:"attempt"`
+	Status     string                      `json:"status"`
+	Blueprint  string                      `json:"blueprint_file"`
+	Recipe     string                      `json:"recipe_file"`
+	Validation aicreate.GeometryValidation `json:"validation,omitempty"`
+	Diagnostic *aicreate.CADDiagnostic     `json:"diagnostic,omitempty"`
+	Error      string                      `json:"error,omitempty"`
+	UpdatedAt  time.Time                   `json:"updated_at"`
+}
+
 type aiCreateDesignStageError struct{ Err error }
 
 func (e *aiCreateDesignStageError) Error() string { return e.Err.Error() }
@@ -634,6 +645,34 @@ func (e *aiCreateDesignStageError) Unwrap() error { return e.Err }
 
 func (e *aiCreateCADRepairExhaustedError) Error() string {
 	return fmt.Sprintf("CAD self-repair failed after %d attempts: %s", e.Attempts, e.Diagnostic)
+}
+
+func persistAICreateCADAttempt(outputPath, progressID string, attempt int, blueprint aicreate.Blueprint, validation aicreate.GeometryValidation, generationErr error, status string) error {
+	runID := safeGeometryName(progressID)
+	if strings.TrimSpace(progressID) == "" {
+		runID = "latest"
+	}
+	attemptDirectory := filepath.Join(filepath.Dir(outputPath), "cad-attempts", runID, fmt.Sprintf("attempt-%02d", attempt))
+	blueprintPath := filepath.Join(attemptDirectory, "blueprint.json")
+	recipePath := filepath.Join(attemptDirectory, "recipe.json")
+	recordPath := filepath.Join(attemptDirectory, "result.json")
+	if err := writeAICreateState(blueprintPath, blueprint); err != nil {
+		return fmt.Errorf("persist CAD attempt blueprint: %w", err)
+	}
+	if err := writeAICreateState(recipePath, blueprint.Geometry); err != nil {
+		return fmt.Errorf("persist CAD attempt recipe: %w", err)
+	}
+	record := aiCreateCADAttemptRecord{
+		Attempt: attempt, Status: status, Blueprint: filepath.Base(blueprintPath), Recipe: filepath.Base(recipePath),
+		Validation: validation, Diagnostic: aicreate.GenerationDiagnostic(generationErr), UpdatedAt: time.Now().UTC(),
+	}
+	if generationErr != nil {
+		record.Error = generationErr.Error()
+	}
+	if err := writeAICreateState(recordPath, record); err != nil {
+		return fmt.Errorf("persist CAD attempt result: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) prepareAICreateCAD(ctx context.Context, session aiCreateSession, progressID string) (aicreate.Blueprint, aicreate.GeometryValidation, string, string, error) {
@@ -708,9 +747,23 @@ func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Gen
 		}
 		return validation, err
 	}
+	runAttempt := func(attempt int, candidate aicreate.Blueprint) (aicreate.GeometryValidation, error) {
+		if err := persistAICreateCADAttempt(outputPath, progressID, attempt, candidate, aicreate.GeometryValidation{}, nil, "running"); err != nil {
+			log.Printf("Could not persist AI Create CAD attempt %d before execution: %v", attempt, err)
+		}
+		validation, err := generate(candidate)
+		status := "completed"
+		if err != nil {
+			status = "failed"
+		}
+		if persistErr := persistAICreateCADAttempt(outputPath, progressID, attempt, candidate, validation, err, status); persistErr != nil {
+			log.Printf("Could not persist AI Create CAD attempt %d result: %v", attempt, persistErr)
+		}
+		return validation, err
+	}
 
 	current := blueprint
-	validation, err := generate(current)
+	validation, err := runAttempt(0, current)
 	if err == nil {
 		return current, validation, nil
 	}
@@ -731,7 +784,7 @@ func (s *Server) generateAICreateCAD(ctx context.Context, generator aicreate.Gen
 		}
 		current = repaired
 		s.updateAICreateProgress(progressID, 1, fmt.Sprintf("Validating exact CAD produced by self-repair %d of %d.", attempt, maxAICreateCADRepairAttempts))
-		validation, err = generate(current)
+		validation, err = runAttempt(attempt, current)
 		if err == nil {
 			return current, validation, nil
 		}

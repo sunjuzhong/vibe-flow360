@@ -413,6 +413,31 @@ func TestGenerateAICreateCADLetsAgentRepairGeometryFailure(t *testing.T) {
 	}
 }
 
+func TestGenerateAICreateCADPersistsEveryRepairAttempt(t *testing.T) {
+	root := t.TempDir()
+	outputPath := filepath.Join(root, "session", "body.step")
+	agentCalls := 0
+	diagnostic := &aicreate.CADDiagnostic{Code: "BOOLEAN_RESULT_EMPTY", OperationID: "external_fluid", Operation: "cut", Message: "empty result"}
+	generator := &sequenceCADGenerator{errors: []error{&aicreate.GenerationError{Kind: aicreate.GenerationGeometryFailure, Err: errors.New("empty external fluid"), Diagnostic: diagnostic}}}
+	app := &Server{agent: newCADRepairAgent(t, &agentCalls)}
+	_, _, err := app.generateAICreateCAD(context.Background(), generator, aiCreateSession{Intent: "Create external flow"}, aicreate.Blueprint{ProjectName: "Initial", Geometry: validTestFlow360Geometry("initial")}, outputPath, "aip-persist-attempts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, attempt := range []string{"attempt-00", "attempt-01"} {
+		directory := filepath.Join(root, "session", "cad-attempts", "aip-persist-attempts", attempt)
+		for _, name := range []string{"blueprint.json", "recipe.json", "result.json"} {
+			if _, statErr := os.Stat(filepath.Join(directory, name)); statErr != nil {
+				t.Fatalf("%s did not persist %s: %v", attempt, name, statErr)
+			}
+		}
+	}
+	payload, readErr := os.ReadFile(filepath.Join(root, "session", "cad-attempts", "aip-persist-attempts", "attempt-00", "result.json"))
+	if readErr != nil || !strings.Contains(string(payload), "BOOLEAN_RESULT_EMPTY") || !strings.Contains(string(payload), "failed") {
+		t.Fatalf("failed attempt omitted its structured diagnostic: %s (%v)", payload, readErr)
+	}
+}
+
 func TestGenerateAICreateCADCanRecoverOnThirdAgentRepair(t *testing.T) {
 	agentCalls := 0
 	geometryFailure := func(message string) error {

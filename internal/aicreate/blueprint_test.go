@@ -227,6 +227,24 @@ func TestValidateFlow360GeometryContractRejectsPeriodicGeometryToCase(t *testing
 	}
 }
 
+func TestValidateFlow360GeometryContractRequiresExternalFluidRelationship(t *testing.T) {
+	geometry := Geometry{
+		Operations: []Operation{
+			{ID: "domain", Op: "box", Params: map[string]any{"length": 10.0, "width": 10.0, "height": 10.0}},
+			{ID: "body", Op: "sphere", Params: map[string]any{"radius": 1.0}},
+			{ID: "external_fluid", Op: "cut", Params: map[string]any{"left": "domain", "right": "body"}},
+		},
+		Results: []GeometryResult{{Source: "external_fluid", Name: "external-fluid", Faces: []FaceLabel{{Name: "farfield", Selector: "%PLANE"}}}},
+	}
+	if err := ValidateFlow360GeometryContract(geometry); err == nil || !strings.Contains(err.Error(), "domain_relationship") {
+		t.Fatalf("external fluid without an explicit topology relationship was accepted: %v", err)
+	}
+	geometry.Operations[2].Params["domain_relationship"] = "enclosed"
+	if err := ValidateFlow360GeometryContract(geometry); err != nil {
+		t.Fatalf("valid external fluid relationship was rejected: %v", err)
+	}
+}
+
 func TestClarificationRejectsPeriodicGeometryToCaseChoice(t *testing.T) {
 	raw := json.RawMessage(`[{"id":"domain","label":"Domain","type":"select","required":true,"default":"finite","options":[{"value":"periodic","label":"Thin periodic"},{"value":"finite","label":"Finite span"}]}]`)
 	if _, err := parseClarificationFields(raw); err == nil || !strings.Contains(err.Error(), "unsupported periodic") {

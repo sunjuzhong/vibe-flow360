@@ -142,10 +142,13 @@ The deterministic CAD DSL supports:
 - sweep params: profile ([[x,y], ...]), profile_type (optional "polyline" or "spline"), path ([[x,y,z], ...]), profile_plane ("XY", "XZ", or "YZ")
 - translate params: source, vector ([x,y,z])
 - rotate params: source, axis_start, axis_end, angle
-- union/cut/intersect params: left, right
+- union/intersect params: left, right
+- cut params: left, right, and domain_relationship for an external-fluid result: "enclosed", "span-through", or "symmetry-half"
 - fillet params: source, radius
 
-Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, and %TORUS. Design the final exact BREP for Flow360, not merely for CAD validity: every face of every result must be selected exactly once, with no unnamed faces and no selector overlap. Give every result a descriptive body name and use stable semantic boundary names such as inlet, outlet, cylinder_wall, spanwise_symmetry_min, spanwise_symmetry_max, blade, or farfield. Geometry-to-Case AI Create MUST NOT emit periodic face names or offer a periodic-domain choice: Flow360 periodic boundaries require a conformal paired VolumeMesh with identical node counts, which exact CAD validation and SimulationParams preflight cannot prove. Use symmetry planes for a safe finite-span baseline; periodic studies must start from a reviewed compatible VolumeMesh. A selector may match multiple faces; they are exported with deterministic numeric suffixes. Ensure obstacle cuts fully span the intended fluid domain where the requested topology requires that; do not leave accidental internal caps, partial wall coverage, or coincident unlabelled faces.
+Supported deterministic face selectors are >X, <X, >Y, <Y, >Z, <Z, |X, |Y, |Z, %PLANE, %CYLINDER, %CONE, %SPHERE, %TORUS, %BEZIER, %BSPLINE, %REVOLUTION, %EXTRUSION, and %OFFSET. Emit exactly one supported selector per face assignment; boolean selector expressions are not supported. Design the final exact BREP for Flow360, not merely for CAD validity: every face of every result must be selected exactly once, with no unnamed faces and no selector overlap. Give every result a descriptive body name and use stable semantic boundary names such as inlet, outlet, cylinder_wall, spanwise_symmetry_min, spanwise_symmetry_max, blade, or farfield. Geometry-to-Case AI Create MUST NOT emit periodic face names or offer a periodic-domain choice: Flow360 periodic boundaries require a conformal paired VolumeMesh with identical node counts, which exact CAD validation and SimulationParams preflight cannot prove. Use symmetry planes for a safe finite-span baseline; periodic studies must start from a reviewed compatible VolumeMesh. A selector may match multiple faces; they are exported with deterministic numeric suffixes. Ensure obstacle cuts fully span the intended fluid domain where the requested topology requires that; do not leave accidental internal caps, partial wall coverage, or coincident unlabelled faces.
+
+For every external-fluid cut, declare domain_relationship. Use "enclosed" for an isolated body strictly inside the farfield, "span-through" only when the obstacle intentionally crosses both sides of exactly one domain axis, and "symmetry-half" only when a half-model intentionally meets one symmetry plane. Never use a contact mode merely to bypass a failed boolean.
 
 All dimensions are finite metres and all angles are degrees. Use multiple operations, bodies, and booleans when the requested geometry requires them. Every result must contain one or more closed solids suitable for exact STEP export. Do not emit Python, file paths, shell commands, STL, meshes, external URLs, or unsupported operations.
 
@@ -535,8 +538,32 @@ func ValidateFlow360GeometryContract(geometry Geometry) error {
 				return &GenerationError{Kind: GenerationGeometryFailure, Err: fmt.Errorf("periodic boundary %s is unsafe for autonomous Geometry-to-Case generation because paired VolumeMesh node conformity is not established; use spanwise symmetry boundaries", face.Name)}
 			}
 		}
+		if looksLikeExternalFluid(result.Source) || looksLikeExternalFluid(result.Name) {
+			for _, operation := range geometry.Operations {
+				if operation.ID != result.Source || operation.Op != "cut" {
+					continue
+				}
+				relationship, _ := operation.Params["domain_relationship"].(string)
+				if !validDomainRelationship(relationship) {
+					message := fmt.Sprintf("external-fluid cut %s must declare domain_relationship as enclosed, span-through, or symmetry-half", operation.ID)
+					return &GenerationError{
+						Kind: GenerationGeometryFailure, Err: errors.New(message),
+						Diagnostic: &CADDiagnostic{Code: "EXTERNAL_FLUID_RELATIONSHIP_REQUIRED", OperationID: operation.ID, Operation: operation.Op, Message: message},
+					}
+				}
+			}
+		}
 	}
 	return nil
+}
+
+func looksLikeExternalFluid(value string) bool {
+	value = strings.ToLower(strings.ReplaceAll(value, "-", "_"))
+	return strings.Contains(value, "external") && strings.Contains(value, "fluid")
+}
+
+func validDomainRelationship(value string) bool {
+	return value == "enclosed" || value == "span-through" || value == "symmetry-half"
 }
 
 func validateOperation(operation Operation, available map[string]bool) error {
@@ -610,6 +637,12 @@ func validateOperation(operation Operation, available map[string]bool) error {
 			return errors.New("rotation axis endpoints must be different")
 		}
 	}
+	if relationship, present := operation.Params["domain_relationship"]; present {
+		value, ok := relationship.(string)
+		if operation.Op != "cut" || !ok || !validDomainRelationship(value) {
+			return errors.New("domain_relationship is supported only on cut and must be enclosed, span-through, or symmetry-half")
+		}
+	}
 	return nil
 }
 
@@ -654,7 +687,8 @@ func validPath(value any) bool {
 func validFaceSelector(selector string) bool {
 	switch selector {
 	case ">X", "<X", ">Y", "<Y", ">Z", "<Z", "|X", "|Y", "|Z",
-		"%PLANE", "%CYLINDER", "%CONE", "%SPHERE", "%TORUS":
+		"%PLANE", "%CYLINDER", "%CONE", "%SPHERE", "%TORUS", "%BEZIER",
+		"%BSPLINE", "%REVOLUTION", "%EXTRUSION", "%OFFSET":
 		return true
 	default:
 		return false

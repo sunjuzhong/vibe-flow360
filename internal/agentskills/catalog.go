@@ -11,7 +11,7 @@ import (
 type Stage string
 
 const (
-	CatalogVersion           = "2026-08-07.1"
+	CatalogVersion           = "2026-08-16.1"
 	CADDesign          Stage = "cad-design"
 	ParameterAuthoring Stage = "parameter-authoring"
 	PreflightRepair    Stage = "preflight-repair"
@@ -21,7 +21,7 @@ const (
 var skillFiles embed.FS
 
 var stageSkills = map[Stage][]string{
-	CADDesign:          {"flow360-cad-design"},
+	CADDesign:          {"flow360-cad-design", "flow360-external-aero-cad"},
 	ParameterAuthoring: {"flow360-parameter-authoring"},
 	PreflightRepair:    {"flow360-parameter-authoring", "flow360-preflight-repair"},
 }

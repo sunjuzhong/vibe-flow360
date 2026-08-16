@@ -7,7 +7,7 @@ import (
 
 func TestInstructionsAreStageScopedAndVersioned(t *testing.T) {
 	cad := Instructions(CADDesign)
-	if !strings.Contains(cad, CatalogVersion) || !strings.Contains(cad, "flow360-cad-design") || strings.Contains(cad, "flow360-preflight-repair") {
+	if !strings.Contains(cad, CatalogVersion) || !strings.Contains(cad, "flow360-cad-design") || !strings.Contains(cad, "flow360-external-aero-cad") || strings.Contains(cad, "flow360-preflight-repair") {
 		t.Fatalf("unexpected CAD skill bundle: %s", cad)
 	}
 	repair := Instructions(PreflightRepair)

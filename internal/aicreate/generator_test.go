@@ -2,6 +2,7 @@ package aicreate
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,6 +117,25 @@ func TestClassifyCADExecutionFailureSeparatesInfrastructureFromGeometry(t *testi
 	}
 	if got := classifyCADExecutionFailure("Traceback: ValueError: Boolean operation produced an empty solid"); got != GenerationGeometryFailure {
 		t.Fatalf("geometry construction failure classified as %q", got)
+	}
+}
+
+func TestParseCADDiagnosticReadsStructuredKernelEvidence(t *testing.T) {
+	stderr := "Traceback\nValueError: CAD_DIAGNOSTIC {\"code\":\"BOOLEAN_RESULT_EMPTY\",\"operation_id\":\"external_fluid\",\"operation\":\"cut\",\"message\":\"empty\",\"domain_relationship\":\"enclosed\",\"axis_relationships\":[\"inside\",\"cross\",\"inside\"]}\n"
+	diagnostic := parseCADDiagnostic(stderr)
+	if diagnostic == nil || diagnostic.Code != "BOOLEAN_RESULT_EMPTY" || diagnostic.OperationID != "external_fluid" || diagnostic.AxisRelationships[1] != "cross" {
+		t.Fatalf("structured CAD diagnostic was not parsed: %#v", diagnostic)
+	}
+}
+
+func TestGenerationErrorExposesStructuredDiagnosticToRepair(t *testing.T) {
+	diagnostic := &CADDiagnostic{Code: "BOOLEAN_RESULT_EMPTY", OperationID: "external_fluid", Operation: "cut", Message: "empty"}
+	err := &GenerationError{Kind: GenerationGeometryFailure, Err: errors.New("long traceback"), Diagnostic: diagnostic}
+	if got := err.Error(); !strings.HasPrefix(got, "CAD_DIAGNOSTIC ") || !strings.Contains(got, "BOOLEAN_RESULT_EMPTY") {
+		t.Fatalf("repair would receive an unstructured diagnostic: %q", got)
+	}
+	if !errors.Is(err, err.Err) {
+		t.Fatal("structured diagnostic lost the underlying execution error")
 	}
 }
 

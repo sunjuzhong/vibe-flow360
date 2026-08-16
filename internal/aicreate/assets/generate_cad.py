@@ -9,6 +9,84 @@ import cadquery as cq
 from cadquery.occ_impl.exporters.assembly import exportStepMeta
 
 
+def operation_evidence(identifier, operation, result):
+    shape = result.val()
+    solids = shape.Solids() if shape is not None else []
+    faces = shape.Faces() if shape is not None else []
+    volume = sum(float(solid.Volume()) for solid in solids)
+    bounds = []
+    if shape is not None and not shape.isNull():
+        box = shape.BoundingBox()
+        bounds = [box.xmin, box.ymin, box.zmin, box.xmax, box.ymax, box.zmax]
+    return {
+        "id": identifier,
+        "operation": operation,
+        "valid": bool(shape is not None and shape.isValid()),
+        "solid_count": len(solids),
+        "face_count": len(faces),
+        "volume": volume,
+        "bounds": bounds,
+    }
+
+
+def raise_diagnostic(code, operation, message, **details):
+    diagnostic = {
+        "code": code,
+        "operation_id": operation["id"],
+        "operation": operation["op"],
+        "message": message,
+    }
+    diagnostic.update(details)
+    raise ValueError("CAD_DIAGNOSTIC " + json.dumps(diagnostic, separators=(",", ":")))
+
+
+def axis_relationships(left_bounds, right_bounds):
+    scale = max(left_bounds[3 + axis] - left_bounds[axis] for axis in range(3))
+    tolerance = max(scale * 1e-7, 1e-9)
+    relationships = []
+    for axis in range(3):
+        left_min, left_max = left_bounds[axis], left_bounds[axis + 3]
+        right_min, right_max = right_bounds[axis], right_bounds[axis + 3]
+        if right_max < left_min - tolerance or right_min > left_max + tolerance:
+            relationships.append("outside")
+        elif right_min > left_min + tolerance and right_max < left_max - tolerance:
+            relationships.append("inside")
+        elif right_min <= left_min + tolerance and right_max >= left_max - tolerance:
+            relationships.append("span")
+        elif abs(right_min - left_min) <= tolerance and right_max < left_max - tolerance:
+            relationships.append("touch-min")
+        elif abs(right_max - left_max) <= tolerance and right_min > left_min + tolerance:
+            relationships.append("touch-max")
+        else:
+            relationships.append("cross")
+    return relationships
+
+
+def validate_external_fluid_cut(operation, values, diagnostics):
+    relationship = operation["params"].get("domain_relationship")
+    if not relationship:
+        return
+    left_id, right_id = operation["params"]["left"], operation["params"]["right"]
+    left, right = diagnostics[left_id], diagnostics[right_id]
+    relationships = axis_relationships(left["bounds"], right["bounds"])
+    valid = (
+        relationship == "enclosed" and relationships == ["inside", "inside", "inside"]
+    ) or (
+        relationship == "span-through" and relationships.count("span") == 1 and relationships.count("inside") == 2
+    ) or (
+        relationship == "symmetry-half" and sum(item in ("touch-min", "touch-max") for item in relationships) == 1 and relationships.count("inside") == 2
+    )
+    if not valid:
+        raise_diagnostic(
+            "EXTERNAL_FLUID_RELATIONSHIP_MISMATCH",
+            operation,
+            "Obstacle bounds do not satisfy the declared external-fluid domain relationship.",
+            domain_relationship=relationship,
+            axis_relationships=relationships,
+            operands={"left": left, "right": right},
+        )
+
+
 def plane_for_axis(axis):
     return {"x": "YZ", "y": "XZ", "z": "XY"}[axis]
 
@@ -69,8 +147,12 @@ def build(operation, values):
     if op == "revolve":
         if params.get("axis", "z") != "z":
             raise ValueError("revolve currently requires axis z")
+        # CadQuery interprets revolve axes in the current workplane's local
+        # coordinates. On XZ, local +Y is global +Z. Passing a world-space
+        # three-vector here is transformed a second time and revolves about
+        # the workplane normal instead of the requested global Z axis.
         return draw_profile(cq.Workplane("XZ"), params).revolve(
-            float(params["angle"]), (0, 0, 0), (0, 0, 1)
+            float(params["angle"]), (0, 0), (0, 1)
         )
     if op == "loft":
         return loft(params)
@@ -97,8 +179,31 @@ def main():
     with open(sys.argv[1], "r", encoding="utf-8") as stream:
         recipe = json.load(stream)
     values = {}
+    operation_diagnostics = {}
     for operation in recipe["operations"]:
-        values[operation["id"]] = build(operation, values)
+        try:
+            if operation["op"] == "cut":
+                validate_external_fluid_cut(operation, values, operation_diagnostics)
+            result = build(operation, values)
+        except ValueError as error:
+            if str(error).startswith("CAD_DIAGNOSTIC "):
+                raise
+            raise_diagnostic("OPERATION_BUILD_FAILED", operation, str(error))
+        except Exception as error:
+            raise_diagnostic("OPERATION_BUILD_FAILED", operation, f"{type(error).__name__}: {error}")
+        evidence = operation_evidence(operation["id"], operation["op"], result)
+        if not evidence["valid"] or evidence["solid_count"] < 1 or not math.isfinite(evidence["volume"]) or evidence["volume"] <= 0:
+            code = "OPERATION_INVALID_SOLID"
+            if operation["op"] in ("cut", "intersect"):
+                code = "BOOLEAN_RESULT_EMPTY" if evidence["solid_count"] < 1 or evidence["volume"] <= 0 else "BOOLEAN_RESULT_INVALID"
+            operands = {}
+            for role in ("left", "right", "source"):
+                source = operation["params"].get(role)
+                if source in operation_diagnostics:
+                    operands[role] = operation_diagnostics[source]
+            raise_diagnostic(code, operation, "Operation did not produce a valid finite positive solid.", result=evidence, operands=operands)
+        values[operation["id"]] = result
+        operation_diagnostics[operation["id"]] = evidence
     specifications = recipe.get("results") or [{
         "source": recipe["result"], "name": recipe["name"], "faces": []
     }]
@@ -176,6 +281,7 @@ def main():
         "named_face_count": named_face_count,
         "unnamed_face_count": unnamed_face_count,
         "overlapping_face_count": overlapping_face_count,
+        "operation_diagnostics": list(operation_diagnostics.values()),
     }, separators=(",", ":")))
 
 
