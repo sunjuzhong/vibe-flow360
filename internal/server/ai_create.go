@@ -550,7 +550,7 @@ func (s *Server) importAICreateGeometry(ctx context.Context, session aiCreateSes
 	s.updateAICreateProgress(progressID, 3, "Flow360 Project processing completed; querying Geometry state, canonical SimulationParams, and imported boundary entities.")
 	result.Baseline, err = s.waitForAICreateSimulationParams(ctx, result.RootResourceID, progressID)
 	if err != nil {
-		return result, errors.New("Project was created, but Flow360 did not finish preparing its simulation parameters")
+		return result, fmt.Errorf("Project was created, but Flow360 did not finish preparing its simulation parameters: %w", err)
 	}
 	return result, nil
 }
@@ -581,7 +581,7 @@ func (s *Server) resumeAICreateGeometry(ctx context.Context, sessionID string, p
 	s.updateAICreateProgress(progressID, 3, "The existing Flow360 Project is ready; continuing canonical SimulationParams loading.")
 	baseline, err := s.waitForAICreateSimulationParams(ctx, result.RootResourceID, progressID)
 	if err != nil {
-		return result, errors.New("The existing Project was preserved, but Flow360 did not finish preparing its simulation parameters")
+		return result, fmt.Errorf("The existing Project was preserved, but Flow360 did not finish preparing its simulation parameters: %w", err)
 	}
 	result.Baseline = baseline
 	return result, nil
@@ -1186,15 +1186,19 @@ func safeGeometryName(name string) string {
 }
 
 const (
-	aiCreateParamsLookupAttempts = 20
-	aiCreateParamsLookupDelay    = 500 * time.Millisecond
+	aiCreateParamsWaitTimeout = 5 * time.Minute
+	aiCreateParamsLookupDelay = 2 * time.Second
 )
 
 func (s *Server) waitForAICreateSimulationParams(ctx context.Context, geometryID, progressID string) (json.RawMessage, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, aiCreateParamsWaitTimeout)
+	defer cancel()
 	var lastErr error
-	for attempt := 0; attempt < aiCreateParamsLookupAttempts; attempt++ {
-		detail, err := s.flow360.ResourceDetail(ctx, "Geometry", geometryID)
+	var lastState string
+	for {
+		detail, err := s.flow360.ResourceDetail(waitCtx, "Geometry", geometryID)
 		if err == nil {
+			lastState = aiCreateGeometryState(detail.State)
 			if remoteDetail := aiCreateGeometryStateDetail(detail.State); remoteDetail != "" {
 				s.updateAICreateProgress(progressID, 3, remoteDetail)
 			}
@@ -1202,23 +1206,65 @@ func (s *Server) waitForAICreateSimulationParams(ctx context.Context, geometryID
 		if err == nil && aiCreateSimulationParamsReady(detail.SimulationParams) {
 			return detail.SimulationParams, nil
 		}
+		if err == nil {
+			if failed, diagnostic := aiCreateGeometryTerminalFailure(detail.State); failed {
+				return nil, fmt.Errorf("Flow360 Geometry %s failed before canonical SimulationParams became available: %s", geometryID, diagnostic)
+			}
+		}
 		if err != nil {
 			lastErr = err
+		} else if message := strings.TrimSpace(detail.Errors["simulation_params"]); message != "" {
+			lastErr = errors.New(message)
 		} else {
 			lastErr = errors.New("Geometry SimulationParams are not available yet")
 		}
-		if attempt == aiCreateParamsLookupAttempts-1 {
-			break
-		}
 		timer := time.NewTimer(aiCreateParamsLookupDelay)
 		select {
-		case <-ctx.Done():
+		case <-waitCtx.Done():
 			timer.Stop()
+			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+				state := "unknown"
+				if lastState != "" {
+					state = lastState
+				}
+				return nil, fmt.Errorf("Flow360 Geometry %s did not expose canonical SimulationParams within %s (last state: %s): %w", geometryID, aiCreateParamsWaitTimeout, state, lastErr)
+			}
 			return nil, ctx.Err()
 		case <-timer.C:
 		}
 	}
-	return nil, lastErr
+}
+
+func aiCreateGeometryState(raw json.RawMessage) string {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return ""
+	}
+	var state map[string]any
+	if json.Unmarshal(raw, &state) != nil {
+		return ""
+	}
+	return strings.TrimSpace(executionState(state))
+}
+
+func aiCreateGeometryTerminalFailure(raw json.RawMessage) (bool, string) {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return false, ""
+	}
+	var state map[string]any
+	if json.Unmarshal(raw, &state) != nil {
+		return false, ""
+	}
+	status := strings.ToLower(strings.TrimSpace(executionState(state)))
+	terminal, hasTerminal := state["is_terminal"].(bool)
+	success, hasSuccess := state["is_success"].(bool)
+	failedStatus := status == "failed" || status == "error" || status == "cancelled" || status == "canceled"
+	if failedStatus || hasTerminal && terminal && hasSuccess && !success {
+		if status == "" {
+			status = "terminal failure"
+		}
+		return true, status
+	}
+	return false, ""
 }
 
 func aiCreateGeometryStateDetail(raw json.RawMessage) string {

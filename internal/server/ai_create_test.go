@@ -716,6 +716,53 @@ func TestAICreateSimulationParamsReadyRejectsAsyncPlaceholder(t *testing.T) {
 	}
 }
 
+func TestWaitForAICreateSimulationParamsContinuesUntilProcessedPayloadIsReady(t *testing.T) {
+	root := t.TempDir()
+	firstLookup := filepath.Join(root, "first-lookup")
+	fakeFlow360 := filepath.Join(root, "flow360")
+	script := `#!/bin/sh
+case " $* " in
+  *" geometry simulation-params get geo-delayed "*)
+    if [ -e "` + firstLookup + `" ]; then
+      printf '%s' '{"simulation_params":{"version":"25.10.18","models":[{"type":"Fluid"}],"private_attribute_asset_cache":{"project_entity_info":{}}}}'
+    else
+      : > "` + firstLookup + `"
+      printf '%s' '{}'
+    fi
+    ;;
+  *" geometry state geo-delayed "*)
+    if [ -e "` + firstLookup + `" ]; then
+      printf '%s' '{"status":"processed","is_terminal":true,"is_success":true}'
+    else
+      printf '%s' '{"status":"processing","is_terminal":false}'
+    fi
+    ;;
+  *" geometry info geo-delayed "*|*" geometry summary geo-delayed "*) printf '%s' '{}' ;;
+  *) exit 8 ;;
+esac
+`
+	if err := os.WriteFile(fakeFlow360, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{flow360: &flow360.Client{Binary: fakeFlow360, Timeout: time.Second}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	params, err := app.waitForAICreateSimulationParams(ctx, "geo-delayed", "")
+	if err != nil || !aiCreateSimulationParamsReady(params) {
+		t.Fatalf("delayed canonical parameters were not recovered: params=%s err=%v", params, err)
+	}
+}
+
+func TestAICreateGeometryTerminalFailureStopsBlindPolling(t *testing.T) {
+	failed, diagnostic := aiCreateGeometryTerminalFailure(json.RawMessage(`{"status":"failed","is_terminal":true,"is_success":false}`))
+	if !failed || diagnostic != "failed" {
+		t.Fatalf("terminal Geometry failure was not classified: failed=%v diagnostic=%q", failed, diagnostic)
+	}
+	if failed, _ := aiCreateGeometryTerminalFailure(json.RawMessage(`{"status":"processed","is_terminal":true,"is_success":true}`)); failed {
+		t.Fatal("successful terminal Geometry was classified as failed")
+	}
+}
+
 func TestValidateAICreateAssetRejectsSTLAsGeometry(t *testing.T) {
 	root := t.TempDir()
 	stlPath := filepath.Join(root, "cylinder.stl")
