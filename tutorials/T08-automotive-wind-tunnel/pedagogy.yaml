@@ -1,0 +1,43 @@
+schema_version: 2
+audience: Beginners preparing an automotive external-aerodynamics calculation or wind-tunnel correlation study.
+prerequisites:
+  - Recognize no-slip walls, freestream boundaries, drag, lift, and boundary layers.
+  - Understand that CFD boundary motion represents relative motion rather than moving the entire vehicle geometry.
+learning_objectives:
+  - {id: frame-reference, objective: Explain why stationary-car CFD requires the road and wheel surfaces to move in the vehicle frame., assessment: State the correct ground speed and wheel angular speed for a 40 m/s vehicle with 0.32 m tyres.}
+  - {id: tunnel-domain, objective: Size and inspect an analytic automotive wind tunnel using blockage and boundary-distance evidence., assessment: Identify tunnel dimensions that could contaminate forces or truncate the wake.}
+  - {id: floor-model, objective: "Distinguish StaticFloor, FullyMovingFloor, CentralBelt, and WheelBelts by the facility each represents.", assessment: Select the floor model matching a specified physical test setup.}
+  - {id: evidence, objective: Compare stationary and moving-ground cases without attributing every force change to the vehicle body., assessment: "Review underbody flow, wheel wakes, y-plus, convergence, and force deltas together."}
+concepts:
+  cfd:
+    - {id: relative-motion, title: Road-relative motion sets the underbody shear, explanation: In a vehicle-fixed frame the incoming air and road move at vehicle speed while wheels rotate so tread speed matches the road at contact., misconception: A stationary road is not equivalent merely because the car geometry is stationary.}
+    - {id: wheel-kinematics, title: Rolling speed couples translation and rotation, explanation: No-slip rolling uses the magnitude omega = U/R and opposite signs on left and right wheel axes when both axes use +y., misconception: Giving every wheel the same signed angular velocity can make one side rotate backward.}
+    - {id: blockage, title: Tunnel walls can alter measured drag and lift, explanation: "Width, height, inlet distance, and outlet recovery constrain streamlines and pressure recovery around the vehicle.", misconception: A generated tunnel is not automatically large enough for the intended correlation.}
+  flow360:
+    - {id: wind-tunnel, title: WindTunnelFarfield generates named analytic boundaries, explanation: "Tunnel dimensions and floor type create inlet, outlet, ceiling, sides, floor, belt, and wheel-belt ghost surfaces for later boundary assignment.", misconception: WindTunnelFarfield does not infer the physical facility or choose its floor model for you.}
+    - {id: floor-types, title: Floor types encode different test facilities, explanation: StaticFloor adds a friction patch; FullyMovingFloor moves the full road; CentralBelt and WheelBelts represent belt installations., misconception: Central and wheel belts are not interchangeable with a full moving road.}
+    - {id: wall-rotation, title: WallRotation prescribes tyre surface kinematics, explanation: "Each wheel receives its own center, +y axis, and signed angular velocity while the mesh remains stationary.", misconception: WheelBelts move floor patches but do not rotate tyre surfaces.}
+parameter_derivations:
+  - {id: omega, parameter: Wheel angular speed, basis: Enforce rolling tread speed U = omega R at 40 m/s with R = 0.32 m., calculation: omega = 40 / 0.32 = 125 rad/s = 1194 rpm, transfer: Use the loaded rolling radius and verify the contact-patch velocity direction for each wheel.}
+  - {id: blockage, parameter: Frontal blockage screening, basis: Compare the 2.17 m² reference area with the 12 m by 5 m tunnel section., calculation: blockage screen = 2.17 / 60 = 3.6%, transfer: Use actual projected frontal area and include facility-specific correction practice.}
+  - {id: recovery, parameter: Wake review length, basis: The car rear is near x = 1.95 m and the outlet is x = 15 m., calculation: recovery length = 15 − 1.95 = 13.05 m, transfer: Extend the outlet when velocity deficit or pressure gradients remain strong at the boundary.}
+experiments:
+  - id: moving-ground
+    prediction: What changes when floor belts move at 40 m/s and each wheel rotates at 125 rad/s while geometry, tunnel, flow speed, and wake mesh remain fixed?
+    options: [Underbody shear and wheel wakes change, but tunnel blockage stays fixed, The tunnel gets wider and reference area changes]
+    controlled_variable: Geometry, tunnel dimensions, operating condition, reference geometry, mesh defaults, wheel surface spacing, wake box, solver, and outputs remain fixed.
+    observation: Compare underbody streamwise velocity, tyre contact regions, wheel wakes, pressure, skin friction, y-plus, drag, lift balance, and convergence.
+failure_modes:
+  - {id: wrong-sign, symptom: One side of the vehicle has tread moving forward at the floor contact., cause: All wheels use the same signed angular velocity with a common +y axis., correction: Inspect contact-patch velocity vectors and reverse the sign on the opposite side.}
+  - {id: duplicate-motion, symptom: Ground or belt patches receive conflicting wall conditions., cause: Overlapping floor ghost surfaces were assigned more than once., correction: Assign only the ghost surfaces valid for the selected floor type and inspect the boundary table.}
+  - {id: small-tunnel, symptom: Side or ceiling acceleration changes force levels and the outlet truncates the wake., cause: Blockage or recovery distance is inadequate., correction: Increase tunnel dimensions and repeat the same force and wake comparison.}
+  - {id: unresolved-wheels, symptom: Tyre contact and wheel wakes change erratically with mesh level., cause: "Wheel curvature, near-ground gap, or downstream spacing is insufficient.", correction: "Refine wheel surfaces and contact/wake regions, then demonstrate force and field convergence."}
+evidence_rubric:
+  - {id: boundaries, observation: Boundary ownership, pass: "Every generated tunnel, body, and wheel surface has exactly one intended physical model.", fail: "A surface is unassigned, duplicated, or incompatible with the selected floor type."}
+  - {id: kinematics, observation: Ground and wheel velocity, pass: Belts move at 40 m/s and all contact-patch tread velocities match the road direction., fail: A belt is static or any tyre tread moves against the road.}
+  - {id: tunnel, observation: Blockage and recovery, pass: Blockage is reported and wake gradients recover before the outlet without wall contamination., fail: Ceiling or side acceleration dominates or unresolved wake reaches the outlet.}
+  - {id: mesh, observation: Wheel and wake resolution, pass: "Tyre curvature, floor gap, layers, and downstream wake remain continuous with acceptable quality.", fail: "Contact cells collapse, wheels facet, or the wake disappears through abrupt growth."}
+  - {id: forces, observation: Comparable force evidence, pass: Both cases converge and force deltas are supported by underbody and wheel-flow changes., fail: An unconverged scalar delta is reported without field or mesh evidence.}
+transfer_questions:
+  - {prompt: "When should FullyMovingFloor replace WheelBelts?", expected: Use it when the physical facility or on-road idealization has a moving surface across the entire floor rather than discrete central and wheel belts.}
+  - {prompt: "What must be checked after changing tyre radius?", expected: "Recompute omega from U/R, update wheel centers and belt extents if needed, and recheck contact-patch velocity direction and mesh clearance."}

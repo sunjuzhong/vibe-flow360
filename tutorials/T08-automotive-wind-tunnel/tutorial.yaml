@@ -1,0 +1,35 @@
+schema_version: 2
+id: T08
+slug: automotive-wind-tunnel
+title: Reproduce road-relative motion in an automotive wind tunnel
+summary: Separate blockage, road boundary-layer, belt, and wheel-rotation effects before trusting an automotive drag calculation.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:WindTunnelFarfield', section: analytic-tunnel, artifact: simulation.json}
+  - {feature: 'schema:type:StaticFloor', section: stationary-road-baseline, artifact: simulation.json}
+  - {feature: 'schema:type:WheelBelts', section: moving-ground-variant, artifact: variants/moving-ground.patch.json}
+  - {feature: 'schema:type:WallRotation', section: wheel-rotation-variant, artifact: variants/moving-ground.patch.json}
+assets:
+  - path: assets/automotive.csm
+    sha256: c7cdccba93e78dd16d29c7b6cee1acecadf17f9ce00d079bbbe3e131c8bd4333
+    source: Tutorial-owned lightweight automotive geometry composed for the official DrivAer workflow
+    license: Apache-2.0
+variants:
+  - id: moving-ground
+    title: Match road speed with wheel belts and rotating wheel walls
+    patch: variants/moving-ground.patch.json
+    evidence: variants/moving-ground.evidence.yaml

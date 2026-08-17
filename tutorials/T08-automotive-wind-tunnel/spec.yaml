@@ -1,0 +1,20 @@
+schema_version: 1
+scenario: automotive-moving-ground-comparison
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  tunnel_speed: {value: 40, unit: m/s, provenance: adapted}
+  wheel_radius: {value: 0.32, unit: m, provenance: provided}
+  rolling_angular_speed: {value: 125, unit: rad/s, provenance: derived}
+  tunnel_width: {value: 12, unit: m, provenance: adapted}
+  tunnel_height: {value: 5, unit: m, provenance: adapted}
+  inlet_position: {value: -8, unit: m, provenance: adapted}
+  outlet_position: {value: 15, unit: m, provenance: adapted}
+  reference_area: {value: 2.17, unit: m^2, provenance: provided}
+  reference_length: {value: 2.7862, unit: m, provenance: provided}
+  wake_spacing: {value: 0.125, unit: m, provenance: adapted}
+review_required:
+  - Confirm the vehicle coordinate system, floor elevation, wheel centers, and rotation signs.
+  - Confirm the tunnel blockage and inlet/outlet distances are acceptable for the intended comparison.
+  - Confirm moving surfaces travel at 40 m/s and each wheel tread moves rearward at the contact patch.
+  - Compare underbody velocity, wheel wakes, total drag, lift balance, y-plus, and convergence using identical views.
