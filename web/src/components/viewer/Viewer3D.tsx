@@ -300,6 +300,7 @@ type Props = {
   onSelectedFieldChange?: (field: string | null) => void
   fieldNames?: string[]
   fieldEntityIds?: string[]
+  fieldStateResetKey?: string | number
   fieldRange?: [number, number] | null
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
@@ -353,6 +354,7 @@ export function Viewer3D({
   onSelectedFieldChange,
   fieldNames,
   fieldEntityIds,
+  fieldStateResetKey,
   fieldRange,
   onFieldHistogramChange,
   onFieldExtremaChange,
@@ -484,6 +486,7 @@ export function Viewer3D({
     surfaceName: string
     field: UVFFieldProbe | null
   } | null>(null)
+  const previousFieldStateResetKeyRef = useRef(fieldStateResetKey)
 
   const [wireframeOn, setWireframeOn] = useState(false)
   const [viewerClipEnabled, setViewerClipEnabled] = useState(false)
@@ -627,6 +630,20 @@ export function Viewer3D({
     onAssetStatsChange?.(assetStats)
     return () => onAssetStatsChange?.(null)
   }, [assetStats, onAssetStatsChange])
+
+  useEffect(() => {
+    if (previousFieldStateResetKeyRef.current === fieldStateResetKey) return
+    previousFieldStateResetKeyRef.current = fieldStateResetKey
+    setInternalSelectedField(null)
+    setColormap(DEFAULT_COLORMAP)
+    setFieldScale('auto')
+    setFieldRangeOverride(null)
+    setVectorLICEnabled(false)
+    setVectorArrowsEnabled(false)
+    setVectorArrowDensity('standard')
+    setProbeToolActive(false)
+    setProbeResult(null)
+  }, [fieldStateResetKey])
 
   const selectField = (field: string | null) => {
     if (controlledSelectedField === undefined) setInternalSelectedField(field)

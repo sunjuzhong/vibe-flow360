@@ -501,6 +501,10 @@ export function caseFieldForSelection(activeField: string | null, fieldNames: st
   return activeField && fieldNames.includes(activeField) ? activeField : null
 }
 
+export function caseVisualizationSelectionKey(selectedIds: string[]): string {
+  return [...selectedIds].sort().join('\u0000')
+}
+
 export function visibleCaseSurfaceCount(groups: CaseSurfaceGroup[], visibility: Record<string, boolean>): number {
   return groups.filter((group) => {
     const entityIds = group.entityIds ?? [group.id]
@@ -735,6 +739,11 @@ export default function CaseWorkspace({
     () => selectedVisualizationObjects.flatMap((member) => member.entityIds),
     [selectedVisualizationObjects],
   )
+  const selectedVisualizationKey = useMemo(
+    () => caseVisualizationSelectionKey(selectedVisualizationIds),
+    [selectedVisualizationIds],
+  )
+  const previousSelectedVisualizationKeyRef = useRef(selectedVisualizationKey)
   const selectedVisualizationVisible = selectedVisualizationObjects.some((member) => member.entityIds.some(
     (entityId) => entityVisibility[entityId] ?? member.visible,
   ))
@@ -775,6 +784,14 @@ export default function CaseWorkspace({
     setFieldVisualizationEnabled(false)
     setActiveField(null)
   }, [selectedVisualizationIds.length])
+
+  useEffect(() => {
+    if (previousSelectedVisualizationKeyRef.current === selectedVisualizationKey) return
+    previousSelectedVisualizationKeyRef.current = selectedVisualizationKey
+    setFieldVisualizationEnabled(false)
+    setActiveField(null)
+    setFieldHistogram(null)
+  }, [selectedVisualizationKey])
 
   useEffect(() => {
     const compatibleField = caseFieldForSelection(activeField, selectedFieldNames)
@@ -1121,6 +1138,7 @@ export default function CaseWorkspace({
             onSelectedFieldChange={setActiveField}
             fieldNames={selectedFieldNames}
             fieldEntityIds={selectedFieldEntityIds}
+            fieldStateResetKey={selectedVisualizationKey}
             onFieldHistogramChange={setFieldHistogram}
             showFieldPanel={Boolean(fieldVisualizationEnabled && selectedVisualizationObjects.length && selectedFieldNames.length > 0)}
             fieldPanelExtra={(fieldPanel) => (

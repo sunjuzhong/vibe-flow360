@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, caseVisualizationSelectionKey, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -218,6 +218,17 @@ describe('Case visualization selection refresh', () => {
     expect(caseResourceIdentity('case-route-id', null)).toBe('case-route-id')
     expect(caseResourceIdentity('case-route-id', 'case-route-id')).toBe('case-route-id')
     expect(caseResourceIdentity(null, 'case-detail-id')).toBe('case-detail-id')
+  })
+})
+
+describe('Case field state reset identity', () => {
+  it('changes only when the selected visualization set changes', () => {
+    expect(caseVisualizationSelectionKey(['surface-a', 'slice-b'])).toBe(
+      caseVisualizationSelectionKey(['slice-b', 'surface-a']),
+    )
+    expect(caseVisualizationSelectionKey(['surface-a'])).not.toBe(
+      caseVisualizationSelectionKey(['surface-b']),
+    )
   })
 })
 

@@ -30,6 +30,7 @@ export type ViewerToolbarProps = {
   onSelectedFieldChange?: (field: string | null) => void
   fieldNames?: string[]
   fieldEntityIds?: string[]
+  fieldStateResetKey?: string | number
   fieldRange?: [number, number] | null
   onFieldHistogramChange?: (histogram: UVFFieldHistogram | null) => void
   onFieldExtremaChange?: (extrema: UVFFieldExtrema | null) => void
