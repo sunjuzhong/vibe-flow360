@@ -1,0 +1,29 @@
+schema_version: 1
+criteria:
+  - id: feature-aware-patch-valid
+    category: provenance
+    description: The feature-aware merge patch passes Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: variants/feature-aware.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: obstruction-features-survive
+    category: mesh
+    description: The sphere and every 0.2 m support retain continuous multi-element surface coverage.
+    artifact: baseline and feature-aware surface-mesh comparison
+    required: true
+    check: {method: manual, metric: mesh.internal-features.variant-approved}
+  - id: floor-layer-transition-reviewed
+    category: mesh
+    description: Floor layers remain attached and meet adjacent surfaces and the core mesh without collapse or abrupt growth.
+    artifact: feature-aware volume-mesh cross-section
+    required: true
+    check: {method: manual, metric: mesh.floor-layer.variant-approved}
+  - id: cell-cost-explained
+    category: report
+    description: The cell-count increase and worst-quality locations are reported against the global-only baseline.
+    artifact: mesh comparison report
+    required: true
+    check: {method: manual, metric: report.mesh-cost.explained}
+limitations:
+  - Local feature retention must be confirmed from generated mesh evidence; parameter validation alone is insufficient.
+  - The first-layer value is adapted from the official example and must be recalculated for a production y-plus target.

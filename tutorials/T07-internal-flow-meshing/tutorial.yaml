@@ -1,0 +1,38 @@
+schema_version: 2
+id: T07
+slug: internal-flow-meshing
+title: Mesh a closed duct without losing the obstruction or wall layer
+summary: Distinguish a fluid-volume CAD from an external body, identify the connected internal region, and add local controls where pressure loss is generated.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: VolumeMesh
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:UserDefinedFarfield', section: closed-domain-baseline, artifact: simulation.json}
+  - {feature: 'schema:type:SeedpointVolume', section: connected-fluid-zone, artifact: simulation.json}
+  - {feature: 'schema:field:SeedpointVolume.point_in_mesh', section: connected-fluid-zone, artifact: simulation.json}
+  - {feature: 'schema:type:CustomZones', section: connected-fluid-zone, artifact: simulation.json}
+  - {feature: 'schema:variant:MeshingParams.volume_zones[]=CustomZones', section: connected-fluid-zone, artifact: simulation.json}
+  - {feature: 'schema:type:PassiveSpacing', section: feature-aware-variant, artifact: variants/feature-aware.patch.json}
+  - {feature: 'schema:variant:MeshingParams.refinements[]=PassiveSpacing', section: feature-aware-variant, artifact: variants/feature-aware.patch.json}
+assets:
+  - path: assets/internal-flow.csm
+    sha256: 91310a290d9ad221cf42d0fe91ca4ab36c3b5f34e023e68a075edc8ee8a23276
+    source: Flow360 TutorialAutoMeshingInternalFlow, with a documentation comment added
+    license: Apache-2.0
+variants:
+  - id: feature-aware
+    title: Preserve the sphere, thin supports, floor layer, and wall transitions
+    patch: variants/feature-aware.patch.json
+    evidence: variants/feature-aware.evidence.yaml

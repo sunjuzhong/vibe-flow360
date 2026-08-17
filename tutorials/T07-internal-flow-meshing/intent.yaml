@@ -1,0 +1,15 @@
+schema_version: 1
+engineering_question: Build a closed internal-flow mesh that preserves a bluff-body obstruction, thin supports, and the wall layer needed for pressure-loss analysis.
+decision: Determine whether the global mesh is sufficient or feature-aware controls are required before generating a production volume mesh.
+inputs:
+  geometry: assets/internal-flow.csm
+  length_unit: m
+  duct_dimensions: 8 m × 4 m × 4 m
+  sphere_diameter: 2 m
+  support_diameter: 0.2 m
+  seed_point: [1 m, 0 m, 2 m]
+deliverables:
+  - A verified closed fluid-domain topology with explicit inlet, outlet, wall, obstacle, and support groups
+  - A registered SeedpointVolume that identifies the connected internal fluid region
+  - Global-only and feature-aware VolumeMesh Drafts with an explicit semantic diff
+  - A mesh-evidence contract for pressure loss, separation, wall layers, and outlet recovery

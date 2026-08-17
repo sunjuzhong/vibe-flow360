@@ -1,0 +1,22 @@
+schema_version: 1
+scenario: obstructed-wind-tunnel-internal-flow
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  geometry_unit: {value: m, provenance: provided}
+  duct_length: {value: 8, unit: m, provenance: provided}
+  duct_cross_section: {value: 4 × 4, unit: m, provenance: provided}
+  sphere_diameter: {value: 2, unit: m, provenance: provided}
+  support_diameter: {value: 0.2, unit: m, provenance: provided}
+  projected_blockage: {value: 19.6, unit: percent, provenance: derived}
+  upstream_sphere_distance: {value: 3, unit: m, provenance: derived}
+  downstream_recovery_distance: {value: 4, unit: m, provenance: derived}
+  global_surface_edge: {value: 1.2, unit: m, provenance: adapted}
+  sphere_surface_edge: {value: 0.1, unit: m, provenance: adapted}
+  support_surface_edge: {value: 0.01, unit: m, provenance: adapted}
+  floor_first_layer: {value: 0.00001, unit: m, provenance: adapted}
+review_required:
+  - Confirm that the CAD represents the fluid volume, not the surrounding solid duct material.
+  - Confirm inlet, outlet, floor, ceiling, obstacle, and support face groups after import.
+  - Confirm the seed point lies inside the upstream connected fluid and outside every solid obstacle.
+  - Compare obstacle silhouette, support survival, floor-layer continuity, wake transition, and outlet recovery between Drafts.

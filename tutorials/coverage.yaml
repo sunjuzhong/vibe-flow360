@@ -134,6 +134,13 @@ mappings:
     selector:
       owners: [AutomatedFarfield, UserDefinedFarfield]
   - tutorial: T07
+    section: connected-fluid-baseline
+    status: verified
+    artifact: tutorials/T07-internal-flow-meshing/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:(CustomZones|SeedpointVolume)|field:SeedpointVolume\.point_in_mesh|variant:MeshingParams\.volume_zones\[\]=CustomZones)$'
+  - tutorial: T07
     section: baseline
     status: planned
     selector:

@@ -1,0 +1,110 @@
+schema_version: 2
+audience: Beginners preparing an internal-flow mesh for pressure-loss and wake analysis in a duct or wind tunnel.
+prerequisites:
+  - Recognize inlet, outlet, no-slip walls, and an internal obstruction.
+  - Know that a watertight CAD body can represent either solid material or the fluid volume itself.
+learning_objectives:
+  - id: classify-domain
+    objective: Distinguish a closed internal fluid volume from body-only external-flow CAD and select the matching Flow360 domain path.
+    assessment: Explain why AutomatedFarfield must not be added around a CAD body that already represents the duct fluid.
+  - id: place-seed
+    objective: Place and validate a seed point inside the intended connected fluid region.
+    assessment: Reject seed points that lie inside the sphere, on a wall, or in an unintended disconnected pocket.
+  - id: allocate-resolution
+    objective: Allocate mesh resolution according to blockage, curvature, thin supports, wall shear, and wake recovery.
+    assessment: Predict which features disappear or become unreliable under a global-only mesh.
+  - id: judge-evidence
+    objective: Judge an internal mesh using topology, feature survival, layer continuity, transition quality, and outlet recovery evidence.
+    assessment: Apply explicit pass and fail criteria to the baseline and feature-aware meshes.
+concepts:
+  cfd:
+    - id: fluid-domain-topology
+      title: The computational domain is the fluid volume
+      explanation: Internal-flow meshing fills the connected space through which fluid moves; inlet, outlet, walls, sphere, and supports are boundaries of that volume.
+      misconception: A closed duct CAD is not automatically valid if it represents solid material rather than the void occupied by fluid.
+    - id: blockage-and-loss
+      title: Blockage accelerates flow and creates pressure loss
+      explanation: The sphere occupies about 19.6 percent of the 4 m by 4 m section before support blockage is added, so acceleration, separation, and downstream recovery require local resolution.
+      misconception: Resolving only inlet and outlet areas cannot recover loss generated at the obstruction and walls.
+    - id: wall-and-wake-resolution
+      title: Wall-normal and wake gradients need different controls
+      explanation: Boundary layers resolve steep wall-normal velocity gradients while surface and volume transitions preserve curvature, supports, separation, and the wake.
+      misconception: A very small global cell size is not the only way to retain thin supports and a wall layer.
+  flow360:
+    - id: user-defined-domain
+      title: UserDefinedFarfield selects the supplied closed domain
+      explanation: For this Geometry, UserDefinedFarfield tells the mesher to use the CAD-defined domain instead of generating an external box around it.
+      misconception: The API name does not mean this internal duct needs a physical freestream farfield boundary condition.
+    - id: seedpoint-zone
+      title: SeedpointVolume identifies connected fluid
+      explanation: The point at [1, 0, 2] m lies upstream of the sphere and identifies the connected region used by the internal-fluid CustomZones entry.
+      misconception: A seed point is not a decoration; placing it in a solid or disconnected pocket selects the wrong region or fails meshing.
+    - id: local-controls
+      title: Refinements and PassiveSpacing preserve different features
+      explanation: SurfaceRefinement retains the sphere and supports, BoundaryLayer resolves the floor-normal direction, and PassiveSpacing controls how that spacing meets adjacent surfaces.
+      misconception: Passing parameter validation does not prove the generated supports or layers survived.
+parameter_derivations:
+  - id: blockage
+    parameter: Sphere blockage ratio
+    basis: Compare the sphere projected area with the 4 m by 4 m duct cross-section.
+    calculation: blockage = π(1 m)² / 16 m² = 0.196 = 19.6%
+    transfer: Include every obstruction and boundary-layer displacement when checking blockage in another duct.
+  - id: support-resolution
+    parameter: Support surface edge
+    basis: Each support is 0.2 m in diameter and must retain multiple elements across its diameter and circumference.
+    calculation: 0.2 m / 0.01 m = 20 nominal edge lengths across one diameter
+    transfer: Scale the edge target from the thinnest feature that must influence pressure loss, then inspect actual surface facets.
+  - id: recovery-length
+    parameter: Downstream review distance
+    basis: The sphere center is at x=3 m and the outlet is at x=8 m; the sphere rear is at x=4 m.
+    calculation: outlet recovery distance = 8 m − 4 m = 4 m = 2 sphere diameters
+    transfer: Extend or refine the downstream domain when the wake has not recovered before the outlet.
+experiments:
+  - id: feature-aware
+    prediction: What changes when obstacle, support, floor-layer, and transition controls are added while geometry and domain topology remain fixed?
+    options: [The sphere and supports gain local facets and the floor gains a controlled layer, The outlet moves and the blockage ratio changes]
+    controlled_variable: Only local meshing controls change; CAD, project units, domain type, connected-fluid seed, and global defaults remain fixed.
+    observation: Compare identical sections for obstacle silhouette, support continuity, floor layers, growth into the core, wake resolution, cell quality, and cost.
+failure_modes:
+  - id: wrong-domain-side
+    symptom: The mesh appears outside the duct or fills solid material instead of the passage.
+    cause: The CAD was treated as an external body or the imported body represents solid material instead of fluid volume.
+    correction: Inspect topology and normals, confirm the intended fluid body, and use the closed-domain path without AutomatedFarfield.
+  - id: invalid-seed
+    symptom: No custom fluid zone is created or an unintended pocket receives the zone.
+    cause: The seed point lies on a boundary, inside the sphere, or in another disconnected region.
+    correction: Place the point safely inside the intended connected fluid and verify its coordinates against CAD bounds.
+  - id: missing-supports
+    symptom: Supports disappear, merge into the sphere, or become one-cell-wide artifacts.
+    cause: Global edge length and curvature settings do not resolve the 0.2 m diameter features.
+    correction: Apply support-specific surface refinement and inspect the generated facets before volume meshing.
+  - id: outlet-contamination
+    symptom: Strong gradients or recirculation reach the outlet plane.
+    cause: The downstream recovery length or wake resolution is insufficient for the obstruction-induced flow.
+    correction: Extend the domain or refine the downstream region, then verify that the outlet no longer truncates the wake.
+evidence_rubric:
+  - id: topology
+    observation: Fluid-domain topology
+    pass: One connected fluid region is bounded by the intended inlet, outlet, walls, sphere, and supports.
+    fail: Open edges, solid regions, external space, or unintended disconnected pockets are included.
+  - id: seed
+    observation: Seed-point ownership
+    pass: The seed lies inside the upstream fluid and produces the intended named internal zone.
+    fail: The point touches a boundary, lies in solid material, or selects another region.
+  - id: features
+    observation: Obstacle and support survival
+    pass: The sphere remains smooth and every support has continuous, multi-element surface coverage.
+    fail: Faceting distorts the sphere or a support disappears, pinches, or merges.
+  - id: layers
+    observation: Floor-layer continuity
+    pass: Layers remain attached and transition gradually onto adjacent faces and the core mesh.
+    fail: Layers collapse, intersect, or change thickness abruptly near corners and supports.
+  - id: recovery
+    observation: Wake and outlet separation
+    pass: The mesh resolves the wake through the review region and the outlet is not crossed by unresolved abrupt growth.
+    fail: Large cells erase the wake or strong gradients reach a poorly resolved outlet.
+transfer_questions:
+  - prompt: Where should a seed point be placed in a manifold with two disconnected passages?
+    expected: Place one verified interior seed in each passage that must become a separate zone; never place a seed on a wall or inside solid material.
+  - prompt: Why is a physical inlet or outlet face different from UserDefinedFarfield in this meshing step?
+    expected: Inlet and outlet are boundary groups for the later flow model, while UserDefinedFarfield here selects the CAD-defined outer fluid domain for meshing.

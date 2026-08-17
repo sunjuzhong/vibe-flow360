@@ -60,8 +60,11 @@ The coverage gate reports four disjoint states:
 - [T06 — Choose the external farfield domain](T06-farfield-selection/README.md):
   automatic and CAD-defined external domains, enclosed CustomVolume rules,
   normalized boundary placement, blockage, and domain-size sensitivity.
+- [T07 — Mesh a closed internal duct](T07-internal-flow-meshing/README.md):
+  closed fluid-volume topology, a registered connected-fluid seed, and
+  global-only versus feature-aware VolumeMesh Drafts for an obstructed duct.
 
-T01 through T06 can be experienced locally without cloud execution charges:
+T01 through T07 can be experienced locally without cloud execution charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
@@ -70,6 +73,7 @@ python3 tutorials/T03-cylinder-boundary-layer/build_simulation.py --check
 python3 tutorials/T04-airfoil-edge-refinement/build_simulation.py --check
 python3 tutorials/T05-wake-volume-refinement/build_simulation.py --check
 python3 tutorials/T06-farfield-selection/build_simulation.py --check
+python3 tutorials/T07-internal-flow-meshing/build_simulation.py --check
 make tutorials-validate
 ```
 
