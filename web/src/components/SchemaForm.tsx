@@ -1,5 +1,5 @@
 import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, ChevronDown, Code2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 import HelpTooltip from './HelpTooltip'
@@ -459,6 +459,9 @@ function SchemaField({
     )
   }
   if (schema.type === 'array') {
+    if (isComplexArrayItem(schema.items)) {
+      return <ComplexArrayField schema={schema} value={value} onChange={onChange} path={path} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} />
+    }
     const array = Array.isArray(value) ? value : []
     const itemSchema = schema.items ?? { type: 'json' as const }
     const arrayEditor = (
@@ -524,6 +527,9 @@ function SchemaField({
         {arrayEditor}
       </fieldset>
     )
+  }
+  if (schema.type === 'entity_list') {
+    return <EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} />
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
@@ -601,6 +607,136 @@ function SchemaField({
       {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
     </label>
   )
+}
+
+function isComplexArrayItem(schema?: DynamicFormSchema) {
+  return schema?.type === 'object'
+    || schema?.type === 'union' && Boolean(schema.variants?.some((variant) => variant.type === 'object'))
+}
+
+function ComplexArrayField({
+  schema, value, onChange, path, addLabel, removeLabel, collapsibleObjects, rootTabContent,
+}: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  path: string
+  addLabel: string
+  removeLabel: string
+  collapsibleObjects: boolean
+  rootTabContent: boolean
+}) {
+  const array = Array.isArray(value) ? value : []
+  const itemSchema = schema.items ?? { type: 'json' as const }
+  const variants = itemSchema.type === 'union' ? itemSchema.variants ?? [] : []
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [editor, setEditor] = useState<{ index: number | null; schema: DynamicFormSchema; value: unknown } | null>(null)
+
+  const openNew = (variantIndex?: number) => {
+    const selectedSchema = variantIndex === undefined ? itemSchema : variants[variantIndex]
+    if (!selectedSchema) return
+    // New complex items start sparse, but initialValue includes every explicit
+    // schema default so the dialog shows what Flow360 will actually use.
+    const initial = initialValue(selectedSchema, true)
+    setEditor({
+      index: null,
+      schema: selectedSchema,
+      value: itemSchema.type === 'union' ? { variant: variantIndex ?? 0, value: initial } : initial,
+    })
+    setMenuOpen(false)
+  }
+
+  const openExisting = (index: number) => {
+    const item = array[index]
+    const selected = itemSchema.type === 'union' && isUnionDraft(item)
+      ? itemSchema.variants?.[item.variant] ?? itemSchema
+      : itemSchema
+    setEditor({ index, schema: selected, value: item })
+  }
+
+  const saveEditor = () => {
+    if (!editor) return
+    onChange(editor.index === null
+      ? [...array, editor.value]
+      : array.map((entry, index) => index === editor.index ? editor.value : entry))
+    setEditor(null)
+  }
+
+  const title = schema.title || humanize(path.split('.').pop() || 'Items')
+  const editorContent = (
+    <>
+      <div className="schema-array-toolbar">
+        <span><strong>{array.length ? `${array.length} item${array.length === 1 ? '' : 's'}` : 'No items yet'}</strong>{rootTabContent && <SchemaDescriptionHelp description={schema.description} title={title} />}</span>
+        <div className="schema-array-add-wrap">
+          <button type="button" className="schema-array-add" aria-haspopup={variants.length ? 'menu' : undefined} aria-expanded={variants.length ? menuOpen : undefined} onClick={() => variants.length ? setMenuOpen((current) => !current) : openNew()}>
+            <Plus size={14} /> Add item {variants.length ? <ChevronDown size={13} /> : null}
+          </button>
+          {menuOpen && <div className="schema-array-type-menu" role="menu" aria-label={`Choose ${title} type`}>
+            {variants.map((variant, index) => <button type="button" role="menuitem" key={index} onClick={() => openNew(index)}>{variant.title || `Type ${index + 1}`}</button>)}
+          </div>}
+        </div>
+      </div>
+      {array.length === 0 ? <div className="schema-array-empty"><strong>This list is empty</strong><span>Add an item to configure this parameter group.</span></div> : (
+        <div className="schema-array-list">{array.map((item, index) => <section className="schema-array-card compact" key={index}>
+          <header>
+            <span>{arrayItemSummary(itemSchema, item, index)}</span>
+            <span className="schema-array-row-actions">
+              <button type="button" className="schema-array-edit" onClick={() => openExisting(index)}><Edit3 size={13} /> Edit</button>
+              <button type="button" className="schema-array-remove" onClick={() => onChange(array.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${title} item ${index + 1}`}><Trash2 size={13} /> Remove</button>
+            </span>
+          </header>
+        </section>)}</div>
+      )}
+    </>
+  )
+
+  const dialog = editor && <div className="schema-item-editor-backdrop" role="presentation">
+    <section className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`}>
+      <header><div><small>{editor.index === null ? 'NEW ITEM' : 'EDIT ITEM'}</small><h3>{editor.schema.title || title}</h3></div><button type="button" className="icon-button" onClick={() => setEditor(null)} aria-label="Close item editor"><X size={17} /></button></header>
+      <div className="schema-item-editor-body"><SchemaField
+        schema={editor.schema}
+        path={`${path}.${editor.index ?? array.length}`}
+        value={itemSchema.type === 'union' && isUnionDraft(editor.value) ? editor.value.value : editor.value}
+        sparse
+        showAll
+        configured
+        addLabel={addLabel}
+        removeLabel={removeLabel}
+        collapsibleObjects={collapsibleObjects}
+        rootTabContent={editor.schema.type === 'object'}
+        onChange={(next) => setEditor((current) => current ? {
+          ...current,
+          value: itemSchema.type === 'union' && isUnionDraft(current.value) ? { ...current.value, value: next } : next,
+        } : current)}
+      /></div>
+      <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button type="button" className="primary" onClick={saveEditor}>Save item</button></footer>
+    </section>
+  </div>
+
+  if (rootTabContent) return <div className="schema-array-editor schema-root-array">{editorContent}{dialog}</div>
+  return <fieldset className="schema-object schema-array schema-array-editor"><legend><span className="schema-legend-content">{title}</span></legend>{schema.description && !collapsibleObjects && <p>{schema.description}</p>}{editorContent}{dialog}</fieldset>
+}
+
+function arrayItemSummary(schema: DynamicFormSchema, value: unknown, index: number) {
+  const draft = schema.type === 'union' && isUnionDraft(value) ? value : null
+  const selected = draft ? schema.variants?.[draft.variant] : schema
+  const candidate = draft?.value ?? value
+  const object = isRecord(candidate) ? candidate : {}
+  const type = selected?.title || String(object.output_type ?? `Item ${index + 1}`)
+  const name = String(object.name ?? '').trim()
+  return name && name !== type ? `${type} · ${name}` : type
+}
+
+function EntityListField({ schema, value, onChange, title, fieldID }: { schema: DynamicFormSchema; value: unknown; onChange: (value: unknown) => void; title: string; fieldID: string }) {
+  const draft = isRecord(value) ? value : {}
+  const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
+  const choices = schema.entity_choices ?? []
+  const allSelected = choices.length > 0 && choices.every((choice) => selected.includes(choice.value))
+  return <fieldset className="schema-object schema-entity-list" id={fieldID}>
+    <legend>{title}{schema.required === true ? ' *' : ''}</legend>
+    <div className="schema-entity-header"><span>{selected.length} selected</span><button type="button" onClick={() => onChange({ ...draft, entities: allSelected ? [] : choices.map((choice) => choice.value) })}>{allSelected ? 'Clear all' : 'Select all'}</button></div>
+    {choices.length ? <div className="schema-entity-grid">{choices.map((choice) => <label key={choice.value}><input type="checkbox" checked={selected.includes(choice.value)} onChange={(event) => onChange({ ...draft, entities: event.target.checked ? [...selected, choice.value] : selected.filter((item) => item !== choice.value) })} /><span><code>{choice.label}</code>{choice.model_type && <small>{choice.model_type}</small>}</span></label>)}</div> : <div className="schema-array-empty"><strong>No compatible entities</strong><span>Create a compatible entity before configuring this output.</span></div>}
+  </fieldset>
 }
 
 function RootFieldSection({
@@ -937,7 +1073,7 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
       const requiredKeys = Array.isArray(schema.required) ? schema.required : []
       return Object.fromEntries(
         Object.entries(schema.properties ?? {})
-          .filter(([key, child]) => !sparse || child.required === true || requiredKeys.includes(key) || isDiscriminatorDefault(key, child))
+          .filter(([key, child]) => !sparse || child.required === true || requiredKeys.includes(key) || isDiscriminatorDefault(key, child) || child.default !== undefined && child.default !== null)
           .map(([key, child]) => [key, initialValue(child, sparse)]),
       )
     }
@@ -955,6 +1091,8 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
         model: schema.default_model ?? schema.model_choices?.[0]?.value ?? '',
         entities: schema.default_entities ?? [],
       }
+    case 'entity_list':
+      return { entities: [], selectors: [] }
     case 'field_removal':
       return null
     case 'boolean':
@@ -990,6 +1128,16 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
       return Array.isArray(value)
         ? value.map((item) => hydrateSchemaValue(schema.items ?? { type: 'json' }, item, sparse))
         : initialValue(schema, sparse)
+    case 'entity_list': {
+      if (!isRecord(value)) return initialValue(schema, sparse)
+      const stored = Array.isArray(value.stored_entities) ? value.stored_entities : []
+      const entities = stored.flatMap((entity) => {
+        if (!isRecord(entity)) return []
+        const choice = (schema.entity_choices ?? []).find((candidate) => entityMatchesChoice(entity, candidate))
+        return choice ? [choice.value] : []
+      })
+      return { entities, selectors: Array.isArray(value.selectors) ? value.selectors : [] }
+    }
     case 'expression': {
       const object = isRecord(value) ? value : {}
       return {
@@ -1017,8 +1165,8 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       if (sparse) {
         return Object.fromEntries(
           Object.entries(object)
-            .filter(([key]) => Boolean(schema.properties?.[key]))
-            .map(([key, childValue]) => [key, serializeValue(schema.properties![key], childValue, true)]),
+            .filter(([key]) => Boolean(schema.properties?.[key]) || key.startsWith('private_attribute'))
+            .map(([key, childValue]) => [key, schema.properties?.[key] ? serializeValue(schema.properties[key], childValue, true) : childValue]),
         )
       }
       return Object.fromEntries(
@@ -1058,6 +1206,15 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       if (!model) throw new Error(`${schema.title || 'Boundary assignment'} requires a model.`)
       if (!entities.length) throw new Error(`${schema.title || 'Boundary assignment'} requires at least one surface.`)
       return { model, entities }
+    }
+    case 'entity_list': {
+      const object = isRecord(value) ? value : {}
+      const selected = new Set(Array.isArray(object.entities) ? object.entities.filter((item): item is string => typeof item === 'string') : [])
+      const result: Record<string, unknown> = {
+        stored_entities: (schema.entity_choices ?? []).filter((choice) => selected.has(choice.value) && choice.payload).map((choice) => choice.payload),
+      }
+      if (Array.isArray(object.selectors) && object.selectors.length) result.selectors = object.selectors
+      return result
     }
     case 'field_removal':
       return null
@@ -1104,8 +1261,15 @@ function isUnionDraft(value: unknown): value is UnionDraft {
   return isRecord(value) && typeof value.variant === 'number' && 'value' in value
 }
 
+function entityMatchesChoice(entity: Record<string, unknown>, choice: { value: string; payload?: Record<string, unknown> }) {
+  const payload = choice.payload ?? {}
+  const entityID = String(entity.private_attribute_id ?? entity.name ?? '')
+  const payloadID = String(payload.private_attribute_id ?? payload.name ?? choice.value)
+  return entityID !== '' && entityID === payloadID
+}
+
 function isDiscriminatorDefault(key: string, schema: DynamicFormSchema): boolean {
-  return (key === 'type' || key === 'type_name')
+  return (key === 'type' || key === 'type_name' || key === 'output_type')
     && schema.type === 'enum'
     && schema.default !== undefined
     && schema.options?.length === 1
@@ -1121,8 +1285,15 @@ function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean 
     case 'expression':
       return isRecord(value)
         && (value.type_name === 'expression' || typeof value.expression === 'string')
-    case 'object':
+    case 'object': {
+      if (!isRecord(value)) return false
+      const discriminators = Object.entries(schema.properties ?? {}).filter(([key, child]) => isDiscriminatorDefault(key, child))
+      return discriminators.length === 0 || discriminators.every(([key, child]) =>
+        (child.options ?? []).some((option) => JSON.stringify(option) === JSON.stringify(value[key])),
+      )
+    }
     case 'entity_assignment':
+    case 'entity_list':
       return isRecord(value)
     case 'array':
       return Array.isArray(value)

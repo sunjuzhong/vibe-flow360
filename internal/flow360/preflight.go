@@ -574,6 +574,74 @@ def expression_schema(node, inherited_unit=None):
             result["expected_unit"] = inherited_unit
     return result
 
+def entity_list_schema(node, base):
+    title = str(node.get("title", ""))
+    if not title.startswith("EntityList["):
+        return None
+    accepted = {
+        item.strip()
+        for item in title[len("EntityList["):-1].split(",")
+        if item.strip()
+    }
+    info = (
+        original_params.get("private_attribute_asset_cache", {})
+        .get("project_entity_info", {})
+    )
+    candidates = []
+    face_group_tag = info.get("face_group_tag")
+    for group in info.get("grouped_faces", []):
+        if not isinstance(group, list):
+            continue
+        matching = [
+            entity for entity in group
+            if isinstance(entity, dict)
+            and (not face_group_tag or entity.get("private_attribute_tag_key") == face_group_tag)
+        ]
+        candidates.extend(matching)
+    candidates.extend(item for item in info.get("ghost_entities", []) if isinstance(item, dict))
+    candidates.extend(item for item in info.get("draft_entities", []) if isinstance(item, dict))
+
+    # Always retain entities already referenced by the Draft, including remote
+    # imported/mirrored entities that may not appear in the editable catalogs.
+    def collect_stored(value):
+        if isinstance(value, dict):
+            stored = value.get("stored_entities")
+            if isinstance(stored, list):
+                candidates.extend(item for item in stored if isinstance(item, dict))
+            for child in value.values():
+                collect_stored(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect_stored(child)
+    collect_stored(original_params)
+
+    choices = []
+    seen = set()
+    for entity in candidates:
+        entity_type = str(entity.get("private_attribute_entity_type_name", ""))
+        if entity_type not in accepted:
+            continue
+        entity_id = str(entity.get("private_attribute_id") or entity.get("name") or "")
+        if not entity_id:
+            continue
+        value = f"{entity_type}:{entity_id}"
+        if value in seen:
+            continue
+        seen.add(value)
+        choices.append({
+            "value": value,
+            "label": str(entity.get("name") or entity_id),
+            "model_type": entity_type,
+            "payload": copy.deepcopy(entity),
+        })
+    choices.sort(key=lambda choice: (choice["model_type"], choice["label"].lower()))
+    return {
+        **base,
+        "type": "entity_list",
+        "entity_kind": ", ".join(sorted(accepted)),
+        "entity_choices": choices,
+    }
+
 def normalize(node, inherited_unit=None):
     if not isinstance(node, dict):
         return {"type": "json"}
@@ -627,6 +695,9 @@ def normalize(node, inherited_unit=None):
         return {**base, "type": "enum", "options": [copy.deepcopy(node["const"])]}
     node_type = node.get("type")
     if node_type == "object":
+        entity_list = entity_list_schema(node, base)
+        if entity_list is not None:
+            return entity_list
         properties = node.get("properties", {})
         value_schema = properties.get("value")
         quantity_unit = value_schema.get("$units", unit) if isinstance(value_schema, dict) else unit

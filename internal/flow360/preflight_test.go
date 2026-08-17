@@ -175,6 +175,66 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	}
 }
 
+func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	params, err := os.ReadFile(filepath.Join("..", "..", "tutorials", "T05-wake-volume-refinement", "simulation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewClient().PreflightSimulationParams(context.Background(), "Geometry", "case", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var caseSchema map[string]any
+	if err := json.Unmarshal(result.EditorSchemas["Case"], &caseSchema); err != nil {
+		t.Fatal(err)
+	}
+	surfaceOutput := findSchemaByTitle(caseSchema, "SurfaceOutput")
+	if surfaceOutput == nil {
+		t.Fatal("SurfaceOutput variant is missing from the Case editor schema")
+	}
+	properties, _ := surfaceOutput["properties"].(map[string]any)
+	entities, _ := properties["surfaces"].(map[string]any)
+	if entities == nil {
+		entities, _ = properties["entities"].(map[string]any)
+	}
+	choices, _ := entities["entity_choices"].([]any)
+	if entities["type"] != "entity_list" || len(choices) < 1 {
+		t.Fatalf("SurfaceOutput did not project selectable canonical surfaces: %#v", entities)
+	}
+	var surfaceChoice map[string]any
+	for _, raw := range choices {
+		choice := raw.(map[string]any)
+		if choice["model_type"] == "Surface" {
+			surfaceChoice = choice
+			break
+		}
+	}
+	payload, _ := surfaceChoice["payload"].(map[string]any)
+	if payload["private_attribute_id"] == nil || payload["private_attribute_entity_type_name"] != "Surface" {
+		t.Fatalf("surface choice lost its canonical Flow360 payload: %#v", surfaceChoice)
+	}
+	sliceOutput := findSchemaByTitle(caseSchema, "SliceOutput")
+	if sliceOutput == nil {
+		t.Fatal("SliceOutput variant is missing from the Case editor schema")
+	}
+	sliceProperties, _ := sliceOutput["properties"].(map[string]any)
+	slices, _ := sliceProperties["slices"].(map[string]any)
+	if slices == nil {
+		slices, _ = sliceProperties["entities"].(map[string]any)
+	}
+	sliceChoices, _ := slices["entity_choices"].([]any)
+	if slices["type"] != "entity_list" || len(sliceChoices) != 1 {
+		t.Fatalf("SliceOutput did not restrict selection to registered Slice entities: %#v", slices)
+	}
+	slicePayload := sliceChoices[0].(map[string]any)["payload"].(map[string]any)
+	if slicePayload["name"] != "Wake center plane" || slicePayload["private_attribute_entity_type_name"] != "Slice" {
+		t.Fatalf("Slice output choice lost its registered Draft entity payload: %#v", slicePayload)
+	}
+}
+
 func TestInstalledSchemaValidatesTypedExpressionWireAndDimensions(t *testing.T) {
 	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
 		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")

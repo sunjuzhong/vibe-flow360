@@ -142,6 +142,42 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).not.toContain('Type Name')
   })
 
+  it('hydrates an existing Output using its immutable output_type discriminator', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      variants: [
+        { type: 'object', title: 'SurfaceOutput', properties: { output_type: { type: 'enum', options: ['SurfaceOutput'], default: 'SurfaceOutput' } } },
+        { type: 'object', title: 'ForceOutput', properties: { output_type: { type: 'enum', options: ['ForceOutput'], default: 'ForceOutput' }, name: { type: 'string' } } },
+      ],
+    }
+    const hydrated = hydrateSchemaValue(schema, { output_type: 'ForceOutput', name: 'forces', private_attribute_id: 'output-1' }, true)
+    expect(hydrated).toEqual({
+      variant: 1,
+      value: { output_type: 'ForceOutput', name: 'forces', private_attribute_id: 'output-1' },
+    })
+    expect(serializeValue(schema, hydrated, true)).toEqual({ output_type: 'ForceOutput', name: 'forces', private_attribute_id: 'output-1' })
+  })
+
+  it('initializes a new complex item with required fields and explicit defaults only', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        output_type: { type: 'enum', options: ['SurfaceOutput'], default: 'SurfaceOutput' },
+        output_fields: { type: 'array', items: { type: 'string' }, required: true },
+        frequency: { type: 'integer', default: -1 },
+        write_single_file: { type: 'boolean', default: false },
+        optional_note: { type: 'string' },
+        nullable_name: { type: 'string', default: null },
+      },
+    }
+    expect(initialValue(schema, true)).toEqual({
+      output_type: 'SurfaceOutput',
+      output_fields: [],
+      frequency: -1,
+      write_single_file: false,
+    })
+  })
+
   it('normalizes declared legacy unit names to Flow360 wire tokens', () => {
     const schema: DynamicFormSchema = {
       type: 'quantity',
@@ -456,9 +492,34 @@ describe('schema-driven Flow360 form', () => {
     expect(emptyMarkup).not.toContain('<legend')
     expect(emptyMarkup.match(/>Models</g)).toHaveLength(1)
     expect(populatedMarkup).toContain('Item 1')
-    expect(populatedMarkup).toContain('Model name')
+    expect(populatedMarkup).toContain('Edit')
+    expect(populatedMarkup).not.toContain('Model name')
     expect(populatedMarkup).toContain('aria-label="Remove Models item 1"')
     expect(populatedMarkup).not.toContain('>0<')
+  })
+
+  it('round-trips schema-provided Surface and Slice entity payloads without exposing wire metadata', () => {
+    const surface = {
+      name: 'wing',
+      private_attribute_id: 'surface-wing',
+      private_attribute_entity_type_name: 'Surface',
+      private_attribute_sub_components: ['face-1'],
+    }
+    const schema: DynamicFormSchema = {
+      type: 'entity_list',
+      title: 'Surfaces',
+      entity_kind: 'Surface',
+      entity_choices: [{ value: 'Surface:surface-wing', label: 'wing', model_type: 'Surface', payload: surface }],
+    }
+    const canonical = { stored_entities: [surface], selectors: ['wing*'] }
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+    expect(hydrated).toEqual({ entities: ['Surface:surface-wing'], selectors: ['wing*'] })
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
+
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema, value: hydrated, onChange: () => undefined }))
+    expect(markup).toContain('wing')
+    expect(markup).toContain('Surface')
+    expect(markup).not.toContain('private_attribute')
   })
 
   it('does not repeat a root union title below its tab', () => {
