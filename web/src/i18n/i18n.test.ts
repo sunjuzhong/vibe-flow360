@@ -9,6 +9,7 @@ import { t03Evidence, t03ParameterCards, t03Steps, t03Params, t03Pedagogy, valid
 import { t05Evidence, t05ParameterCards, t05Steps, t05Params, t05Pedagogy, validateT05Setup } from '../tutorials/t05'
 import { t06Evidence, t06ParameterCards, t06Steps, t06Params, t06Pedagogy, validateT06Setup } from '../tutorials/t06'
 import { t07Evidence, t07ParameterCards, t07Steps, t07Params, t07Pedagogy, validateT07Setup } from '../tutorials/t07'
+import { t08Evidence, t08ParameterCards, t08Steps, t08Params, t08Pedagogy, validateT08Setup } from '../tutorials/t08'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -254,6 +255,12 @@ describe('language settings', () => {
       ...validateT07Setup(t07Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT07Setup(t07Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t07Pedagogy),
+      ...t08Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t08ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t08Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT08Setup(t08Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT08Setup(t08Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t08Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])

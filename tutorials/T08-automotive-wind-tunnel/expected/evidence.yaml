@@ -1,0 +1,11 @@
+schema_version: 1
+criteria:
+  - {id: pinned-params-valid, category: provenance, description: Both parameter sets pass Geometry-to-Case validation with Flow360 25.10.3., artifact: simulation.json and variants/moving-ground.patch.json, required: true, check: {method: present, metric: flow360.validation.case}}
+  - {id: tunnel-reviewed, category: mesh, description: "Analytic tunnel dimensions, blockage, and wake recovery are reviewed.", artifact: geometry and mesh review, required: true, check: {method: manual, metric: tunnel.extents.approved}}
+  - {id: kinematics-reviewed, category: field, description: Belt speed and all four tyre contact-patch velocity directions are verified., artifact: boundary velocity review, required: true, check: {method: manual, metric: automotive.kinematics.approved}}
+  - {id: mesh-reviewed, category: mesh, description: "Wheel, floor-gap, layer, and wake resolution passes the rubric.", artifact: surface and volume mesh sections, required: true, check: {method: manual, metric: automotive.mesh.approved}}
+  - {id: force-comparison, category: force, description: Converged drag and lift deltas are explained using underbody and wheel-flow evidence., artifact: paired Case results, required: true, check: {method: manual, metric: automotive.forces.explained}}
+limitations:
+  - The lightweight geometry teaches the workflow and is not the detailed DrivAer benchmark shape.
+  - The Web action creates configured Case Drafts but does not submit meshing or solver compute.
+  - Production tunnel corrections, tyre deformation, contact patches, and mesh convergence require project-specific evidence.

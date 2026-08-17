@@ -1,0 +1,586 @@
+{
+  "meshing": {
+    "volume_zones": [
+      {
+        "floor_type": {
+          "central_belt_width": {
+            "units": "m",
+            "value": 1.0
+          },
+          "central_belt_x_range": {
+            "units": "m",
+            "value": [
+              -2.0,
+              3.0
+            ]
+          },
+          "front_wheel_belt_x_range": {
+            "units": "m",
+            "value": [
+              -1.35,
+              -0.5
+            ]
+          },
+          "front_wheel_belt_y_range": {
+            "units": "m",
+            "value": [
+              0.6,
+              1.05
+            ]
+          },
+          "rear_wheel_belt_x_range": {
+            "units": "m",
+            "value": [
+              0.6,
+              1.45
+            ]
+          },
+          "rear_wheel_belt_y_range": {
+            "units": "m",
+            "value": [
+              0.6,
+              1.05
+            ]
+          },
+          "type_name": "WheelBelts"
+        },
+        "floor_z_position": {
+          "units": "m",
+          "value": 0.0
+        },
+        "height": {
+          "units": "m",
+          "value": 5.0
+        },
+        "inlet_x_position": {
+          "units": "m",
+          "value": -8.0
+        },
+        "name": "Automotive wind tunnel",
+        "outlet_x_position": {
+          "units": "m",
+          "value": 15.0
+        },
+        "type": "WindTunnelFarfield",
+        "width": {
+          "units": "m",
+          "value": 12.0
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "initial_condition": {
+        "p": "p",
+        "rho": "rho",
+        "type_name": "NavierStokesInitialCondition",
+        "u": "u",
+        "v": "v",
+        "w": "w"
+      },
+      "interface_interpolation_tolerance": 0.2,
+      "material": {
+        "dynamic_viscosity": {
+          "effective_temperature": {
+            "units": "K",
+            "value": 110.4
+          },
+          "reference_temperature": {
+            "units": "K",
+            "value": 273.15
+          },
+          "reference_viscosity": {
+            "units": "Pa*s",
+            "value": 1.716e-05
+          }
+        },
+        "name": "air",
+        "prandtl_number": 0.72,
+        "thermally_perfect_gas": {
+          "species": [
+            {
+              "mass_fraction": 1.0,
+              "name": "Air",
+              "nasa_9_coefficients": {
+                "temperature_ranges": [
+                  {
+                    "coefficients": [
+                      0.0,
+                      0.0,
+                      3.5,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 6000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 200.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  }
+                ],
+                "type_name": "NASA9Coefficients"
+              },
+              "type_name": "FrozenSpecies"
+            }
+          ],
+          "type_name": "ThermallyPerfectGas"
+        },
+        "turbulent_prandtl_number": 0.9,
+        "type": "air"
+      },
+      "navier_stokes_solver": {
+        "CFL_multiplier": 1.0,
+        "absolute_tolerance": 1e-10,
+        "equation_evaluation_frequency": 1,
+        "kappa_MUSCL": -1.0,
+        "limit_pressure_density": false,
+        "limit_velocity": false,
+        "linear_solver": {
+          "max_iterations": 30,
+          "type_name": "LinearSolver"
+        },
+        "max_force_jac_update_physical_steps": 0,
+        "order_of_accuracy": 2,
+        "relative_tolerance": 0.0,
+        "riemann_solver": {
+          "low_mach_preconditioner": false,
+          "numerical_dissipation_factor": 1.0,
+          "type_name": "Roe"
+        },
+        "type_name": "Compressible",
+        "update_jacobian_frequency": 4
+      },
+      "private_attribute_id": "80000000-0000-4000-8000-000000000816",
+      "transition_model_solver": {
+        "type_name": "None"
+      },
+      "turbulence_model_solver": {
+        "CFL_multiplier": 2.0,
+        "absolute_tolerance": 1e-08,
+        "equation_evaluation_frequency": 4,
+        "linear_solver": {
+          "max_iterations": 20,
+          "type_name": "LinearSolver"
+        },
+        "low_reynolds_correction": false,
+        "max_force_jac_update_physical_steps": 0,
+        "modeling_constants": {
+          "C_DES": 0.72,
+          "C_cb1": 0.1355,
+          "C_cb2": 0.622,
+          "C_d": 8.0,
+          "C_min_rd": 10.0,
+          "C_sigma": 0.6666666666666666,
+          "C_t3": 1.2,
+          "C_t4": 0.5,
+          "C_v1": 7.1,
+          "C_vonKarman": 0.41,
+          "C_w2": 0.3,
+          "C_w4": 0.21,
+          "C_w5": 1.5,
+          "type_name": "SpalartAllmarasConsts"
+        },
+        "order_of_accuracy": 2,
+        "quadratic_constitutive_relation": false,
+        "reconstruction_gradient_limiter": 0.5,
+        "relative_tolerance": 0.0,
+        "rotation_correction": false,
+        "type_name": "SpalartAllmaras",
+        "update_jacobian_frequency": 4
+      },
+      "type": "Fluid"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "windTunnelInlet",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelInlet",
+            "used_by": [
+              "all"
+            ]
+          },
+          {
+            "name": "windTunnelOutlet",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelOutlet",
+            "used_by": [
+              "all"
+            ]
+          },
+          {
+            "name": "windTunnelLeft",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelLeft",
+            "used_by": [
+              "all"
+            ]
+          },
+          {
+            "name": "windTunnelRight",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelRight",
+            "used_by": [
+              "all"
+            ]
+          },
+          {
+            "name": "windTunnelCeiling",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelCeiling",
+            "used_by": [
+              "all"
+            ]
+          }
+        ]
+      },
+      "name": "Wind-tunnel open boundaries",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000817",
+      "type": "Freestream"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "windTunnelFloor",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelFloor",
+            "used_by": [
+              "all"
+            ]
+          },
+          {
+            "name": "windTunnelCentralBelt",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelCentralBelt",
+            "used_by": [
+              "CentralBelt",
+              "WheelBelts"
+            ]
+          },
+          {
+            "name": "windTunnelFrontWheelBelt",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelFrontWheelBelt",
+            "used_by": [
+              "WheelBelts"
+            ]
+          },
+          {
+            "name": "windTunnelRearWheelBelt",
+            "private_attribute_entity_type_name": "WindTunnelGhostSurface",
+            "private_attribute_id": "windTunnelRearWheelBelt",
+            "used_by": [
+              "WheelBelts"
+            ]
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Road system",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000818",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      },
+      "velocity": {
+        "type_name": "number",
+        "units": "m/s",
+        "value": [
+          40.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "body",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000801",
+            "private_attribute_sub_components": [
+              "body0001_face0001",
+              "body0001_face0002",
+              "body0001_face0003",
+              "body0001_face0004",
+              "body0001_face0005",
+              "body0001_face0006",
+              "body0001_face0007",
+              "body0001_face0008",
+              "body0001_face0009",
+              "body0001_face0010"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Stationary car body",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000811",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      }
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "frontLeftWheel",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000802",
+            "private_attribute_sub_components": [
+              "body0001_face0011",
+              "body0001_face0012",
+              "body0001_face0013"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Front-left wheel",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000812",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      },
+      "velocity": {
+        "angular_velocity": {
+          "units": "rad/s",
+          "value": 125.0
+        },
+        "axis": {
+          "type_name": "number",
+          "value": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        },
+        "center": {
+          "units": "m",
+          "value": [
+            -0.92,
+            -0.77,
+            0.34
+          ]
+        },
+        "type_name": "WallRotation"
+      }
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "frontRightWheel",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000803",
+            "private_attribute_sub_components": [
+              "body0001_face0014",
+              "body0001_face0015",
+              "body0001_face0016"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Front-right wheel",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000813",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      },
+      "velocity": {
+        "angular_velocity": {
+          "units": "rad/s",
+          "value": -125.0
+        },
+        "axis": {
+          "type_name": "number",
+          "value": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        },
+        "center": {
+          "units": "m",
+          "value": [
+            -0.92,
+            0.77,
+            0.34
+          ]
+        },
+        "type_name": "WallRotation"
+      }
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "rearLeftWheel",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000804",
+            "private_attribute_sub_components": [
+              "body0001_face0017",
+              "body0001_face0018",
+              "body0001_face0019"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Rear-left wheel",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000814",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      },
+      "velocity": {
+        "angular_velocity": {
+          "units": "rad/s",
+          "value": 125.0
+        },
+        "axis": {
+          "type_name": "number",
+          "value": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        },
+        "center": {
+          "units": "m",
+          "value": [
+            1.05,
+            -0.77,
+            0.34
+          ]
+        },
+        "type_name": "WallRotation"
+      }
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "rearRightWheel",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000805",
+            "private_attribute_sub_components": [
+              "body0001_face0020",
+              "body0001_face0021",
+              "body0001_face0022"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Rear-right wheel",
+      "private_attribute_id": "80000000-0000-4000-8000-000000000815",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      },
+      "velocity": {
+        "angular_velocity": {
+          "units": "rad/s",
+          "value": -125.0
+        },
+        "axis": {
+          "type_name": "number",
+          "value": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        },
+        "center": {
+          "units": "m",
+          "value": [
+            1.05,
+            0.77,
+            0.34
+          ]
+        },
+        "type_name": "WallRotation"
+      }
+    }
+  ]
+}

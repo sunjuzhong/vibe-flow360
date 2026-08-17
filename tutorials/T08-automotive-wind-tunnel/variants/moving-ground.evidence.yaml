@@ -1,0 +1,7 @@
+schema_version: 1
+criteria:
+  - {id: moving-patch-valid, category: provenance, description: The WheelBelts and WallRotation patch passes Geometry-to-Case validation., artifact: variants/moving-ground.patch.json, required: true, check: {method: present, metric: flow360.validation.case}}
+  - {id: road-speed, category: field, description: Central and wheel belts use the 40 m/s vehicle-frame road velocity., artifact: moving-ground Draft, required: true, check: {method: manual, metric: ground.velocity.approved}}
+  - {id: wheel-speed, category: field, description: Four wheel walls use 125 rad/s magnitudes with side-correct signs and centers., artifact: moving-ground Draft, required: true, check: {method: manual, metric: wheel.rotation.approved}}
+limitations:
+  - Wheel rotation kinematics must be verified visually at each contact patch before solver submission.

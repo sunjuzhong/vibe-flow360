@@ -1,0 +1,14 @@
+schema_version: 1
+engineering_question: Determine how a stationary wind-tunnel floor biases the underbody and wheel flow relative to a road-matched moving-ground setup.
+decision: Choose a floor and wheel-motion model that represents the intended test facility or on-road condition before comparing drag.
+inputs:
+  geometry: assets/automotive.csm
+  length_unit: m
+  tunnel_speed: 40 m/s
+  wheel_radius: 0.32 m
+  tunnel_dimensions: 23 m × 12 m × 5 m
+deliverables:
+  - One analytic WindTunnelFarfield containing the supplied car and wheels
+  - Stationary-floor and road-matched Case Drafts with a controlled semantic diff
+  - Registered wake refinement and explicit wheel angular velocities
+  - An evidence contract for blockage, underbody flow, wheel contact region, wake, and forces

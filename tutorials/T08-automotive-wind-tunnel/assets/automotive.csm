@@ -1,0 +1,34 @@
+# Lightweight full-car geometry for the T08 automotive wind-tunnel tutorial.
+# x is streamwise, y is lateral, z is upward; the road plane is z = 0.
+box -1.45 -0.72 0.34 3.4 1.44 0.62
+attribute faceName $body
+attribute groupName $body
+store $lowerBody
+
+box -0.70 -0.64 0.92 1.75 1.28 0.55
+attribute faceName $body
+attribute groupName $body
+store $upperBody
+
+restore $lowerBody
+restore $upperBody
+union
+attribute faceName $body
+attribute groupName $body
+
+cylinder -0.92 -0.88 0.34 -0.92 -0.66 0.34 0.32
+attribute faceName $frontLeftWheel
+attribute groupName $frontLeftWheel
+
+cylinder -0.92 0.66 0.34 -0.92 0.88 0.34 0.32
+attribute faceName $frontRightWheel
+attribute groupName $frontRightWheel
+
+cylinder 1.05 -0.88 0.34 1.05 -0.66 0.34 0.32
+attribute faceName $rearLeftWheel
+attribute groupName $rearLeftWheel
+
+cylinder 1.05 0.66 0.34 1.05 0.88 0.34 0.32
+attribute faceName $rearRightWheel
+attribute groupName $rearRightWheel
+end

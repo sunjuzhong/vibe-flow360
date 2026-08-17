@@ -146,6 +146,13 @@ mappings:
     selector:
       owners: [CustomVolume, CustomZones, GenericVolume, SeedpointVolume]
   - tutorial: T08
+    section: automotive-wind-tunnel-baseline
+    status: verified
+    artifact: tutorials/T08-automotive-wind-tunnel/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(StaticFloor|WindTunnelFarfield)$'
+  - tutorial: T08
     section: baseline
     status: planned
     selector:

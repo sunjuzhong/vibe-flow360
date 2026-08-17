@@ -48,6 +48,7 @@ tutorials-test:
 	python3 tutorials/T05-wake-volume-refinement/build_simulation.py --check
 	python3 tutorials/T06-farfield-selection/build_simulation.py --check
 	python3 tutorials/T07-internal-flow-meshing/build_simulation.py --check
+	python3 tutorials/T08-automotive-wind-tunnel/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:
