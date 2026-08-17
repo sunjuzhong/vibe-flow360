@@ -16,13 +16,14 @@ import (
 )
 
 type Client struct {
-	Binary          string
-	Timeout         time.Duration
-	ResourceTimeout time.Duration
-	ResourceRetries int
-	Profile         string
-	Environment     string
-	APIKey          string
+	Binary            string
+	Timeout           time.Duration
+	ResourceTimeout   time.Duration
+	ResourceRetries   int
+	Profile           string
+	Environment       string
+	APIKey            string
+	ManagedRuntimeDir string
 	// UpgradeCompatible is invoked when the cloud SimulationParams patch
 	// version is newer than the installed runtime but remains in the release
 	// line supported by this Vibe Flow360 build. Tests and custom embedders may
@@ -31,6 +32,7 @@ type Client struct {
 
 	upgradeMu       sync.Mutex
 	upgradedThrough string
+	activeBinary    atomic.Pointer[string]
 }
 
 type Status struct {
@@ -56,13 +58,14 @@ type ResourceDetail struct {
 
 func NewClient() *Client {
 	client := &Client{
-		Binary:          resolveFlow360Binary(),
-		Timeout:         timeoutFromEnv("VIBESIM_FLOW360_TIMEOUT_SECONDS", defaultCommandTimeout),
-		ResourceTimeout: timeoutFromEnv("VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS", defaultResourceTimeout),
-		ResourceRetries: intFromEnv("VIBESIM_FLOW360_RESOURCE_RETRIES", defaultResourceRetries, 1, 10),
-		Profile:         firstNonEmpty(os.Getenv("VIBESIM_FLOW360_PROFILE"), "default"),
-		Environment:     strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_ENV")),
-		APIKey:          firstNonEmpty(os.Getenv("VIBESIM_FLOW360_API_KEY"), os.Getenv("FLOW360_APIKEY")),
+		Binary:            resolveFlow360Binary(),
+		Timeout:           timeoutFromEnv("VIBESIM_FLOW360_TIMEOUT_SECONDS", defaultCommandTimeout),
+		ResourceTimeout:   timeoutFromEnv("VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS", defaultResourceTimeout),
+		ResourceRetries:   intFromEnv("VIBESIM_FLOW360_RESOURCE_RETRIES", defaultResourceRetries, 1, 10),
+		Profile:           firstNonEmpty(os.Getenv("VIBESIM_FLOW360_PROFILE"), "default"),
+		Environment:       strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_ENV")),
+		APIKey:            firstNonEmpty(os.Getenv("VIBESIM_FLOW360_API_KEY"), os.Getenv("FLOW360_APIKEY")),
+		ManagedRuntimeDir: strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_RUNTIME_DIR")),
 	}
 	client.UpgradeCompatible = client.upgradeManagedRuntime
 	return client
@@ -77,6 +80,9 @@ func resolveFlow360Binary() string {
 			return candidate
 		}
 	}
+	if candidate := managedFlow360Binary(); candidate != "" {
+		return candidate
+	}
 
 	path, err := exec.LookPath("flow360")
 	if err == nil && !isPyenvShim(path) {
@@ -89,6 +95,47 @@ func resolveFlow360Binary() string {
 		return path
 	}
 	return "flow360"
+}
+
+func managedFlow360Binary() string {
+	runtimeDir := strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_RUNTIME_DIR"))
+	var err error
+	if runtimeDir != "" {
+		runtimeDir, err = filepath.Abs(runtimeDir)
+	} else {
+		runtimeDir, err = defaultManagedRuntimeDir()
+	}
+	if err != nil {
+		return ""
+	}
+	return executableFile(filepath.Join(runtimeDir, "bin", "flow360"))
+}
+
+func defaultManagedRuntimeDir() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "vibe-flow360", "runtime"), nil
+}
+
+func (c *Client) managedRuntimeDir() (string, error) {
+	if configured := strings.TrimSpace(c.ManagedRuntimeDir); configured != "" {
+		return filepath.Abs(configured)
+	}
+	return defaultManagedRuntimeDir()
+}
+
+func (c *Client) runtimeBinary() string {
+	if active := c.activeBinary.Load(); active != nil {
+		return *active
+	}
+	return c.Binary
+}
+
+func (c *Client) activateRuntimeBinary(path string) {
+	value := strings.Clone(path)
+	c.activeBinary.Store(&value)
 }
 
 func pyenvFlow360Binary() string {
@@ -132,7 +179,7 @@ func isPyenvShim(path string) bool {
 }
 
 func (c *Client) Status(ctx context.Context) Status {
-	path, err := exec.LookPath(c.Binary)
+	path, err := exec.LookPath(c.runtimeBinary())
 	if err != nil {
 		return c.status(false, "", "", "flow360 CLI was not found")
 	}
@@ -1141,7 +1188,7 @@ func (c *Client) runWithTimeout(parent context.Context, timeout time.Duration, a
 	defer cancel()
 
 	commandArgs := c.commandArgs(args...)
-	cmd := exec.CommandContext(ctx, c.Binary, commandArgs...)
+	cmd := exec.CommandContext(ctx, c.runtimeBinary(), commandArgs...)
 	if c.APIKey != "" {
 		cmd.Env = append(os.Environ(), "FLOW360_APIKEY="+c.APIKey)
 	}

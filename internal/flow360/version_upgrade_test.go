@@ -124,6 +124,9 @@ func TestUpgradeManagedRuntimeStagesVerifiesAndAtomicallySwitches(t *testing.T) 
 mkdir -p "$UV_TOOL_BIN_DIR"
 printf '#!/bin/sh\nprintf "installed version: 25.10.18\\n"\n' > "$UV_TOOL_BIN_DIR/flow360"
 chmod 700 "$UV_TOOL_BIN_DIR/flow360"
+mkdir -p "$UV_TOOL_DIR/flow360/bin"
+printf '#!/bin/sh\nprintf "25.10.18\\n"\n' > "$UV_TOOL_DIR/flow360/bin/python"
+chmod 700 "$UV_TOOL_DIR/flow360/bin/python"
 `
 	if err := os.WriteFile(uvBinary, []byte(uvScript), 0o700); err != nil {
 		t.Fatal(err)
@@ -142,5 +145,53 @@ chmod 700 "$UV_TOOL_BIN_DIR/flow360"
 	output, err := exec.Command(flowBinary, "version").CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "25.10.18") {
 		t.Fatalf("activated runtime output = %q, err = %v", output, err)
+	}
+}
+
+func TestUpgradeManagedRuntimeMigratesCustomInstallToManagedRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed runtime switching uses a POSIX symlink")
+	}
+	customRoot := t.TempDir()
+	customBinDir := filepath.Join(customRoot, "bin")
+	if err := os.MkdirAll(customBinDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	customBinary := filepath.Join(customBinDir, "flow360")
+	if err := os.WriteFile(customBinary, []byte("#!/bin/sh\nprintf 'installed version: 25.10.17\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	uvBinary := filepath.Join(customBinDir, "uv")
+	uvScript := `#!/bin/sh
+mkdir -p "$UV_TOOL_BIN_DIR"
+printf '#!/bin/sh\nprintf "installed version: 25.10.18\\n"\n' > "$UV_TOOL_BIN_DIR/flow360"
+chmod 700 "$UV_TOOL_BIN_DIR/flow360"
+mkdir -p "$UV_TOOL_DIR/flow360/bin"
+printf '#!/bin/sh\nprintf "25.10.18\\n"\n' > "$UV_TOOL_DIR/flow360/bin/python"
+chmod 700 "$UV_TOOL_DIR/flow360/bin/python"
+`
+	if err := os.WriteFile(uvBinary, []byte(uvScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_UV_BINARY", uvBinary)
+	managedRoot := t.TempDir()
+	client := &Client{Binary: customBinary, ManagedRuntimeDir: managedRoot}
+	if err := client.upgradeManagedRuntime(context.Background(), "25.10.18", SupportedVersionConstraint); err != nil {
+		t.Fatal(err)
+	}
+	managedBinary := filepath.Join(managedRoot, "bin", "flow360")
+	if client.runtimeBinary() != managedBinary {
+		t.Fatalf("active binary = %q, want %q", client.runtimeBinary(), managedBinary)
+	}
+	info, err := os.Lstat(customBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("custom runtime was replaced: mode=%v", info.Mode())
+	}
+	output, err := exec.Command(managedBinary, "version").CombinedOutput()
+	if err != nil || !strings.Contains(string(output), "25.10.18") {
+		t.Fatalf("managed runtime output = %q, err = %v", output, err)
 	}
 }

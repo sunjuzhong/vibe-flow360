@@ -369,7 +369,49 @@ func TestFlow360PythonUsesInterpreterNextToCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != python {
-		t.Fatalf("got %q, want %q", got, python)
+	resolvedPython, err := filepath.EvalSymlinks(python)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != resolvedPython {
+		t.Fatalf("got %q, want %q", got, resolvedPython)
+	}
+}
+
+func TestFlow360PythonUsesManagedUVToolInterpreter(t *testing.T) {
+	runtimeDir := t.TempDir()
+	stageDir := filepath.Join(runtimeDir, "runtimes", "flow360-25-10-18-test")
+	stageBinary := filepath.Join(stageDir, "bin", "flow360")
+	toolBinary := filepath.Join(stageDir, "uv-tools", "flow360", "bin", "flow360")
+	python := filepath.Join(stageDir, "uv-tools", "flow360", "bin", "python")
+	managedBinary := filepath.Join(runtimeDir, "bin", "flow360")
+	for _, dir := range []string{filepath.Dir(stageBinary), filepath.Dir(toolBinary), filepath.Dir(managedBinary)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(toolBinary, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(python, []byte{}, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(toolBinary, stageBinary); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(stageBinary, managedBinary); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: managedBinary}
+	got, err := client.flow360Python()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedPython, err := filepath.EvalSymlinks(python)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != resolvedPython {
+		t.Fatalf("got %q, want %q", got, resolvedPython)
 	}
 }

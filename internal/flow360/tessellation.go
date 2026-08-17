@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -731,15 +732,34 @@ func visualizationError(
 }
 
 func (c *Client) flow360Python() (string, error) {
-	if configured := strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_PYTHON")); configured != "" {
-		if info, err := os.Stat(configured); err == nil && !info.IsDir() {
-			return configured, nil
+	activeBinary := c.runtimeBinary()
+	// Once a compatible managed runtime has been activated, its interpreter is
+	// authoritative even if the process originally discovered a custom Python.
+	if activeBinary == c.Binary {
+		if configured := strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_PYTHON")); configured != "" {
+			if info, err := os.Stat(configured); err == nil && !info.IsDir() {
+				return configured, nil
+			}
+			return "", errors.New("VIBESIM_FLOW360_PYTHON does not point to an executable file")
 		}
-		return "", errors.New("VIBESIM_FLOW360_PYTHON does not point to an executable file")
 	}
-	binary, err := exec.LookPath(c.Binary)
+	binary, err := exec.LookPath(activeBinary)
 	if err != nil {
 		return "", fmt.Errorf("find flow360 executable: %w", err)
+	}
+	// uv installs console scripts in a separate bin directory from the stable
+	// activation link. Resolve the link chain first: its final target sits next
+	// to the virtual environment's Python interpreter.
+	if resolved, resolveErr := filepath.EvalSymlinks(binary); resolveErr == nil {
+		for _, name := range []string{"python", "python3"} {
+			if runtime.GOOS == "windows" {
+				name += ".exe"
+			}
+			candidate := filepath.Join(filepath.Dir(resolved), name)
+			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+				return candidate, nil
+			}
+		}
 	}
 	for _, name := range []string{"python", "python3"} {
 		candidate := filepath.Join(filepath.Dir(binary), name)

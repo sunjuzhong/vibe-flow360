@@ -139,17 +139,24 @@ func compareNumericVersions(left, right string) int {
 }
 
 func (c *Client) upgradeManagedRuntime(ctx context.Context, targetVersion, constraint string) error {
-	binary, err := exec.LookPath(c.Binary)
+	binary, err := exec.LookPath(c.runtimeBinary())
 	if err != nil {
-		return fmt.Errorf("find managed Flow360 binary: %w", err)
+		return fmt.Errorf("find Flow360 binary: %w", err)
 	}
-	binDir := filepath.Dir(binary)
-	toolsDir := filepath.Dir(binDir)
-	if filepath.Base(binDir) != "bin" {
-		return errors.New("Flow360 is not installed in the Vibe Flow360 managed runtime")
+	toolsDir, err := c.managedRuntimeDir()
+	if err != nil {
+		return fmt.Errorf("find Vibe Flow360 runtime directory: %w", err)
 	}
-	if info, statErr := os.Stat(filepath.Join(toolsDir, "uv-tools")); statErr != nil || !info.IsDir() {
-		return errors.New("Flow360 managed runtime metadata is unavailable")
+	currentBinDir := filepath.Dir(binary)
+	currentToolsDir := filepath.Dir(currentBinDir)
+	if filepath.Base(currentBinDir) == "bin" {
+		if info, statErr := os.Stat(filepath.Join(currentToolsDir, "uv-tools")); statErr == nil && info.IsDir() {
+			toolsDir = currentToolsDir
+		}
+	}
+	binDir := filepath.Join(toolsDir, "bin")
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
+		return fmt.Errorf("create managed Flow360 bin directory: %w", err)
 	}
 	uvBinary := strings.TrimSpace(os.Getenv("VIBESIM_UV_BINARY"))
 	if uvBinary == "" {
@@ -157,7 +164,22 @@ func (c *Client) upgradeManagedRuntime(ctx context.Context, targetVersion, const
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
-		uvBinary = filepath.Join(binDir, name)
+		candidates := []string{filepath.Join(binDir, name)}
+		if executable, executableErr := os.Executable(); executableErr == nil {
+			candidates = append(candidates, filepath.Join(filepath.Dir(executable), name))
+		}
+		if homeDir, homeErr := os.UserHomeDir(); homeErr == nil {
+			candidates = append(candidates, filepath.Join(homeDir, ".local", "bin", name))
+		}
+		if pathBinary, pathErr := exec.LookPath(name); pathErr == nil {
+			candidates = append(candidates, pathBinary)
+		}
+		for _, candidate := range candidates {
+			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
+				uvBinary = candidate
+				break
+			}
+		}
 	}
 	if info, statErr := os.Stat(uvBinary); statErr != nil || info.IsDir() {
 		return errors.New("the managed uv updater is unavailable")
@@ -207,30 +229,47 @@ func (c *Client) upgradeManagedRuntime(ctx context.Context, targetVersion, const
 		}
 		return fmt.Errorf("upgrade managed Flow360 runtime: %s", message)
 	}
-	stageBinary := filepath.Join(stageBinDir, filepath.Base(binary))
+	executable := "flow360"
+	if runtime.GOOS == "windows" {
+		executable += ".exe"
+	}
+	stageBinary := filepath.Join(stageBinDir, executable)
 	if info, statErr := os.Stat(stageBinary); statErr != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
 		return errors.New("staged Flow360 update did not produce an executable")
 	}
-	verify := exec.CommandContext(updateCtx, stageBinary, "version")
-	verify.Env = append(os.Environ(), "SIMCLOUD_PROFILE="+strings.TrimSpace(c.Profile))
+	stagePython := filepath.Join(stageDir, "uv-tools", "flow360", "bin", "python")
+	if runtime.GOOS == "windows" {
+		stagePython = filepath.Join(stageDir, "uv-tools", "flow360", "Scripts", "python.exe")
+	}
+	if info, statErr := os.Stat(stagePython); statErr != nil || info.IsDir() {
+		return errors.New("staged Flow360 update did not provide its Python interpreter")
+	}
+	verify := exec.CommandContext(
+		updateCtx,
+		stagePython,
+		"-c",
+		"from flow360_schema import __version__; print(__version__)",
+	)
 	versionOutput, err := verify.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("verify staged Flow360 runtime: %s", compactOutput(versionOutput))
+		return fmt.Errorf("verify staged Flow360 schema: %s", compactOutput(versionOutput))
 	}
 	installedVersion := highestVersionInOutput(string(versionOutput), SupportedRelease)
 	if compareNumericVersions(installedVersion, targetVersion) < 0 {
-		return fmt.Errorf("latest available compatible runtime is %s, but the Project requires %s", installedVersion, targetVersion)
+		return fmt.Errorf("latest available compatible schema is %s, but the Project requires %s", installedVersion, targetVersion)
 	}
 
+	managedBinary := filepath.Join(binDir, executable)
 	nextLink := filepath.Join(binDir, ".flow360-next-"+strings.ReplaceAll(targetVersion, ".", "-"))
 	_ = os.Remove(nextLink)
 	if err := os.Symlink(stageBinary, nextLink); err != nil {
 		return fmt.Errorf("prepare managed Flow360 runtime switch: %w", err)
 	}
-	if err := os.Rename(nextLink, binary); err != nil {
+	if err := os.Rename(nextLink, managedBinary); err != nil {
 		_ = os.Remove(nextLink)
 		return fmt.Errorf("activate managed Flow360 runtime: %w", err)
 	}
+	c.activateRuntimeBinary(managedBinary)
 	activated = true
 	return nil
 }

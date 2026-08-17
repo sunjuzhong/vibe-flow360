@@ -75,6 +75,7 @@ func TestResolveFlow360BinaryBypassesPyenvShim(t *testing.T) {
 	t.Setenv("PYENV_ROOT", root)
 	t.Setenv("VIBESIM_FLOW360_BINARY", "")
 	t.Setenv("VIBESIM_FLOW360_PYTHON", "")
+	t.Setenv("VIBESIM_FLOW360_RUNTIME_DIR", filepath.Join(t.TempDir(), "missing"))
 
 	if got := resolveFlow360Binary(); got != realBinary {
 		t.Fatalf("got %q, want %q", got, realBinary)
@@ -91,6 +92,7 @@ func TestResolveFlow360BinaryPreservesNormalPathExecutable(t *testing.T) {
 	t.Setenv("PYENV_ROOT", filepath.Join(t.TempDir(), "missing"))
 	t.Setenv("VIBESIM_FLOW360_BINARY", "")
 	t.Setenv("VIBESIM_FLOW360_PYTHON", "")
+	t.Setenv("VIBESIM_FLOW360_RUNTIME_DIR", filepath.Join(t.TempDir(), "missing"))
 
 	if got := resolveFlow360Binary(); got != binary {
 		t.Fatalf("got %q, want %q", got, binary)

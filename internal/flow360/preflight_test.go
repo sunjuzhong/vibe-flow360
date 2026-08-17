@@ -70,6 +70,63 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 }
 
+func TestPreflightSimulationParamsUpgradesStructuredVersionMismatchAndRetries(t *testing.T) {
+	temp := t.TempDir()
+	fake := filepath.Join(temp, "python")
+	attempt := filepath.Join(temp, "attempt")
+	script := `#!/bin/sh
+if [ ! -f "` + attempt + `" ]; then
+  printf '1' > "` + attempt + `"
+  printf '%s' '{"schema_version":1,"validator_version":"25.10.17","valid":false,"issues":[{"level":"error","code":"schema_input","message":"The cloud ` + "`SimulationParam`" + ` (version: 25.10.18) is too new for your local schema package (version: 25.10.17). Errors may occur since forward compatibility is limited."},{"level":"error","code":"schema_input","message":"method"}],"form_schema":{"type":"object","properties":{}},"editor_schemas":{}}'
+  exit 0
+fi
+printf '%s' '{"schema_version":1,"validator_version":"25.10.18","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}},"editor_schemas":{}}'
+`
+	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fake)
+	upgradeCalls := 0
+	client := &Client{Binary: "flow360", UpgradeCompatible: func(_ context.Context, target, constraint string) error {
+		upgradeCalls++
+		if target != "25.10.18" || constraint != "25.10.*" {
+			t.Fatalf("unexpected upgrade target %q constraint %q", target, constraint)
+		}
+		return nil
+	}}
+	result, err := client.PreflightSimulationParams(
+		context.Background(), "Geometry", "case", json.RawMessage(`{"unit_system":{"name":"SI"}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || result.ValidatorVersion != "25.10.18" || upgradeCalls != 1 {
+		t.Fatalf("result = %#v, upgrade calls = %d", result, upgradeCalls)
+	}
+}
+
+func TestPreflightSimulationParamsRejectsStructuredCrossReleaseMismatch(t *testing.T) {
+	temp := t.TempDir()
+	fake := filepath.Join(temp, "python")
+	script := `#!/bin/sh
+printf '%s' '{"schema_version":1,"validator_version":"25.10.18","valid":false,"issues":[{"level":"error","code":"schema_input","message":"The cloud SimulationParam (version: 25.11.2) is too new for your local schema package (version: 25.10.18)."}],"form_schema":{"type":"object","properties":{}},"editor_schemas":{}}'
+`
+	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fake)
+	client := &Client{Binary: "flow360", UpgradeCompatible: func(context.Context, string, string) error {
+		t.Fatal("cross-release mismatch must not run the updater")
+		return nil
+	}}
+	_, err := client.PreflightSimulationParams(
+		context.Background(), "Geometry", "case", json.RawMessage(`{"unit_system":{"name":"SI"}}`),
+	)
+	if CompatibilityErrorCode(err) != "flow360_release_not_supported" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPlanFormSchemaReturnsOnlyActiveRouteStages(t *testing.T) {
 	temp := t.TempDir()
 	fake := filepath.Join(temp, "python")

@@ -52,6 +52,9 @@ func (c *Client) PreflightSimulationParams(
 ) (PreflightResult, error) {
 	result, err := c.preflightSimulationParamsOnce(ctx, rootType, target, params)
 	if err == nil {
+		err = preflightVersionMismatch(result)
+	}
+	if err == nil {
 		return result, nil
 	}
 	retry, compatibilityErr := c.prepareCompatibleUpgrade(ctx, err)
@@ -61,7 +64,28 @@ func (c *Client) PreflightSimulationParams(
 	if !retry {
 		return PreflightResult{}, err
 	}
-	return c.preflightSimulationParamsOnce(ctx, rootType, target, params)
+	retried, retryErr := c.preflightSimulationParamsOnce(ctx, rootType, target, params)
+	if retryErr != nil {
+		return PreflightResult{}, retryErr
+	}
+	if mismatch := preflightVersionMismatch(retried); mismatch != nil {
+		cloudVersion, _, _ := schemaVersionMismatch(mismatch)
+		return PreflightResult{}, &CompatibleUpgradeError{
+			TargetVersion: cloudVersion,
+			Err:           errors.New("updated runtime remains older than the cloud SimulationParams schema"),
+		}
+	}
+	return retried, nil
+}
+
+func preflightVersionMismatch(result PreflightResult) error {
+	for _, issue := range result.Issues {
+		candidate := errors.New(issue.Message)
+		if _, _, ok := schemaVersionMismatch(candidate); ok {
+			return candidate
+		}
+	}
+	return nil
 }
 
 func (c *Client) preflightSimulationParamsOnce(
