@@ -1,0 +1,29 @@
+schema_version: 1
+criteria:
+  - id: pinned-valid
+    category: provenance
+    description: Both parameter sets pass Geometry-to-SurfaceMesh validation with Flow360 25.10.3.
+    artifact: simulation.json and variants/feature-aware.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.surface-mesh}
+  - id: topology
+    category: mesh
+    description: The generated surface remains one watertight component with all fin channels open.
+    artifact: paired SurfaceMesh reviews
+    required: true
+    check: {method: manual, metric: surface.topology.approved}
+  - id: dimensions
+    category: mesh
+    description: Fin thickness and channel width remain within the stated geometric tolerance.
+    artifact: section measurements
+    required: true
+    check: {method: manual, metric: surface.dimensions.approved}
+  - id: quality
+    category: mesh
+    description: Non-orthogonality and skewness remain inside the explicit T10 limits.
+    artifact: quality summary
+    required: true
+    check: {method: manual, metric: surface.quality.approved}
+limitations:
+  - The lightweight heat sink teaches surface-mesh decisions and is not a validated thermal design.
+  - The Web action creates configured SurfaceMesh Drafts but does not submit paid meshing compute.

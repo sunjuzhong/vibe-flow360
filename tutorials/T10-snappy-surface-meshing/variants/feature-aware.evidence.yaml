@@ -1,0 +1,16 @@
+schema_version: 1
+criteria:
+  - id: refinements-valid
+    category: provenance
+    description: Body, Region, and SurfaceEdge refinement entities deserialize and validate.
+    artifact: variants/feature-aware.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.surface-mesh}
+  - id: feature-benefit
+    category: mesh
+    description: Local cell growth produces measurable improvement in fin, channel, and edge fidelity.
+    artifact: paired SurfaceMesh sections
+    required: true
+    check: {method: manual, metric: surface.feature-benefit.approved}
+limitations:
+  - Parameter validation cannot replace generated-surface topology and quality evidence.

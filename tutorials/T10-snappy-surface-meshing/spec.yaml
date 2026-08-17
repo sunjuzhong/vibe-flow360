@@ -1,0 +1,16 @@
+schema_version: 1
+scenario: finned-heat-sink-surface-mesh
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  heat_sink_length: {value: 0.16, unit: m, provenance: provided}
+  fin_thickness: {value: 0.004, unit: m, provenance: provided}
+  channel_width: {value: 0.014, unit: m, provenance: derived}
+  default_max_spacing: {value: 0.015625, unit: m, provenance: adapted}
+  fin_max_spacing: {value: 0.001953125, unit: m, provenance: adapted}
+  channel_cells: {value: 7.168, unit: count, provenance: derived}
+  max_non_orthogonality: {value: 70, unit: degree, provenance: adapted}
+review_required:
+  - Confirm the imported bodyName and faceName groups resolve to heatSink, base, and fins.
+  - Confirm every 4 mm fin remains present and every 14 mm cooling channel remains open.
+  - Review surface closure, self-intersection, feature-edge retention, non-orthogonality, and skewness before volume meshing.

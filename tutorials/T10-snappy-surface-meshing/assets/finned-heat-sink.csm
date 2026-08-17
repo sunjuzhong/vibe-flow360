@@ -1,0 +1,42 @@
+# Lightweight finned heat-sink geometry for T10. Units are metres.
+# Air flows along +x through five 12 mm channels between six 4 mm fins.
+box 0 0 0 0.16 0.10 0.010
+attribute faceName $base
+attribute groupName $heatSink
+store $assembly
+
+box 0.015 0.002 0.010 0.13 0.004 0.045
+attribute faceName $fins
+attribute groupName $heatSink
+store $fin1
+box 0.015 0.020 0.010 0.13 0.004 0.045
+attribute faceName $fins
+attribute groupName $heatSink
+store $fin2
+box 0.015 0.038 0.010 0.13 0.004 0.045
+attribute faceName $fins
+attribute groupName $heatSink
+store $fin3
+box 0.015 0.056 0.010 0.13 0.004 0.045
+attribute faceName $fins
+attribute groupName $heatSink
+store $fin4
+box 0.015 0.074 0.010 0.13 0.004 0.045
+attribute faceName $fins
+attribute groupName $heatSink
+store $fin5
+box 0.015 0.092 0.010 0.13 0.004 0.045
+attribute faceName $fins
+attribute groupName $heatSink
+store $fin6
+
+restore $assembly
+restore $fin1
+restore $fin2
+restore $fin3
+restore $fin4
+restore $fin5
+restore $fin6
+union 6 0 0
+attribute bodyName $heatSink
+end

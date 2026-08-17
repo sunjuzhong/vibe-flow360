@@ -1,0 +1,112 @@
+schema_version: 2
+audience: Beginners moving from automatic surface meshing to a reviewable modular snappy workflow for thin, closely spaced, sharp-edged parts.
+prerequisites:
+  - Recognize that a surface mesh approximates CAD boundaries before volume cells are generated.
+  - Understand that smaller spacing increases geometric fidelity and cell count.
+learning_objectives:
+  - id: workflow
+    objective: Separate surface-meshing controls from later volume-meshing controls in ModularMeshingWorkflow.
+    assessment: Identify which T10 fields affect castellating, snapping, smoothing, and quality acceptance.
+  - id: feature-controls
+    objective: Assign body, region, and edge refinements according to the geometric risk they control.
+    assessment: Explain why fin faces and fin edges need different controls.
+  - id: octree
+    objective: Relate requested spacing to discrete octree refinement levels and transition cells.
+    assessment: Calculate channel samples from effective spacing and explain n_cells_between_levels.
+  - id: evidence
+    objective: Reject a surface mesh that loses fins, closes channels, or violates explicit quality limits.
+    assessment: Apply pass and fail evidence to both SurfaceMesh Drafts.
+concepts:
+  cfd:
+    - id: geometry-fidelity
+      title: Boundary error changes the flow passage
+      explanation: Missing fin thickness or a closed channel changes wetted area, hydraulic diameter, pressure drop, and heat-transfer predictions before the solver starts.
+      misconception: A converged volume-mesh solution can repair missing surface geometry.
+    - id: resolution
+      title: Gap resolution must follow the narrowest relevant passage
+      explanation: The 14 mm channels need several cells across their width to remain open and support later boundary-layer growth.
+      misconception: One cell across a channel is sufficient because the CAD remains visible.
+    - id: quality
+      title: Fidelity and quality are separate acceptance axes
+      explanation: A mesh can preserve every fin yet still contain excessive non-orthogonality, skewness, or self-intersection.
+      misconception: More refinement automatically improves every quality metric.
+  flow360:
+    - id: modular
+      title: ModularMeshingWorkflow separates surface and volume stages
+      explanation: T10 configures snappy SurfaceMeshingParams now while leaving later volume-meshing choices explicit.
+      misconception: SurfaceMeshingParams is interchangeable with the legacy MeshingParams defaults.
+    - id: refinement
+      title: Body, Region, and SurfaceEdge refinements solve different risks
+      explanation: BodyRefinement bounds the whole part, RegionRefinement tightens fin faces and proximity, and SurfaceEdgeRefinement retains sharp roots and tips over a distance field.
+      misconception: Applying the smallest spacing globally is the most efficient way to preserve local features.
+    - id: snap
+      title: Castellating, snapping, and smoothing form a coupled pipeline
+      explanation: Octree cells approximate the part, snapping moves them toward CAD, and smoothing controls distortion without erasing retained features.
+      misconception: Strict snapping guarantees a valid mesh without a quality review.
+parameter_derivations:
+  - id: channel
+    parameter: Cells across a cooling channel
+    basis: Divide the 14 mm channel by the 1.953125 mm fin-region maximum spacing.
+    calculation: 14 / 1.953125 = 7.168 cells across the channel
+    transfer: Recompute using the narrowest manufactured channel and the effective octree spacing.
+  - id: fin
+    parameter: Samples across fin thickness
+    basis: Divide the 4 mm fin thickness by the 0.9765625 mm minimum body or region spacing.
+    calculation: 4 / 0.9765625 = 4.096 samples across fin thickness
+    transfer: Increase samples when curvature, conduction coupling, or tolerance sensitivity requires it.
+  - id: levels
+    parameter: Refinement transition
+    basis: Snappy octree spacing changes by factors of two and the variant requests two cells between levels.
+    calculation: 15.625 → 7.8125 → 3.90625 → 1.953125 mm
+    transfer: Use gradual transitions near sensitive surfaces while monitoring total cell growth.
+experiments:
+  - id: feature-aware
+    prediction: What should change when the feature-aware refinements are enabled while CAD and quality limits remain fixed?
+    options:
+      - Fin thickness, channel openness, and sharp edges improve at higher local surface-cell cost
+      - The farfield size and heat-sink dimensions change
+    controlled_variable: Geometry, farfield, default spacing, smoothing, quality limits, and tutorial evidence views remain fixed.
+    observation: Compare component count, watertightness, channel sections, fin thickness, edge retention, transition smoothness, non-orthogonality, skewness, and surface-cell count.
+failure_modes:
+  - id: groups
+    symptom: A refinement resolves no entities or the wrong part.
+    cause: The heatSink body group or fins face group does not match the imported Geometry catalog.
+    correction: Resolve canonical remote groups by name and ID before synchronizing the SurfaceMesh Draft.
+  - id: closed-channel
+    symptom: A cooling passage is bridged or disappears.
+    cause: Gap and proximity spacing are too coarse for the narrow channel.
+    correction: Tighten the fin-region or body gap control and inspect orthogonal sections.
+  - id: rounded-edge
+    symptom: Fin roots or tips become rounded or detached.
+    cause: Feature extraction, edge spacing, snapping, or smoothing does not retain the sharp edge.
+    correction: Review included angle and distance spacing, then balance snapping against smoothing.
+  - id: quality
+    symptom: The detailed mesh fails non-orthogonality or skewness limits.
+    cause: Aggressive local refinement and snapping create distorted transitions.
+    correction: Increase transition cells, adjust snap or smooth controls, and repeat the controlled comparison.
+evidence_rubric:
+  - id: ownership
+    observation: Geometry entity ownership
+    pass: heatSink, base, and fins groups resolve exactly once and every refinement uses the intended group.
+    fail: Any refinement is empty, duplicated, or attached to a stale entity.
+  - id: topology
+    observation: Watertight surface topology
+    pass: One closed component remains with no holes, self-intersections, or unintended bridges.
+    fail: A fin detaches, a channel closes, or a non-manifold edge appears.
+  - id: dimensions
+    observation: Feature preservation
+    pass: All six 4 mm fins and five 14 mm channels remain measurable within the stated tolerance.
+    fail: Any fin or channel is lost or materially displaced.
+  - id: quality
+    observation: Explicit quality metrics
+    pass: Non-orthogonality and skewness remain within configured limits without hidden overrides.
+    fail: The mesher silently accepts cells outside the tutorial quality contract.
+  - id: cost
+    observation: Local cost versus benefit
+    pass: Added surface cells concentrate on fins, channels, and edges and produce measurable fidelity gains.
+    fail: Cell count grows broadly without improving the targeted features.
+transfer_questions:
+  - prompt: When should RegionRefinement replace a smaller global maximum spacing?
+    expected: When only named surfaces or proximity regions need the finer scale and global refinement would waste cells elsewhere.
+  - prompt: What must be revisited if the manufactured channel shrinks from 14 mm to 8 mm?
+    expected: Recompute samples across the gap, tighten gap or proximity spacing, and repeat topology and quality evidence.

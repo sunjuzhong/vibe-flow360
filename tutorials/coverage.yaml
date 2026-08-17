@@ -177,6 +177,20 @@ mappings:
     selector:
       owners: [RotationCylinder, RotationSphere, RotationVolume]
   - tutorial: T10
+    section: modular-snappy-baseline
+    status: verified
+    artifact: tutorials/T10-snappy-surface-meshing/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(ModularMeshingWorkflow|SurfaceMeshingParams|CastellatedMeshControls|SnapControls|SmoothControls|QualityMetrics)$'
+  - tutorial: T10
+    section: feature-aware-snappy-variant
+    status: verified
+    artifact: tutorials/T10-snappy-surface-meshing/variants/feature-aware.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(BodyRefinement|RegionRefinement|flow360_schema__models__simulation__meshing_param__snappy__snappy_mesh_refinements__SurfaceEdgeRefinement)$'
+  - tutorial: T10
     section: baseline
     status: planned
     selector:

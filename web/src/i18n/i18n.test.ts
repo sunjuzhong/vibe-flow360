@@ -11,6 +11,7 @@ import { t06Evidence, t06ParameterCards, t06Steps, t06Params, t06Pedagogy, valid
 import { t07Evidence, t07ParameterCards, t07Steps, t07Params, t07Pedagogy, validateT07Setup } from '../tutorials/t07'
 import { t08Evidence, t08ParameterCards, t08Steps, t08Params, t08Pedagogy, validateT08Setup } from '../tutorials/t08'
 import { t09Evidence, t09ParameterCards, t09Steps, t09Params, t09Pedagogy, validateT09Setup } from '../tutorials/t09'
+import { t10Evidence, t10ParameterCards, t10Steps, t10Params, t10Pedagogy, validateT10Setup } from '../tutorials/t10'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -268,6 +269,12 @@ describe('language settings', () => {
       ...validateT09Setup(t09Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT09Setup(t09Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t09Pedagogy),
+      ...t10Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t10ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t10Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT10Setup(t10Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT10Setup(t10Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t10Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -338,6 +345,21 @@ describe('language settings', () => {
       'The bundled T09 parameters contain an invalid entity, interface, or motion-hierarchy contract.',
       'The bundled T09 coaxial-rotor Geometry could not be loaded.',
       'Flow360 created the T09 Project without returning its Geometry identifiers.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T10 environment builder in Chinese', () => {
+    const messages = [
+      'SURFACE MESHING', 'MODULAR SNAPPY WORKFLOW', 'REFINEMENT SET',
+      'Build the T10 snappy surface-mesh comparison',
+      'The app uploads the bundled heat sink and creates global-only and feature-aware SurfaceMesh Drafts.',
+      'ModularMeshingWorkflow, octree spacing, Body/Region/SurfaceEdge refinements, snap and smooth controls, explicit quality metrics',
+      'Global snappy defaults', 'Feature-aware snappy controls',
+      'Tutorial T10 · snappy heat-sink mesh',
+      'The bundled T10 parameters contain an invalid snappy workflow, quality limit, or refinement target.',
+      'The bundled T10 heat-sink Geometry could not be loaded.',
+      'Flow360 created the T10 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
