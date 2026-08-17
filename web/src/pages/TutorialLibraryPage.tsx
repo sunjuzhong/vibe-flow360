@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Box, CheckCircle2, CircleDot, Clock3, Gauge, Plane, ShieldCheck, Target, Waypoints } from 'lucide-react'
+import { ArrowRight, BookOpen, Box, CheckCircle2, CircleDot, Clock3, Droplets, Gauge, Plane, ShieldCheck, Target, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>6 available</span>
+          <span>7 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -85,6 +85,10 @@ export default function TutorialLibraryPage() {
           <Link className="tutorial-card" to="/tutorials/T06">
             <div className="tutorial-card-visual airfoil-card-visual"><Box size={52} strokeWidth={1.1}/><span className="tutorial-id">T06</span><span className="tutorial-level">DOMAIN SETUP</span></div>
             <div className="tutorial-card-content"><p className="eyebrow">EXTERNAL FARFIELD</p><h2>Choose automatic or CAD-defined boundaries</h2><p>Match body-only or fluid-volume CAD to the correct farfield workflow, then test whether an 8D boundary changes the solution.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 18–22 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T07">
+            <div className="tutorial-card-visual mesh-card-visual"><Droplets size={52} strokeWidth={1.1}/><span className="tutorial-id">T07</span><span className="tutorial-level">INTERNAL FLOW</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">CLOSED DUCT MESHING</p><h2>Mesh the fluid passage and preserve pressure-loss features</h2><p>Identify the connected fluid volume, register its seed point, and compare global-only spacing with obstacle, support, and floor-layer controls.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 20–24 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>

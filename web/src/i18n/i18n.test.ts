@@ -8,6 +8,7 @@ import { t02Evidence, t02ParameterCards, t02Steps, t02Params, t02Pedagogy, valid
 import { t03Evidence, t03ParameterCards, t03Steps, t03Params, t03Pedagogy, validateT03Setup } from '../tutorials/t03'
 import { t05Evidence, t05ParameterCards, t05Steps, t05Params, t05Pedagogy, validateT05Setup } from '../tutorials/t05'
 import { t06Evidence, t06ParameterCards, t06Steps, t06Params, t06Pedagogy, validateT06Setup } from '../tutorials/t06'
+import { t07Evidence, t07ParameterCards, t07Steps, t07Params, t07Pedagogy, validateT07Setup } from '../tutorials/t07'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -247,6 +248,12 @@ describe('language settings', () => {
       ...validateT06Setup(t06Params('compact')).flatMap(({ label, detail }) => [label, detail]),
       ...validateT06Setup(t06Params('manual')).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t06Pedagogy),
+      ...t07Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t07ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t07Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT07Setup(t07Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT07Setup(t07Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t07Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -282,6 +289,23 @@ describe('language settings', () => {
       'Both Case Draft parameter sets are synced. No surface mesh, volume mesh, or solver Case has been submitted.',
       'Create Project + 2 Case Drafts',
       'Tutorial T02 · wind-tunnel similarity',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T07 environment builder in Chinese', () => {
+    const messages = [
+      'INTERNAL FLOW',
+      'CLOSED DUCT MESHING',
+      'Build the T07 internal-flow mesh environment',
+      'The app uploads the bundled closed fluid volume and creates global-only and feature-aware VolumeMesh Drafts.',
+      'UserDefinedFarfield, registered SeedpointVolume, global defaults, sphere/support/floor transition controls',
+      'Global-only internal mesh',
+      'Feature-aware internal mesh',
+      'Both VolumeMesh Draft parameter sets are synced. No surface or volume mesh computation has been submitted.',
+      'Tutorial T07 · internal duct meshing',
+      'Global-only internal duct mesh strategy',
+      'Feature-aware internal duct mesh strategy',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

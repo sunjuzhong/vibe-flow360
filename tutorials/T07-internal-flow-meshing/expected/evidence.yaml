@@ -1,0 +1,42 @@
+schema_version: 1
+criteria:
+  - id: pinned-params-valid
+    category: provenance
+    description: Both parameter sets deserialize and pass Geometry-to-VolumeMesh validation with Flow360 25.10.3.
+    artifact: simulation.json and variants/feature-aware.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.volume-mesh}
+  - id: closed-fluid-domain
+    category: mesh
+    description: The mesh contains one intended internal fluid passage and does not generate an external farfield volume.
+    artifact: geometry and volume-mesh review
+    required: true
+    check: {method: manual, metric: mesh.internal-domain.approved}
+  - id: seed-zone-valid
+    category: mesh
+    description: The registered [1, 0, 2] m seed lies inside the upstream fluid and creates the Primary duct fluid zone.
+    artifact: Draft entity catalog and volume-zone review
+    required: true
+    check: {method: manual, metric: mesh.seedpoint-zone.approved}
+  - id: features-survive
+    category: mesh
+    description: The feature-aware mesh retains the sphere curvature and all four 0.2 m supports with multi-element coverage.
+    artifact: surface-mesh review
+    required: true
+    check: {method: manual, metric: mesh.features.approved}
+  - id: floor-layers-continuous
+    category: mesh
+    description: Floor layers remain attached and transition without collapse or abrupt expansion.
+    artifact: volume-mesh cross-section
+    required: true
+    check: {method: manual, metric: mesh.floor-layer.continuous}
+  - id: outlet-recovery-reviewed
+    category: mesh
+    description: Cell growth through the wake and two-diameter outlet recovery region is smooth enough for later pressure-loss analysis.
+    artifact: centerline and outlet mesh sections
+    required: true
+    check: {method: manual, metric: mesh.outlet-recovery.approved}
+limitations:
+  - The tutorial creates mesh Drafts but does not submit cloud meshing or a solver Case.
+  - The adapted first-layer thickness is a meshing comparison input, not a production y-plus prescription.
+  - Pressure-loss and convergence evidence require operating conditions, boundary conditions, and a solver Case in later tutorials.

@@ -1,0 +1,123 @@
+{
+  "meshing": {
+    "refinements": [
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "sphere",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000704",
+              "private_attribute_sub_components": [
+                "body0001_face0007"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "max_edge_length": {
+          "units": "m",
+          "value": 0.1
+        },
+        "name": "Sphere obstacle",
+        "refinement_type": "SurfaceRefinement"
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "strut",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000705",
+              "private_attribute_sub_components": [
+                "body0001_face0008",
+                "body0001_face0009",
+                "body0001_face0010",
+                "body0001_face0011",
+                "body0001_face0012",
+                "body0001_face0013",
+                "body0001_face0014",
+                "body0001_face0015",
+                "body0001_face0016",
+                "body0001_face0017",
+                "body0001_face0018",
+                "body0001_face0019",
+                "body0001_face0020",
+                "body0001_face0021",
+                "body0001_face0022",
+                "body0001_face0023"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "max_edge_length": {
+          "units": "m",
+          "value": 0.01
+        },
+        "name": "Thin supports",
+        "refinement_type": "SurfaceRefinement"
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "floor",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000702",
+              "private_attribute_sub_components": [
+                "body0001_face0005"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "first_layer_thickness": {
+          "units": "m",
+          "value": 1e-05
+        },
+        "name": "Floor shear layer",
+        "refinement_type": "BoundaryLayer"
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "adjacent2floor",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000701",
+              "private_attribute_sub_components": [
+                "body0001_face0001",
+                "body0001_face0002",
+                "body0001_face0003",
+                "body0001_face0004"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "name": "Floor-adjacent transition",
+        "refinement_type": "PassiveSpacing",
+        "type": "projected"
+      },
+      {
+        "entities": {
+          "stored_entities": [
+            {
+              "name": "ceiling",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000703",
+              "private_attribute_sub_components": [
+                "body0001_face0006"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "name": "Ceiling spacing",
+        "refinement_type": "PassiveSpacing",
+        "type": "unchanged"
+      }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+# Closed wind-tunnel fluid volume used by Flow360's internal-flow meshing example.
+box 0 -2 0 8 4 4
+select face 1
+    attribute faceName $adjacent2floor
+    attribute groupName $inlet
+select face 2
+    attribute faceName $adjacent2floor
+    attribute groupName $outlet
+select face 3
+    attribute faceName $adjacent2floor
+    attribute groupName $sideNegY
+select face 4
+    attribute faceName $adjacent2floor
+    attribute groupName $sidePosY
+select face 5
+    attribute faceName $floor
+    attribute groupName $floor
+select face 6
+    attribute faceName $ceiling
+    attribute groupName $ceiling
+store $windTunnel
+
+mark
+    sphere 3 0 1.1 1
+        attribute faceName $sphere
+        attribute groupName $sphere
+    cylinder 2.5 +0.5 -0.1 2.5 +0.5 1.0 0.1
+        attribute faceName $strut
+        attribute groupName $strut1
+    cylinder 2.5 -0.5 -0.1 2.5 -0.5 1.0 0.1
+        attribute faceName $strut
+        attribute groupName $strut2
+    cylinder 3.5 +0.5 -0.1 3.5 +0.5 1.0 0.1
+        attribute faceName $strut
+        attribute groupName $strut3
+    cylinder 3.5 -0.5 -0.1 3.5 -0.5 1.0 0.1
+        attribute faceName $strut
+        attribute groupName $strut4
+union 1 0 0
+store $sphereAndStruts
+
+restore $windTunnel
+restore $sphereAndStruts
+subtract
