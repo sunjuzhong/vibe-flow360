@@ -52,8 +52,31 @@ func codexTimeoutFromEnv() time.Duration {
 }
 
 func (s *Service) codexReady() bool {
-	_, err := exec.LookPath(s.CodexBinary)
+	_, _, err := s.codexCommand()
 	return err == nil
+}
+
+func (s *Service) codexCommand() (string, []string, error) {
+	binary, err := exec.LookPath(s.CodexBinary)
+	if err != nil {
+		return "", nil, fmt.Errorf("external Codex binary %q was not found", s.CodexBinary)
+	}
+
+	environment := codexEnvironment(os.Environ())
+	binaryDir := filepath.Dir(binary)
+	environment = prependPath(environment, binaryDir)
+
+	// npm-installed Codex launchers use `#!/usr/bin/env node`. Background
+	// services commonly receive a minimal PATH even when VIBESIM_CODEX_BINARY
+	// points directly into an NVM installation. Make the sibling Node runtime
+	// visible to env, and do not report the provider as ready when that runtime
+	// is genuinely absent.
+	if runtime, ok := envShebangRuntime(binary); ok {
+		if _, err := exec.LookPath(runtime); err != nil && !isExecutableFile(filepath.Join(binaryDir, runtime)) {
+			return "", nil, fmt.Errorf("external Codex runtime %q was not found", runtime)
+		}
+	}
+	return binary, environment, nil
 }
 
 func (s *Service) chatWithCodex(
@@ -62,8 +85,9 @@ func (s *Service) chatWithCodex(
 	userPrompt string,
 	requestedModel string,
 ) (string, error) {
-	if !s.codexReady() {
-		return "", fmt.Errorf("external Codex binary %q was not found", s.CodexBinary)
+	binary, environment, err := s.codexCommand()
+	if err != nil {
+		return "", err
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, s.CodexTimeout)
@@ -95,8 +119,8 @@ func (s *Service) chatWithCodex(
 	}
 	args = append(args, "-")
 
-	command := exec.CommandContext(runCtx, s.CodexBinary, args...)
-	command.Env = codexEnvironment(os.Environ())
+	command := exec.CommandContext(runCtx, binary, args...)
+	command.Env = environment
 	command.Stdin = strings.NewReader(codexPrompt(systemPrompt, userPrompt))
 	var diagnostics limitedBuffer
 	command.Stdout = &diagnostics
@@ -160,6 +184,56 @@ func codexEnvironment(environment []string) []string {
 		result = append(result, entry)
 	}
 	return result
+}
+
+func prependPath(environment []string, directory string) []string {
+	if directory == "" || directory == "." {
+		return environment
+	}
+	result := make([]string, 0, len(environment)+1)
+	found := false
+	for _, entry := range environment {
+		key, value, hasValue := strings.Cut(entry, "=")
+		if key == "PATH" && hasValue {
+			result = append(result, "PATH="+directory+string(os.PathListSeparator)+value)
+			found = true
+			continue
+		}
+		result = append(result, entry)
+	}
+	if !found {
+		result = append(result, "PATH="+directory)
+	}
+	return result
+}
+
+func envShebangRuntime(path string) (string, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 512))
+	if err != nil {
+		return "", false
+	}
+	line, _, _ := strings.Cut(string(data), "\n")
+	fields := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "#!"))
+	if len(fields) < 2 || filepath.Base(fields[0]) != "env" {
+		return "", false
+	}
+	for _, field := range fields[1:] {
+		if field == "-S" || strings.HasPrefix(field, "-") {
+			continue
+		}
+		return field, true
+	}
+	return "", false
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
 }
 
 type limitedBuffer struct {

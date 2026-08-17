@@ -184,6 +184,52 @@ func TestCodexProviderRunsEphemeralReadOnlyAndValidatesAction(t *testing.T) {
 	}
 }
 
+func TestCodexProviderFindsNodeBesideConfiguredBinary(t *testing.T) {
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "codex")
+	node := filepath.Join(directory, "node")
+	codexScript := `#!/usr/bin/env node
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then output="$2"; shift 2; else shift; fi
+done
+/bin/cat >/dev/null
+/usr/bin/printf '{}' > "$output"
+`
+	nodeShim := `#!/bin/sh
+exec /bin/sh "$@"
+`
+	if err := os.WriteFile(binary, []byte(codexScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(node, []byte(nodeShim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+
+	service := &Service{Provider: "codex", CodexBinary: binary, CodexTimeout: time.Second}
+	if !service.codexReady() {
+		t.Fatal("expected colocated Node runtime to make Codex ready")
+	}
+	response, err := service.Chat(context.Background(), ChatRequest{Message: "Analyze geometry"})
+	if err != nil || response != "{}" {
+		t.Fatalf("colocated Node runtime was not used: response=%q err=%v", response, err)
+	}
+}
+
+func TestCodexProviderNotReadyWhenEnvShebangRuntimeIsMissing(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(binary, []byte("#!/usr/bin/env missing-codex-runtime\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+
+	service := &Service{Provider: "codex", CodexBinary: binary}
+	if service.codexReady() {
+		t.Fatal("Codex must not be ready without its shebang runtime")
+	}
+}
+
 func TestCodexEnvironmentRemovesFlow360Secrets(t *testing.T) {
 	filtered := codexEnvironment([]string{
 		"PATH=/bin",
