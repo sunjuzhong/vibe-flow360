@@ -48,11 +48,16 @@ export function summarizeResultTable(table: ParsedResultTable, scope: string, pa
       last: present[present.length - 1] === undefined ? undefined : clip(present[present.length - 1]),
     }
     if (!numeric) return { ...base, sample_values: Array.from(new Set(present)).slice(0, 8).map((value) => clip(value)) }
+    const statistics = numbers.reduce((result, value) => ({
+      minimum: Math.min(result.minimum, value),
+      maximum: Math.max(result.maximum, value),
+      sum: result.sum + value,
+    }), { minimum: Number.POSITIVE_INFINITY, maximum: Number.NEGATIVE_INFINITY, sum: 0 })
     return {
       ...base,
-      minimum: Math.min(...numbers),
-      maximum: Math.max(...numbers),
-      mean: numbers.reduce((sum, value) => sum + value, 0) / numbers.length,
+      minimum: statistics.minimum,
+      maximum: statistics.maximum,
+      mean: statistics.sum / numbers.length,
     }
   })
   const sampleIndexes = new Set<number>()
@@ -136,10 +141,10 @@ export function parseResultTable(content: string, path = ''): ParsedResultTable 
       .map((line) => line.split(/\s+/))
     : parseQuotedRows(content, detected)
 
-  let columnCount = Math.min(
-    MAX_PREVIEW_COLUMNS,
-    Math.max(1, ...parsedRows.map((row) => row.length)),
-  )
+  let columnCount = Math.min(MAX_PREVIEW_COLUMNS, parsedRows.reduce(
+    (maximum, row) => Math.max(maximum, row.length),
+    1,
+  ))
   while (
     columnCount > 1
     && parsedRows.every((row) => (row[columnCount - 1] ?? '').trim() === '')
@@ -318,7 +323,7 @@ export function ResultTablePreview({
 
   return (
     <div ref={dialogRef} className="result-preview-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <section className="result-preview-dialog">
+      <section className={`result-preview-dialog${aiOpen ? ' ai-open' : ''}`}>
         <header className="result-preview-header">
           <div>
             <FileSpreadsheet size={16} />
@@ -330,82 +335,86 @@ export function ResultTablePreview({
           <button className="icon-button" onClick={onClose} aria-label={t('Close result preview')}><X size={15} /></button>
         </header>
 
-        {loading && (
-          <div className="result-preview-state" role="status">
-            <RefreshCw size={18} className="spin" /> {t('Loading result data…')}
-          </div>
-        )}
-        {error && (
-          <div className="result-preview-state error" role="alert">
-            <AlertCircle size={18} /> {error}
-          </div>
-        )}
-        {!loading && !error && table && (
-          <>
-            <div className="result-preview-meta">
-              <span>{t(`${table.totalRows.toLocaleString()} data rows`)}</span>
-              <span>{t(`${table.headers.length} columns`)}</span>
-              <span>{t(`${table.delimiter} separated`)}</span>
-              {table.truncated && <em>{t('Chart data truncated')}</em>}
-              {table.totalRows > MAX_TABLE_ROWS && <em>{t(`Table shows first ${MAX_TABLE_ROWS}`)}</em>}
-              <button className="result-ai-trigger" type="button" onClick={() => void openInterpretation()} disabled={preparingAI || table.rows.length === 0}>
-                {preparingAI ? <Loader2 className="spin" size={12} /> : <Sparkles size={12} />}
-                {t('AI interpretation')}
-              </button>
-              <div className="result-preview-view-toggle" role="group" aria-label={t('Result view')}>
-                <button className={view === 'chart' ? 'selected' : ''} onClick={() => setView('chart')} disabled={!recommendation?.yColumns.length}><BarChart3 size={12} />{t('Chart')}</button>
-                <button className={view === 'table' ? 'selected' : ''} onClick={() => setView('table')}><Table2 size={12} />{t('Table')}</button>
+        <div className={`result-preview-workspace${aiOpen ? ' ai-open' : ''}`}>
+          <div className="result-preview-main">
+            {loading && (
+              <div className="result-preview-state" role="status">
+                <RefreshCw size={18} className="spin" /> {t('Loading result data…')}
               </div>
-            </div>
-            {view === 'chart' && recommendation && (
+            )}
+            {error && (
+              <div className="result-preview-state error" role="alert">
+                <AlertCircle size={18} /> {error}
+              </div>
+            )}
+            {!loading && !error && table && (
               <>
-                {loadCandidate && comparisonCandidates.length > 0 && (
-                  <DatasetPicker
-                    candidates={datasets.length >= 3 ? [] : candidateScan.compatible}
-                    selected={datasets.map((dataset) => dataset.path)}
-                    scanning={candidateScan.scanning}
-                    checked={candidateScan.checked}
-                    total={candidateScan.total}
-                    inspectionFailed={candidateScan.failed > 0}
-                    onAdd={addDataset}
-                  />
+                <div className="result-preview-meta">
+                  <span>{t(`${table.totalRows.toLocaleString()} data rows`)}</span>
+                  <span>{t(`${table.headers.length} columns`)}</span>
+                  <span>{t(`${table.delimiter} separated`)}</span>
+                  {table.truncated && <em>{t('Chart data truncated')}</em>}
+                  {table.totalRows > MAX_TABLE_ROWS && <em>{t(`Table shows first ${MAX_TABLE_ROWS}`)}</em>}
+                  <button className="result-ai-trigger" type="button" onClick={() => void openInterpretation()} disabled={preparingAI || table.rows.length === 0}>
+                    {preparingAI ? <Loader2 className="spin" size={12} /> : <Sparkles size={12} />}
+                    {t('AI interpretation')}
+                  </button>
+                  <div className="result-preview-view-toggle" role="group" aria-label={t('Result view')}>
+                    <button className={view === 'chart' ? 'selected' : ''} onClick={() => setView('chart')} disabled={!recommendation?.yColumns.length}><BarChart3 size={12} />{t('Chart')}</button>
+                    <button className={view === 'table' ? 'selected' : ''} onClick={() => setView('table')}><Table2 size={12} />{t('Table')}</button>
+                  </div>
+                </div>
+                {view === 'chart' && recommendation && (
+                  <>
+                    {loadCandidate && comparisonCandidates.length > 0 && (
+                      <DatasetPicker
+                        candidates={datasets.length >= 3 ? [] : candidateScan.compatible}
+                        selected={datasets.map((dataset) => dataset.path)}
+                        scanning={candidateScan.scanning}
+                        checked={candidateScan.checked}
+                        total={candidateScan.total}
+                        inspectionFailed={candidateScan.failed > 0}
+                        onAdd={addDataset}
+                      />
+                    )}
+                    <ResultChartPanel
+                      datasets={datasets}
+                      recommendation={recommendation}
+                      onRemoveDataset={(datasetPath) => {
+                        setExtraDatasets((current) => current.filter((dataset) => dataset.path !== datasetPath))
+                        if (tablePath === datasetPath) setTablePath(path)
+                      }}
+                    />
+                  </>
                 )}
-                <ResultChartPanel
-                  datasets={datasets}
-                  recommendation={recommendation}
-                  onRemoveDataset={(datasetPath) => {
-                    setExtraDatasets((current) => current.filter((dataset) => dataset.path !== datasetPath))
-                    if (tablePath === datasetPath) setTablePath(path)
-                  }}
-                />
+                {view === 'table' && selectedTable && (
+                  <div className="result-preview-content">
+                    {datasets.length > 1 && (
+                      <label className="result-table-dataset-select">{t('Dataset')}<select value={selectedTable.path} onChange={(event) => setTablePath(event.target.value)}>{datasets.map((dataset) => <option value={dataset.path} key={dataset.path}>{dataset.path.split('/').pop()}</option>)}</select></label>
+                    )}
+                    <table className="result-preview-table">
+                      <thead>
+                        <tr>{selectedTable.table.headers.map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {selectedTable.table.rows.slice(0, MAX_TABLE_ROWS).map((row, rowIndex) => (
+                          <tr key={rowIndex}>
+                            {row.map((cell, cellIndex) => (
+                              <td className={isNumericCell(cell) ? 'numeric' : ''} key={cellIndex}>{cell || '—'}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {selectedTable.table.rows.length === 0 && <div className="result-preview-empty">{t('This result contains headers but no data rows.')}</div>}
+                  </div>
+                )}
               </>
             )}
-            {view === 'table' && selectedTable && (
-              <div className="result-preview-content">
-                {datasets.length > 1 && (
-                  <label className="result-table-dataset-select">{t('Dataset')}<select value={selectedTable.path} onChange={(event) => setTablePath(event.target.value)}>{datasets.map((dataset) => <option value={dataset.path} key={dataset.path}>{dataset.path.split('/').pop()}</option>)}</select></label>
-                )}
-                <table className="result-preview-table">
-                  <thead>
-                    <tr>{selectedTable.table.headers.map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {selectedTable.table.rows.slice(0, MAX_TABLE_ROWS).map((row, rowIndex) => (
-                      <tr key={rowIndex}>
-                        {row.map((cell, cellIndex) => (
-                          <td className={isNumericCell(cell) ? 'numeric' : ''} key={cellIndex}>{cell || '—'}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {selectedTable.table.rows.length === 0 && <div className="result-preview-empty">{t('This result contains headers but no data rows.')}</div>}
-              </div>
-            )}
-          </>
-        )}
+          </div>
+          <ResultAIInterpretationDialog open={aiOpen} input={aiInput} onClose={() => setAIOpen(false)} />
+        </div>
       </section>
-      <ResultAIInterpretationDialog open={aiOpen} input={aiInput} onClose={() => setAIOpen(false)} />
     </div>
   )
 }

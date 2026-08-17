@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -155,6 +156,7 @@ func (s *Server) interpretResult(c *gin.Context) {
 		"",
 	)
 	if err != nil {
+		log.Printf("AI result interpretation failed for %s: %v", request.Path, err)
 		if errors.Is(err, context.DeadlineExceeded) {
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI interpretation timed out"})
 			return
@@ -215,6 +217,7 @@ func (s *Server) continueResultInterpretation(c *gin.Context, request resultInte
 	defer cancel()
 	reply, err := s.agent.Complete(ctx, resultInterpretationFollowupSystemPrompt, userPrompt, "")
 	if err != nil {
+		log.Printf("AI result interpretation follow-up failed for %s: %v", request.Path, err)
 		if errors.Is(err, context.DeadlineExceeded) {
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "AI interpretation timed out"})
 			return

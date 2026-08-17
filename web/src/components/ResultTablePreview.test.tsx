@@ -93,6 +93,21 @@ describe('parseResultTable', () => {
 })
 
 describe('ResultTablePreview', () => {
+  it('summarizes large numeric result columns without overflowing the call stack', () => {
+    const analysisRows = Array.from({ length: 200_000 }, (_, index) => [String(index), String(index / 10)])
+    const request = summarizeResultTable({
+      headers: ['step', 'cfl'],
+      rows: analysisRows.slice(0, 10),
+      analysisRows,
+      totalRows: analysisRows.length,
+      truncated: true,
+      delimiter: 'comma',
+    }, 'case-1', 'results/cfl_v2.csv', 'zh-CN', 'a'.repeat(64))
+
+    expect(request.columns[0]).toMatchObject({ minimum: 0, maximum: 199_999, mean: 99_999.5 })
+    expect(request.columns[1]).toMatchObject({ minimum: 0, maximum: 19_999.9, mean: 9_999.95 })
+  })
+
   it('renders an accessible adaptive result explorer', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider><ResultTablePreview path="results/forces.csv" content={'step,cl\n1,0.5\n2,0.7'} onClose={() => undefined} /></I18nProvider>,

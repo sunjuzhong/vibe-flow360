@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api, type ChatMessage, type ResultInterpretationRequest, type ResultInterpretationResponse } from '../api/client'
 import { useI18n } from '../i18n'
-import { useFocusTrap } from '../lib/useFocusTrap'
 
 export function ResultMarkdown({ children }: { children: string }) {
   return (
@@ -21,6 +20,10 @@ export function resultConversationMessages(messages: ChatMessage[], pendingQuest
   return [...messages, { role: 'user', content: pendingQuestion }]
 }
 
+export function resultInterpretationErrorMessage(failure: unknown): string {
+  return failure instanceof Error ? failure.message : String(failure)
+}
+
 export function ResultAIInterpretationDialog({ open, input, onClose }: {
   open: boolean
   input: ResultInterpretationRequest | null
@@ -28,7 +31,6 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
 }) {
   const { t } = useI18n()
   const titleId = useId()
-  const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose, '.result-ai-question')
   const conversationEndRef = useRef<HTMLDivElement | null>(null)
   const loadedFingerprintRef = useRef('')
   const lastRequestRef = useRef<{ mode: ResultInterpretationRequest['mode']; question: string }>({ mode: 'load', question: '' })
@@ -48,7 +50,7 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
       setResponse(result)
       if (mode === 'ask') setPendingQuestion('')
     } catch (failure) {
-      setError(String(failure).replace('Error: ', ''))
+      setError(resultInterpretationErrorMessage(failure))
     } finally {
       setBusy(false)
     }
@@ -98,8 +100,8 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
   const conversationMessages = resultConversationMessages(response?.messages ?? [], pendingQuestion)
 
   return (
-    <div className="result-ai-modal" role="presentation">
-      <section ref={dialogRef} className="result-ai-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+    <aside className="result-ai-panel" role="complementary" aria-labelledby={titleId}>
+      <section className="result-ai-dialog">
         <header className="result-ai-dialog-header">
           <div><Sparkles size={18} /><span><strong id={titleId}>{t('AI interpretation')}</strong><small>{input?.path ?? t('Preparing data fingerprint…')}</small></span></div>
           <button type="button" onClick={onClose} aria-label={t('Close AI interpretation')}><X size={17} /></button>
@@ -147,6 +149,6 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
           <button type="submit" disabled={!response || busy || Boolean(pendingQuestion) || !question.trim()} aria-label={t('Send follow-up question')}><Send size={16} /></button>
         </form>
       </section>
-    </div>
+    </aside>
   )
 }

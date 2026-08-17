@@ -2541,7 +2541,11 @@ button { color: inherit; }
 .result-action-btn { display: inline-grid; width: 24px; height: 24px; place-items: center; border: 1px solid #d5d7ce; border-radius: 5px; background: white; color: #6b7066; cursor: pointer; }
 .result-action-btn:hover { color: #354507; border-color: #a8bd6b; background: #f3f7e7; }
 .result-preview-modal { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(29,32,26,.52); backdrop-filter: blur(2px); }
-.result-preview-dialog { display: flex; width: min(1060px,94vw); max-height: min(760px,86vh); min-height: 260px; flex-direction: column; overflow: hidden; border: 1px solid #d4d6cd; border-radius: 11px; background: #f8f8f4; box-shadow: 0 24px 70px rgba(24,28,20,.28); }
+.result-preview-dialog { display: flex; width: min(1060px,94vw); height: min(760px,86vh); min-height: 260px; flex-direction: column; overflow: hidden; border: 1px solid #d4d6cd; border-radius: 11px; background: #f8f8f4; box-shadow: 0 24px 70px rgba(24,28,20,.28); }
+.result-preview-dialog.ai-open { width: min(1480px,96vw); height: min(820px,90vh); }
+.result-preview-workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: minmax(0,1fr); }
+.result-preview-workspace.ai-open { grid-template-columns: minmax(0,1fr) minmax(340px,32vw); }
+.result-preview-main { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }
 .result-compare-dialog { width: min(1280px,96vw); height: min(840px,90vh); max-height: 90vh; }
 .result-compare-meta { flex: none; }
 .result-compare-meta .result-preview-view-toggle { margin-left: auto; }
@@ -2588,8 +2592,8 @@ button { color: inherit; }
 .result-ai-trigger:hover:not(:disabled) { border-color: #aebe77; background: #eef5dd; }
 .result-ai-trigger:disabled { cursor: wait; opacity: .62; }
 .result-ai-trigger + .result-preview-view-toggle { margin-left: 0; }
-.result-ai-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(25,29,23,.58); backdrop-filter: blur(3px); }
-.result-ai-dialog { display: flex; width: min(980px,94vw); height: min(780px,90vh); min-height: 520px; flex-direction: column; overflow: hidden; border: 1px solid #cfd5c7; border-radius: 13px; color: #444c40; background: #f7f8f3; box-shadow: 0 28px 80px rgba(20,25,17,.34); outline: none; }
+.result-ai-panel { min-width: 0; min-height: 0; overflow: hidden; border-left: 1px solid #cfd5c7; background: #f7f8f3; }
+.result-ai-dialog { display: flex; width: 100%; height: 100%; min-height: 0; flex-direction: column; overflow: hidden; color: #444c40; background: #f7f8f3; }
 .result-ai-dialog-header { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 16px; border-bottom: 1px solid #dce0d7; background: #fbfcf8; }
 .result-ai-dialog-header > div { display: flex; min-width: 0; align-items: center; gap: 9px; color: #789226; }
 .result-ai-dialog-header span { min-width: 0; }
@@ -2699,7 +2703,7 @@ button { color: inherit; }
 .result-table-dataset-select select { width: min(360px,70%); }
 @media (max-width: 760px) {
   .result-preview-modal { padding: 10px; }
-  .result-preview-dialog { width: 98vw; max-height: 92vh; }
+  .result-preview-dialog { width: 98vw; height: 92vh; }
   .result-compare-dialog { width: 100%; height: 96vh; max-height: 96vh; }
   .result-compare-fieldbar { align-items: stretch; flex-direction: column; }
   .result-compare-fieldbar label { min-width: 0; }
@@ -2709,8 +2713,9 @@ button { color: inherit; }
   .result-chart-stage { overflow: visible; }
   .result-dataset-picker { grid-template-columns: 1fr; }
   .result-dataset-picker > button { justify-content: center; }
-  .result-ai-modal { padding: 8px; }
-  .result-ai-dialog { width: 100%; height: 96vh; min-height: 0; border-radius: 10px; }
+  .result-preview-workspace.ai-open { grid-template-columns: 1fr; }
+  .result-preview-workspace.ai-open .result-preview-main { display: none; }
+  .result-ai-panel { border-left: 0; }
   .result-ai-dialog-header { min-height: 54px; padding: 9px 11px; }
   .result-ai-dialog-meta { padding: 7px 11px; }
   .result-ai-dialog-meta > div { width: 100%; margin-left: 0; }
