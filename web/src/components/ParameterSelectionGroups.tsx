@@ -33,6 +33,11 @@ export function ParameterSelectionGroups({
 }) {
   const { t } = useI18n()
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const presetSets = useMemo(() => {
+    const grouped = new Map<string, ParameterSelectionPreset[]>()
+    for (const preset of presets) grouped.set(preset.tag, [...(grouped.get(preset.tag) ?? []), preset])
+    return [...grouped]
+  }, [presets])
   if (presets.length === 0) return null
 
   return (
@@ -46,7 +51,10 @@ export function ParameterSelectionGroups({
       showVisibilityControl={false}
     >
       <div className="parameter-selection-groups">
-        {presets.map((preset) => {
+        {presetSets.map(([tag, tagPresets]) => (
+          <section className="parameter-selection-set" key={tag}>
+            <header><strong>{t(parameterSelectionTagLabel(tag))}</strong><small>{tag}</small></header>
+            {tagPresets.map((preset) => {
           const selectedCount = preset.memberIds.filter((id) => selectedSet.has(id)).length
           const selectionState = selectedCount === 0 ? 'false' : selectedCount === preset.memberIds.length ? 'true' : 'mixed'
           const anyVisible = preset.memberIds.some((id) => visibility[id] !== false)
@@ -65,7 +73,7 @@ export function ParameterSelectionGroups({
                 ))}
               >
                 <SelectionIcon size={13} aria-hidden="true" />
-                <span><strong>{preset.label}</strong><small>{t('{count} items · {tag}').replace('{count}', String(preset.memberIds.length)).replace('{tag}', preset.tag)}</small></span>
+                <span><strong>{preset.label}</strong><small>{t('{count} items').replace('{count}', String(preset.memberIds.length))}</small></span>
               </button>
               <button
                 type="button"
@@ -79,8 +87,19 @@ export function ParameterSelectionGroups({
               </button>
             </div>
           )
-        })}
+            })}
+          </section>
+        ))}
       </div>
     </ManifestMemberGroup>
   )
+}
+
+export function parameterSelectionTagLabel(tag: string): string {
+  if (tag === 'builtinName') return 'Named surfaces'
+  if (tag === 'groupByBodyId') return 'By body'
+  if (tag === 'bodyId') return 'Bodies'
+  if (tag === 'groupByFile') return 'By file'
+  if (tag === 'groupName') return 'Named groups'
+  return tag.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (value) => value.toUpperCase())
 }

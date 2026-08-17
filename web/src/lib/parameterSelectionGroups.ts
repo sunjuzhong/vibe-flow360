@@ -43,9 +43,15 @@ export function buildParameterSelectionPresets(
   const params = unwrapSimulationParams(simulationParams)
   const cache = record(params.private_attribute_asset_cache)
   const info = record(cache.project_entity_info)
-  const schemes = array(info[collectionByKind[kind]])
+  const entitySchemes = array(info[collectionByKind[kind]])
     .map((candidate) => array(candidate).map(parameterEntity).filter(isDefined))
     .filter((scheme) => scheme.length > 0)
+  const bodySchemes = kind === 'body' ? [] : array(info.grouped_bodies)
+    .map((candidate) => array(candidate)
+      .map((value) => bodySelectionEntity(value, info, kind))
+      .filter(isDefined))
+    .filter((scheme) => scheme.length > 0)
+  const schemes = [...entitySchemes, ...bodySchemes]
   if (schemes.length === 0) return []
 
   const entities = schemes.flat()
@@ -64,7 +70,12 @@ export function buildParameterSelectionPresets(
       const contained = components.size > 0 && [...components].every((component) => presetComponents.has(component))
       return directMatch || contained ? [member.id] : []
     })
-    if (memberIds.length < 2) return []
+    if (memberIds.length === 0) return []
+    if (memberIds.length === 1) {
+      if (entity.tag === 'faceId' || entity.tag === 'edgeId') return []
+      const member = members.find((candidate) => candidate.id === memberIds[0])
+      if (member && memberKeys(member).some((key) => entityKeys.has(key))) return []
+    }
     return [{
       id: `${kind}:${entity.tag}:${entity.id}`,
       label: entity.name || entity.id,
@@ -76,14 +87,36 @@ export function buildParameterSelectionPresets(
 
   const bestByMembers = new Map<string, typeof candidates[number]>()
   for (const candidate of candidates) {
-    const key = [...candidate.memberIds].sort().join('\u0000')
+    const key = `${candidate.tag}\u0001${[...candidate.memberIds].sort().join('\u0000')}`
     const current = bestByMembers.get(key)
     if (!current || candidate.score > current.score) bestByMembers.set(key, candidate)
   }
 
-  return [...bestByMembers.values()]
-    .sort((left, right) => left.label.localeCompare(right.label))
+  const uniqueSelections = new Map<string, typeof candidates[number]>()
+  for (const candidate of bestByMembers.values()) {
+    const key = `${normalize(candidate.label)}\u0001${[...candidate.memberIds].sort().join('\u0000')}`
+    const current = uniqueSelections.get(key)
+    if (!current || candidate.score > current.score) uniqueSelections.set(key, candidate)
+  }
+
+  return [...uniqueSelections.values()]
+    .sort((left, right) => left.tag.localeCompare(right.tag) || left.label.localeCompare(right.label))
     .map(({ score: _score, ...preset }) => preset)
+}
+
+function bodySelectionEntity(
+  value: unknown,
+  info: Record<string, unknown>,
+  kind: Exclude<ParameterSelectionKind, 'body'>,
+): ParameterEntity | undefined {
+  const entity = parameterEntity(value)
+  if (!entity) return undefined
+  const bodyIndex = record(info.bodies_face_edge_ids)
+  const componentKey = kind === 'face' ? 'face_ids' : 'edge_ids'
+  const components = entity.components.flatMap((bodyId) =>
+    array(record(bodyIndex[bodyId])[componentKey]).map(text).filter(Boolean),
+  )
+  return components.length > 0 ? { ...entity, components } : undefined
 }
 
 function resolveMemberComponents(

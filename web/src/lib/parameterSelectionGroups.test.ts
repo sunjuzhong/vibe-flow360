@@ -51,6 +51,12 @@ describe('buildParameterSelectionPresets', () => {
         memberIds: ['face-1', 'face-2', 'face-3'],
       },
       {
+        id: 'face:groupName:fuselage',
+        label: 'fuselage',
+        tag: 'groupName',
+        memberIds: ['face-3'],
+      },
+      {
         id: 'face:groupName:wing',
         label: 'wing',
         tag: 'groupName',
@@ -77,5 +83,52 @@ describe('buildParameterSelectionPresets', () => {
       { id: 'edge-2' },
     ])).toEqual([])
     expect(buildParameterSelectionPresets(params, 'face', [{ id: 'wing' }])).toEqual([])
+  })
+
+  it('keeps semantic singleton aliases and expands body/file groups through the body index', () => {
+    const realShape = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          face_group_tag: 'faceId',
+          bodies_face_edge_ids: {
+            body00001: { face_ids: ['face-1', 'face-2'] },
+            body00002: { face_ids: ['face-3'] },
+          },
+          grouped_faces: [
+            [
+              { name: 'inlet', private_attribute_id: 'inlet', private_attribute_tag_key: 'builtinName', private_attribute_sub_components: ['face-1'] },
+              { name: 'wall', private_attribute_id: 'wall', private_attribute_tag_key: 'builtinName', private_attribute_sub_components: ['face-2', 'face-3'] },
+            ],
+            [
+              { name: 'body00001', private_attribute_id: 'body00001', private_attribute_tag_key: 'groupByBodyId', private_attribute_sub_components: ['face-1', 'face-2'] },
+              { name: 'body00002', private_attribute_id: 'body00002', private_attribute_tag_key: 'groupByBodyId', private_attribute_sub_components: ['face-3'] },
+            ],
+            ['face-1', 'face-2', 'face-3'].map((id) => ({ name: id, private_attribute_id: id, private_attribute_tag_key: 'faceId', private_attribute_sub_components: [id] })),
+          ],
+          grouped_bodies: [
+            [
+              { name: 'body00001', private_attribute_id: 'body00001', private_attribute_tag_key: 'bodyId', private_attribute_sub_components: ['body00001'] },
+              { name: 'body00002', private_attribute_id: 'body00002', private_attribute_tag_key: 'bodyId', private_attribute_sub_components: ['body00002'] },
+            ],
+            [{
+              name: 'agent-geometry.step',
+              private_attribute_id: 'agent-geometry.step',
+              private_attribute_tag_key: 'groupByFile',
+              private_attribute_sub_components: ['body00001', 'body00002'],
+            }],
+          ],
+        },
+      },
+    }
+
+    expect(buildParameterSelectionPresets(realShape, 'face', [
+      { id: 'face-1' }, { id: 'face-2' }, { id: 'face-3' },
+    ])).toEqual([
+      { id: 'face:builtinName:inlet', label: 'inlet', tag: 'builtinName', memberIds: ['face-1'] },
+      { id: 'face:builtinName:wall', label: 'wall', tag: 'builtinName', memberIds: ['face-2', 'face-3'] },
+      { id: 'face:groupByBodyId:body00001', label: 'body00001', tag: 'groupByBodyId', memberIds: ['face-1', 'face-2'] },
+      { id: 'face:groupByBodyId:body00002', label: 'body00002', tag: 'groupByBodyId', memberIds: ['face-3'] },
+      { id: 'face:groupByFile:agent-geometry.step', label: 'agent-geometry.step', tag: 'groupByFile', memberIds: ['face-1', 'face-2', 'face-3'] },
+    ])
   })
 })
