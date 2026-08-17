@@ -1,0 +1,44 @@
+schema_version: 2
+audience: Beginners modelling submerged structures who need to distinguish liquid reference properties, current loading, and hydrostatic pressure.
+prerequisites:
+  - Know that pressure force acts normal to a surface.
+  - Recognize density and dynamic viscosity as material properties.
+learning_objectives:
+  - {id: liquid-state, objective: Configure Water through LiquidOperatingCondition and explain the reference velocity used for nondimensionalization., assessment: 'Locate density, viscosity, velocity, and reference velocity in both Drafts.'}
+  - {id: scales, objective: 'Compare Reynolds number, dynamic pressure, and hydrostatic head before solving.', assessment: 'Reproduce Re = 3.99e5, q = 2.00 kPa, and delta-p = 39.24 kPa.'}
+  - {id: gravity, objective: Explain how Fluid.gravity adds a body force and pressure gradient., assessment: Predict the sign and magnitude of dp/dz for negative-z gravity.}
+  - {id: evidence, objective: Separate hydrostatic pressure from current-induced disturbance in post-processing., assessment: Apply the pressure-slope and force-decomposition evidence rubric.}
+concepts:
+  cfd:
+    - {id: incompressible-scale, title: Low-speed water is density-dominated rather than Mach-dominated, explanation: Density and viscosity set inertia and diffusion while the liquid formulation supplies the solver reference scale., misconception: A small Mach number means water can be configured as ordinary air with a lower velocity.}
+    - {id: pressure-scales, title: Hydrostatic head and dynamic pressure answer different questions, explanation: rho g delta-z is the depth-related pressure change; one-half rho U squared is the current's kinetic pressure scale., misconception: Every pressure difference around the pile should be normalized and interpreted as current-induced Cp.}
+    - {id: gradient, title: Gravity is balanced by a pressure gradient, explanation: A steady uniform liquid away from the pile approaches dp/dz = -rho g for z positive upward., misconception: Gravity simply accelerates the whole domain downward indefinitely.}
+  flow360:
+    - {id: liquid-condition, title: LiquidOperatingCondition owns the global water reference state, explanation: It carries Water plus the physical and reference velocities used by Flow360 for scaling., misconception: The Fluid model alone is sufficient to change an air Case into water.}
+    - {id: gravity-location, title: Gravity belongs inside the Fluid model, explanation: The variant adds direction and magnitude to Fluid.gravity and applies the body force globally to fluid zones., misconception: Gravity is a separate surface boundary condition or a standalone model in the models array.}
+    - {id: liquid-boundaries, title: Liquid operation uses the freestream workflow in this release, explanation: T12 uses AutomatedFarfield plus Freestream around a submerged body; liquid Inflow and Outflow models are not accepted by the pinned schema., misconception: An internal pipe inlet/outlet setup is interchangeable with this supported liquid workflow.}
+parameter_derivations:
+  - {id: reynolds, parameter: Diameter Reynolds number, basis: 'Use rho = 1000 kg/m^3, U = 2 m/s, D = 0.2 m, and mu = 0.001002 Pa*s.', calculation: Re_D = rho U D / mu = 399201.6, transfer: Recompute with the length governing separation or boundary-layer development on the new geometry.}
+  - {id: dynamic, parameter: Dynamic pressure, basis: Use the cross-current velocity and water density., calculation: q = 0.5 rho U^2 = 0.5 x 1000 x 2^2 = 2000 Pa, transfer: Use the same reference when comparing current-induced pressure coefficients and drag.}
+  - {id: hydrostatic, parameter: Four-metre hydrostatic pressure span, basis: Gravity is 9.81 m/s^2 over delta-z = 4 m., calculation: delta-p_h = rho g delta-z = 1000 x 9.81 x 4 = 39240 Pa, transfer: Use the signed vertical separation between the points being compared.}
+  - {id: ratio, parameter: Head-to-dynamic-pressure ratio, basis: Compare the two derived pressure scales before solving., calculation: 39240 / 2000 = 19.62, transfer: 'When this ratio is not small, preserve gravity and remove the hydrostatic trend before reading current-only loads.'}
+experiments:
+  - id: gravity
+    prediction: What changes when Earth gravity is enabled while water, current, geometry, mesh, and boundaries remain fixed?
+    options: [Pressure gains an approximately -9810 Pa/m vertical slope away from the pile, The 2 m/s current and Water viscosity both increase]
+    controlled_variable: Geometry, Water properties, 2 m/s velocity, farfield, wall, meshing, steady steps, and output fields remain fixed.
+    observation: Compare the semantic parameter diff, center-plane pressure slope, depth-corrected pile pressure, force components, and convergence.
+failure_modes:
+  - {id: direction, symptom: Pressure increases toward the top of the pile., cause: The gravity direction or vertical-axis convention is reversed., correction: 'Confirm z is positive upward and Gravity direction is [0,0,-1].'}
+  - {id: cp, symptom: Cp varies strongly with depth and is reported as current loading., cause: Hydrostatic pressure was not separated from the dynamic disturbance., correction: Fit and subtract the farfield rho g z trend before comparing circumferential Cp or drag.}
+  - {id: material, symptom: Expected pressure scales differ by orders of magnitude., cause: 'Air density, inconsistent units, or the wrong Water properties were used.', correction: Verify LiquidOperatingCondition material density and dynamic viscosity in the synchronized Draft.}
+  - {id: scope, symptom: The setup is used to predict waves or cavitation., cause: A single-phase submerged-flow model was applied beyond its physics., correction: Choose a workflow that explicitly represents a free surface or cavitation before making those claims.}
+evidence_rubric:
+  - {id: diff, observation: Semantic parameter comparison, pass: Fluid.gravity is the only intentional difference., fail: 'Water, velocity, mesh, boundaries, solver, or outputs also change.'}
+  - {id: slope, observation: Farfield pressure versus z, pass: The gravity case approaches -9810 Pa/m and the baseline approaches zero vertical hydrostatic slope., fail: 'The sign, magnitude, or linear trend is inconsistent away from the pile.'}
+  - {id: disturbance, observation: Depth-corrected pile pressure, pass: Current-induced patterns are compared after subtracting one consistent hydrostatic reference., fail: Raw pressures at different elevations are attributed entirely to the current.}
+  - {id: force, observation: Integrated load components, pass: Drag and vertical or hydrostatic contributions are reported separately with stable signs., fail: One resultant magnitude hides the physical components or reference convention.}
+  - {id: numerical, observation: Mesh and convergence evidence, pass: 'Surface resolution, y+, residuals, and loads pass refinement and convergence checks.', fail: Pressure-slope agreement is used to excuse unresolved separation or drifting forces.}
+transfer_questions:
+  - {prompt: 'What happens to the hydrostatic span if the pile is 10 m tall?', expected: 'It becomes rho g times 10 m, about 98.1 kPa for the same water and gravity.'}
+  - {prompt: 'Why compare depth-corrected pressure rather than raw pressure around the pile?', expected: Raw pressure contains both the hydrostatic depth trend and the current-induced disturbance; subtraction isolates the contribution relevant to current loading.}

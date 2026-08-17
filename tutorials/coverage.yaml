@@ -201,6 +201,20 @@ mappings:
     selector:
       owners: [Air, AerospaceCondition, GenericReferenceCondition, Mach, Temperature, ThermalState]
   - tutorial: T12
+    section: liquid-operating-condition
+    status: verified
+    artifact: tutorials/T12-liquid-gravity/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(LiquidOperatingCondition|Water)$'
+  - tutorial: T12
+    section: gravity-variant
+    status: verified
+    artifact: tutorials/T12-liquid-gravity/variants/gravity.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:Gravity$'
+  - tutorial: T12
     section: baseline
     status: planned
     selector:

@@ -12,6 +12,7 @@ import { t07Evidence, t07ParameterCards, t07Steps, t07Params, t07Pedagogy, valid
 import { t08Evidence, t08ParameterCards, t08Steps, t08Params, t08Pedagogy, validateT08Setup } from '../tutorials/t08'
 import { t09Evidence, t09ParameterCards, t09Steps, t09Params, t09Pedagogy, validateT09Setup } from '../tutorials/t09'
 import { t10Evidence, t10ParameterCards, t10Steps, t10Params, t10Pedagogy, validateT10Setup } from '../tutorials/t10'
+import { t12Evidence, t12ParameterCards, t12Steps, t12Params, t12Pedagogy, validateT12Setup } from '../tutorials/t12'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -275,6 +276,12 @@ describe('language settings', () => {
       ...validateT10Setup(t10Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT10Setup(t10Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t10Pedagogy),
+      ...t12Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t12ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t12Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT12Setup(t12Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT12Setup(t12Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t12Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -360,6 +367,21 @@ describe('language settings', () => {
       'The bundled T10 parameters contain an invalid snappy workflow, quality limit, or refinement target.',
       'The bundled T10 heat-sink Geometry could not be loaded.',
       'Flow360 created the T10 Project without returning its Geometry identifiers.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T12 environment builder in Chinese', () => {
+    const messages = [
+      'LIQUID CFD', 'WATER + GRAVITY', 'PHYSICS DIFF',
+      'Build the T12 water-and-gravity comparison',
+      'The app uploads the bundled submerged pile and creates gravity-off and Earth-gravity Case Drafts.',
+      'Water, LiquidOperatingCondition at 2 m/s, AutomatedFarfield, pile Wall, optional 9.81 m/s² Gravity, dimensional pressure outputs',
+      'Water current without gravity', 'Water current with Earth gravity',
+      'Tutorial T12 · submerged pile gravity',
+      'The bundled T12 parameters contain an invalid liquid, gravity, boundary, or evidence contract.',
+      'The bundled T12 submerged-pile Geometry could not be loaded.',
+      'Flow360 created the T12 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

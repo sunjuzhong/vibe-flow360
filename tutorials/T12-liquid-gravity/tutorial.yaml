@@ -1,0 +1,16 @@
+schema_version: 2
+id: T12
+slug: liquid-gravity
+title: Resolve hydrostatic pressure on a submerged pile
+summary: Compare current-induced dynamic pressure with the hydrostatic gradient on a four-metre pile using Water, LiquidOperatingCondition, and Gravity.
+flow360: {api_version: release-25.10, package_version: 25.10.3, root_item_type: Geometry, validation_level: Case}
+artifacts: {intent: intent.yaml, spec: spec.yaml, simulation: simulation.json, plan: plan.md, report: expected/report.md, generator: build_simulation.py, pedagogy: pedagogy.yaml}
+evidence: {contract: expected/evidence.yaml}
+coverage:
+  - {feature: 'schema:type:LiquidOperatingCondition', section: liquid-reference-state, artifact: simulation.json}
+  - {feature: 'schema:type:Water', section: water-properties, artifact: simulation.json}
+  - {feature: 'schema:type:Gravity', section: gravity-body-force, artifact: variants/gravity.patch.json}
+assets:
+  - {path: assets/vertical-riser.csm, sha256: 6dcbac568fd64c275f6b0ad4dcc4fc61e0c947cf08d8aa7527620393388afa8b, source: Tutorial-owned lightweight vertical-pile geometry, license: Apache-2.0}
+variants:
+  - {id: gravity, title: Add Earth gravity to the water model, patch: variants/gravity.patch.json, evidence: variants/gravity.evidence.yaml}

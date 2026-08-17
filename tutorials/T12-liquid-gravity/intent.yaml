@@ -1,0 +1,14 @@
+schema_version: 1
+engineering_question: Does a four-metre submerged pile require gravity-aware pressure interpretation when the cross-current is 2 m/s?
+decision: Include gravity whenever hydrostatic head is material relative to current-induced dynamic pressure or structural pressure loading.
+inputs:
+  geometry: assets/vertical-riser.csm
+  length_unit: m
+  water_density: 1000 kg/m^3
+  dynamic_viscosity: 0.001002 Pa*s
+  current_speed: 2 m/s
+  vertical_span: 4 m
+deliverables:
+  - Gravity-off and Earth-gravity Case Drafts built from the same Geometry
+  - Reynolds number, dynamic pressure, hydrostatic head, and pressure-ratio derivations
+  - A pressure evidence contract that separates depth trend from current disturbance

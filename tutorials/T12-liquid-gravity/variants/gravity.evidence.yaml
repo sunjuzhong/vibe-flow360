@@ -1,0 +1,6 @@
+schema_version: 1
+criteria:
+  - {id: gravity-valid, category: provenance, description: 'Earth gravity deserializes inside Fluid with direction [0,0,-1] and magnitude 9.81 m/s^2.', artifact: variants/gravity.patch.json, required: true, check: {method: present, metric: flow360.validation.case}}
+  - {id: expected-head, category: field, description: The four-metre pressure difference approaches 39.24 kPa away from local pile disturbances., artifact: center-plane pressure profile, required: true, check: {method: manual, metric: pressure.hydrostatic-head}}
+limitations:
+  - A valid Gravity object does not prove the pressure reference, mesh, or converged solution is correct.

@@ -1,0 +1,10 @@
+schema_version: 1
+criteria:
+  - {id: pinned-valid, category: provenance, description: Both parameter sets pass Geometry-to-Case validation with Flow360 25.10.3., artifact: simulation.json and variants/gravity.patch.json, required: true, check: {method: present, metric: flow360.validation.case}}
+  - {id: pressure-slope, category: field, description: Away from the pile the gravity case approaches dp/dz = -rho g while the gravity-off case does not., artifact: center-plane pressure profile, required: true, check: {method: manual, metric: pressure.vertical-slope}}
+  - {id: controlled-pair, category: provenance, description: Fluid.gravity is the only intentional parameter change., artifact: semantic parameter diff, required: true, check: {method: present, metric: params.controlled-diff}}
+  - {id: loads, category: force, description: Hydrostatic and current-induced pressure contributions are reported separately., artifact: pile surface pressure and integrated forces, required: true, check: {method: manual, metric: loads.decomposed}}
+limitations:
+  - The straight pile is a teaching geometry, not a certified offshore design.
+  - The model is single-phase water and does not represent a free surface, waves, cavitation, or sediment.
+  - The Web action creates configured Drafts but does not submit paid computation.
