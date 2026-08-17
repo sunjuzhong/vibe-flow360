@@ -31,6 +31,7 @@ describe('SurfaceBoundaryInspector', () => {
       <I18nProvider>
         <SurfaceBoundaryInspector
           inventory={inventory}
+          presets={[]}
           selectedIds={['face-9']}
           conflictCount={1}
           visibility={{ 'face-2': false }}
@@ -70,6 +71,7 @@ describe('SurfaceBoundaryInspector', () => {
       <I18nProvider>
         <SurfaceBoundaryInspector
           inventory={inventory.slice(0, 2)}
+          presets={[]}
           selectedIds={[]}
           conflictCount={0}
           visibility={{}}
@@ -93,6 +95,7 @@ describe('SurfaceBoundaryInspector', () => {
       <I18nProvider>
         <SurfaceBoundaryInspector
           inventory={[]}
+          presets={[]}
           selectedIds={[]}
           conflictCount={0}
           visibility={{}}

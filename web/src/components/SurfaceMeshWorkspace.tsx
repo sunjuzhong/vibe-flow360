@@ -53,6 +53,7 @@ import {
 } from '../lib/surfaceMeshAdvanced'
 import { surfaceQualityRiskDirection } from '../lib/surfaceMeshReview'
 import { applySurfaceOpacity, buildSurfaceAppearances } from '../lib/surfaceAppearance'
+import { buildParameterSelectionPresets } from '../lib/parameterSelectionGroups'
 
 const noSurfaceGroups: [] = []
 
@@ -136,6 +137,10 @@ export default function SurfaceMeshWorkspace({
   const review = useSurfaceMeshReview(
     manifest?.groups ?? noSurfaceGroups,
     detail?.simulation_params,
+  )
+  const parameterFacePresets = useMemo(
+    () => buildParameterSelectionPresets(detail?.simulation_params, 'face', review.boundaryInventory),
+    [detail?.simulation_params, review.boundaryInventory],
   )
   const qualityFilter = useSurfaceQualityFilter(
     resourceId ?? detail?.id ?? '',
@@ -249,6 +254,7 @@ export default function SurfaceMeshWorkspace({
           <div className="geometry-entity-tree surface-entity-tree">
             <SurfaceBoundaryInspector
               inventory={review.boundaryInventory}
+              presets={parameterFacePresets}
               selectedIds={review.selectedBoundaryIds}
               conflictCount={review.boundaryConflictCount}
               visibility={review.visibility}

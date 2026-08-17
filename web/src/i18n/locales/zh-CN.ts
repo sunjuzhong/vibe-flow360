@@ -1,6 +1,12 @@
 import type { LocalePack } from './types'
 
 const messages: Record<string, string> = {
+  'Selection groups': '选择组',
+  'selection groups': '选择组',
+  'Select {name} · Ctrl, Cmd, or Shift-click to combine groups': '选择 {name} · 按住 Ctrl、Cmd 或 Shift 点击可组合多个组',
+  '{count} items · {tag}': '{count} 项 · {tag}',
+  'Hide group {name}': '隐藏组 {name}',
+  'Show group {name}': '显示组 {name}',
   'Loading experience…': '正在加载…',
   'Flow360 simulation workspace': 'Flow360 仿真工作区',
   'Return to home': '返回首页',

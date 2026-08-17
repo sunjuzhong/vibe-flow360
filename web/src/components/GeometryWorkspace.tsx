@@ -90,6 +90,8 @@ import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParame
 import type { DraftEntityMutation } from '../lib/draftEntities'
 import { VirtualizedManifestRows } from './VirtualizedManifestRows'
 import { ResourceSelectionToolbar } from './ResourceSelectionToolbar'
+import { ParameterSelectionGroups } from './ParameterSelectionGroups'
+import { buildParameterSelectionPresets } from '../lib/parameterSelectionGroups'
 import { UVFAssetLRU } from '../lib/uvf-three'
 import './GeometryWorkspace.css'
 
@@ -438,6 +440,10 @@ export default function GeometryWorkspace({
       edge.name.toLowerCase().includes(query) || edge.id.toLowerCase().includes(query),
     )
   }, [entitySearch, manifest])
+  const parameterFacePresets = useMemo(
+    () => buildParameterSelectionPresets(detail?.simulation_params, 'face', manifest?.groups ?? []),
+    [detail?.simulation_params, manifest?.groups],
+  )
   const entityIsVisible = (entityId: string) => entityVisibility[entityId] !== false
   const visibleFaceCount = manifest?.groups.filter((group) => entityIsVisible(group.id)).length ?? 0
   const visibleEdgeCount = manifest?.edges?.filter((edge) => entityIsVisible(edge.id)).length ?? 0
@@ -864,6 +870,16 @@ export default function GeometryWorkspace({
           onSelectionChange={chooseGroups}
         />
         <div ref={entityTreeRef} className="geometry-entity-tree">
+          <ParameterSelectionGroups
+            presets={parameterFacePresets}
+            selectedIds={selectedGroupIds}
+            visibility={entityVisibility}
+            onSelectionChange={chooseGroups}
+            onSetVisibility={(ids, visible) => setEntityVisibility((current) => ({
+              ...current,
+              ...Object.fromEntries(ids.map((id) => [id, visible])),
+            }))}
+          />
           <ManifestMemberGroup
             label="Geometry bodies"
             memberLabel="surfaces"

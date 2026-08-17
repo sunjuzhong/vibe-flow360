@@ -4,6 +4,8 @@ import type { SurfaceBoundaryRow } from '../../lib/surfaceMeshReview'
 import { ManifestMemberGroup } from '../ManifestMemberGroup'
 import { useI18n } from '../../i18n'
 import { ResourceSelectionToolbar } from '../ResourceSelectionToolbar'
+import { ParameterSelectionGroups } from '../ParameterSelectionGroups'
+import type { ParameterSelectionPreset } from '../../lib/parameterSelectionGroups'
 
 export type SurfaceBoundaryFilter = 'all' | SurfaceBoundaryRow['status']
 
@@ -29,6 +31,7 @@ export function filterSurfaceBoundaries(
 
 export function SurfaceBoundaryInspector({
   inventory,
+  presets,
   selectedIds,
   conflictCount,
   visibility,
@@ -39,6 +42,7 @@ export function SurfaceBoundaryInspector({
   onHideAll,
 }: {
   inventory: SurfaceBoundaryRow[]
+  presets: ParameterSelectionPreset[]
   selectedIds: string[]
   conflictCount: number
   visibility: Record<string, boolean>
@@ -82,6 +86,15 @@ export function SurfaceBoundaryInspector({
 
   return (
     <div className="surface-boundary-inspector">
+      <ParameterSelectionGroups
+        presets={presets}
+        selectedIds={selectedIds}
+        visibility={visibility}
+        onSelectionChange={onSelectionChange}
+        onSetVisibility={(ids, visible) => ids.forEach((id) => {
+          if ((visibility[id] !== false) !== visible) onToggleVisibility(id)
+        })}
+      />
       <ManifestMemberGroup
         label={t('Surface boundaries')}
         memberLabel={t('boundaries')}
