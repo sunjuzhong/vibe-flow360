@@ -66,8 +66,11 @@ The coverage gate reports four disjoint states:
 - [T08 — Automotive wind tunnel and moving ground](T08-automotive-wind-tunnel/README.md):
   analytic tunnel sizing, floor-model selection, rolling-wheel kinematics,
   wake refinement, and stationary-road versus moving-ground Case Drafts.
+- [T09 — Nested rotating zones](T09-nested-rotation/README.md):
+  cylindrical and spherical sliding interfaces, registered analytic entities,
+  parent-relative rotor motion, angular advance, and interface evidence.
 
-T01 through T08 can be experienced locally without cloud execution charges:
+T01 through T09 can be experienced locally without cloud execution charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
@@ -78,6 +81,7 @@ python3 tutorials/T05-wake-volume-refinement/build_simulation.py --check
 python3 tutorials/T06-farfield-selection/build_simulation.py --check
 python3 tutorials/T07-internal-flow-meshing/build_simulation.py --check
 python3 tutorials/T08-automotive-wind-tunnel/build_simulation.py --check
+python3 tutorials/T09-nested-rotation/build_simulation.py --check
 make tutorials-validate
 ```
 

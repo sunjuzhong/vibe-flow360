@@ -1,0 +1,17 @@
+schema_version: 2
+id: T09
+slug: nested-rotation
+title: Build single and nested rotating zones for a coaxial rotor
+summary: Connect physical rotor stages to cylindrical and spherical sliding interfaces, then make relative motion explicit with parent_volume.
+flow360: {api_version: release-25.10, package_version: 25.10.3, root_item_type: Geometry, validation_level: Case}
+artifacts: {intent: intent.yaml, spec: spec.yaml, simulation: simulation.json, plan: plan.md, report: expected/report.md, generator: build_simulation.py, pedagogy: pedagogy.yaml}
+evidence: {contract: expected/evidence.yaml}
+coverage:
+  - {feature: 'schema:type:RotationVolume', section: outer-cylinder, artifact: simulation.json}
+  - {feature: 'schema:type:RotationSphere', section: nested-inner-sphere, artifact: variants/nested.patch.json}
+  - {feature: 'schema:field:Rotation.parent_volume', section: nested-motion, artifact: variants/nested.patch.json}
+  - {feature: 'schema:variant:Rotation.parent_volume=Cylinder', section: nested-motion, artifact: variants/nested.patch.json}
+assets:
+  - {path: assets/coaxial-rotor.csm, sha256: e1a684a6ce69cc38a6001ed01c8905cd485bcb2dd376de5dc4b265c3634fa37a, source: Tutorial-owned lightweight geometry adapted from official isolated-propeller and nested-rotation examples, license: Apache-2.0}
+variants:
+  - {id: nested, title: Split the inner stage into a spherical child rotating zone, patch: variants/nested.patch.json, evidence: variants/nested.evidence.yaml}

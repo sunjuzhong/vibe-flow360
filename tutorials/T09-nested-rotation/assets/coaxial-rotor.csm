@@ -1,0 +1,19 @@
+# Lightweight coaxial two-stage rotor for the T09 nested-rotation tutorial.
+# Both stages rotate about x; the inner stage sits upstream and inside a sphere.
+box -0.34 -1.00 -0.08 0.08 2.00 0.16
+attribute faceName $innerRotor
+attribute groupName $innerRotor
+cylinder -0.38 0 0 -0.22 0 0 0.20
+attribute faceName $innerRotor
+attribute groupName $innerRotor
+
+box 0.22 -1.80 -0.07 0.08 3.60 0.14
+attribute faceName $outerRotor
+attribute groupName $outerRotor
+box 0.22 -0.07 -1.80 0.08 0.14 3.60
+attribute faceName $outerRotor
+attribute groupName $outerRotor
+cylinder 0.18 0 0 0.34 0 0 0.24
+attribute faceName $outerRotor
+attribute groupName $outerRotor
+end

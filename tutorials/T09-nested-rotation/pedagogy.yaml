@@ -1,0 +1,43 @@
+schema_version: 2
+audience: Beginners configuring sliding interfaces and hierarchical motion for coaxial rotors, nested mechanisms, or moving assemblies.
+prerequisites:
+  - Recognize angular velocity, rotating reference frames, and the difference between a solid surface and a volume zone.
+  - Understand that a sliding interface separates meshes with different motion descriptions.
+learning_objectives:
+  - {id: zone-purpose, objective: 'Separate the geometric surface, mesh rotation zone, and solver Rotation model.', assessment: Assign each object one spatial or physical responsibility.}
+  - {id: containment, objective: Verify nested-zone containment and non-intersection before meshing., assessment: Reject a child interface that crosses its parent or any rotor surface.}
+  - {id: relative-motion, objective: Interpret inner motion relative to parent_volume and derive absolute motion., assessment: Derive -300 rpm absolute speed from 200 rpm parent plus -500 rpm relative speed.}
+  - {id: evidence, objective: 'Review interface, time-step, conservation, wake, and load evidence before using results.', assessment: Apply explicit pass and fail criteria to both Drafts.}
+concepts:
+  cfd:
+    - {id: interface, title: Sliding interfaces separate motion descriptions, explanation: A conforming rotating-zone boundary lets adjacent meshes move differently while exchanging fluxes., misconception: A rotating solid surface alone does not create a rotating fluid volume.}
+    - {id: hierarchy, title: Nested motion is composed from parent and child frames, explanation: The child angular speed is relative to its parent; its inertial speed is the signed sum for coaxial axes., misconception: A child value is not automatically its absolute laboratory-frame speed.}
+    - {id: timestep, title: Angular advance controls temporal resolution, explanation: The time step should keep interface motion and blade-passing physics sufficiently resolved., misconception: Passing schema validation does not prove that 10 degrees per step is accurate.}
+  flow360:
+    - {id: volume, title: RotationVolume creates a cylindrical sliding mesh zone, explanation: 'It uses a registered Cylinder and explicit axial, radial, and circumferential spacing.', misconception: RotationCylinder is the preferred current API; it is retained only for backward compatibility.}
+    - {id: sphere, title: RotationSphere creates a spherical child interface, explanation: A registered Sphere defines the inner sliding interface and its circumferential spacing., misconception: A Sphere referenced by parameters is valid even when absent from the Draft entity catalog.}
+    - {id: parent, title: Rotation.parent_volume declares motion hierarchy, explanation: The inner Rotation references the outer Cylinder so Flow360 evaluates its -500 rpm relative to the 200 rpm parent., misconception: Geometric containment alone establishes the solver motion hierarchy.}
+parameter_derivations:
+  - {id: absolute-speed, parameter: Inner absolute angular speed, basis: Coaxial signed angular speeds add across parent and child frames., calculation: omega_abs = 200 + (-500) = -300 rpm, transfer: Transform axes before adding when parent and child axes are not coaxial.}
+  - {id: outer-step, parameter: Outer angular advance per step, basis: Convert 200 rpm with dt = 0.001 s., calculation: 200 × 360/60 × 0.001 = 1.2 degrees per step, transfer: Reduce dt when interfaces or load harmonics need more samples per revolution.}
+  - {id: child-step, parameter: Relative child advance per step, basis: Convert |-500| rpm with dt = 0.001 s., calculation: 500 × 360/60 × 0.001 = 3.0 degrees per step, transfer: Base temporal screening on the fastest relative motion and relevant blade-passing frequency.}
+experiments:
+  - id: nested-zone
+    prediction: What changes when the inner stage receives its own spherical zone and a parent-linked relative Rotation?
+    options: [The outer stage remains at 200 rpm while the inner absolute speed becomes -300 rpm, Both stages become stationary because opposite signs cancel]
+    controlled_variable: Geometry, farfield, outer zone, outer speed, wake refinement, flow condition, time step, solver, and outputs remain fixed.
+    observation: Compare interface topology, registered entities, motion tree, angular advance, mesh quality, wake continuity, conservation, and rotor loads.
+failure_modes:
+  - {id: dangling, symptom: Validation reports a missing or dangling rotation entity., cause: A Cylinder or Sphere is referenced but not registered in draft_entities., correction: Register the exact entity ID and preserve canonical remote Geometry metadata.}
+  - {id: overlap, symptom: The sliding interface cuts a blade or crosses its parent boundary., cause: 'Zone radius, center, or height does not contain the intended surfaces with clearance.', correction: Inspect sections in all three directions and resize or reposition the interface.}
+  - {id: parent, symptom: Inner-stage motion is evaluated in the wrong frame., cause: parent_volume is absent or points to the wrong outer zone., correction: Reference the registered outer Cylinder and verify the displayed motion tree.}
+  - {id: timestep, symptom: Loads oscillate with phase error or aliasing., cause: Angular advance per step is too large for the fastest relative motion., correction: Reduce the time step and demonstrate temporal convergence of loads and wake structures.}
+evidence_rubric:
+  - {id: catalog, observation: Draft entity catalog, pass: 'Outer Cylinder, inner Sphere, wake Cylinder, and Slice IDs resolve exactly once.', fail: 'Any referenced entity is absent, duplicated, or replaced by a stale ID.'}
+  - {id: topology, observation: Nested interface topology, pass: The inner sphere lies inside the outer cylinder and neither interface intersects rotor surfaces., fail: Interfaces cross each other or any solid surface.}
+  - {id: hierarchy, observation: Motion hierarchy, pass: Inner Rotation names the outer Cylinder as parent and signed speeds yield -300 rpm absolute., fail: The child has no parent or is interpreted as -500 rpm absolute.}
+  - {id: temporal, observation: Angular advance, pass: Outer and relative inner advances are 1.2 and 3.0 degrees per step and pass sensitivity review., fail: The fastest motion is undersampled or no time-step comparison is provided.}
+  - {id: result, observation: Interface and wake evidence, pass: 'Flux conservation, interface quality, wake continuity, and loads are stable across refinements.', fail: 'Discontinuities, quality failures, or unresolved load drift appear near interfaces.'}
+transfer_questions:
+  - {prompt: 'When is one RotationVolume enough?', expected: Use one zone when every enclosed surface shares the same rigid motion and no child frame is required.}
+  - {prompt: 'How should non-coaxial parent and child angular velocities be combined?', expected: Transform both angular-velocity vectors into a common frame before vector addition; do not add scalar rpm values.}

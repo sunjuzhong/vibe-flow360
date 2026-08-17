@@ -29,6 +29,7 @@ import T05TutorialPage from './T05TutorialPage'
 import T06TutorialPage from './T06TutorialPage'
 import T07TutorialPage from './T07TutorialPage'
 import T08TutorialPage from './T08TutorialPage'
+import T09TutorialPage from './T09TutorialPage'
 import {
   t01Evidence,
   t01ParameterCards,
@@ -85,6 +86,7 @@ export default function TutorialPage() {
   if (tutorialId.toUpperCase() === 'T06') return <T06TutorialPage />
   if (tutorialId.toUpperCase() === 'T07') return <T07TutorialPage />
   if (tutorialId.toUpperCase() === 'T08') return <T08TutorialPage />
+  if (tutorialId.toUpperCase() === 'T09') return <T09TutorialPage />
   if (tutorialId.toUpperCase() !== 'T01') return <Navigate to="/tutorials" replace />
   return <T01TutorialPage />
 }

@@ -1,0 +1,11 @@
+schema_version: 1
+criteria:
+  - {id: pinned-valid, category: provenance, description: Both parameter sets pass Geometry-to-Case validation with Flow360 25.10.3., artifact: simulation.json and variants/nested.patch.json, required: true, check: {method: present, metric: flow360.validation.case}}
+  - {id: entities, category: mesh, description: 'All Cylinder, Sphere, and Slice references resolve through the Draft catalog.', artifact: configured Drafts, required: true, check: {method: manual, metric: rotation.entities.approved}}
+  - {id: interfaces, category: mesh, description: 'Child and parent interfaces are contained, clear of solids, and quality-approved.', artifact: volume mesh sections, required: true, check: {method: manual, metric: rotation.interfaces.approved}}
+  - {id: hierarchy, category: report, description: The motion tree and signed absolute angular speed are reviewed., artifact: motion review, required: true, check: {method: manual, metric: rotation.hierarchy.approved}}
+  - {id: solution, category: convergence, description: 'Time-step sensitivity, conservation, wake continuity, and rotor loads pass review.', artifact: paired Case results, required: true, check: {method: manual, metric: rotation.solution.approved}}
+limitations:
+  - The lightweight coaxial geometry teaches zone hierarchy and is not a validated production rotor.
+  - The Web action creates configured Case Drafts but does not submit paid meshing or solver compute.
+  - Absolute-speed addition shown here applies to coaxial signed motion; non-coaxial motion requires vector-frame transforms.

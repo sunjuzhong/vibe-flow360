@@ -1,0 +1,9 @@
+schema_version: 1
+engineering_question: Determine when one rotating volume is insufficient for a coaxial rotor whose inner stage moves relative to an outer stage.
+decision: Use a single zone when all enclosed parts share one motion; use a registered child zone and parent_volume when motion must be composed hierarchically.
+inputs: {geometry: assets/coaxial-rotor.csm, length_unit: m, freestream_speed: 20 m/s, outer_speed: 200 rpm, inner_relative_speed: -500 rpm}
+deliverables:
+  - A registered cylindrical outer zone, spherical inner zone, wake cylinder, and center slice
+  - Single-zone and nested-rotation Case Drafts with a controlled semantic diff
+  - Explicit outer, relative inner, and derived absolute inner angular speeds
+  - Evidence requirements for containment, interface quality, motion hierarchy, time resolution, and wake behavior
