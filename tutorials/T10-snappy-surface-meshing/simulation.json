@@ -1,0 +1,390 @@
+{
+  "meshing": {
+    "outputs": [],
+    "surface_meshing": {
+      "castellated_mesh_controls": {
+        "min_refinement_cells": 8,
+        "n_cells_between_levels": 1,
+        "resolve_feature_angle": {
+          "units": "degree",
+          "value": 25.0
+        }
+      },
+      "defaults": {
+        "gap_resolution": {
+          "units": "m",
+          "value": 0.012
+        },
+        "max_spacing": {
+          "units": "m",
+          "value": 0.015625
+        },
+        "min_spacing": {
+          "units": "m",
+          "value": 0.001953125
+        }
+      },
+      "quality_metrics": {
+        "error_reduction": 0.75,
+        "feature_edge_deduplication_tolerance": 0.2,
+        "max_boundary_skewness": {
+          "units": "degree",
+          "value": 12.0
+        },
+        "max_concavity": {
+          "units": "degree",
+          "value": 45.0
+        },
+        "max_internal_skewness": {
+          "units": "degree",
+          "value": 35.0
+        },
+        "max_non_orthogonality": {
+          "units": "degree",
+          "value": 70.0
+        },
+        "min_cell_determinant": false,
+        "min_face_weight": false,
+        "min_tetrahedron_quality": 1e-09,
+        "min_triangle_twist": false,
+        "min_twist": false,
+        "min_volume_collapse_ratio": false,
+        "min_volume_ratio": false,
+        "n_smooth_scale": 4,
+        "zmetric_threshold": 0.8
+      },
+      "smooth_controls": {
+        "iterations": 6,
+        "lambda_factor": 0.65,
+        "mu_factor": 0.7
+      },
+      "snap_controls": {
+        "multi_region_feature_snap": true,
+        "n_feature_snap_iterations": 20,
+        "n_relax_iterations": 6,
+        "n_smooth_patch": 4,
+        "n_solve_iterations": 40,
+        "strict_region_snap": false,
+        "tolerance": 1.5
+      },
+      "type_name": "SnappySurfaceMeshingParams"
+    },
+    "type_name": "ModularMeshingWorkflow",
+    "zones": [
+      {
+        "method": "auto",
+        "name": "Automated Farfield",
+        "relative_size": 20.0,
+        "type": "AutomatedFarfield"
+      }
+    ]
+  },
+  "models": [
+    {
+      "initial_condition": {
+        "p": "p",
+        "rho": "rho",
+        "type_name": "NavierStokesInitialCondition",
+        "u": "u",
+        "v": "v",
+        "w": "w"
+      },
+      "interface_interpolation_tolerance": 0.2,
+      "material": {
+        "dynamic_viscosity": {
+          "effective_temperature": {
+            "units": "K",
+            "value": 110.4
+          },
+          "reference_temperature": {
+            "units": "K",
+            "value": 273.15
+          },
+          "reference_viscosity": {
+            "units": "Pa*s",
+            "value": 1.716e-05
+          }
+        },
+        "name": "air",
+        "prandtl_number": 0.72,
+        "thermally_perfect_gas": {
+          "species": [
+            {
+              "mass_fraction": 1.0,
+              "name": "Air",
+              "nasa_9_coefficients": {
+                "temperature_ranges": [
+                  {
+                    "coefficients": [
+                      0.0,
+                      0.0,
+                      3.5,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 6000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 200.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  }
+                ],
+                "type_name": "NASA9Coefficients"
+              },
+              "type_name": "FrozenSpecies"
+            }
+          ],
+          "type_name": "ThermallyPerfectGas"
+        },
+        "turbulent_prandtl_number": 0.9,
+        "type": "air"
+      },
+      "navier_stokes_solver": {
+        "CFL_multiplier": 1.0,
+        "absolute_tolerance": 1e-10,
+        "equation_evaluation_frequency": 1,
+        "kappa_MUSCL": -1.0,
+        "limit_pressure_density": false,
+        "limit_velocity": false,
+        "linear_solver": {
+          "max_iterations": 30,
+          "type_name": "LinearSolver"
+        },
+        "max_force_jac_update_physical_steps": 0,
+        "order_of_accuracy": 2,
+        "relative_tolerance": 0.0,
+        "riemann_solver": {
+          "low_mach_preconditioner": false,
+          "numerical_dissipation_factor": 1.0,
+          "type_name": "Roe"
+        },
+        "type_name": "Compressible",
+        "update_jacobian_frequency": 4
+      },
+      "private_attribute_id": "__default_fluid",
+      "transition_model_solver": {
+        "type_name": "None"
+      },
+      "turbulence_model_solver": {
+        "CFL_multiplier": 2.0,
+        "absolute_tolerance": 1e-08,
+        "equation_evaluation_frequency": 4,
+        "linear_solver": {
+          "max_iterations": 20,
+          "type_name": "LinearSolver"
+        },
+        "low_reynolds_correction": false,
+        "max_force_jac_update_physical_steps": 0,
+        "modeling_constants": {
+          "C_DES": 0.72,
+          "C_cb1": 0.1355,
+          "C_cb2": 0.622,
+          "C_d": 8.0,
+          "C_min_rd": 10.0,
+          "C_sigma": 0.6666666666666666,
+          "C_t3": 1.2,
+          "C_t4": 0.5,
+          "C_v1": 7.1,
+          "C_vonKarman": 0.41,
+          "C_w2": 0.3,
+          "C_w4": 0.21,
+          "C_w5": 1.5,
+          "type_name": "SpalartAllmarasConsts"
+        },
+        "order_of_accuracy": 2,
+        "quadratic_constitutive_relation": false,
+        "reconstruction_gradient_limiter": 0.5,
+        "relative_tolerance": 0.0,
+        "rotation_correction": false,
+        "type_name": "SpalartAllmaras",
+        "update_jacobian_frequency": 4
+      },
+      "type": "Fluid"
+    }
+  ],
+  "private_attribute_asset_cache": {
+    "project_entity_info": {
+      "body_attribute_names": [
+        "bodyName"
+      ],
+      "body_group_tag": "bodyName",
+      "body_ids": [
+        "body0001"
+      ],
+      "draft_entities": [],
+      "edge_attribute_names": [],
+      "edge_ids": [],
+      "face_attribute_names": [
+        "faceName"
+      ],
+      "face_group_tag": "faceName",
+      "face_ids": [
+        "body0001_face0001",
+        "body0001_face0002",
+        "body0001_face0003",
+        "body0001_face0004",
+        "body0001_face0005",
+        "body0001_face0006",
+        "body0001_face0007",
+        "body0001_face0008",
+        "body0001_face0009",
+        "body0001_face0010",
+        "body0001_face0011",
+        "body0001_face0012",
+        "body0001_face0013",
+        "body0001_face0014",
+        "body0001_face0015",
+        "body0001_face0016",
+        "body0001_face0017",
+        "body0001_face0018",
+        "body0001_face0019",
+        "body0001_face0020",
+        "body0001_face0021",
+        "body0001_face0022",
+        "body0001_face0023",
+        "body0001_face0024",
+        "body0001_face0025",
+        "body0001_face0026",
+        "body0001_face0027",
+        "body0001_face0028",
+        "body0001_face0029",
+        "body0001_face0030",
+        "body0001_face0031",
+        "body0001_face0032",
+        "body0001_face0033",
+        "body0001_face0034",
+        "body0001_face0035",
+        "body0001_face0036",
+        "body0001_face0037",
+        "body0001_face0038",
+        "body0001_face0039",
+        "body0001_face0040",
+        "body0001_face0041",
+        "body0001_face0042"
+      ],
+      "ghost_entities": [],
+      "global_bounding_box": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.16,
+          0.1,
+          0.055
+        ]
+      ],
+      "grouped_bodies": [
+        [
+          {
+            "mesh_exterior": true,
+            "name": "heatSink",
+            "private_attribute_entity_type_name": "GeometryBodyGroup",
+            "private_attribute_id": "a0000000-0000-4000-8000-000000001001",
+            "private_attribute_sub_components": [
+              "body0001"
+            ],
+            "private_attribute_tag_key": "bodyName"
+          }
+        ]
+      ],
+      "grouped_edges": [
+        []
+      ],
+      "grouped_faces": [
+        [
+          {
+            "name": "base",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "a0000000-0000-4000-8000-000000001002",
+            "private_attribute_sub_components": [
+              "body0001_face0001",
+              "body0001_face0002",
+              "body0001_face0003",
+              "body0001_face0004",
+              "body0001_face0005",
+              "body0001_face0006"
+            ],
+            "private_attribute_tag_key": "faceName"
+          },
+          {
+            "name": "fins",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "a0000000-0000-4000-8000-000000001003",
+            "private_attribute_sub_components": [
+              "body0001_face0007",
+              "body0001_face0008",
+              "body0001_face0009",
+              "body0001_face0010",
+              "body0001_face0011",
+              "body0001_face0012",
+              "body0001_face0013",
+              "body0001_face0014",
+              "body0001_face0015",
+              "body0001_face0016",
+              "body0001_face0017",
+              "body0001_face0018",
+              "body0001_face0019",
+              "body0001_face0020",
+              "body0001_face0021",
+              "body0001_face0022",
+              "body0001_face0023",
+              "body0001_face0024",
+              "body0001_face0025",
+              "body0001_face0026",
+              "body0001_face0027",
+              "body0001_face0028",
+              "body0001_face0029",
+              "body0001_face0030",
+              "body0001_face0031",
+              "body0001_face0032",
+              "body0001_face0033",
+              "body0001_face0034",
+              "body0001_face0035",
+              "body0001_face0036",
+              "body0001_face0037",
+              "body0001_face0038",
+              "body0001_face0039",
+              "body0001_face0040",
+              "body0001_face0041",
+              "body0001_face0042"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      ],
+      "type_name": "GeometryEntityInfo"
+    },
+    "project_length_unit": {
+      "units": "m",
+      "value": 1.0
+    },
+    "use_geometry_AI": false,
+    "use_inhouse_mesher": false
+  },
+  "time_stepping": {
+    "CFL": {
+      "convergence_limiting_factor": 0.25,
+      "max": 10000.0,
+      "max_relative_change": 1.0,
+      "min": 0.1,
+      "type": "adaptive"
+    },
+    "max_steps": 2000,
+    "type_name": "Steady"
+  },
+  "unit_system": {
+    "name": "SI"
+  },
+  "user_defined_fields": [],
+  "version": "25.10.17"
+}

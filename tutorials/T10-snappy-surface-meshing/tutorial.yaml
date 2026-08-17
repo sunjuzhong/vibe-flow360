@@ -1,0 +1,40 @@
+schema_version: 2
+id: T10
+slug: snappy-surface-meshing
+title: Capture heat-sink fins with modular snappy surface meshing
+summary: Connect octree spacing, snapping, feature refinement, and explicit quality limits to the geometry that controls cooling-channel fidelity.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: SurfaceMesh
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:ModularMeshingWorkflow', section: modular-workflow, artifact: simulation.json}
+  - {feature: 'schema:type:SurfaceMeshingParams', section: snappy-surface, artifact: simulation.json}
+  - {feature: 'schema:type:CastellatedMeshControls', section: castellated-controls, artifact: simulation.json}
+  - {feature: 'schema:type:SnapControls', section: snapping-controls, artifact: simulation.json}
+  - {feature: 'schema:type:SmoothControls', section: smoothing-controls, artifact: simulation.json}
+  - {feature: 'schema:type:QualityMetrics', section: quality-gate, artifact: simulation.json}
+  - {feature: 'schema:type:BodyRefinement', section: feature-aware, artifact: variants/feature-aware.patch.json}
+  - {feature: 'schema:type:RegionRefinement', section: feature-aware, artifact: variants/feature-aware.patch.json}
+  - {feature: 'schema:type:flow360_schema__models__simulation__meshing_param__snappy__snappy_mesh_refinements__SurfaceEdgeRefinement', section: feature-aware, artifact: variants/feature-aware.patch.json}
+assets:
+  - path: assets/finned-heat-sink.csm
+    sha256: 7643d82f642a564362b492058cd3475a61f3fb2bd584090d68f642576dc2eec2
+    source: Tutorial-owned lightweight geometry adapted from the official cube_snappy example
+    license: Apache-2.0
+variants:
+  - id: feature-aware
+    title: Add body, fin-region, and edge refinements
+    patch: variants/feature-aware.patch.json
+    evidence: variants/feature-aware.evidence.yaml

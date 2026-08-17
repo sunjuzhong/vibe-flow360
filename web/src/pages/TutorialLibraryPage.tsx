@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Box, CarFront, CheckCircle2, CircleDot, Clock3, Droplets, Gauge, Plane, Rotate3D, ShieldCheck, Target, Waypoints } from 'lucide-react'
+import { ArrowRight, BookOpen, Box, Boxes, CarFront, CheckCircle2, CircleDot, Clock3, Droplets, Gauge, Plane, Rotate3D, ShieldCheck, Target, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>9 available</span>
+          <span>10 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -97,6 +97,10 @@ export default function TutorialLibraryPage() {
           <Link className="tutorial-card" to="/tutorials/T09">
             <div className="tutorial-card-visual mesh-card-visual"><Rotate3D size={52} strokeWidth={1.1}/><span className="tutorial-id">T09</span><span className="tutorial-level">ROTORCRAFT CFD</span></div>
             <div className="tutorial-card-content"><p className="eyebrow">NESTED ROTATING ZONES</p><h2>Compose parent and child rotor motion</h2><p>Separate rotor walls, sliding mesh zones, and solver motion, then compare one shared frame with a parent-linked spherical child zone.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 22–28 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T10">
+            <div className="tutorial-card-visual airfoil-card-visual"><Boxes size={52} strokeWidth={1.1}/><span className="tutorial-id">T10</span><span className="tutorial-level">SURFACE MESHING</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">MODULAR SNAPPY WORKFLOW</p><h2>Preserve heat-sink fins and cooling channels</h2><p>Relate octree levels, snapping, refinements, and quality limits to six thin fins and five narrow cooling passages.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 22–28 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>

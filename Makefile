@@ -50,6 +50,7 @@ tutorials-test:
 	python3 tutorials/T07-internal-flow-meshing/build_simulation.py --check
 	python3 tutorials/T08-automotive-wind-tunnel/build_simulation.py --check
 	python3 tutorials/T09-nested-rotation/build_simulation.py --check
+	python3 tutorials/T10-snappy-surface-meshing/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:

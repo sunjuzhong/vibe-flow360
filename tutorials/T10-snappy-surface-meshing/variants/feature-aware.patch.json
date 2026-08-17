@@ -1,0 +1,143 @@
+{
+  "meshing": {
+    "surface_meshing": {
+      "castellated_mesh_controls": {
+        "n_cells_between_levels": 2
+      },
+      "refinements": [
+        {
+          "entities": {
+            "stored_entities": [
+              {
+                "mesh_exterior": true,
+                "name": "heatSink",
+                "private_attribute_entity_type_name": "GeometryBodyGroup",
+                "private_attribute_id": "a0000000-0000-4000-8000-000000001001",
+                "private_attribute_sub_components": [
+                  "body0001"
+                ],
+                "private_attribute_tag_key": "bodyName"
+              }
+            ]
+          },
+          "gap_resolution": {
+            "units": "m",
+            "value": 0.002
+          },
+          "max_spacing": {
+            "units": "m",
+            "value": 0.00390625
+          },
+          "min_spacing": {
+            "units": "m",
+            "value": 0.0009765625
+          },
+          "refinement_type": "SnappyBodyRefinement"
+        },
+        {
+          "entities": {
+            "stored_entities": [
+              {
+                "name": "fins",
+                "private_attribute_entity_type_name": "Surface",
+                "private_attribute_id": "a0000000-0000-4000-8000-000000001003",
+                "private_attribute_sub_components": [
+                  "body0001_face0007",
+                  "body0001_face0008",
+                  "body0001_face0009",
+                  "body0001_face0010",
+                  "body0001_face0011",
+                  "body0001_face0012",
+                  "body0001_face0013",
+                  "body0001_face0014",
+                  "body0001_face0015",
+                  "body0001_face0016",
+                  "body0001_face0017",
+                  "body0001_face0018",
+                  "body0001_face0019",
+                  "body0001_face0020",
+                  "body0001_face0021",
+                  "body0001_face0022",
+                  "body0001_face0023",
+                  "body0001_face0024",
+                  "body0001_face0025",
+                  "body0001_face0026",
+                  "body0001_face0027",
+                  "body0001_face0028",
+                  "body0001_face0029",
+                  "body0001_face0030",
+                  "body0001_face0031",
+                  "body0001_face0032",
+                  "body0001_face0033",
+                  "body0001_face0034",
+                  "body0001_face0035",
+                  "body0001_face0036",
+                  "body0001_face0037",
+                  "body0001_face0038",
+                  "body0001_face0039",
+                  "body0001_face0040",
+                  "body0001_face0041",
+                  "body0001_face0042"
+                ],
+                "private_attribute_tag_key": "faceName"
+              }
+            ]
+          },
+          "max_spacing": {
+            "units": "m",
+            "value": 0.001953125
+          },
+          "min_spacing": {
+            "units": "m",
+            "value": 0.0009765625
+          },
+          "proximity_spacing": {
+            "units": "m",
+            "value": 0.00048828125
+          },
+          "refinement_type": "SnappySurfaceRefinement"
+        },
+        {
+          "distances": {
+            "units": "m",
+            "value": [
+              0.003,
+              0.008
+            ]
+          },
+          "entities": {
+            "stored_entities": [
+              {
+                "mesh_exterior": true,
+                "name": "heatSink",
+                "private_attribute_entity_type_name": "GeometryBodyGroup",
+                "private_attribute_id": "a0000000-0000-4000-8000-000000001001",
+                "private_attribute_sub_components": [
+                  "body0001"
+                ],
+                "private_attribute_tag_key": "bodyName"
+              }
+            ]
+          },
+          "geometric_test_only": false,
+          "included_angle": {
+            "units": "degree",
+            "value": 120.0
+          },
+          "refinement_type": "SnappySurfaceEdgeRefinement",
+          "retain_on_smoothing": true,
+          "spacing": {
+            "units": "m",
+            "value": [
+              0.0009765625,
+              0.001953125
+            ]
+          }
+        }
+      ],
+      "snap_controls": {
+        "strict_region_snap": true
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+schema_version: 1
+engineering_question: Determine whether a global snappy setup can preserve six thin fins and five 12 mm cooling channels, or whether feature-aware controls are required.
+decision: Use explicit body, region, and edge refinements when the generated SurfaceMesh does not preserve fin thickness, channel width, sharp roots, and watertight topology.
+inputs:
+  geometry: assets/finned-heat-sink.csm
+  length_unit: m
+  fin_thickness: 0.004 m
+  channel_width: 0.014 m
+  fin_height: 0.045 m
+deliverables:
+  - Global-only and feature-aware snappy SurfaceMesh Drafts
+  - Explicit octree spacing levels, snapping controls, and quality limits
+  - Evidence for fin thickness, channel openness, edge retention, watertightness, and mesh quality

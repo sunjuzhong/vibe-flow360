@@ -69,8 +69,11 @@ The coverage gate reports four disjoint states:
 - [T09 — Nested rotating zones](T09-nested-rotation/README.md):
   cylindrical and spherical sliding interfaces, registered analytic entities,
   parent-relative rotor motion, angular advance, and interface evidence.
+- [T10 — Modular snappy surface meshing](T10-snappy-surface-meshing/README.md):
+  octree spacing, snapping, smoothing, quality metrics, and feature-aware
+  body, fin-region, and sharp-edge controls for a finned heat sink.
 
-T01 through T09 can be experienced locally without cloud execution charges:
+T01 through T10 can be experienced locally without cloud execution charges:
 
 ```bash
 python3 tutorials/T01-first-lift-drag/build_simulation.py --check
@@ -82,6 +85,7 @@ python3 tutorials/T06-farfield-selection/build_simulation.py --check
 python3 tutorials/T07-internal-flow-meshing/build_simulation.py --check
 python3 tutorials/T08-automotive-wind-tunnel/build_simulation.py --check
 python3 tutorials/T09-nested-rotation/build_simulation.py --check
+python3 tutorials/T10-snappy-surface-meshing/build_simulation.py --check
 make tutorials-validate
 ```
 
