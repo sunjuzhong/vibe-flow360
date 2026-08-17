@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>10 available</span>
+          <span>11 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -101,6 +101,10 @@ export default function TutorialLibraryPage() {
           <Link className="tutorial-card" to="/tutorials/T10">
             <div className="tutorial-card-visual airfoil-card-visual"><Boxes size={52} strokeWidth={1.1}/><span className="tutorial-id">T10</span><span className="tutorial-level">SURFACE MESHING</span></div>
             <div className="tutorial-card-content"><p className="eyebrow">MODULAR SNAPPY WORKFLOW</p><h2>Preserve heat-sink fins and cooling channels</h2><p>Relate octree levels, snapping, refinements, and quality limits to six thin fins and five narrow cooling passages.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 22–28 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T12">
+            <div className="tutorial-card-visual mesh-card-visual"><Droplets size={52} strokeWidth={1.1}/><span className="tutorial-id">T12</span><span className="tutorial-level">LIQUID CFD</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">WATER + GRAVITY</p><h2>Separate hydrostatic head from current loading</h2><p>Configure Water and LiquidOperatingCondition, compare 39.24 kPa of hydrostatic head with 2.00 kPa of dynamic pressure, and add Gravity as one controlled change.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 20–25 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>

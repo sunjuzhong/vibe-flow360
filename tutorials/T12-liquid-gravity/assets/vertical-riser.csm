@@ -1,0 +1,4 @@
+# Four-metre vertical submerged pile in a 2 m/s current.
+cylinder 0 0 0 0 0 4 0.1
+attribute groupName $pile
+end

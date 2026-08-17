@@ -1,0 +1,153 @@
+{
+  "models": [
+    {
+      "gravity": {
+        "direction": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "magnitude": {
+          "units": "m/s**2",
+          "value": 9.81
+        }
+      },
+      "initial_condition": {
+        "p": "p",
+        "rho": "rho",
+        "type_name": "NavierStokesInitialCondition",
+        "u": "u",
+        "v": "v",
+        "w": "w"
+      },
+      "interface_interpolation_tolerance": 0.2,
+      "material": {
+        "density": {
+          "units": "kg/m**3",
+          "value": 1000.0
+        },
+        "dynamic_viscosity": {
+          "units": "Pa*s",
+          "value": 0.001002
+        },
+        "name": "Water",
+        "type": "water"
+      },
+      "navier_stokes_solver": {
+        "CFL_multiplier": 1.0,
+        "absolute_tolerance": 1e-10,
+        "equation_evaluation_frequency": 1,
+        "kappa_MUSCL": -1.0,
+        "limit_pressure_density": false,
+        "limit_velocity": false,
+        "linear_solver": {
+          "max_iterations": 30,
+          "type_name": "LinearSolver"
+        },
+        "max_force_jac_update_physical_steps": 0,
+        "order_of_accuracy": 2,
+        "relative_tolerance": 0.0,
+        "riemann_solver": {
+          "low_mach_preconditioner": false,
+          "numerical_dissipation_factor": 1.0,
+          "type_name": "Roe"
+        },
+        "type_name": "Compressible",
+        "update_jacobian_frequency": 4
+      },
+      "private_attribute_id": "12000000-0000-4000-8000-000000001211",
+      "transition_model_solver": {
+        "type_name": "None"
+      },
+      "turbulence_model_solver": {
+        "CFL_multiplier": 2.0,
+        "absolute_tolerance": 1e-08,
+        "equation_evaluation_frequency": 4,
+        "linear_solver": {
+          "max_iterations": 20,
+          "type_name": "LinearSolver"
+        },
+        "low_reynolds_correction": false,
+        "max_force_jac_update_physical_steps": 0,
+        "modeling_constants": {
+          "C_DES": 0.72,
+          "C_cb1": 0.1355,
+          "C_cb2": 0.622,
+          "C_d": 8.0,
+          "C_min_rd": 10.0,
+          "C_sigma": 0.6666666666666666,
+          "C_t3": 1.2,
+          "C_t4": 0.5,
+          "C_v1": 7.1,
+          "C_vonKarman": 0.41,
+          "C_w2": 0.3,
+          "C_w4": 0.21,
+          "C_w5": 1.5,
+          "type_name": "SpalartAllmarasConsts"
+        },
+        "order_of_accuracy": 2,
+        "quadratic_constitutive_relation": false,
+        "reconstruction_gradient_limiter": 0.5,
+        "relative_tolerance": 0.0,
+        "rotation_correction": false,
+        "type_name": "SpalartAllmaras",
+        "update_jacobian_frequency": 4
+      },
+      "type": "Fluid"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "center": [
+              0,
+              0,
+              2
+            ],
+            "max_radius": 100.0,
+            "name": "farfield",
+            "private_attribute_entity_type_name": "GhostSphere",
+            "private_attribute_id": "farfield"
+          }
+        ]
+      },
+      "name": "Water current farfield",
+      "private_attribute_id": "12000000-0000-4000-8000-000000001212",
+      "type": "Freestream"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "pile",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000001201",
+            "private_attribute_sub_components": [
+              "body0001_face0001",
+              "body0001_face0002",
+              "body0001_face0003"
+            ],
+            "private_attribute_tag_key": "groupName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "No-slip pile wall",
+      "private_attribute_id": "12000000-0000-4000-8000-000000001214",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall",
+      "use_wall_function": {
+        "wall_function_type": "BoundaryLayer"
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+schema_version: 1
+scenario: submerged-vertical-pile
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  pile_diameter: {value: 0.2, unit: m, provenance: provided}
+  pile_height: {value: 4, unit: m, provenance: provided}
+  current_speed: {value: 2, unit: m/s, provenance: provided}
+  water_density: {value: 1000, unit: kg/m^3, provenance: Flow360 Water}
+  dynamic_viscosity: {value: 0.001002, unit: Pa*s, provenance: Flow360 Water}
+  reynolds_number: {value: 399201.6, unit: dimensionless, provenance: derived}
+  dynamic_pressure: {value: 2000, unit: Pa, provenance: derived}
+  hydrostatic_pressure_span: {value: 39240, unit: Pa, provenance: derived}
+  head_to_dynamic_ratio: {value: 19.62, unit: dimensionless, provenance: derived}
+review_required:
+  - Confirm the imported pile group and generated farfield resolve once.
+  - Confirm Gravity points in negative z while the current points in positive x.
+  - Compare pressure after subtracting the hydrostatic reference trend; do not read raw Cp as current-only loading.
