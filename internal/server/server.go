@@ -1752,6 +1752,20 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	// when only summary generation fails. Critical partial data still falls back
 	// to the last complete snapshot and never overwrites it.
 	if criticalErrors := flow360.CriticalResourceDetailErrors(detail.Errors); len(criticalErrors) > 0 {
+		// Case result inventory is independently useful and can succeed even when
+		// a large SimulationParams fetch is temporarily unavailable. Do not throw
+		// away fresh artifacts by replacing them with a metadata-only Project
+		// snapshot. Return the partial live detail, but never cache it as complete.
+		if usablePartialCaseDetail(detail) {
+			raw, marshalErr := json.Marshal(detail)
+			if marshalErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode partial resource detail"})
+				return
+			}
+			c.Header("X-VibeSim-Detail-Partial", "true")
+			s.writeLiveJSON(c, raw)
+			return
+		}
 		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
 			return
 		}
@@ -1770,6 +1784,13 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	}
 	s.cacheLiveJSON("resource-detail", cacheKey, raw)
 	s.writeLiveJSON(c, raw)
+}
+
+func usablePartialCaseDetail(detail flow360.ResourceDetail) bool {
+	return detail.Type == "Case" &&
+		len(detail.Results) > 0 &&
+		json.Valid(detail.Results) &&
+		strings.TrimSpace(detail.Errors["results"]) == ""
 }
 
 func flow360ErrorResponse(err error) gin.H {

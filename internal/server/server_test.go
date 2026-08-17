@@ -843,6 +843,73 @@ func TestResourceDetailPartialFailureFallsBackToCompleteSnapshot(t *testing.T) {
 	}
 }
 
+func TestResourceDetailKeepsCaseResultsWhenSimulationParamsFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+case "$*" in
+  "case info case-partial") printf '{"id":"case-partial","status":"completed"}' ;;
+  "case state case-partial") printf '{"id":"case-partial","status":"completed"}' ;;
+  "case results list case-partial") printf '{"records":[{"path":"results/slices.tar.gz","size_bytes":42}]}' ;;
+  *) printf 'SimulationParams unavailable' >&2; exit 1 ;;
+esac
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := projectcache.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.Put("resource-detail", "Case/case-partial", json.RawMessage(
+		`{"id":"case-partial","type":"Case","info":{"status":"completed"}}`,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{
+		flow360: &flow360.Client{Binary: binaryPath, Timeout: time.Second, ResourceTimeout: time.Second},
+		cache:   cache,
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-partial", nil)
+	context.Params = gin.Params{
+		{Key: "resource_type", Value: "Case"},
+		{Key: "resource_id", Value: "case-partial"},
+	}
+
+	app.flow360ResourceDetail(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("X-VibeSim-Data-Source"); got != "live" {
+		t.Fatalf("got data source %q, want live", got)
+	}
+	if got := recorder.Header().Get("X-VibeSim-Detail-Partial"); got != "true" {
+		t.Fatalf("got partial header %q, want true", got)
+	}
+	var detail flow360.ResourceDetail
+	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	var results struct {
+		Records []struct {
+			Path string `json:"path"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(detail.Results, &results); err != nil {
+		t.Fatal(err)
+	}
+	if len(results.Records) != 1 || results.Records[0].Path != "results/slices.tar.gz" {
+		t.Fatalf("unexpected results %#v", results.Records)
+	}
+	if detail.Errors["simulation_params"] == "" {
+		t.Fatalf("expected the partial SimulationParams error to remain visible")
+	}
+}
+
 func TestResourceDetailCacheOnlyFallsBackToProjectMirror(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mirror, err := projectmirror.New(t.TempDir(), "production-default")

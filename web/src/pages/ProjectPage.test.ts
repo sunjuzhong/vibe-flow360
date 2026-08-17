@@ -5,6 +5,7 @@ import {
   draftSourceNode,
   draftSourceResource,
   geometryContextId,
+  hydrateResourceDetail,
   initialProjectPanel,
   isDraftDetailFor,
   panelDismissesFromAmbientInteraction,
@@ -65,6 +66,44 @@ describe('projectSyncProgress', () => {
   it('keeps an indeterminate synchronization visible', () => {
     expect(projectSyncProgress(null)).toBe(4)
     expect(projectSyncProgress(manifest({ total_resources: 0 }))).toBe(4)
+  })
+})
+
+describe('hydrateResourceDetail', () => {
+  it('renders metadata cache first and then replaces it with full live Case detail', async () => {
+    const calls: boolean[] = []
+    const snapshots: string[] = []
+    const result = await hydrateResourceDetail(async (cacheOnly) => {
+      calls.push(cacheOnly)
+      return cacheOnly
+        ? { data: { id: 'case-1', type: 'Case', state: { status: 'completed' } }, source: 'cache' }
+        : {
+            data: {
+              id: 'case-1',
+              type: 'Case',
+              state: { status: 'completed' },
+              results: { records: [{ path: 'results/slices.tar.gz' }] },
+            },
+            source: 'live',
+          }
+    }, true, (response) => snapshots.push(`${response.source}:${response.data.results?.records?.length ?? 0}`))
+
+    expect(calls).toEqual([true, false])
+    expect(snapshots).toEqual(['cache:0', 'live:1'])
+    expect(result).toEqual({ cachedLoaded: true, liveLoaded: true })
+  })
+
+  it('keeps the cached detail usable when the live refresh is unavailable', async () => {
+    const snapshots: string[] = []
+    const result = await hydrateResourceDetail(async (cacheOnly) => {
+      if (!cacheOnly) throw new Error('offline')
+      return { data: { id: 'case-1', type: 'Case' }, source: 'cache' }
+    }, true, (response) => snapshots.push(response.source))
+
+    expect(snapshots).toEqual(['cache'])
+    expect(result.cachedLoaded).toBe(true)
+    expect(result.liveLoaded).toBe(false)
+    expect(result.error).toEqual(new Error('offline'))
   })
 })
 

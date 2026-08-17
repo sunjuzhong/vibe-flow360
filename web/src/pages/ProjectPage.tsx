@@ -18,6 +18,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   api,
   type Flow360Status,
+  type Flow360DataResponse,
   type DraftRecord,
   type GeometryComparison,
   type GeometryDiagnosticReport,
@@ -108,6 +109,31 @@ export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
   if (!manifest?.total_resources) return 4
   const finished = manifest.synced_resources + manifest.failed_resources
   return Math.min(100, Math.max(4, Math.round((finished / manifest.total_resources) * 100)))
+}
+
+export async function hydrateResourceDetail(
+  fetchDetail: (cacheOnly: boolean) => Promise<Flow360DataResponse<ResourceDetail>>,
+  cacheFirst: boolean,
+  onSnapshot: (response: Flow360DataResponse<ResourceDetail>) => void,
+): Promise<{ cachedLoaded: boolean; liveLoaded: boolean; error?: unknown }> {
+  let cachedLoaded = false
+  if (cacheFirst) {
+    try {
+      const cached = await fetchDetail(true)
+      onSnapshot(cached)
+      cachedLoaded = true
+    } catch {
+      // A cache miss is expected on the first visit.
+    }
+  }
+
+  try {
+    const live = await fetchDetail(false)
+    onSnapshot(live)
+    return { cachedLoaded, liveLoaded: true }
+  } catch (error) {
+    return { cachedLoaded, liveLoaded: false, error }
+  }
 }
 
 export function geometryContextId(items: ProjectItem[], selectedId: string | null | undefined) {
@@ -207,6 +233,7 @@ export default function ProjectPage() {
   const [detail, setDetail] = useState<ResourceDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
+  const detailRequestRef = useRef(0)
   const [drafts, setDrafts] = useState<DraftRecord[]>([])
   const [draftsLoading, setDraftsLoading] = useState(true)
   const [draftsError, setDraftsError] = useState('')
@@ -598,35 +625,26 @@ export default function ProjectPage() {
 
   const loadDetail = useCallback(async (cacheFirst = true) => {
     if (!selected) return
+    const requestId = ++detailRequestRef.current
     setDetailLoading(true)
     setDetailError('')
     setDetail(null)
-    let cachedLoaded = false
-    if (cacheFirst) {
-      try {
-        const cached = await api.resourceDetail(selected.type, selected.id, true)
-        setDetail(cached.data)
-        setDetailLoading(false)
-        setDetailDataSource('cache')
-        setDetailCachedAt(cached.cachedAt || '')
-        cachedLoaded = true
-      } catch {
-        // A cache miss is expected on the first visit.
-      }
+    const result = await hydrateResourceDetail(
+      (cacheOnly) => api.resourceDetail(selected.type, selected.id, cacheOnly),
+      cacheFirst,
+      (response) => {
+        if (requestId !== detailRequestRef.current) return
+        setDetail(response.data)
+        setDetailDataSource(response.source)
+        setDetailCachedAt(response.cachedAt || '')
+        if (response.source === 'cache') setDetailLoading(false)
+      },
+    )
+    if (requestId !== detailRequestRef.current) return
+    if (result.error && !result.cachedLoaded) {
+      setDetailError(String(result.error).replace('Error: ', ''))
     }
-    if (cachedLoaded) return
-    try {
-      const response = await api.resourceDetail(selected.type, selected.id)
-      setDetail(response.data)
-      setDetailDataSource(response.source)
-      setDetailCachedAt(response.cachedAt || '')
-    } catch (cause) {
-      if (!cachedLoaded) {
-        setDetailError(String(cause).replace('Error: ', ''))
-      }
-    } finally {
-      setDetailLoading(false)
-    }
+    setDetailLoading(false)
   }, [projectId, selected])
 
   useEffect(() => {
