@@ -2,6 +2,7 @@ package sliceplayer
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -89,15 +91,34 @@ type referencedFrame struct {
 	Step  *int64
 }
 
-// ConvertTarGz converts VTU pieces sequentially. Only one archive entry is held
-// in memory at a time; procN pieces become separate UVF solids in one frame.
+// ConvertTarGz converts VTU pieces sequentially and retains the compatibility
+// API used by focused converter callers.
 func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled func() bool) (Playback, error) {
+	var index Index
+	return convertTarGz(filename, outputDir, maxOutputBytes, DefaultLimits, nil, cancelled, &index)
+}
+
+// PrepareTarGz validates and indexes the archive while converting its VTU
+// frames. The gzip stream is decompressed exactly once.
+func PrepareTarGz(filename, outputDir string, maxOutputBytes int64, limits Limits, progress ProgressFunc, cancelled func() bool) (Index, Playback, error) {
+	var index Index
+	playback, err := convertTarGz(filename, outputDir, maxOutputBytes, limits, progress, cancelled, &index)
+	return index, playback, err
+}
+
+func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limits, progress ProgressFunc, cancelled func() bool, index *Index) (Playback, error) {
+	limits = normalizeLimits(limits)
 	file, err := os.Open(filename)
 	if err != nil {
 		return Playback{}, err
 	}
 	defer file.Close()
-	gz, err := gzip.NewReader(file)
+	info, err := file.Stat()
+	if err != nil {
+		return Playback{}, fmt.Errorf("inspect time-series archive: %w", err)
+	}
+	counter := &countingReader{r: file}
+	gz, err := gzip.NewReader(counter)
 	if err != nil {
 		return Playback{}, fmt.Errorf("open slice gzip stream: %w", err)
 	}
@@ -105,6 +126,7 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 	if err := os.MkdirAll(outputDir, 0o700); err != nil {
 		return Playback{}, err
 	}
+	*index = Index{Version: IndexVersion, CompressedBytes: info.Size(), CreatedAt: time.Now().UTC()}
 	frames := map[string]*frameBuild{}
 	assetKeys := map[string]string{}
 	pieceFrames := map[string]referencedFrame{}
@@ -124,14 +146,52 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		if cancelled != nil && cancelled() {
 			return Playback{}, ErrCancelled
 		}
+		index.EntryCount++
+		if index.EntryCount > limits.MaxEntries {
+			return Playback{}, fmt.Errorf("time-series archive exceeds %d entries", limits.MaxEntries)
+		}
+		if len(header.Name) > limits.MaxPathBytes {
+			return Playback{}, fmt.Errorf("time-series archive path exceeds %d bytes", limits.MaxPathBytes)
+		}
 		clean, cleanErr := safeArchivePath(header.Name)
 		if cleanErr != nil {
 			return Playback{}, cleanErr
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+		if header.Size < 0 || header.Size > limits.MaxEntryBytes {
+			return Playback{}, fmt.Errorf("time-series archive entry %q exceeds %d bytes", clean, limits.MaxEntryBytes)
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA && header.Typeflag != tar.TypeDir {
+			return Playback{}, fmt.Errorf("time-series archive entry %q has unsupported link or special-file type", clean)
+		}
+		if header.Typeflag == tar.TypeDir {
+			if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
+				return Playback{}, err
+			}
 			continue
 		}
+		if header.Size > limits.MaxUncompressedBytes-index.UncompressedBytes {
+			return Playback{}, fmt.Errorf("time-series archive exceeds %d uncompressed bytes", limits.MaxUncompressedBytes)
+		}
+		index.UncompressedBytes += header.Size
+		format := archiveFormat(clean)
+		sliceName, inferredStep := inferSliceAndStep(clean)
+		index.Entries = append(index.Entries, Entry{Path: clean, Size: header.Size, Format: format, Slice: sliceName, Step: inferredStep})
+		entryIndex := len(index.Entries) - 1
 		lowerName := strings.ToLower(clean)
+		if strings.HasSuffix(lowerName, ".pvtp") && header.Size <= 1<<20 {
+			payload, readErr := io.ReadAll(io.LimitReader(reader, header.Size+1))
+			if readErr != nil {
+				return Playback{}, readErr
+			}
+			if int64(len(payload)) != header.Size {
+				return Playback{}, fmt.Errorf("PVTP manifest %q is truncated", clean)
+			}
+			index.Entries[entryIndex].Fields = parseParallelVTKFields(bytes.NewReader(payload))
+			if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
+				return Playback{}, err
+			}
+			continue
+		}
 		if strings.HasSuffix(lowerName, ".pvtu") {
 			if header.Size <= 0 || header.Size > 1<<20 {
 				return Playback{}, fmt.Errorf("PVTU manifest %q exceeds the 1 MiB metadata limit", clean)
@@ -143,12 +203,12 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 			if int64(len(payload)) != header.Size {
 				return Playback{}, fmt.Errorf("PVTU manifest %q is truncated", clean)
 			}
+			index.Entries[entryIndex].Fields = parseParallelVTKFields(bytes.NewReader(payload))
 			var manifest pvtuDocument
 			if err := xml.Unmarshal(payload, &manifest); err != nil {
 				return Playback{}, fmt.Errorf("parse %s: %w", clean, err)
 			}
 			key, step := frameKey(clean)
-			sliceName, _ := inferSliceAndStep(clean)
 			for _, piece := range manifest.Pieces {
 				source := strings.ReplaceAll(strings.TrimSpace(piece.Source), "\\", "/")
 				sourceClean := path.Clean(source)
@@ -164,16 +224,21 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 				}
 				pieceFrames[joined] = referencedFrame{Key: key, Slice: sliceName, Step: step}
 			}
+			if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
+				return Playback{}, err
+			}
 			continue
 		}
 		if !strings.HasSuffix(lowerName, ".vtu") {
+			if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
+				return Playback{}, err
+			}
 			continue
 		}
 		if header.Size <= 0 || header.Size > MaxConvertibleVTUBytes {
 			return Playback{}, fmt.Errorf("VTU entry %q exceeds the %d byte conversion limit", clean, MaxConvertibleVTUBytes)
 		}
 		key, step := frameKey(clean)
-		sliceName, _ := inferSliceAndStep(clean)
 		if referenced, ok := pieceFrames[clean]; ok {
 			key, step = referenced.Key, referenced.Step
 			sliceName = referenced.Slice
@@ -245,6 +310,16 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 			frame.HasPreview = true
 		}
 		frame.PreviewPieces = append(frame.PreviewPieces, preview)
+		if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
+			return Playback{}, err
+		}
+	}
+	if err := gz.Close(); err != nil {
+		return Playback{}, fmt.Errorf("verify slice gzip stream: %w", err)
+	}
+	index.Slices, index.Formats = summarize(index.Entries)
+	if progress != nil && !progress(100, counter.n) {
+		return Playback{}, ErrCancelled
 	}
 	keys := make([]string, 0, len(frames))
 	for key := range frames {
@@ -327,6 +402,13 @@ func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled fu
 		return Playback{}, errors.New("time-series archive contains no convertible VTU surface frames")
 	}
 	return playback, nil
+}
+
+func reportPreparationProgress(progress ProgressFunc, compressedBytes, totalBytes int64) error {
+	if progress != nil && !progress(progressPercent(compressedBytes, totalBytes), compressedBytes) {
+		return ErrCancelled
+	}
+	return nil
 }
 
 func frameKey(name string) (string, *int64) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -134,12 +133,11 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		return
 	}
 
-	downloadDir := filepath.Join(s.workDir, "slice-player", "downloads", jobID)
-	if err := os.MkdirAll(downloadDir, 0o700); err != nil {
+	downloadDir, err := s.slicePlayerJobs.ArchiveDirectory(sliceplayer.SourceKey(caseID, resultPath, s.slicePlayerSourceSize(jobID)))
+	if err != nil {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
 		return
 	}
-	defer os.RemoveAll(downloadDir)
 	_, _ = s.slicePlayerJobs.Update(jobID, 5, "downloading-archive")
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Minute)
 	s.registerSlicePlayerCancel(jobID, cancel)
@@ -147,7 +145,7 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		s.unregisterSlicePlayerCancel(jobID)
 		cancel()
 	}()
-	archivePath, err := s.flow360.DownloadCaseResultTo(ctx, caseID, resultPath, downloadDir, slicePlayerMaxArchiveBytes())
+	archivePath, err := s.flow360.DownloadCaseResultToExpected(ctx, caseID, resultPath, downloadDir, s.slicePlayerSourceSize(jobID), slicePlayerMaxArchiveBytes())
 	if err != nil {
 		if s.slicePlayerJobs.IsCancelled(jobID) {
 			return
@@ -158,35 +156,23 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 	if s.slicePlayerJobs.IsCancelled(jobID) {
 		return
 	}
-	_, _ = s.slicePlayerJobs.Update(jobID, 35, "scanning-archive")
-	lastProgress := -1
-	index, err := sliceplayer.ScanTarGz(archivePath, sliceplayer.DefaultLimits, func(percent int, _ int64) bool {
-		if s.slicePlayerJobs.IsCancelled(jobID) {
-			return false
-		}
-		if percent > lastProgress {
-			lastProgress = percent
-			_, _ = s.slicePlayerJobs.Update(jobID, 35+(percent*35/100), "scanning-archive")
-		}
-		return true
-	})
-	if err != nil {
-		if s.slicePlayerJobs.IsCancelled(jobID) {
-			return
-		}
-		_, _ = s.slicePlayerJobs.Fail(jobID, err)
-		return
-	}
-	if s.slicePlayerJobs.IsCancelled(jobID) {
-		return
-	}
-	_, _ = s.slicePlayerJobs.Update(jobID, 72, "converting-frames")
+	_, _ = s.slicePlayerJobs.Update(jobID, 35, "preparing-frames")
 	assetDirectory, err := s.slicePlayerJobs.AssetDirectory(cacheKey)
 	if err != nil {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
 		return
 	}
-	playback, err := sliceplayer.ConvertTarGz(archivePath, assetDirectory, slicePlayerMaxArchiveBytes(), func() bool { return s.slicePlayerJobs.IsCancelled(jobID) })
+	lastProgress := -1
+	index, playback, err := sliceplayer.PrepareTarGz(archivePath, assetDirectory, slicePlayerMaxArchiveBytes(), sliceplayer.DefaultLimits, func(percent int, _ int64) bool {
+		if s.slicePlayerJobs.IsCancelled(jobID) {
+			return false
+		}
+		if percent > lastProgress {
+			lastProgress = percent
+			_, _ = s.slicePlayerJobs.Update(jobID, 35+(percent*60/100), "preparing-frames")
+		}
+		return true
+	}, func() bool { return s.slicePlayerJobs.IsCancelled(jobID) })
 	if err != nil {
 		if s.slicePlayerJobs.IsCancelled(jobID) {
 			return
@@ -194,9 +180,30 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
 		return
 	}
+	if s.slicePlayerJobs.IsCancelled(jobID) {
+		return
+	}
 	_, _ = s.slicePlayerJobs.Update(jobID, 97, "persisting-player-cache")
 	if _, err := s.slicePlayerJobs.Complete(jobID, index, &playback); err != nil {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
+	}
+}
+
+func (s *Server) slicePlayerSourceSize(jobID string) int64 {
+	job, ok := s.slicePlayerJobs.Get(jobID)
+	if !ok {
+		return 0
+	}
+	return job.SourceSize
+}
+
+func (s *Server) resumeSlicePlayerJobs() {
+	if s.slicePlayerJobs == nil || s.flow360 == nil {
+		return
+	}
+	for _, job := range s.slicePlayerJobs.RecoverableJobs() {
+		job := job
+		go s.runSlicePlayerJob(job.ID, job.CaseID, job.ResultPath, job.CacheKey)
 	}
 }
 

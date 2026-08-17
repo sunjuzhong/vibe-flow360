@@ -46,6 +46,118 @@ printf '123456789' > "$output"
 	}
 }
 
+func TestDownloadCaseResultToRequestsResumeAndRemoteSizeGuard(t *testing.T) {
+	directory := t.TempDir()
+	binaryPath := filepath.Join(directory, "fake-flow360")
+	argumentsPath := filepath.Join(directory, "arguments")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "` + argumentsPath + `"
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+printf 'data' > "$output"
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(directory, "results")
+	if _, err := (&Client{Binary: binaryPath}).DownloadCaseResultTo(context.Background(), "case-1", "results/slices.tar.gz", outputDir, 99); err != nil {
+		t.Fatal(err)
+	}
+	arguments, err := os.ReadFile(argumentsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(strings.Fields(string(arguments)), " ")
+	if !strings.Contains(joined, "--resume") || !strings.Contains(joined, "--max-bytes 99") {
+		t.Fatalf("resumable options were not forwarded: %s", joined)
+	}
+}
+
+func TestResumableDownloadOptionsUnsupported(t *testing.T) {
+	if !resumableDownloadOptionsUnsupported(errors.New("flow360: No such option: --resume")) {
+		t.Fatal("expected old CLI option error to be recognized")
+	}
+	if resumableDownloadOptionsUnsupported(errors.New("network unavailable")) {
+		t.Fatal("unrelated errors must not trigger a non-resumable retry")
+	}
+}
+
+func TestDownloadCaseResultToFallsBackForOlderCLI(t *testing.T) {
+	directory := t.TempDir()
+	binaryPath := filepath.Join(directory, "fake-flow360")
+	countPath := filepath.Join(directory, "count")
+	script := `#!/bin/sh
+count=0
+if [ -f "` + countPath + `" ]; then count=$(cat "` + countPath + `"); fi
+count=$((count + 1))
+printf '%s' "$count" > "` + countPath + `"
+output=""
+for argument in "$@"; do
+  if [ "$argument" = "--resume" ]; then
+    echo 'Error: No such option: --resume' >&2
+    exit 2
+  fi
+done
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then shift; output="$1"; fi
+  shift
+done
+printf 'data' > "$output"
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(directory, "results")
+	path, err := (&Client{Binary: binaryPath}).DownloadCaseResultTo(context.Background(), "case-1", "results/slices.tar.gz", outputDir, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload, readErr := os.ReadFile(path); readErr != nil || string(payload) != "data" {
+		t.Fatalf("fallback did not download result: %q %v", payload, readErr)
+	}
+	if count, readErr := os.ReadFile(countPath); readErr != nil || string(count) != "2" {
+		t.Fatalf("expected resumable attempt plus fallback: %q %v", count, readErr)
+	}
+}
+
+func TestDownloadCaseResultToReusesExactStableFileWithOlderCLI(t *testing.T) {
+	directory := t.TempDir()
+	binaryPath := filepath.Join(directory, "fake-flow360")
+	countPath := filepath.Join(directory, "count")
+	script := `#!/bin/sh
+printf 'called' >> "` + countPath + `"
+echo 'Error: No such option: --resume' >&2
+exit 2
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(directory, "results")
+	if err := os.MkdirAll(outputDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(outputDir, "slices.tar.gz")
+	if err := os.WriteFile(outputPath, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, err := (&Client{Binary: binaryPath}).DownloadCaseResultToExpected(
+		context.Background(), "case-1", "results/slices.tar.gz", outputDir, 6, 99,
+	)
+	if err != nil || path != outputPath {
+		t.Fatalf("stable result was not reused: path=%q err=%v", path, err)
+	}
+	count, readErr := os.ReadFile(countPath)
+	if readErr != nil || string(count) != "called" {
+		t.Fatalf("old CLI should only receive the feature probe: %q %v", count, readErr)
+	}
+}
+
 func TestResolveFlow360BinaryPrefersExplicitConfiguration(t *testing.T) {
 	t.Setenv("VIBESIM_FLOW360_BINARY", "/opt/flow360/bin/flow360")
 	t.Setenv("VIBESIM_FLOW360_PYTHON", "")

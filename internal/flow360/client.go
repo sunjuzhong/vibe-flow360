@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -737,6 +738,10 @@ func (c *Client) downloadCaseResult(ctx context.Context, resourceID, resultPath 
 }
 
 func (c *Client) DownloadCaseResultTo(ctx context.Context, resourceID, resultPath, outputDir string, maxSize int64) (string, error) {
+	return c.DownloadCaseResultToExpected(ctx, resourceID, resultPath, outputDir, 0, maxSize)
+}
+
+func (c *Client) DownloadCaseResultToExpected(ctx context.Context, resourceID, resultPath, outputDir string, expectedSize, maxSize int64) (string, error) {
 	if strings.TrimSpace(outputDir) == "" {
 		return "", errors.New("result output directory is required")
 	}
@@ -770,13 +775,29 @@ func (c *Client) DownloadCaseResultTo(ctx context.Context, resourceID, resultPat
 			}
 		}()
 	}
-	_, runErr := c.runWithTimeout(
-		downloadContext,
-		30*time.Minute,
+	downloadArgs := []string{
 		"case", "results", "get", resourceID, resultPath,
 		"--output", outputPath,
 		"--overwrite",
-	)
+		"--resume",
+	}
+	if maxSize > 0 {
+		downloadArgs = append(downloadArgs, "--max-bytes", strconv.FormatInt(maxSize, 10))
+	}
+	_, runErr := c.runWithTimeout(downloadContext, 30*time.Minute, downloadArgs...)
+	if runErr != nil && resumableDownloadOptionsUnsupported(runErr) {
+		if reusableDownloadedResult(outputPath, expectedSize) {
+			runErr = nil
+		} else {
+			_, runErr = c.runWithTimeout(
+				downloadContext,
+				30*time.Minute,
+				"case", "results", "get", resourceID, resultPath,
+				"--output", outputPath,
+				"--overwrite",
+			)
+		}
+	}
 	close(monitorDone)
 	if exceeded.Load() {
 		_ = os.Remove(outputPath)
@@ -797,6 +818,23 @@ func (c *Client) DownloadCaseResultTo(ctx context.Context, resourceID, resultPat
 		return "", err
 	}
 	return outputPath, nil
+}
+
+func reusableDownloadedResult(path string, expectedSize int64) bool {
+	if expectedSize <= 0 {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() == expectedSize
+}
+
+func resumableDownloadOptionsUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such option") &&
+		(strings.Contains(message, "--resume") || strings.Contains(message, "--max-bytes"))
 }
 
 func (c *Client) ListCaseResults(ctx context.Context, caseID string) ([]string, error) {

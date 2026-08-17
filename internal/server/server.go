@@ -210,6 +210,7 @@ func New() *Server {
 	app.loadAICreateState()
 	app.resumeSTEPValidations()
 	app.resumeAISTEPJobs()
+	app.resumeSlicePlayerJobs()
 	app.routes()
 
 	go app.startImportCleanupLoop()

@@ -29,10 +29,13 @@ function indexedTitle(kind: CaseTimeSeriesArchiveKind) {
 function stageLabel(stage: string) {
   switch (stage) {
     case 'queued': return 'Waiting for the preparation worker'
+    case 'recovering': return 'Restoring an interrupted preparation'
     case 'downloading-archive': return 'Downloading the time-series archive to bounded local storage'
     case 'scanning-archive': return 'Scanning frames without extracting the full archive'
     case 'converting-frames': return 'Converting VTU pieces into bounded playable frames'
+    case 'preparing-frames': return 'Validating the archive and preparing playable frames in one pass'
     case 'persisting-frame-index': return 'Persisting the random-access frame index'
+    case 'persisting-player-cache': return 'Persisting the playable frame cache'
     case 'restoring-player-cache': return 'Restoring the existing player cache'
     case 'completed': return 'Archive index is ready'
     case 'cancelled': return 'Preparation was cancelled'

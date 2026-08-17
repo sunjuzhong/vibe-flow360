@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 )
@@ -52,16 +53,16 @@ type Job struct {
 }
 
 type Store struct {
-	mu                      sync.Mutex
-	root, jobsDir, cacheDir string
-	jobs                    map[string]Job
+	mu                                  sync.Mutex
+	root, jobsDir, cacheDir, archiveDir string
+	jobs                                map[string]Job
 }
 
 var validJobID = regexp.MustCompile(`^slice-player-[a-f0-9]{24}$`)
 
 func NewStore(root string) (*Store, error) {
-	store := &Store{root: root, jobsDir: filepath.Join(root, "jobs"), cacheDir: filepath.Join(root, "cache"), jobs: map[string]Job{}}
-	for _, directory := range []string{store.jobsDir, store.cacheDir} {
+	store := &Store{root: root, jobsDir: filepath.Join(root, "jobs"), cacheDir: filepath.Join(root, "cache"), archiveDir: filepath.Join(root, "archives"), jobs: map[string]Job{}}
+	for _, directory := range []string{store.jobsDir, store.cacheDir, store.archiveDir} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return nil, err
 		}
@@ -84,11 +85,12 @@ func NewStore(root string) (*Store, error) {
 		}
 		if job.Status == JobQueued || job.Status == JobRunning {
 			now := time.Now().UTC()
-			job.Status = JobFailed
-			job.Stage = "interrupted"
-			job.Error = "time-series preparation was interrupted by server restart; start it again"
+			job.Status = JobQueued
+			job.Progress = 0
+			job.Stage = "recovering"
+			job.Error = ""
 			job.UpdatedAt = now
-			job.FinishedAt = &now
+			job.FinishedAt = nil
 			_ = store.writeJob(job)
 		}
 		if store.upgradePlaybackFrameRanges(&job) {
@@ -152,6 +154,29 @@ func (s *Store) upgradePlaybackFrameRanges(job *Job) bool {
 
 func CacheKey(caseID, resultPath string, size int64) string {
 	return fmt.Sprintf("v%d:%s:%s:%d", IndexVersion, caseID, resultPath, size)
+}
+
+func SourceKey(caseID, resultPath string, size int64) string {
+	return fmt.Sprintf("source:%s:%s:%d", caseID, resultPath, size)
+}
+
+func (s *Store) ArchiveDirectory(sourceKey string) (string, error) {
+	digest := sha256.Sum256([]byte(sourceKey))
+	directory := filepath.Join(s.archiveDir, hex.EncodeToString(digest[:]))
+	return directory, os.MkdirAll(directory, 0o700)
+}
+
+func (s *Store) RecoverableJobs() []Job {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	jobs := make([]Job, 0)
+	for _, job := range s.jobs {
+		if job.Status == JobQueued {
+			jobs = append(jobs, job)
+		}
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].CreatedAt.Before(jobs[j].CreatedAt) })
+	return jobs
 }
 
 func (s *Store) Create(caseID, resultPath string, sourceSize int64, cacheKey string) (Job, error) {

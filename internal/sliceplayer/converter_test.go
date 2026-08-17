@@ -114,6 +114,35 @@ func TestConvertTarGzBuildsPlayableUVFFrame(t *testing.T) {
 	}
 }
 
+func TestPrepareTarGzBuildsIndexAndPlaybackInOnePass(t *testing.T) {
+	manifest := `<?xml version="1.0"?><VTKFile><PUnstructuredGrid><PPointData><PDataArray Name="Mach"/></PPointData><Piece Source="slice_Wake_000100_proc0.vtu"/></PUnstructuredGrid></VTKFile>`
+	archive := writeArchive(t, []archiveEntry{
+		{name: "slice_Wake_000100.pvtu", body: manifest},
+		{name: "slice_Wake_000100_proc0.vtu", body: testVTU()},
+	})
+	lastProgress := 0
+	index, playback, err := PrepareTarGz(
+		archive,
+		t.TempDir(),
+		1<<20,
+		Limits{},
+		func(percent int, _ int64) bool { lastProgress = percent; return true },
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.EntryCount != 2 || len(index.Entries) != 2 || len(index.Slices) != 1 {
+		t.Fatalf("unexpected single-pass index: %#v", index)
+	}
+	if strings.Join(index.Slices[0].Fields, ",") != "Mach" {
+		t.Fatalf("parallel fields were not indexed: %#v", index.Slices[0])
+	}
+	if !playback.Ready || playback.FrameCount != 1 || lastProgress != 100 {
+		t.Fatalf("unexpected playback/progress: %#v progress=%d", playback, lastProgress)
+	}
+}
+
 func TestConvertTarGzDeduplicatesStaticTopologyAcrossTimeSteps(t *testing.T) {
 	archive := writeArchive(t, []archiveEntry{
 		{name: "slice_Wake_000100_proc0.vtu", body: testVTU()},

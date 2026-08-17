@@ -68,6 +68,47 @@ func TestLatestForResultPathKeepsArchiveJobsIndependent(t *testing.T) {
 	}
 }
 
+func TestStoreRecoversInterruptedJobsAndUsesStableArchiveDirectory(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := CacheKey("case-1", "results/slices.tar.gz", 42)
+	job, err := store.Create("case-1", "results/slices.tar.gz", 42, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(job.ID, 48, "preparing-frames"); err != nil {
+		t.Fatal(err)
+	}
+	sourceKey := SourceKey(job.CaseID, job.ResultPath, job.SourceSize)
+	firstDirectory, err := store.ArchiveDirectory(sourceKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, ok := restarted.Get(job.ID)
+	if !ok || recovered.Status != JobQueued || recovered.Stage != "recovering" || recovered.FinishedAt != nil {
+		t.Fatalf("interrupted job was not made recoverable: %#v", recovered)
+	}
+	jobs := restarted.RecoverableJobs()
+	if len(jobs) != 1 || jobs[0].ID != job.ID {
+		t.Fatalf("unexpected recoverable jobs: %#v", jobs)
+	}
+	secondDirectory, err := restarted.ArchiveDirectory(sourceKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstDirectory != secondDirectory {
+		t.Fatalf("archive directory changed across restart: %q != %q", firstDirectory, secondDirectory)
+	}
+}
+
 func TestNewStoreUpgradesLegacyPlaybackRangesFromLocalManifests(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)
