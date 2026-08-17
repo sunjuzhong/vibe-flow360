@@ -232,6 +232,26 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	}
 }
 
+func TestInstalledSchemaRestoresOmittedAutomatedFarfieldMethod(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	params := json.RawMessage(`{
+		"version":"25.10.18",
+		"unit_system":{"name":"SI"},
+		"meshing":{"type_name":"MeshingParams","volume_zones":[{"name":"Farfield","type":"AutomatedFarfield"}]}
+	}`)
+	result, err := NewClient().PreflightSimulationParams(context.Background(), "Geometry", "case", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range result.Issues {
+		if issue.Code == "key_error" && issue.Message == "'method'" {
+			t.Fatalf("omitted schema default escaped as raw method KeyError: %#v", issue)
+		}
+	}
+}
+
 func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testing.T) {
 	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
 		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")

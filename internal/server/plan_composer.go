@@ -689,9 +689,6 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	if err != nil {
 		return planComposerContext{}, err
 	}
-	if len(detail.SimulationParams) == 0 {
-		return planComposerContext{}, errors.New("Flow360 source SimulationParams are unavailable")
-	}
 	var info struct {
 		ProjectID string `json:"project_id"`
 		Name      string `json:"name"`
@@ -702,13 +699,12 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	if info.ProjectID != request.ProjectID {
 		return planComposerContext{}, errors.New("source resource does not belong to this project")
 	}
-	if strings.TrimSpace(request.DraftID) != "" {
-		draftDetail, draftErr := s.flow360.ResourceDetail(ctx, "Draft", strings.TrimSpace(request.DraftID))
+	draftID := strings.TrimSpace(request.DraftID)
+	var draftParams json.RawMessage
+	if draftID != "" {
+		draftDetail, draftErr := s.flow360.ResourceDetail(ctx, "Draft", draftID)
 		if draftErr != nil {
 			return planComposerContext{}, draftErr
-		}
-		if len(draftDetail.SimulationParams) == 0 {
-			return planComposerContext{}, errors.New("Draft SimulationParams are unavailable")
 		}
 		var draftInfo map[string]any
 		if len(draftDetail.Info) == 0 || json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
@@ -720,7 +716,11 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 		if draftSourceID := firstStringField(draftInfo, "source_id", "source_item_id"); draftSourceID != "" && draftSourceID != request.SourceID {
 			return planComposerContext{}, errors.New("Draft is not based on this source resource")
 		}
-		detail.SimulationParams = draftDetail.SimulationParams
+		draftParams = draftDetail.SimulationParams
+	}
+	detail.SimulationParams, err = planComposerBaseline(detail.SimulationParams, draftParams, draftID != "")
+	if err != nil {
+		return planComposerContext{}, err
 	}
 	baseline, err := plans.MergedSimulationParams(plans.Plan{Baseline: detail.SimulationParams, Patch: request.Patch})
 	if err != nil {
@@ -732,6 +732,19 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	}
 	request.SourceType = detail.Type
 	return planComposerContext{Request: request, Name: info.Name, Baseline: baseline, Form: form}, nil
+}
+
+func planComposerBaseline(sourceParams, draftParams json.RawMessage, draftRequested bool) (json.RawMessage, error) {
+	if draftRequested {
+		if len(draftParams) == 0 {
+			return nil, errors.New("Draft SimulationParams are unavailable")
+		}
+		return draftParams, nil
+	}
+	if len(sourceParams) == 0 {
+		return nil, errors.New("Flow360 source SimulationParams are unavailable")
+	}
+	return sourceParams, nil
 }
 
 type promptSchemaField struct {

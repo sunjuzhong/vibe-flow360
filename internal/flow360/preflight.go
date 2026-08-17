@@ -282,6 +282,7 @@ from flow360.component.simulation import services
 from flow360_schema import __version__ as schema_version
 from flow360_schema.framework.physical_dimensions.dimension_meta import PhysicalDimensionMeta
 from flow360_schema.models.functions import math as flow360_math
+from flow360_schema.models.simulation.meshing_param.volume_params import AutomatedFarfield
 from flow360_schema.models.simulation.simulation_params import SimulationParams
 from unyt import Unit
 
@@ -299,6 +300,26 @@ original_params = copy.deepcopy(params)
 # Flow360 accepts typed Expressions without running their dimension checks.
 params.setdefault("version", package_version("flow360"))
 params.setdefault("unit_system", {"name": "SI"})
+
+# Cloud payloads may omit fields equal to their Pydantic defaults. Flow360
+# 25.10 validation currently inspects AutomatedFarfield.method on the raw wire
+# dictionary before Pydantic has a chance to restore its default, producing a
+# bare KeyError. Materialize the authoritative installed-schema default only in
+# this validation copy; original_params remains unchanged for diffs and saves.
+meshing = params.get("meshing")
+if isinstance(meshing, dict):
+    farfield_method_default = AutomatedFarfield.model_fields["method"].default
+    for zones_key in ("volume_zones", "zones"):
+        zones = meshing.get(zones_key)
+        if not isinstance(zones, list):
+            continue
+        for zone in zones:
+            if (
+                isinstance(zone, dict)
+                and zone.get("type") == "AutomatedFarfield"
+                and "method" not in zone
+            ):
+                zone["method"] = farfield_method_default
 root_type = request.get("root_type")
 if root_type == "Case":
     root_type = None

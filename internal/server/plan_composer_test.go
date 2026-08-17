@@ -70,6 +70,23 @@ func TestPlanAssistIssueContextPreservesSchemaPaths(t *testing.T) {
 	}
 }
 
+func TestPlanComposerDraftCanSupplyBaselineWhenSourceHasNoSimulationParams(t *testing.T) {
+	draft := json.RawMessage(`{"version":"25.10.18"}`)
+	baseline, err := planComposerBaseline(nil, draft, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(baseline) != string(draft) {
+		t.Fatalf("Draft baseline was not selected: %s", baseline)
+	}
+	if _, err := planComposerBaseline(nil, nil, false); err == nil || !strings.Contains(err.Error(), "source SimulationParams") {
+		t.Fatalf("missing source baseline returned the wrong error: %v", err)
+	}
+	if _, err := planComposerBaseline(json.RawMessage(`{}`), nil, true); err == nil || !strings.Contains(err.Error(), "Draft SimulationParams") {
+		t.Fatalf("missing requested Draft baseline returned the wrong error: %v", err)
+	}
+}
+
 func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"},"step_size":{"type":"quantity","unit":"s","value_schema":{"type":"number"}},"max_steps":{"type":"json"}}}}}`)
 	composer := planComposerContext{
