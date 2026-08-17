@@ -1,0 +1,19 @@
+schema_version: 1
+scenario: coaxial-nested-rotation
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  freestream_speed: {value: 20, unit: m/s, provenance: adapted}
+  outer_zone_radius: {value: 2.2, unit: m, provenance: adapted}
+  inner_zone_radius: {value: 1.1, unit: m, provenance: adapted}
+  outer_speed: {value: 200, unit: rpm, provenance: adapted}
+  inner_relative_speed: {value: -500, unit: rpm, provenance: adapted}
+  inner_absolute_speed: {value: -300, unit: rpm, provenance: derived}
+  time_step: {value: 0.001, unit: s, provenance: adapted}
+  outer_angle_per_step: {value: 1.2, unit: degree, provenance: derived}
+  inner_relative_angle_per_step: {value: 3.0, unit: degree, provenance: derived}
+review_required:
+  - Verify that every rotor surface belongs to the intended rotating zone and no interface intersects solid geometry.
+  - Verify that the inner sphere is geometrically contained by the outer cylinder and both Draft entities are registered.
+  - Interpret -500 rpm as motion relative to the 200 rpm parent, yielding -300 rpm absolute inner speed.
+  - Compare interface mesh quality, time resolution, wake continuity, conservation, and loads before accepting the nested model.

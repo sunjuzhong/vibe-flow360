@@ -10,6 +10,7 @@ import { t05Evidence, t05ParameterCards, t05Steps, t05Params, t05Pedagogy, valid
 import { t06Evidence, t06ParameterCards, t06Steps, t06Params, t06Pedagogy, validateT06Setup } from '../tutorials/t06'
 import { t07Evidence, t07ParameterCards, t07Steps, t07Params, t07Pedagogy, validateT07Setup } from '../tutorials/t07'
 import { t08Evidence, t08ParameterCards, t08Steps, t08Params, t08Pedagogy, validateT08Setup } from '../tutorials/t08'
+import { t09Evidence, t09ParameterCards, t09Steps, t09Params, t09Pedagogy, validateT09Setup } from '../tutorials/t09'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -261,6 +262,12 @@ describe('language settings', () => {
       ...validateT08Setup(t08Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT08Setup(t08Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t08Pedagogy),
+      ...t09Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t09ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t09Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT09Setup(t09Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT09Setup(t09Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t09Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -313,6 +320,24 @@ describe('language settings', () => {
       'Tutorial T07 · internal duct meshing',
       'Global-only internal duct mesh strategy',
       'Feature-aware internal duct mesh strategy',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T09 environment builder in Chinese', () => {
+    const messages = [
+      'ROTORCRAFT CFD',
+      'NESTED ROTATING ZONES',
+      'MOTION TREE',
+      'Build the T09 nested-rotation comparison',
+      'The app uploads the bundled coaxial rotor and creates shared-zone and nested-zone Case Drafts.',
+      'RotationVolume, RotationSphere, registered Cylinder/Sphere, +200 rpm parent, −500 rpm relative child, 0.001 s step',
+      'Shared rotating zone',
+      'Nested parent-child rotating zones',
+      'Tutorial T09 · nested rotating zones',
+      'The bundled T09 parameters contain an invalid entity, interface, or motion-hierarchy contract.',
+      'The bundled T09 coaxial-rotor Geometry could not be loaded.',
+      'Flow360 created the T09 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

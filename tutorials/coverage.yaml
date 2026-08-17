@@ -158,6 +158,20 @@ mappings:
     selector:
       owners: [CentralBelt, FullyMovingFloor, StaticFloor, WheelBelts, WindTunnelFarfield]
   - tutorial: T09
+    section: nested-rotation-baseline
+    status: verified
+    artifact: tutorials/T09-nested-rotation/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:RotationVolume$'
+  - tutorial: T09
+    section: nested-rotation-variant
+    status: verified
+    artifact: tutorials/T09-nested-rotation/variants/nested.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:RotationSphere|field:Rotation\.parent_volume|variant:Rotation\.parent_volume=Cylinder)$'
+  - tutorial: T09
     section: baseline
     status: planned
     selector:

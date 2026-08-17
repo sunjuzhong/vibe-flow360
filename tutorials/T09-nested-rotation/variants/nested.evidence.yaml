@@ -1,0 +1,7 @@
+schema_version: 1
+criteria:
+  - {id: nested-valid, category: provenance, description: The nested RotationSphere and parent_volume patch passes Geometry-to-Case validation., artifact: variants/nested.patch.json, required: true, check: {method: present, metric: flow360.validation.case}}
+  - {id: parent-valid, category: report, description: Inner relative Rotation references the exact registered outer Cylinder., artifact: nested Draft, required: true, check: {method: manual, metric: rotation.parent.approved}}
+  - {id: nested-mesh, category: mesh, description: 'Both sliding interfaces are distinct, contained, and clear of rotor surfaces.', artifact: nested volume mesh, required: true, check: {method: manual, metric: rotation.nested-mesh.approved}}
+limitations:
+  - Parameter validation cannot replace generated-interface and conservation evidence.

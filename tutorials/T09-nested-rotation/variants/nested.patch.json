@@ -1,0 +1,525 @@
+{
+  "meshing": {
+    "volume_zones": [
+      {
+        "method": "auto",
+        "name": "Rotor farfield",
+        "relative_size": 40.0,
+        "type": "AutomatedFarfield"
+      },
+      {
+        "enclosed_entities": {
+          "stored_entities": [
+            {
+              "name": "outerRotor",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000902",
+              "private_attribute_sub_components": [
+                "body0001_face0010",
+                "body0001_face0011",
+                "body0001_face0012",
+                "body0001_face0013",
+                "body0001_face0014",
+                "body0001_face0015",
+                "body0001_face0016",
+                "body0001_face0017",
+                "body0001_face0018",
+                "body0001_face0019",
+                "body0001_face0020",
+                "body0001_face0021",
+                "body0001_face0022",
+                "body0001_face0023",
+                "body0001_face0024"
+              ],
+              "private_attribute_tag_key": "faceName"
+            },
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  -0.3,
+                  0.0,
+                  0.0
+                ]
+              },
+              "name": "Inner rotor sphere",
+              "private_attribute_entity_type_name": "Sphere",
+              "private_attribute_id": "90000000-0000-4000-8000-000000000902",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              },
+              "radius": {
+                "units": "m",
+                "value": 1.1
+              }
+            }
+          ]
+        },
+        "entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "height": {
+                "units": "m",
+                "value": 1.2
+              },
+              "inner_radius": {
+                "units": "m",
+                "value": 0.0
+              },
+              "name": "Outer rotor cylinder",
+              "outer_radius": {
+                "units": "m",
+                "value": 2.2
+              },
+              "private_attribute_entity_type_name": "Cylinder",
+              "private_attribute_id": "90000000-0000-4000-8000-000000000901",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              }
+            }
+          ]
+        },
+        "name": "Outer cylindrical sliding interface",
+        "spacing_axial": {
+          "units": "m",
+          "value": 0.08
+        },
+        "spacing_circumferential": {
+          "units": "m",
+          "value": 0.08
+        },
+        "spacing_radial": {
+          "units": "m",
+          "value": 0.08
+        },
+        "type": "RotationVolume"
+      },
+      {
+        "enclosed_entities": {
+          "stored_entities": [
+            {
+              "name": "innerRotor",
+              "private_attribute_entity_type_name": "Surface",
+              "private_attribute_id": "00000000-0000-4000-8000-000000000901",
+              "private_attribute_sub_components": [
+                "body0001_face0001",
+                "body0001_face0002",
+                "body0001_face0003",
+                "body0001_face0004",
+                "body0001_face0005",
+                "body0001_face0006",
+                "body0001_face0007",
+                "body0001_face0008",
+                "body0001_face0009"
+              ],
+              "private_attribute_tag_key": "faceName"
+            }
+          ]
+        },
+        "entities": {
+          "stored_entities": [
+            {
+              "axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "center": {
+                "units": "m",
+                "value": [
+                  -0.3,
+                  0.0,
+                  0.0
+                ]
+              },
+              "name": "Inner rotor sphere",
+              "private_attribute_entity_type_name": "Sphere",
+              "private_attribute_id": "90000000-0000-4000-8000-000000000902",
+              "private_attribute_zone_boundary_names": {
+                "items": []
+              },
+              "radius": {
+                "units": "m",
+                "value": 1.1
+              }
+            }
+          ]
+        },
+        "name": "Inner spherical sliding interface",
+        "spacing_circumferential": {
+          "units": "m",
+          "value": 0.04
+        },
+        "type": "RotationSphere"
+      }
+    ]
+  },
+  "models": [
+    {
+      "initial_condition": {
+        "p": "p",
+        "rho": "rho",
+        "type_name": "NavierStokesInitialCondition",
+        "u": "u",
+        "v": "v",
+        "w": "w"
+      },
+      "interface_interpolation_tolerance": 0.2,
+      "material": {
+        "dynamic_viscosity": {
+          "effective_temperature": {
+            "units": "K",
+            "value": 110.4
+          },
+          "reference_temperature": {
+            "units": "K",
+            "value": 273.15
+          },
+          "reference_viscosity": {
+            "units": "Pa*s",
+            "value": 1.716e-05
+          }
+        },
+        "name": "air",
+        "prandtl_number": 0.72,
+        "thermally_perfect_gas": {
+          "species": [
+            {
+              "mass_fraction": 1.0,
+              "name": "Air",
+              "nasa_9_coefficients": {
+                "temperature_ranges": [
+                  {
+                    "coefficients": [
+                      0.0,
+                      0.0,
+                      3.5,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 6000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 200.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  }
+                ],
+                "type_name": "NASA9Coefficients"
+              },
+              "type_name": "FrozenSpecies"
+            }
+          ],
+          "type_name": "ThermallyPerfectGas"
+        },
+        "turbulent_prandtl_number": 0.9,
+        "type": "air"
+      },
+      "navier_stokes_solver": {
+        "CFL_multiplier": 1.0,
+        "absolute_tolerance": 1e-10,
+        "equation_evaluation_frequency": 1,
+        "kappa_MUSCL": -1.0,
+        "limit_pressure_density": false,
+        "limit_velocity": false,
+        "linear_solver": {
+          "max_iterations": 30,
+          "type_name": "LinearSolver"
+        },
+        "max_force_jac_update_physical_steps": 0,
+        "order_of_accuracy": 2,
+        "relative_tolerance": 0.0,
+        "riemann_solver": {
+          "low_mach_preconditioner": false,
+          "numerical_dissipation_factor": 1.0,
+          "type_name": "Roe"
+        },
+        "type_name": "Compressible",
+        "update_jacobian_frequency": 4
+      },
+      "private_attribute_id": "90000000-0000-4000-8000-000000000913",
+      "transition_model_solver": {
+        "type_name": "None"
+      },
+      "turbulence_model_solver": {
+        "CFL_multiplier": 2.0,
+        "absolute_tolerance": 1e-08,
+        "equation_evaluation_frequency": 4,
+        "linear_solver": {
+          "max_iterations": 20,
+          "type_name": "LinearSolver"
+        },
+        "low_reynolds_correction": false,
+        "max_force_jac_update_physical_steps": 0,
+        "modeling_constants": {
+          "C_DES": 0.72,
+          "C_cb1": 0.1355,
+          "C_cb2": 0.622,
+          "C_d": 8.0,
+          "C_min_rd": 10.0,
+          "C_sigma": 0.6666666666666666,
+          "C_t3": 1.2,
+          "C_t4": 0.5,
+          "C_v1": 7.1,
+          "C_vonKarman": 0.41,
+          "C_w2": 0.3,
+          "C_w4": 0.21,
+          "C_w5": 1.5,
+          "type_name": "SpalartAllmarasConsts"
+        },
+        "order_of_accuracy": 2,
+        "quadratic_constitutive_relation": false,
+        "reconstruction_gradient_limiter": 0.5,
+        "relative_tolerance": 0.0,
+        "rotation_correction": false,
+        "type_name": "SpalartAllmaras",
+        "update_jacobian_frequency": 4
+      },
+      "type": "Fluid"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "farfield",
+            "private_attribute_entity_type_name": "GhostSurface",
+            "private_attribute_id": "farfield"
+          }
+        ]
+      },
+      "name": "Rotor farfield",
+      "private_attribute_id": "90000000-0000-4000-8000-000000000914",
+      "type": "Freestream"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "innerRotor",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000901",
+            "private_attribute_sub_components": [
+              "body0001_face0001",
+              "body0001_face0002",
+              "body0001_face0003",
+              "body0001_face0004",
+              "body0001_face0005",
+              "body0001_face0006",
+              "body0001_face0007",
+              "body0001_face0008",
+              "body0001_face0009"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Inner rotor wall",
+      "private_attribute_id": "90000000-0000-4000-8000-000000000915",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "outerRotor",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "00000000-0000-4000-8000-000000000902",
+            "private_attribute_sub_components": [
+              "body0001_face0010",
+              "body0001_face0011",
+              "body0001_face0012",
+              "body0001_face0013",
+              "body0001_face0014",
+              "body0001_face0015",
+              "body0001_face0016",
+              "body0001_face0017",
+              "body0001_face0018",
+              "body0001_face0019",
+              "body0001_face0020",
+              "body0001_face0021",
+              "body0001_face0022",
+              "body0001_face0023",
+              "body0001_face0024"
+            ],
+            "private_attribute_tag_key": "faceName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "Outer rotor wall",
+      "private_attribute_id": "90000000-0000-4000-8000-000000000916",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "axis": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "center": {
+              "units": "m",
+              "value": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "height": {
+              "units": "m",
+              "value": 1.2
+            },
+            "inner_radius": {
+              "units": "m",
+              "value": 0.0
+            },
+            "name": "Outer rotor cylinder",
+            "outer_radius": {
+              "units": "m",
+              "value": 2.2
+            },
+            "private_attribute_entity_type_name": "Cylinder",
+            "private_attribute_id": "90000000-0000-4000-8000-000000000901",
+            "private_attribute_zone_boundary_names": {
+              "items": []
+            }
+          }
+        ]
+      },
+      "name": "Outer stage rotation",
+      "private_attribute_id": "90000000-0000-4000-8000-000000000911",
+      "spec": {
+        "type_name": "AngularVelocity",
+        "value": {
+          "type_name": "number",
+          "units": "rpm",
+          "value": 200.0
+        }
+      },
+      "type": "Rotation"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "axis": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "center": {
+              "units": "m",
+              "value": [
+                -0.3,
+                0.0,
+                0.0
+              ]
+            },
+            "name": "Inner rotor sphere",
+            "private_attribute_entity_type_name": "Sphere",
+            "private_attribute_id": "90000000-0000-4000-8000-000000000902",
+            "private_attribute_zone_boundary_names": {
+              "items": []
+            },
+            "radius": {
+              "units": "m",
+              "value": 1.1
+            }
+          }
+        ]
+      },
+      "name": "Inner relative rotation",
+      "parent_volume": {
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "center": {
+          "units": "m",
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "height": {
+          "units": "m",
+          "value": 1.2
+        },
+        "inner_radius": {
+          "units": "m",
+          "value": 0.0
+        },
+        "name": "Outer rotor cylinder",
+        "outer_radius": {
+          "units": "m",
+          "value": 2.2
+        },
+        "private_attribute_entity_type_name": "Cylinder",
+        "private_attribute_id": "90000000-0000-4000-8000-000000000901",
+        "private_attribute_zone_boundary_names": {
+          "items": []
+        }
+      },
+      "private_attribute_id": "90000000-0000-4000-8000-000000000912",
+      "spec": {
+        "type_name": "AngularVelocity",
+        "value": {
+          "type_name": "number",
+          "units": "rpm",
+          "value": -500.0
+        }
+      },
+      "type": "Rotation"
+    }
+  ]
+}
