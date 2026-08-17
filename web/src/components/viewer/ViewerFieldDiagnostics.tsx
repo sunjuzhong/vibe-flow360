@@ -7,20 +7,20 @@ export function ViewerFieldDiagnostics({
   field,
   range,
   histogram,
-  extrema,
-  probe,
-  entityNames,
-  riskDirection,
+  extrema = null,
+  probe = null,
+  entityNames = {},
+  riskDirection = 'max',
   onLocateExtreme,
 }: {
   field: UVFFieldInfo | undefined
   range: [number, number] | null
   histogram: UVFFieldHistogram | null
-  extrema: UVFFieldExtrema | null
-  probe: UVFFieldProbe | null
-  entityNames: Record<string, string>
-  riskDirection: 'min' | 'max'
-  onLocateExtreme: (direction: 'min' | 'max') => void
+  extrema?: UVFFieldExtrema | null
+  probe?: UVFFieldProbe | null
+  entityNames?: Record<string, string>
+  riskDirection?: 'min' | 'max'
+  onLocateExtreme?: (direction: 'min' | 'max') => void
 }) {
   const { t } = useI18n()
   const activeHistogram = histogram?.field.name === field?.name ? histogram : null
@@ -53,7 +53,7 @@ export function ViewerFieldDiagnostics({
           ))}
         </div>
       )}
-      {riskProbe && (
+      {riskProbe && onLocateExtreme && (
         <button type="button" className="viewer-field-locate-extreme" onClick={() => onLocateExtreme(riskDirection)}>
           <Crosshair size={10} /> {locateLabel}
         </button>

@@ -62,4 +62,28 @@ describe('ViewerFieldDiagnostics', () => {
 
     expect(html).toBe('')
   })
+
+  it('renders a histogram without Surface quality diagnostics', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ViewerFieldDiagnostics
+          field={{ name: 'Cp', kind: 'scalar', min: -1, max: 1 }}
+          range={[-0.5, 0.5]}
+          histogram={{
+            field: { name: 'Cp', kind: 'scalar', min: -1, max: 1 },
+            sampleCount: 20,
+            bins: [
+              { min: -1, max: 0, count: 5 },
+              { min: 0, max: 1, count: 15 },
+            ],
+          }}
+        />
+      </I18nProvider>,
+    )
+
+    expect(html).toContain('Cp distribution with 20 samples')
+    expect(html).toContain('viewer-field-histogram')
+    expect(html).not.toContain('viewer-field-locate-extreme')
+    expect(html).not.toContain('viewer-field-diagnostic-probe')
+  })
 })

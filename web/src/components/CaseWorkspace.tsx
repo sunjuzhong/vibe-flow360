@@ -26,6 +26,7 @@ import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
 import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerManifest, type ViewerSelection } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
+import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { CaseVisualizationSelectionCard } from './CaseVisualizationSelectionCard'
 import { useResourcePreview } from '../hooks/useResourcePreview'
 import type { ProjectAnnotationsModel } from '../hooks/useProjectAnnotations'
@@ -47,7 +48,7 @@ import {
   findLengthUnit,
 } from '../lib/viewer-tools/context/ViewerContext'
 import type { JsonValue, ResourceRef } from '../lib/viewer-tools/types'
-import type { UVFEntityInfo } from '../lib/uvf-three'
+import type { UVFEntityInfo, UVFFieldHistogram } from '../lib/uvf-three'
 import { meshGroupManifestHints, normalizeManifestHint } from '../lib/manifestGroups'
 import { ManifestMemberGroup } from './ManifestMemberGroup'
 import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
@@ -649,6 +650,7 @@ export default function CaseWorkspace({
   const parameterEntities = useMemo(() => [...draftEntities, ...ghostEntities], [draftEntities, ghostEntities])
   const [viewerEntities, setViewerEntities] = useState<UVFEntityInfo[]>([])
   const [activeField, setActiveField] = useState<string | null>(null)
+  const [fieldHistogram, setFieldHistogram] = useState<UVFFieldHistogram | null>(null)
   const [fieldVisualizationEnabled, setFieldVisualizationEnabled] = useState(false)
   const [cameraCommand, setCameraCommand] = useState<ViewerCameraCommand | null>(null)
   const [viewerAssetStats, setViewerAssetStats] = useState<ViewerAssetStats | null>(null)
@@ -1119,7 +1121,15 @@ export default function CaseWorkspace({
             onSelectedFieldChange={setActiveField}
             fieldNames={selectedFieldNames}
             fieldEntityIds={selectedFieldEntityIds}
+            onFieldHistogramChange={setFieldHistogram}
             showFieldPanel={Boolean(fieldVisualizationEnabled && selectedVisualizationObjects.length && selectedFieldNames.length > 0)}
+            fieldPanelExtra={(fieldPanel) => (
+              <ViewerFieldDiagnostics
+                field={fieldPanel.field}
+                range={fieldPanel.range}
+                histogram={fieldHistogram}
+              />
+            )}
             showVectorControls={fieldVisualizationEnabled}
             showEntityLegend={false}
             onEntitiesDiscovered={setViewerEntities}
