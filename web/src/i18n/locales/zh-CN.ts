@@ -2,6 +2,7 @@ import type { LocalePack } from './types'
 
 const messages: Record<string, string> = {
   'Selection groups': '选择组',
+  'Geometry selection': '几何选择',
   'selection groups': '选择组',
   'Select {name} · Ctrl, Cmd, or Shift-click to combine groups': '选择 {name} · 按住 Ctrl、Cmd 或 Shift 点击可组合多个组',
   '{count} items · {tag}': '{count} 项 · {tag}',

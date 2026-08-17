@@ -16,7 +16,14 @@ describe('ParameterSelectionGroups', () => {
         <ParameterSelectionGroups
           presets={[
             { id: 'wing', label: 'Wing', tag: 'groupName', memberIds: ['a', 'b'] },
-            { id: 'body', label: 'Body', tag: 'bodyId', memberIds: ['a', 'b', 'c'] },
+            {
+              id: 'body',
+              label: 'Body',
+              tag: 'bodyId',
+              memberIds: ['a', 'b', 'c'],
+              faceIds: ['a', 'b'],
+              edgeIds: ['c'],
+            },
           ]}
           selectedIds={['a', 'b']}
           visibility={{ a: true, b: true, c: false }}
@@ -33,5 +40,25 @@ describe('ParameterSelectionGroups', () => {
     expect(html).toContain('<small>groupName</small>')
     expect(html).toContain('2 items')
     expect(html).toContain('aria-label="Hide group Wing"')
+    expect(html).toContain('Faces<small>2</small>')
+    expect(html).toContain('Edges<small>1</small>')
+  })
+
+  it('disables presets that could not be mapped completely', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ParameterSelectionGroups
+          presets={[{ id: 'file', label: 'model.step', tag: 'groupByFile', memberIds: [], available: false }]}
+          selectedIds={[]}
+          visibility={{}}
+          onSelectionChange={vi.fn()}
+          onSetVisibility={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+
+    expect(html).toContain('class="parameter-selection-group  unavailable"')
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('Unavailable')
   })
 })

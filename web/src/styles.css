@@ -7622,6 +7622,7 @@ button { color: inherit; }
 .parameter-selection-group:hover { background: #eeefe9; }
 .parameter-selection-group.selected { color: #34400f; background: #e4edc9; }
 .parameter-selection-group.partial { color: #576230; background: #f0f3e6; }
+.parameter-selection-group.unavailable { opacity: .55; }
 
 .parameter-selection-group__select {
   display: grid;
@@ -7659,8 +7660,38 @@ button { color: inherit; }
   cursor: pointer;
 }
 
+.parameter-selection-group__children {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 4px;
+  padding: 0 7px 5px 27px;
+}
+
+.parameter-selection-group__children button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid #d9ddd2;
+  border-radius: 4px;
+  color: #697064;
+  background: rgba(255, 255, 255, .55);
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.parameter-selection-group__children button[aria-pressed='true'] {
+  border-color: #a8b875;
+  color: #34400f;
+  background: #e4edc9;
+}
+
+.parameter-selection-group__children small { font: 7px 'DM Mono'; }
+.parameter-selection-group button:disabled { cursor: not-allowed; }
+
 .parameter-selection-group__select:focus-visible,
-.parameter-selection-group__visibility:focus-visible {
+.parameter-selection-group__visibility:focus-visible,
+.parameter-selection-group__children button:focus-visible {
   outline: 2px solid rgba(126, 151, 44, .45);
   outline-offset: -2px;
 }

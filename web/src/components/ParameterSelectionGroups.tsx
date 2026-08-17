@@ -55,16 +55,22 @@ export function ParameterSelectionGroups({
           <section className="parameter-selection-set" key={tag}>
             <header><strong>{t(parameterSelectionTagLabel(tag))}</strong><small>{tag}</small></header>
             {tagPresets.map((preset) => {
+          const available = preset.available !== false && preset.memberIds.length > 0
           const selectedCount = preset.memberIds.filter((id) => selectedSet.has(id)).length
           const selectionState = selectedCount === 0 ? 'false' : selectedCount === preset.memberIds.length ? 'true' : 'mixed'
           const anyVisible = preset.memberIds.some((id) => visibility[id] !== false)
           const SelectionIcon = selectionState === 'true' ? CheckSquare2 : selectionState === 'mixed' ? MinusSquare : Layers3
+          const subsets = [
+            { label: t('Faces'), ids: preset.faceIds ?? [] },
+            { label: t('Edges'), ids: preset.edgeIds ?? [] },
+          ].filter((subset) => subset.ids.length > 0)
           return (
-            <div className={`parameter-selection-group ${selectionState === 'true' ? 'selected' : selectionState === 'mixed' ? 'partial' : ''}`} key={preset.id}>
+            <div className={`parameter-selection-group ${selectionState === 'true' ? 'selected' : selectionState === 'mixed' ? 'partial' : ''} ${available ? '' : 'unavailable'}`} key={preset.id}>
               <button
                 type="button"
                 className="parameter-selection-group__select"
                 aria-pressed={selectionState}
+                disabled={!available}
                 title={t('Select {name} · Ctrl, Cmd, or Shift-click to combine groups').replace('{name}', preset.label)}
                 onClick={(event) => onSelectionChange(nextParameterPresetSelection(
                   selectedIds,
@@ -73,11 +79,15 @@ export function ParameterSelectionGroups({
                 ))}
               >
                 <SelectionIcon size={13} aria-hidden="true" />
-                <span><strong>{preset.label}</strong><small>{t('{count} items').replace('{count}', String(preset.memberIds.length))}</small></span>
+                <span><strong>{preset.label}</strong><small>{available
+                  ? t('{count} items').replace('{count}', String(preset.memberIds.length))
+                  : t('Unavailable')}
+                </small></span>
               </button>
               <button
                 type="button"
                 className="parameter-selection-group__visibility"
+                disabled={!available}
                 aria-label={t(anyVisible ? 'Hide group {name}' : 'Show group {name}').replace('{name}', preset.label)}
                 aria-pressed={anyVisible}
                 title={t(anyVisible ? 'Hide group {name}' : 'Show group {name}').replace('{name}', preset.label)}
@@ -85,6 +95,29 @@ export function ParameterSelectionGroups({
               >
                 {anyVisible ? <Eye size={13} aria-hidden="true" /> : <EyeOff size={13} aria-hidden="true" />}
               </button>
+              {subsets.length > 1 && (
+                <div className="parameter-selection-group__children">
+                  {subsets.map((subset) => {
+                    const subsetSelected = subset.ids.filter((id) => selectedSet.has(id)).length
+                    const subsetState = subsetSelected === 0 ? 'false' : subsetSelected === subset.ids.length ? 'true' : 'mixed'
+                    return (
+                      <button
+                        type="button"
+                        key={subset.label}
+                        aria-pressed={subsetState}
+                        disabled={!available}
+                        onClick={(event) => onSelectionChange(nextParameterPresetSelection(
+                          selectedIds,
+                          subset.ids,
+                          event.ctrlKey || event.metaKey || event.shiftKey,
+                        ))}
+                      >
+                        {subset.label}<small>{subset.ids.length}</small>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
             })}

@@ -11,6 +11,9 @@ export type ParameterSelectionPreset = {
   label: string
   tag: string
   memberIds: string[]
+  faceIds?: string[]
+  edgeIds?: string[]
+  available?: boolean
 }
 
 type ParameterEntity = {
@@ -34,6 +37,62 @@ const activeTagByKind = {
 
 export type ParameterSelectionKind = keyof typeof collectionByKind
 
+export function buildGeometryParameterSelectionPresets(
+  simulationParams: unknown,
+  faces: readonly ParameterSelectionMember[],
+  edges: readonly ParameterSelectionMember[],
+): ParameterSelectionPreset[] {
+  const params = unwrapSimulationParams(simulationParams)
+  const info = record(record(params.private_attribute_asset_cache).project_entity_info)
+  const facePresets = buildParameterSelectionPresets(simulationParams, 'face', faces)
+    .map((preset) => ({ ...preset, faceIds: preset.memberIds, edgeIds: [] }))
+  const edgePresets = buildParameterSelectionPresets(simulationParams, 'edge', edges)
+    .map((preset) => ({ ...preset, faceIds: [], edgeIds: preset.memberIds }))
+  const faceEntities = parameterEntities(info.grouped_faces)
+  const edgeEntities = parameterEntities(info.grouped_edges)
+  const bodyEntities = parameterEntities(info.grouped_bodies)
+  const bodyIndex = record(info.bodies_face_edge_ids)
+  const faceComponents = memberComponentIndex(faces, faceEntities, text(info.face_group_tag))
+  const edgeComponents = memberComponentIndex(edges, edgeEntities, text(info.edge_group_tag))
+
+  const bodyPresets = bodyEntities.map((entity) => {
+    const expectedFaces = entity.components.flatMap((bodyId) =>
+      array(record(bodyIndex[bodyId]).face_ids).map(text).filter(Boolean),
+    )
+    const expectedEdges = entity.components.flatMap((bodyId) =>
+      array(record(bodyIndex[bodyId]).edge_ids).map(text).filter(Boolean),
+    )
+    const matchedFaces = matchMembers(expectedFaces, faces, faceComponents)
+    const matchedEdges = matchMembers(expectedEdges, edges, edgeComponents)
+    const available = expectedFaces.length + expectedEdges.length > 0
+      && matchedFaces.complete
+      && matchedEdges.complete
+    const faceIds = available ? matchedFaces.memberIds : []
+    const edgeIds = available ? matchedEdges.memberIds : []
+    return {
+      id: `geometry:${entity.tag}:${entity.id}`,
+      label: entity.name || entity.id,
+      tag: entity.tag === 'bodyId' ? 'groupByBodyId' : entity.tag,
+      memberIds: [...faceIds, ...edgeIds],
+      faceIds,
+      edgeIds,
+      available,
+    }
+  })
+
+  const bodyPresetKeys = new Set(bodyPresets.map((preset) =>
+    `${preset.tag}\u0001${normalize(preset.label)}`,
+  ))
+  const isReplacedByBodyPreset = (preset: ParameterSelectionPreset) => bodyPresetKeys.has(
+    `${preset.tag === 'bodyId' ? 'groupByBodyId' : preset.tag}\u0001${normalize(preset.label)}`,
+  )
+  return dedupePresets([
+    ...facePresets.filter((preset) => !isReplacedByBodyPreset(preset)),
+    ...edgePresets.filter((preset) => !isReplacedByBodyPreset(preset)),
+    ...bodyPresets,
+  ])
+}
+
 export function buildParameterSelectionPresets(
   simulationParams: unknown,
   kind: ParameterSelectionKind,
@@ -43,9 +102,7 @@ export function buildParameterSelectionPresets(
   const params = unwrapSimulationParams(simulationParams)
   const cache = record(params.private_attribute_asset_cache)
   const info = record(cache.project_entity_info)
-  const entitySchemes = array(info[collectionByKind[kind]])
-    .map((candidate) => array(candidate).map(parameterEntity).filter(isDefined))
-    .filter((scheme) => scheme.length > 0)
+  const entitySchemes = entitySchemeList(info[collectionByKind[kind]])
   const bodySchemes = kind === 'body' ? [] : array(info.grouped_bodies)
     .map((candidate) => array(candidate)
       .map((value) => bodySelectionEntity(value, info, kind))
@@ -56,21 +113,13 @@ export function buildParameterSelectionPresets(
 
   const entities = schemes.flat()
   const activeTag = text(info[activeTagByKind[kind]])
-  const memberComponents = new Map(members.map((member) => [
-    member.id,
-    resolveMemberComponents(member, entities, activeTag),
-  ]))
+  const memberComponents = memberComponentIndex(members, entities, activeTag)
 
   const candidates = entities.flatMap((entity) => {
     const entityKeys = normalizedSet([entity.id, entity.name])
-    const presetComponents = normalizedSet(entity.components)
-    const memberIds = members.flatMap((member) => {
-      const directMatch = memberKeys(member).some((key) => entityKeys.has(key))
-      const components = memberComponents.get(member.id) ?? new Set<string>()
-      const contained = components.size > 0 && [...components].every((component) => presetComponents.has(component))
-      return directMatch || contained ? [member.id] : []
-    })
-    if (memberIds.length === 0) return []
+    const matched = matchMembers(entity.components, members, memberComponents, entityKeys)
+    const memberIds = matched.memberIds
+    if (memberIds.length === 0 || !matched.complete) return []
     if (memberIds.length === 1) {
       if (entity.tag === 'faceId' || entity.tag === 'edgeId') return []
       const member = members.find((candidate) => candidate.id === memberIds[0])
@@ -102,6 +151,62 @@ export function buildParameterSelectionPresets(
   return [...uniqueSelections.values()]
     .sort((left, right) => left.tag.localeCompare(right.tag) || left.label.localeCompare(right.label))
     .map(({ score: _score, ...preset }) => preset)
+}
+
+function parameterEntities(value: unknown): ParameterEntity[] {
+  return entitySchemeList(value).flat()
+}
+
+function entitySchemeList(value: unknown): ParameterEntity[][] {
+  return array(value)
+    .map((candidate) => array(candidate).map(parameterEntity).filter(isDefined))
+    .filter((scheme) => scheme.length > 0)
+}
+
+function memberComponentIndex(
+  members: readonly ParameterSelectionMember[],
+  entities: ParameterEntity[],
+  activeTag: string,
+): Map<string, Set<string>> {
+  return new Map(members.map((member) => [
+    member.id,
+    resolveMemberComponents(member, entities, activeTag),
+  ]))
+}
+
+function matchMembers(
+  expectedComponents: readonly string[],
+  members: readonly ParameterSelectionMember[],
+  memberComponents: Map<string, Set<string>>,
+  directEntityKeys = new Set<string>(),
+): { memberIds: string[]; complete: boolean } {
+  const expected = normalizedSet(expectedComponents)
+  if (expected.size === 0) return { memberIds: [], complete: true }
+  const coverage = new Set<string>()
+  const memberIds = members.flatMap((member) => {
+    const directMatch = memberKeys(member).some((key) => directEntityKeys.has(key))
+    const components = memberComponents.get(member.id) ?? new Set<string>()
+    const contained = components.size > 0 && [...components].every((component) => expected.has(component))
+    if (!directMatch && !contained) return []
+    for (const component of components) {
+      if (expected.has(component)) coverage.add(component)
+    }
+    return [member.id]
+  })
+  return {
+    memberIds: [...new Set(memberIds)],
+    complete: [...expected].every((component) => coverage.has(component)),
+  }
+}
+
+function dedupePresets(presets: ParameterSelectionPreset[]): ParameterSelectionPreset[] {
+  const unique = new Map<string, ParameterSelectionPreset>()
+  for (const preset of presets) {
+    const key = `${preset.tag}\u0001${normalize(preset.label)}\u0001${[...preset.memberIds].sort().join('\u0000')}`
+    if (!unique.has(key)) unique.set(key, preset)
+  }
+  return [...unique.values()]
+    .sort((left, right) => left.tag.localeCompare(right.tag) || left.label.localeCompare(right.label))
 }
 
 function bodySelectionEntity(

@@ -91,7 +91,7 @@ import type { DraftEntityMutation } from '../lib/draftEntities'
 import { VirtualizedManifestRows } from './VirtualizedManifestRows'
 import { ResourceSelectionToolbar } from './ResourceSelectionToolbar'
 import { ParameterSelectionGroups } from './ParameterSelectionGroups'
-import { buildParameterSelectionPresets } from '../lib/parameterSelectionGroups'
+import { buildGeometryParameterSelectionPresets } from '../lib/parameterSelectionGroups'
 import { UVFAssetLRU } from '../lib/uvf-three'
 import './GeometryWorkspace.css'
 
@@ -416,14 +416,17 @@ export default function GeometryWorkspace({
   })
   const selectedGroup = manifest?.groups.find((group) => group.id === viewerSelection.groupId) ?? null
   const selectedEdge = manifest?.edges?.find((edge) => edge.id === viewerSelection.groupId) ?? null
-  const selectedGroupIds = viewerSelection.groupIds?.length
+  const selectedEntityIds = viewerSelection.groupIds?.length
     ? viewerSelection.groupIds
-    : selectedGroup ? [selectedGroup.id] : []
+    : viewerSelection.groupId ? [viewerSelection.groupId] : []
+  const selectedEntityIdSet = new Set(selectedEntityIds)
+  const selectedGroupIds = manifest?.groups
+    .filter((group) => selectedEntityIdSet.has(group.id))
+    .map((group) => group.id) ?? []
   const selectedGroups = manifest?.groups.filter((group) => selectedGroupIds.includes(group.id)) ?? []
   const selectedGroupIdSet = new Set(selectedGroupIds)
-  const selectedEntityIds = selectedGroups.length > 0
-    ? selectedGroups.map((group) => group.id)
-    : selectedEdge ? [selectedEdge.id] : []
+  const selectedEdges = manifest?.edges?.filter((edge) => selectedEntityIdSet.has(edge.id)) ?? []
+  const selectedEdgeIdSet = new Set(selectedEdges.map((edge) => edge.id))
   const selectedEntitiesVisible = selectedEntityIds.every((id) => entityVisibility[id] !== false)
   const resourceKey = resourceId ?? detail?.id ?? ''
   const filteredGroups = useMemo(() => {
@@ -440,9 +443,13 @@ export default function GeometryWorkspace({
       edge.name.toLowerCase().includes(query) || edge.id.toLowerCase().includes(query),
     )
   }, [entitySearch, manifest])
-  const parameterFacePresets = useMemo(
-    () => buildParameterSelectionPresets(detail?.simulation_params, 'face', manifest?.groups ?? []),
-    [detail?.simulation_params, manifest?.groups],
+  const parameterSelectionPresets = useMemo(
+    () => buildGeometryParameterSelectionPresets(
+      detail?.simulation_params,
+      manifest?.groups ?? [],
+      manifest?.edges ?? [],
+    ),
+    [detail?.simulation_params, manifest?.edges, manifest?.groups],
   )
   const entityIsVisible = (entityId: string) => entityVisibility[entityId] !== false
   const visibleFaceCount = manifest?.groups.filter((group) => entityIsVisible(group.id)).length ?? 0
@@ -564,18 +571,18 @@ export default function GeometryWorkspace({
     if (resourceKey) saveGeometryAppearanceAssignments(resourceKey, next)
   }
 
-  const chooseGroups = (ids: string[]) => {
+  const chooseEntities = (ids: string[]) => {
     setViewerSelection({ groupId: ids.at(-1) ?? null, groupIds: ids })
   }
 
-  const toggleGroupSelection = (groupId: string, additive: boolean) => {
+  const toggleEntitySelection = (groupId: string, additive: boolean) => {
     if (!additive) {
-      chooseGroups([groupId])
+      chooseEntities([groupId])
       return
     }
-    chooseGroups(selectedGroupIds.includes(groupId)
-      ? selectedGroupIds.filter((id) => id !== groupId)
-      : [...selectedGroupIds, groupId])
+    chooseEntities(selectedEntityIdSet.has(groupId)
+      ? selectedEntityIds.filter((id) => id !== groupId)
+      : [...selectedEntityIds, groupId])
   }
 
   const toggleEntityVisibility = (entityId: string) => {
@@ -863,18 +870,18 @@ export default function GeometryWorkspace({
           />
         </label>
         <ResourceSelectionToolbar
-          allIds={(manifest?.groups ?? []).map((group) => group.id)}
-          resultIds={filteredGroups.map((group) => group.id)}
-          selectedIds={selectedGroupIds}
+          allIds={[...(manifest?.groups ?? []), ...(manifest?.edges ?? [])].map((entity) => entity.id)}
+          resultIds={[...filteredGroups, ...filteredEdges].map((entity) => entity.id)}
+          selectedIds={selectedEntityIds}
           filtered={entitySearch.trim().length > 0}
-          onSelectionChange={chooseGroups}
+          onSelectionChange={chooseEntities}
         />
         <div ref={entityTreeRef} className="geometry-entity-tree">
           <ParameterSelectionGroups
-            presets={parameterFacePresets}
-            selectedIds={selectedGroupIds}
+            presets={parameterSelectionPresets}
+            selectedIds={selectedEntityIds}
             visibility={entityVisibility}
-            onSelectionChange={chooseGroups}
+            onSelectionChange={chooseEntities}
             onSetVisibility={(ids, visible) => setEntityVisibility((current) => ({
               ...current,
               ...Object.fromEntries(ids.map((id) => [id, visible])),
@@ -909,7 +916,7 @@ export default function GeometryWorkspace({
                 <button
                   type="button"
                   className="geometry-entity-select"
-                  onClick={(event) => toggleGroupSelection(
+                  onClick={(event) => toggleEntitySelection(
                     group.id,
                     event.ctrlKey || event.metaKey || event.shiftKey,
                   )}
@@ -963,15 +970,18 @@ export default function GeometryWorkspace({
               const visible = entityIsVisible(edge.id)
               return (
               <div
-                className={`geometry-entity-row ${viewerSelection.groupId === edge.id ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
+                className={`geometry-entity-row ${selectedEdgeIdSet.has(edge.id) ? 'selected' : ''} ${visible ? '' : 'hidden'}`}
                 data-entity-id={edge.id}
                 key={edge.id}
               >
                 <button
                   type="button"
                   className="geometry-entity-select"
-                  onClick={() => setViewerSelection({ groupId: edge.id })}
-                  title="Select edge"
+                  onClick={(event) => toggleEntitySelection(
+                    edge.id,
+                    event.ctrlKey || event.metaKey || event.shiftKey,
+                  )}
+                  title="Select; Ctrl, Cmd, or Shift-click to add/remove"
                 >
                   <span className="geometry-edge-mark" />
                   <span>{edge.name}</span>
@@ -1109,16 +1119,21 @@ export default function GeometryWorkspace({
 
         <section className="geometry-selection-card">
           <div className="geometry-section-title"><Info size={13} /> Selection properties</div>
-          {selectedGroups.length > 1 ? (
+          {selectedEntityIds.length > 1 ? (
             <dl>
-              <div><dt>Type</dt><dd>Face selection</dd></div>
-              <div><dt>Selected</dt><dd>{selectedGroups.length} faces</dd></div>
-              <div><dt>Triangles</dt><dd>{selectedGroups.reduce((sum, group) => sum + (group.triangles ?? 0), 0).toLocaleString()}</dd></div>
-              <div><dt>Display material</dt><dd>
-                {selectedAppearanceNames.size === 1
-                  ? [...selectedAppearanceNames][0]
-                  : `${selectedAppearanceNames.size} materials`}
-              </dd></div>
+              <div><dt>Type</dt><dd>Geometry selection</dd></div>
+              <div><dt>Faces</dt><dd>{selectedGroups.length}</dd></div>
+              <div><dt>Edges</dt><dd>{selectedEdges.length}</dd></div>
+              {selectedGroups.length > 0 && (
+                <div><dt>Triangles</dt><dd>{selectedGroups.reduce((sum, group) => sum + (group.triangles ?? 0), 0).toLocaleString()}</dd></div>
+              )}
+              {selectedGroups.length > 0 && (
+                <div><dt>Display material</dt><dd>
+                  {selectedAppearanceNames.size === 1
+                    ? [...selectedAppearanceNames][0]
+                    : `${selectedAppearanceNames.size} materials`}
+                </dd></div>
+              )}
             </dl>
           ) : selectedGroup ? (
             <dl>
@@ -1168,7 +1183,7 @@ export default function GeometryWorkspace({
                   </button>
                 </>
               )}
-              <button type="button" onClick={() => chooseGroups([])}>
+              <button type="button" onClick={() => chooseEntities([])}>
                 <X size={12} /> Clear
               </button>
             </div>
