@@ -2257,3 +2257,12 @@ func TestFindDraftInPayloadSupportsProjectDraftEnvelopes(t *testing.T) {
 		t.Fatal("did not expect an unknown Draft to be found")
 	}
 }
+
+func TestFlow360ErrorResponseIncludesReleasePolicyDetails(t *testing.T) {
+	payload := flow360ErrorResponse(&flow360.ReleaseCompatibilityError{CloudVersion: "25.11.2"})
+	if payload["code"] != "flow360_release_not_supported" ||
+		payload["cloud_version"] != "25.11.2" ||
+		payload["supported_release"] != "25.10" {
+		t.Fatalf("unexpected compatibility response: %#v", payload)
+	}
+}

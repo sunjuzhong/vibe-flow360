@@ -59,7 +59,7 @@ func TestPrepareInstallsPinnedIsolatedRuntimes(t *testing.T) {
 	if len(runner.calls) != 3 {
 		t.Fatalf("calls = %#v", runner.calls)
 	}
-	if got, want := runner.calls[0].args, []string{"tool", "install", "--python", "3.11", "flow360==25.10.*"}; !reflect.DeepEqual(got, want) {
+	if got, want := runner.calls[0].args, []string{"tool", "install", "--upgrade", "--python", "3.11", "flow360==25.10.*"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("install args = %#v, want %#v", got, want)
 	}
 	if got := strings.Join(runner.calls[1].args, " "); !strings.Contains(got, "cadquery==2.6.1") {

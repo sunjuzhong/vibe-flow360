@@ -12,10 +12,12 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 )
 
 const (
-	DefaultFlow360Version = "25.10.*"
+	DefaultFlow360Version = flow360.SupportedVersionConstraint
 	DefaultPythonVersion  = "3.11"
 	DefaultCadQuery       = "2.6.1"
 	uvVersion             = "0.11.32"
@@ -92,7 +94,7 @@ func Prepare(ctx context.Context, options Options, runner Runner) (Result, error
 	}
 	environment := uvEnvironment(toolsDir)
 	packageSpec := "flow360==" + options.Flow360
-	if err := runner.Run(ctx, environment, uvBinary, "tool", "install", "--python", options.Python, packageSpec); err != nil {
+	if err := runner.Run(ctx, environment, uvBinary, "tool", "install", "--upgrade", "--python", options.Python, packageSpec); err != nil {
 		return Result{}, fmt.Errorf("install Flow360 CLI %s: %w", options.Flow360, err)
 	}
 

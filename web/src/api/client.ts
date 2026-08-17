@@ -17,6 +17,18 @@ export type Flow360Status = {
   error?: string
 }
 
+export class APIError extends Error {
+  code?: string
+  details: Record<string, unknown>
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message)
+    this.name = 'APIError'
+    this.code = typeof details.code === 'string' ? details.code : undefined
+    this.details = details
+  }
+}
+
 export type AgentState = {
   mode: 'ai' | 'codex' | 'local-planner' | 'configuration-error'
   provider: 'builtin' | 'codex' | string
@@ -713,7 +725,7 @@ export type DynamicFormRecommendation = {
 }
 
 export type DynamicFormSchema = {
-  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'expression' | 'union' | 'entity_assignment' | 'field_removal' | 'json'
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'quantity' | 'expression' | 'union' | 'entity_assignment' | 'entity_list' | 'field_removal' | 'json'
   title?: string
   description?: string
   default?: unknown
@@ -739,6 +751,7 @@ export type DynamicFormSchema = {
   entity_choices?: DynamicFormChoice[]
   default_model?: string
   default_entities?: string[]
+  entity_kind?: string
   recommendation?: DynamicFormRecommendation
   minimum?: number
   maximum?: number
@@ -1059,14 +1072,14 @@ export type SweepResult = {
 async function json<T>(path: string): Promise<T> {
   const response = await fetch(path)
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.error || response.statusText)
+  if (!response.ok) throw new APIError(body.error || response.statusText, body)
   return body as T
 }
 
 async function flow360JSON<T>(path: string): Promise<Flow360DataResponse<T>> {
   const response = await fetch(path)
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.error || response.statusText)
+  if (!response.ok) throw new APIError(body.error || response.statusText, body)
   const source = response.headers.get('X-VibeSim-Data-Source') === 'cache' ? 'cache' : 'live'
   return {
     data: body as T,
@@ -1083,7 +1096,7 @@ async function mutate<T>(path: string, body?: unknown): Promise<T> {
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.error || payload.message || response.statusText)
+  if (!response.ok) throw new APIError(payload.error || payload.message || response.statusText, payload)
   return payload as T
 }
 

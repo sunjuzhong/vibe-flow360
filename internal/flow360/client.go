@@ -23,6 +23,14 @@ type Client struct {
 	Profile         string
 	Environment     string
 	APIKey          string
+	// UpgradeCompatible is invoked when the cloud SimulationParams patch
+	// version is newer than the installed runtime but remains in the release
+	// line supported by this Vibe Flow360 build. Tests and custom embedders may
+	// replace it; NewClient configures the isolated managed-runtime upgrader.
+	UpgradeCompatible func(context.Context, string, string) error
+
+	upgradeMu       sync.Mutex
+	upgradedThrough string
 }
 
 type Status struct {
@@ -47,7 +55,7 @@ type ResourceDetail struct {
 }
 
 func NewClient() *Client {
-	return &Client{
+	client := &Client{
 		Binary:          resolveFlow360Binary(),
 		Timeout:         timeoutFromEnv("VIBESIM_FLOW360_TIMEOUT_SECONDS", defaultCommandTimeout),
 		ResourceTimeout: timeoutFromEnv("VIBESIM_FLOW360_RESOURCE_TIMEOUT_SECONDS", defaultResourceTimeout),
@@ -56,6 +64,8 @@ func NewClient() *Client {
 		Environment:     strings.TrimSpace(os.Getenv("VIBESIM_FLOW360_ENV")),
 		APIKey:          firstNonEmpty(os.Getenv("VIBESIM_FLOW360_API_KEY"), os.Getenv("FLOW360_APIKEY")),
 	}
+	client.UpgradeCompatible = client.upgradeManagedRuntime
+	return client
 }
 
 func resolveFlow360Binary() string {
@@ -485,8 +495,9 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 	}
 
 	var (
-		wait sync.WaitGroup
-		mu   sync.Mutex
+		wait             sync.WaitGroup
+		mu               sync.Mutex
+		compatibilityErr error
 	)
 	for _, item := range operations {
 		item := item
@@ -512,6 +523,16 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 			params, commandErr = c.jsonCommandWithTimeout(
 				ctx, c.resourceCommandTimeout(), command, "simulation-params", "get", resourceID,
 			)
+			if commandErr != nil {
+				retry, upgradeErr := c.prepareCompatibleUpgrade(ctx, commandErr)
+				if upgradeErr != nil {
+					commandErr = upgradeErr
+				} else if retry {
+					params, commandErr = c.jsonCommandWithTimeout(
+						ctx, c.resourceCommandTimeout(), command, "simulation-params", "get", resourceID,
+					)
+				}
+			}
 			params = unwrapSimulationParamsPayload(params)
 		} else {
 			params, summary, summaryErr, commandErr = c.resourceSimulationData(ctx, normalizedType, resourceID)
@@ -520,6 +541,9 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 		defer mu.Unlock()
 		if commandErr != nil {
 			detail.Errors["simulation_params"] = commandErr.Error()
+			if CompatibilityErrorCode(commandErr) != "" {
+				compatibilityErr = commandErr
+			}
 			return
 		}
 		detail.SimulationParams = params
@@ -529,7 +553,7 @@ func (c *Client) ResourceDetail(ctx context.Context, resourceType, resourceID st
 		}
 	}()
 	wait.Wait()
-	return detail, nil
+	return detail, compatibilityErr
 }
 
 // ResourceMetadata deliberately limits Project synchronization to the small,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { DynamicFormSchema } from '../api/client'
-import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAutoSyncReady, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
+import { APIError, type DynamicFormSchema } from '../api/client'
+import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -129,5 +129,15 @@ describe('Draft parameter editor', () => {
     expect(draftReviewRunReady({ ...ready, syncError: 'offline' })).toBe(false)
     expect(draftReviewRunReady({ ...ready, validationValid: false })).toBe(false)
     expect(draftReviewRunReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
+  })
+
+  it('turns release policy API errors into an actionable localized message', () => {
+    const error = new APIError('raw backend message', {
+      code: 'flow360_release_not_supported',
+      cloud_version: '25.11.2',
+      supported_release: '25.10',
+    })
+    const translated = draftParameterErrorMessage(error, () => '项目版本 {cloudVersion}，当前应用支持 {supportedRelease}。')
+    expect(translated).toBe('项目版本 25.11.2，当前应用支持 25.10。')
   })
 })

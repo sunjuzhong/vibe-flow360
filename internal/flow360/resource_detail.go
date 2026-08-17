@@ -76,6 +76,25 @@ func (c *Client) resourceSimulationData(
 	resourceType string,
 	resourceID string,
 ) (json.RawMessage, json.RawMessage, error, error) {
+	params, summary, summaryErr, commandErr := c.resourceSimulationDataOnce(ctx, resourceType, resourceID)
+	if commandErr == nil {
+		return params, summary, summaryErr, nil
+	}
+	retry, compatibilityErr := c.prepareCompatibleUpgrade(ctx, commandErr)
+	if compatibilityErr != nil {
+		return nil, nil, nil, compatibilityErr
+	}
+	if !retry {
+		return nil, nil, nil, commandErr
+	}
+	return c.resourceSimulationDataOnce(ctx, resourceType, resourceID)
+}
+
+func (c *Client) resourceSimulationDataOnce(
+	ctx context.Context,
+	resourceType string,
+	resourceID string,
+) (json.RawMessage, json.RawMessage, error, error) {
 	python, err := c.flow360Python()
 	if err != nil {
 		// Non-Python test doubles and legacy installations can still return the

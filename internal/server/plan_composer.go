@@ -61,7 +61,7 @@ func (s *Server) planFormSchema(c *gin.Context) {
 	}
 	context, err := s.loadPlanComposerContext(c.Request.Context(), request)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, flow360ErrorResponse(err))
 		return
 	}
 	c.JSON(http.StatusOK, planFormSchemaResponse{PlanFormSchema: context.Form, Baseline: context.Baseline})
@@ -82,7 +82,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 	}
 	composer, err := s.loadPlanComposerContext(c.Request.Context(), request)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, flow360ErrorResponse(err))
 		return
 	}
 	result, err := s.generateSchemaNativePlan(c.Request.Context(), composer)
@@ -704,7 +704,10 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	}
 	if strings.TrimSpace(request.DraftID) != "" {
 		draftDetail, draftErr := s.flow360.ResourceDetail(ctx, "Draft", strings.TrimSpace(request.DraftID))
-		if draftErr != nil || len(draftDetail.SimulationParams) == 0 {
+		if draftErr != nil {
+			return planComposerContext{}, draftErr
+		}
+		if len(draftDetail.SimulationParams) == 0 {
 			return planComposerContext{}, errors.New("Draft SimulationParams are unavailable")
 		}
 		var draftInfo map[string]any

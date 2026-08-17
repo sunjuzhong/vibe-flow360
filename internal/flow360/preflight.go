@@ -50,6 +50,26 @@ func (c *Client) PreflightSimulationParams(
 	target string,
 	params json.RawMessage,
 ) (PreflightResult, error) {
+	result, err := c.preflightSimulationParamsOnce(ctx, rootType, target, params)
+	if err == nil {
+		return result, nil
+	}
+	retry, compatibilityErr := c.prepareCompatibleUpgrade(ctx, err)
+	if compatibilityErr != nil {
+		return PreflightResult{}, compatibilityErr
+	}
+	if !retry {
+		return PreflightResult{}, err
+	}
+	return c.preflightSimulationParamsOnce(ctx, rootType, target, params)
+}
+
+func (c *Client) preflightSimulationParamsOnce(
+	ctx context.Context,
+	rootType string,
+	target string,
+	params json.RawMessage,
+) (PreflightResult, error) {
 	if !json.Valid(params) {
 		return PreflightResult{}, errors.New("SimulationParams must be valid JSON")
 	}

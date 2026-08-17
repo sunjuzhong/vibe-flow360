@@ -1143,7 +1143,13 @@ func (s *Server) runPlanPreflight(ctx context.Context, plan plans.Plan) plans.Pl
 func (s *Server) runPlanPreflightOnce(ctx context.Context, plan plans.Plan) plans.Plan {
 	if len(plan.Baseline) == 0 || plan.Revision == 0 {
 		detail, err := s.flow360.ResourceDetail(ctx, plan.SourceType, plan.SourceID)
-		if err != nil || len(detail.SimulationParams) == 0 {
+		if err != nil {
+			if code := flow360.CompatibilityErrorCode(err); code != "" {
+				return s.persistPreflightIssue(plan, code, err.Error())
+			}
+			return s.persistUnavailablePreflight(plan, "Flow360 source SimulationParams are unavailable")
+		}
+		if len(detail.SimulationParams) == 0 {
 			return s.persistUnavailablePreflight(plan, "Flow360 source SimulationParams are unavailable")
 		}
 		updated, err := s.plans.SetBaseline(plan.ID, detail.SimulationParams)
@@ -1159,6 +1165,9 @@ func (s *Server) runPlanPreflightOnce(ctx context.Context, plan plans.Plan) plan
 	result, err := s.flow360.PreflightSimulationParams(ctx, plan.SourceType, plan.Target, merged)
 	if err != nil {
 		log.Printf("Flow360 schema preflight failed for %s: %v", plan.ID, err)
+		if code := flow360.CompatibilityErrorCode(err); code != "" {
+			return s.persistPreflightIssue(plan, code, err.Error())
+		}
 		return s.persistUnavailablePreflight(plan, "Flow360 schema preflight is temporarily unavailable")
 	}
 	issues := make([]plans.PreflightIssue, 0, len(result.Issues))
@@ -1181,11 +1190,15 @@ func (s *Server) runPlanPreflightOnce(ctx context.Context, plan plans.Plan) plan
 }
 
 func (s *Server) persistUnavailablePreflight(plan plans.Plan, message string) plans.Plan {
+	return s.persistPreflightIssue(plan, "preflight_unavailable", message)
+}
+
+func (s *Server) persistPreflightIssue(plan plans.Plan, code, message string) plans.Plan {
 	formSchema := json.RawMessage(`{"type":"object","properties":{},"required":[]}`)
 	updated, err := s.plans.SetPreflight(plan.ID, plans.Preflight{
 		SchemaVersion: 1, Valid: false, ValidatedRevision: plan.Revision,
 		Issues: []plans.PreflightIssue{{
-			Level: "error", Code: "preflight_unavailable", Message: message,
+			Level: "error", Code: code, Message: message,
 		}},
 		FormSchema: formSchema,
 	})
@@ -1731,7 +1744,7 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, flow360ErrorResponse(err))
 		return
 	}
 	// ResourceDetail is assembled from several Flow360 calls. A locally derived
@@ -1757,6 +1770,24 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	}
 	s.cacheLiveJSON("resource-detail", cacheKey, raw)
 	s.writeLiveJSON(c, raw)
+}
+
+func flow360ErrorResponse(err error) gin.H {
+	payload := gin.H{"error": err.Error()}
+	if code := flow360.CompatibilityErrorCode(err); code != "" {
+		payload["code"] = code
+	}
+	var unsupported *flow360.ReleaseCompatibilityError
+	if errors.As(err, &unsupported) {
+		payload["cloud_version"] = unsupported.CloudVersion
+		payload["supported_release"] = flow360.SupportedRelease
+	}
+	var upgradeFailed *flow360.CompatibleUpgradeError
+	if errors.As(err, &upgradeFailed) {
+		payload["target_version"] = upgradeFailed.TargetVersion
+		payload["supported_release"] = flow360.SupportedRelease
+	}
+	return payload
 }
 
 // Static resource routes such as /resources/Case/:resource_id do not populate

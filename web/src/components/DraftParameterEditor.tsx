@@ -1,6 +1,6 @@
 import { AlertCircle, ArrowRight, Code2, Eye, ListTree, Play, RefreshCw, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
+import { APIError, api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
 import JsonPreview from './JsonPreview'
@@ -87,7 +87,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         if (!active) return
         setSchema(null)
         setMode('json')
-        setError(`The Flow360 form schema is unavailable. You can still edit valid JSON. ${cleanError(cause)}`)
+        setError(`The Flow360 form schema is unavailable. You can still edit valid JSON. ${draftParameterErrorMessage(cause, t)}`)
       })
       .finally(() => active && setLoading(false))
     return () => { active = false }
@@ -102,7 +102,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           : schema ? buildDraftParameters(schema, formValue) : baseline
       return { value, fingerprint: JSON.stringify(value), error: '' }
     } catch (cause) {
-      return { value: null, fingerprint: '', error: cleanError(cause) }
+      return { value: null, fingerprint: '', error: draftParameterErrorMessage(cause, t) }
     }
   }, [baseline, formValue, jsonValue, mode, previewValue, schema])
 
@@ -128,7 +128,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           if (!active) return
           setValidation(null)
           setValidatedFingerprint('')
-          setError(cleanError(cause))
+          setError(draftParameterErrorMessage(cause, t))
         })
         .finally(() => active && setValidating(false))
     }, dirty ? 500 : 0)
@@ -161,7 +161,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       setError('')
       setMode(nextMode)
     } catch (cause) {
-      setError(cleanError(cause))
+      setError(draftParameterErrorMessage(cause, t))
     }
   }
 
@@ -225,7 +225,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     } catch (cause) {
       if (currentDraftIdRef.current !== requestDraftId) return
       const errorMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
-      setAIMessages((current) => [...current, { id: errorMessageID, role: 'error', content: cleanError(cause) }])
+      setAIMessages((current) => [...current, { id: errorMessageID, role: 'error', content: draftParameterErrorMessage(cause, t) }])
     } finally {
       if (currentDraftIdRef.current === requestDraftId) setAILoading(false)
     }
@@ -250,7 +250,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       }
     } catch (cause) {
       if (currentDraftIdRef.current !== requestDraftId) return
-      setSyncError(cleanError(cause))
+      setSyncError(draftParameterErrorMessage(cause, t))
       setFailedSyncFingerprint(fingerprint)
     } finally {
       if (currentDraftIdRef.current === requestDraftId) setSaving(false)
@@ -271,7 +271,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         setValidation(currentValidation)
         setValidatedFingerprint(candidateResult.fingerprint)
       } catch (cause) {
-        setSyncError(cleanError(cause))
+        setSyncError(draftParameterErrorMessage(cause, t))
         return
       } finally {
         setValidating(false)
@@ -571,7 +571,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function cleanError(cause: unknown): string {
+export function draftParameterErrorMessage(cause: unknown, t: (text: string) => string = (text) => text): string {
+  if (cause instanceof APIError) {
+    if (cause.code === 'flow360_release_not_supported') {
+      return t('This Project uses Flow360 {cloudVersion} parameters. Upgrade Vibe Flow360 to a release that supports Flow360 {supportedRelease}.')
+        .replace('{cloudVersion}', String(cause.details.cloud_version || ''))
+        .replace('{supportedRelease}', String(cause.details.supported_release || ''))
+    }
+    if (cause.code === 'flow360_compatible_upgrade_failed') {
+      return t('Vibe Flow360 could not update its Flow360 {supportedRelease} compatibility components automatically. Check the network connection and retry.')
+        .replace('{supportedRelease}', String(cause.details.supported_release || ''))
+    }
+  }
   return (cause instanceof Error ? cause.message : String(cause)).replace(/^Error:\s*/, '')
 }
 
