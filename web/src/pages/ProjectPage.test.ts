@@ -308,6 +308,22 @@ describe('Draft Geometry topology context', () => {
     expect((mergeDraftAssetTopology(source, draft).private_attribute_asset_cache as any)
       .project_entity_info.grouped_faces).toEqual([[{ name: 'draft-wing' }]])
   })
+
+  it('treats nested empty grouping schemes as missing topology', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: { grouped_bodies: [[{ name: 'source-body' }]] },
+      },
+    }
+    const draft = {
+      private_attribute_asset_cache: {
+        project_entity_info: { grouped_bodies: [[]] },
+      },
+    }
+
+    expect((mergeDraftAssetTopology(source, draft).private_attribute_asset_cache as any)
+      .project_entity_info.grouped_bodies).toEqual([[{ name: 'source-body' }]])
+  })
 })
 
 describe('Draft creation base', () => {

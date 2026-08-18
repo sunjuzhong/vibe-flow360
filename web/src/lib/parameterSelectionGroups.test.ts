@@ -182,4 +182,68 @@ describe('buildParameterSelectionPresets', () => {
       },
     ])
   })
+
+  it('keeps unmappable semantic groups visible and derives bodies from the topology index', () => {
+    const semanticParams = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          face_group_tag: 'faceName',
+          edge_group_tag: 'edgeName',
+          grouped_faces: [[{
+            name: 'wing',
+            private_attribute_id: 'wing-group',
+            private_attribute_tag_key: 'faceName',
+            private_attribute_sub_components: ['semantic-wing-face'],
+          }]],
+          grouped_edges: [[{
+            name: 'leadingEdges',
+            private_attribute_id: 'leading-group',
+            private_attribute_tag_key: 'edgeName',
+            private_attribute_sub_components: ['semantic-leading-edge'],
+          }]],
+          grouped_bodies: [[]],
+          bodies_face_edge_ids: {
+            body00001: { face_ids: ['face-1', 'face-2'], edge_ids: ['edge-1'] },
+          },
+        },
+      },
+    }
+
+    expect(buildGeometryParameterSelectionPresets(
+      semanticParams,
+      [
+        { id: 'face-1', path: ['Default CAD'] },
+        { id: 'face-2', path: ['Default CAD'] },
+      ],
+      [{ id: 'edge-1', path: ['Default CAD'] }],
+    )).toEqual([
+      {
+        id: 'edge:edgeName:leading-group',
+        label: 'leadingEdges',
+        tag: 'edgeName',
+        memberIds: [],
+        faceIds: [],
+        edgeIds: [],
+        available: false,
+      },
+      {
+        id: 'face:faceName:wing-group',
+        label: 'wing',
+        tag: 'faceName',
+        memberIds: [],
+        faceIds: [],
+        edgeIds: [],
+        available: false,
+      },
+      {
+        id: 'geometry:bodyId:body00001',
+        label: 'body00001',
+        tag: 'groupByBodyId',
+        memberIds: ['face-1', 'face-2', 'edge-1'],
+        faceIds: ['face-1', 'face-2'],
+        edgeIds: ['edge-1'],
+        available: true,
+      },
+    ])
+  })
 })

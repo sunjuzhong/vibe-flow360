@@ -44,14 +44,24 @@ export function buildGeometryParameterSelectionPresets(
 ): ParameterSelectionPreset[] {
   const params = unwrapSimulationParams(simulationParams)
   const info = record(record(params.private_attribute_asset_cache).project_entity_info)
-  const facePresets = buildParameterSelectionPresets(simulationParams, 'face', faces)
-    .map((preset) => ({ ...preset, faceIds: preset.memberIds, edgeIds: [] }))
-  const edgePresets = buildParameterSelectionPresets(simulationParams, 'edge', edges)
-    .map((preset) => ({ ...preset, faceIds: [], edgeIds: preset.memberIds }))
   const faceEntities = parameterEntities(info.grouped_faces)
   const edgeEntities = parameterEntities(info.grouped_edges)
-  const bodyEntities = parameterEntities(info.grouped_bodies)
   const bodyIndex = record(info.bodies_face_edge_ids)
+  const declaredBodyEntities = parameterEntities(info.grouped_bodies)
+  const bodyEntities = declaredBodyEntities.length > 0
+    ? declaredBodyEntities
+    : Object.keys(bodyIndex).map((bodyId) => ({
+        id: bodyId,
+        name: bodyId,
+        tag: 'bodyId',
+        components: [bodyId],
+      }))
+  const mappedFacePresets = buildParameterSelectionPresets(simulationParams, 'face', faces)
+    .map((preset) => ({ ...preset, faceIds: preset.memberIds, edgeIds: [] }))
+  const mappedEdgePresets = buildParameterSelectionPresets(simulationParams, 'edge', edges)
+    .map((preset) => ({ ...preset, faceIds: [], edgeIds: preset.memberIds }))
+  const facePresets = includeUnavailableEntityPresets('face', faceEntities, mappedFacePresets)
+  const edgePresets = includeUnavailableEntityPresets('edge', edgeEntities, mappedEdgePresets)
   const faceComponents = memberComponentIndex(faces, faceEntities, text(info.face_group_tag))
   const edgeComponents = memberComponentIndex(edges, edgeEntities, text(info.edge_group_tag))
 
@@ -62,8 +72,8 @@ export function buildGeometryParameterSelectionPresets(
     const expectedEdges = entity.components.flatMap((bodyId) =>
       array(record(bodyIndex[bodyId]).edge_ids).map(text).filter(Boolean),
     )
-    const matchedFaces = matchMembers(expectedFaces, faces, faceComponents)
-    const matchedEdges = matchMembers(expectedEdges, edges, edgeComponents)
+    const matchedFaces = matchMembers(expectedFaces, faces, faceComponents, normalizedSet(expectedFaces))
+    const matchedEdges = matchMembers(expectedEdges, edges, edgeComponents, normalizedSet(expectedEdges))
     const available = expectedFaces.length + expectedEdges.length > 0
       && matchedFaces.complete
       && matchedEdges.complete
@@ -91,6 +101,31 @@ export function buildGeometryParameterSelectionPresets(
     ...edgePresets.filter((preset) => !isReplacedByBodyPreset(preset)),
     ...bodyPresets,
   ])
+}
+
+function includeUnavailableEntityPresets(
+  kind: Exclude<ParameterSelectionKind, 'body'>,
+  entities: ParameterEntity[],
+  mapped: ParameterSelectionPreset[],
+): ParameterSelectionPreset[] {
+  const mappedIds = new Set(mapped.map((preset) => preset.id))
+  const rawTags = new Set(['faceId', 'edgeId', '__standalone__'])
+  return [
+    ...mapped,
+    ...entities.flatMap((entity) => {
+      const id = `${kind}:${entity.tag}:${entity.id}`
+      if (mappedIds.has(id) || rawTags.has(entity.tag)) return []
+      return [{
+        id,
+        label: entity.name || entity.id,
+        tag: entity.tag,
+        memberIds: [],
+        faceIds: [],
+        edgeIds: [],
+        available: false,
+      }]
+    }),
+  ]
 }
 
 export function buildParameterSelectionPresets(
