@@ -1,4 +1,4 @@
-import { CheckSquare2, Eye, EyeOff, Layers3, MinusSquare } from 'lucide-react'
+import { CheckSquare2, ChevronDown, Eye, EyeOff, Layers3, MinusSquare } from 'lucide-react'
 import { useMemo } from 'react'
 import { useI18n } from '../i18n'
 import type { ParameterSelectionPreset } from '../lib/parameterSelectionGroups'
@@ -52,9 +52,14 @@ export function ParameterSelectionGroups({
     >
       <div className="parameter-selection-groups">
         {presetSets.map(([tag, tagPresets]) => (
-          <section className="parameter-selection-set" key={tag}>
-            <header><strong>{t(parameterSelectionTagLabel(tag))}</strong><small>{tag}</small></header>
-            {tagPresets.map((preset) => {
+          <details className="parameter-selection-set" key={tag} open>
+            <summary className="parameter-selection-set__toggle">
+              <ChevronDown size={11} aria-hidden="true" />
+              <strong>{t(parameterSelectionTagLabel(tag))}</strong>
+              <small>{tag}</small>
+            </summary>
+            <div className="parameter-selection-set__content">
+              {tagPresets.map((preset) => {
           const available = preset.available !== false && preset.memberIds.length > 0
           const selectedCount = preset.memberIds.filter((id) => selectedSet.has(id)).length
           const selectionState = selectedCount === 0 ? 'false' : selectedCount === preset.memberIds.length ? 'true' : 'mixed'
@@ -120,8 +125,9 @@ export function ParameterSelectionGroups({
               )}
             </div>
           )
-            })}
-          </section>
+              })}
+            </div>
+          </details>
         ))}
       </div>
     </ManifestMemberGroup>
