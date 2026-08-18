@@ -538,6 +538,20 @@ func TestResourceMeshPreviewReturnsFriendlyCapacityError(t *testing.T) {
 		!strings.Contains(response["technical_error"].(string), "512 MiB") {
 		t.Fatalf("friendly and technical errors were not separated: %#v", response)
 	}
+
+	cachedRecorder := httptest.NewRecorder()
+	cachedContext, _ := gin.CreateTestContext(cachedRecorder)
+	cachedContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Geometry/geo-1/preview-mesh", nil)
+	cachedContext.Params = requestContext.Params
+	app.flow360ResourceMeshPreview(cachedContext)
+	if cachedRecorder.Code != http.StatusServiceUnavailable || cachedRecorder.Header().Get("X-VibeSim-Data-Source") != "cache" {
+		t.Fatalf("cached capacity response got %d: %s", cachedRecorder.Code, cachedRecorder.Body)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.visualizationCalls != 1 {
+		t.Fatalf("oversized visualization attempted %d downloads, want one", client.visualizationCalls)
+	}
 }
 
 func TestVisualizationManifestBrowserSafe(t *testing.T) {
@@ -553,7 +567,7 @@ func TestVisualizationManifestBrowserSafe(t *testing.T) {
 	}
 }
 
-func TestResourceMeshPreviewRefreshesManifestWithDanglingGroupReferences(t *testing.T) {
+func TestResourceMeshPreviewNormalizesLocalManifestWithoutRedownload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	client := &fakeProjectSyncClient{
 		details: map[string]flow360.ResourceDetail{
@@ -595,8 +609,63 @@ func TestResourceMeshPreviewRefreshesManifestWithDanglingGroupReferences(t *test
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if client.visualizationCalls != 1 {
-		t.Fatalf("visualization downloaded %d times, want once", client.visualizationCalls)
+	if client.visualizationCalls != 0 {
+		t.Fatalf("visualization downloaded %d times, want local manifest reuse", client.visualizationCalls)
+	}
+}
+
+func TestResourceMeshPreviewUsesLocalManifestAndDownloadsMissingAssetOnDemand(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manifest := json.RawMessage(`[
+		{"id":"body-1","type":"SolidGeometry","properties":{"boundsMin":[-1,-1,-1],"boundsMax":[1,1,1]},"resources":{"buffers":{"type":"buffers","path":"body.bin","sections":[{"name":"position","length":36}]}}},
+		{"id":"face-1","name":"Face 1","type":"Face","properties":{"bufferLocations":{"indices":[{"startIndex":0,"endIndex":3}]}}}
+	]`)
+	visualization := flow360.ResourceVisualization{
+		Manifest: manifest,
+		Bins:     map[string][]byte{"body.bin": {1, 2, 3}},
+	}
+	client := &fakeProjectSyncClient{
+		details: map[string]flow360.ResourceDetail{
+			"Case/case-1": {ID: "case-1", Type: "Case", Errors: map[string]string{}},
+		},
+		failures:      map[string]error{},
+		visualization: &visualization,
+	}
+	app := newProjectSyncTestServer(t, client)
+	app.syncProject(t.Context(), "prj-1", client)
+	if _, err := app.mirror.PutResourceVisualization("prj-1", "Case", "case-1", manifest, map[string][]byte{}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	previewRecorder := httptest.NewRecorder()
+	previewContext, _ := gin.CreateTestContext(previewRecorder)
+	previewContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-1/preview-mesh", nil)
+	previewContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Case"},
+		{Key: "resource_id", Value: "case-1"},
+	}
+	app.flow360ResourceMeshPreview(previewContext)
+	if previewRecorder.Code != http.StatusOK {
+		t.Fatalf("local manifest preview got %d: %s", previewRecorder.Code, previewRecorder.Body)
+	}
+
+	assetRecorder := httptest.NewRecorder()
+	assetContext, _ := gin.CreateTestContext(assetRecorder)
+	assetContext.Request = httptest.NewRequest(http.MethodGet, "/asset", nil)
+	assetContext.Params = gin.Params{
+		{Key: "resource_type", Value: "Case"},
+		{Key: "resource_id", Value: "case-1"},
+		{Key: "asset_path", Value: "/body.bin"},
+	}
+	app.flow360ResourceVisualizationAsset(assetContext)
+	if assetRecorder.Code != http.StatusOK || !bytes.Equal(assetRecorder.Body.Bytes(), []byte{1, 2, 3}) {
+		t.Fatalf("on-demand asset got %d: %v", assetRecorder.Code, assetRecorder.Body.Bytes())
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.visualizationCalls != 0 || client.visualizationAssetCalls != 1 {
+		t.Fatalf("downloads: visualization=%d asset=%d, want 0 and 1", client.visualizationCalls, client.visualizationAssetCalls)
 	}
 }
 

@@ -518,6 +518,7 @@ func (c *Client) ResourceVisualization(
 func visualizationFailureKind(message string, fallback VisualizationErrorKind) VisualizationErrorKind {
 	normalized := strings.ToLower(message)
 	for _, marker := range []string{
+		"visualization manifest exceeds the",
 		"exceeds the 512 mib remote limit",
 		"exceeds 8388608 byte limit",
 		"exceeds the size limit",
@@ -1067,6 +1068,28 @@ except KeyError as exc:
 api = api_class(resource_id)
 manifest_remote = "visualize/manifest/manifest.json"
 manifest_local = root / "manifest.json"
+
+# The SDK download helper performs HEAD internally but does not expose its
+# ContentLength to callers. A one-byte range read gives us the total object
+# size before downloading hundreds of MiB that the browser can never consume.
+transfer = api._interface.s3_transfer_method
+if hasattr(transfer, "read_bytes"):
+    _, metadata = transfer.read_bytes(
+        resource_id,
+        manifest_remote,
+        byte_range=(0, 0),
+        log_error=False,
+    )
+    content_range = metadata.get("content_range") or ""
+    try:
+        remote_size = int(content_range.rsplit("/", 1)[1])
+    except (IndexError, TypeError, ValueError):
+        remote_size = None
+    remote_limit = 512 * 1024 * 1024 if resource_type == "Geometry" else 8 * 1024 * 1024
+    if remote_size is not None and remote_size > remote_limit:
+        raise ValueError(
+            f"visualization manifest exceeds the {remote_limit // (1024 * 1024)} MiB remote limit"
+        )
 api.download_file(manifest_remote, to_file=str(manifest_local), overwrite=True)
 
 # Flow360 Geometry manifests can contain hundreds of thousands of Face and

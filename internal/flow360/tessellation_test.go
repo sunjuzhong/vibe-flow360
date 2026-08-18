@@ -197,6 +197,7 @@ func TestResourceVisualizationRejectsUnsupportedTypeWithTypedError(t *testing.T)
 func TestVisualizationFailureKindClassifiesCapacityErrors(t *testing.T) {
 	for _, message := range []string{
 		"visualization manifest exceeds the 512 MiB remote limit",
+		"visualization manifest exceeds the 8 MiB remote limit",
 		"visualization asset exceeds 8388608 byte limit",
 		"normalized visualization manifest exceeds the size limit",
 		"visualization manifest has an invalid entry count",

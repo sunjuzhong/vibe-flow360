@@ -86,7 +86,10 @@ type Server struct {
 	aiCreateProgress    map[string]aiCreateProgress
 }
 
-const browserVisualizationManifestLimit = 8 * 1024 * 1024
+const (
+	browserVisualizationManifestLimit = 8 * 1024 * 1024
+	visualizationErrorCacheTTL        = 24 * time.Hour
+)
 
 var allowedImportExtensions = map[string][]string{
 	"geometry":     {".step", ".stp", ".igs", ".iges", ".brep", ".csm", ".cax", ".catpart", ".catproduct"},
@@ -1744,6 +1747,9 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "local resource snapshot is unavailable"})
 		return
 	}
+	if !forceResourceFileSync(c) && s.servePartialResourceDetailSnapshot(c, cacheKey) {
+		return
+	}
 	detail, err := s.flow360.ResourceDetail(
 		c.Request.Context(),
 		resourceType,
@@ -1771,6 +1777,9 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode partial resource detail"})
 				return
 			}
+			if s.cache != nil {
+				_, _ = s.cache.Put("resource-detail-partial", cacheKey, raw)
+			}
 			c.Header("X-VibeSim-Detail-Partial", "true")
 			s.writeLiveJSON(c, raw)
 			return
@@ -1792,6 +1801,9 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		return
 	}
 	s.cacheLiveJSON("resource-detail", cacheKey, raw)
+	if s.cache != nil {
+		_ = s.cache.Delete("resource-detail-partial", cacheKey)
+	}
 	s.writeLiveJSON(c, raw)
 }
 
@@ -1850,6 +1862,9 @@ func resourceTypeForDetail(requestedType, resourceID string) string {
 }
 
 func (s *Server) serveResourceDetailSnapshot(c *gin.Context, resourceType, resourceID, cacheKey string) bool {
+	if s.servePartialResourceDetailSnapshot(c, cacheKey) {
+		return true
+	}
 	if s.cache != nil {
 		if entry, err := s.cache.Get("resource-detail", cacheKey); err == nil {
 			s.writeResourceDetailSnapshot(c, entry.Data, entry.CachedAt, "cached Flow360 API snapshot")
@@ -1863,6 +1878,19 @@ func (s *Server) serveResourceDetailSnapshot(c *gin.Context, resourceType, resou
 		}
 	}
 	return false
+}
+
+func (s *Server) servePartialResourceDetailSnapshot(c *gin.Context, cacheKey string) bool {
+	if s.cache == nil {
+		return false
+	}
+	entry, err := s.cache.GetFresh("resource-detail-partial", cacheKey, projectcache.DefaultTTL)
+	if err != nil {
+		return false
+	}
+	c.Header("X-VibeSim-Detail-Partial", "true")
+	s.writeResourceDetailSnapshot(c, entry.Data, entry.CachedAt, "cached partial Flow360 API snapshot")
+	return true
 }
 
 func (s *Server) writeResourceDetailSnapshot(c *gin.Context, payload json.RawMessage, cachedAt time.Time, source string) {
@@ -1996,6 +2024,7 @@ func (s *Server) resourceResult(
 func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	resourceType := c.Param("resource_type")
 	resourceID := c.Param("resource_id")
+	cacheKey := resourceType + "/" + resourceID
 	force := forceResourceFileSync(c)
 	var visualizationErr error
 
@@ -2007,27 +2036,39 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		var cachedPreview *flow360.MeshPreview
 		manifest, manifestErr := s.mirror.ResourceVisualizationManifest(resourceType, resourceID)
 		if manifestErr == nil {
-			originalManifest := manifest
 			if resourceType == "Case" {
 				manifest, manifestErr = flow360.NormalizeCaseVisualizationManifest(manifest)
 			} else {
 				manifest, manifestErr = flow360.NormalizeVisualizationManifest(manifest)
 			}
-			manifestChanged := manifestErr == nil && !bytes.Equal(originalManifest, manifest)
 			assetURL := visualizationManifestURL(resourceType, resourceID, manifest)
 			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)
 			if previewErr == nil {
-				if !manifestChanged {
+				if visualizationManifestBrowserSafe(manifest) {
 					cachedPreview = &preview
 				}
-				if !force && !manifestChanged && visualizationManifestBrowserSafe(manifest) && s.resourceVisualizationComplete(resourceType, resourceID, manifest) {
+				if !force && visualizationManifestBrowserSafe(manifest) {
+					// The manifest is sufficient to start the viewer. Missing referenced
+					// buffers are fetched individually by the visualization asset route,
+					// so do not redownload the entire immutable visualization here.
+					s.clearVisualizationError(cacheKey)
 					c.Header("Cache-Control", "private, max-age=60")
 					c.JSON(http.StatusOK, preview)
 					return
 				}
+				if !force {
+					visualizationErr = &flow360.VisualizationError{
+						Kind:         flow360.VisualizationTooLarge,
+						ResourceType: resourceType,
+						Err:          fmt.Errorf("normalized visualization manifest exceeds the %d MiB browser limit", browserVisualizationManifestLimit/(1024*1024)),
+					}
+				}
 			}
 		}
-		if s.projectSyncClient != nil {
+		if visualizationErr == nil && !force && s.serveCachedVisualizationError(c, cacheKey) {
+			return
+		}
+		if visualizationErr == nil && s.projectSyncClient != nil {
 			projectID, projectErr := s.ensureResourceMirrorIdentity(c.Request.Context(), resourceType, resourceID)
 			if projectErr == nil {
 				visualization, downloadErr := s.projectSyncClient.ResourceVisualization(
@@ -2049,6 +2090,7 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 						)
 					}
 					if persistErr == nil {
+						s.clearVisualizationError(cacheKey)
 						assetURL := visualizationManifestURL(resourceType, resourceID, visualization.Manifest)
 						if preview, previewErr := flow360.GeometryUVFPreview(resourceID, visualization.Manifest, assetURL); previewErr == nil {
 							c.Header("Cache-Control", "private, max-age=60")
@@ -2070,18 +2112,9 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 		}
 	}
 	if visualizationErr != nil {
-		response := gin.H{
-			"code":     "visualization_unavailable",
-			"error":    visualizationErr.Error(),
-			"format":   resourceType,
-			"groups":   []any{},
-			"warnings": []string{resourceType + " visualization could not be prepared"},
-		}
-		var typedErr *flow360.VisualizationError
-		if errors.As(visualizationErr, &typedErr) && typedErr.Kind == flow360.VisualizationTooLarge {
-			response["code"] = "visualization_too_large"
-			response["error"] = "This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support."
-			response["technical_error"] = visualizationErr.Error()
+		response, cacheable := resourceVisualizationErrorResponse(resourceType, visualizationErr)
+		if cacheable {
+			s.cacheVisualizationError(cacheKey, response)
 		}
 		c.JSON(http.StatusServiceUnavailable, response)
 		return
@@ -2107,6 +2140,58 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+func resourceVisualizationErrorResponse(resourceType string, err error) (gin.H, bool) {
+	response := gin.H{
+		"code":     "visualization_unavailable",
+		"error":    err.Error(),
+		"format":   resourceType,
+		"groups":   []any{},
+		"warnings": []string{resourceType + " visualization could not be prepared"},
+	}
+	var typedErr *flow360.VisualizationError
+	if errors.As(err, &typedErr) && typedErr.Kind == flow360.VisualizationTooLarge {
+		response["code"] = "visualization_too_large"
+		response["error"] = "This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support."
+		response["technical_error"] = err.Error()
+		return response, true
+	}
+	return response, false
+}
+
+func (s *Server) serveCachedVisualizationError(c *gin.Context, key string) bool {
+	if s.cache == nil {
+		return false
+	}
+	entry, err := s.cache.GetFresh("visualization-error", key, visualizationErrorCacheTTL)
+	if err != nil {
+		return false
+	}
+	var response gin.H
+	if json.Unmarshal(entry.Data, &response) != nil {
+		return false
+	}
+	c.Header("X-VibeSim-Data-Source", "cache")
+	c.Header("Cache-Control", "private, max-age=60")
+	c.JSON(http.StatusServiceUnavailable, response)
+	return true
+}
+
+func (s *Server) cacheVisualizationError(key string, response gin.H) {
+	if s.cache == nil {
+		return
+	}
+	payload, err := json.Marshal(response)
+	if err == nil {
+		_, _ = s.cache.Put("visualization-error", key, payload)
+	}
+}
+
+func (s *Server) clearVisualizationError(key string) {
+	if s.cache != nil {
+		_ = s.cache.Delete("visualization-error", key)
+	}
 }
 
 func visualizationManifestBrowserSafe(manifest json.RawMessage) bool {
@@ -2162,21 +2247,6 @@ func (s *Server) ensureResourceMirrorIdentity(ctx context.Context, resourceType,
 		return "", err
 	}
 	return strings.TrimSpace(info.ProjectID), nil
-}
-
-func (s *Server) resourceVisualizationComplete(resourceType, resourceID string, manifest json.RawMessage) bool {
-	paths, err := flow360.TessellationDefaultBinPaths(manifest)
-	if err != nil {
-		return false
-	}
-	for _, path := range paths {
-		file, _, err := s.mirror.OpenResourceVisualizationFile(resourceType, resourceID, path)
-		if err != nil {
-			return false
-		}
-		_ = file.Close()
-	}
-	return true
 }
 
 func (s *Server) flow360GeometryDiagnostics(c *gin.Context) {

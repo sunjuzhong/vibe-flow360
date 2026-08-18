@@ -70,6 +70,48 @@ describe('projectSyncProgress', () => {
 })
 
 describe('hydrateResourceDetail', () => {
+  it('does not refetch an immutable complete Case snapshot', async () => {
+    const calls: boolean[] = []
+    const result = await hydrateResourceDetail(async (cacheOnly) => {
+      calls.push(cacheOnly)
+      if (!cacheOnly) throw new Error('live detail should not be requested')
+      return {
+        data: {
+          id: 'case-1',
+          type: 'Case',
+          state: { status: 'completed' },
+          simulation_params: { version: '1' },
+          results: { records: [] },
+        },
+        source: 'cache',
+      }
+    }, true, () => {})
+
+    expect(calls).toEqual([true])
+    expect(result).toEqual({ cachedLoaded: true, liveLoaded: false })
+  })
+
+  it('does not repeat a failed large SimulationParams fetch for a terminal Case', async () => {
+    const calls: boolean[] = []
+    const result = await hydrateResourceDetail(async (cacheOnly) => {
+      calls.push(cacheOnly)
+      if (!cacheOnly) throw new Error('live detail should not be requested')
+      return {
+        data: {
+          id: 'case-1',
+          type: 'Case',
+          state: { status: 'completed' },
+          results: { records: [{ path: 'results/total_forces_v2.csv' }] },
+          errors: { simulation_params: 'response exceeds 128 MiB' },
+        },
+        source: 'cache',
+      }
+    }, true, () => {})
+
+    expect(calls).toEqual([true])
+    expect(result).toEqual({ cachedLoaded: true, liveLoaded: false })
+  })
+
   it('renders metadata cache first and then replaces it with full live Case detail', async () => {
     const calls: boolean[] = []
     const snapshots: string[] = []

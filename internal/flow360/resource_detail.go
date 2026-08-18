@@ -18,6 +18,7 @@ const maxResourceDetailOutputSize = 128 * 1024 * 1024
 // second time, which doubles remote work and made large Project syncs time out.
 const resourceSimulationBridge = `
 import json
+import contextlib
 import sys
 import time
 
@@ -48,7 +49,11 @@ webapi_classes = {
 }
 for attempt in range(max_attempts):
     try:
-        simulation_params = webapi_classes[resource_type](resource_id).get_simulation_params()
+        # Some SDK/runtime versions write progress or compatibility messages to
+        # stdout. Keep stdout reserved for the single structured JSON envelope
+        # consumed by the Go bridge.
+        with contextlib.redirect_stdout(sys.stderr):
+            simulation_params = webapi_classes[resource_type](resource_id).get_simulation_params()
         break
     except RequestException:
         if attempt == max_attempts - 1:
@@ -56,10 +61,11 @@ for attempt in range(max_attempts):
         time.sleep(min(2 ** attempt, 8))
 payload = {"simulation_params": simulation_params}
 try:
-    payload["summary"] = {
-        "id": resource_id,
-        "summary": summarize_simulation(simulation_params),
-    }
+    with contextlib.redirect_stdout(sys.stderr):
+        payload["summary"] = {
+            "id": resource_id,
+            "summary": summarize_simulation(simulation_params),
+        }
 except Exception as error:  # Summary is derived, so preserve usable raw params.
     payload["summary_error"] = f"{type(error).__name__}: {error}"
 print(json.dumps(payload))

@@ -117,14 +117,32 @@ export async function hydrateResourceDetail(
   onSnapshot: (response: Flow360DataResponse<ResourceDetail>) => void,
 ): Promise<{ cachedLoaded: boolean; liveLoaded: boolean; error?: unknown }> {
   let cachedLoaded = false
+  let cachedDetail: ResourceDetail | null = null
   if (cacheFirst) {
     try {
       const cached = await fetchDetail(true)
       onSnapshot(cached)
       cachedLoaded = true
+      cachedDetail = cached.data
     } catch {
       // A cache miss is expected on the first visit.
     }
+  }
+
+  // Completed Flow360 resources are immutable. Once the local snapshot has
+  // the canonical parameters and (for Cases) the result inventory, another
+  // live detail fetch only repeats expensive remote SDK work.
+  const cachedStatus = String(cachedDetail?.state?.status ?? '').toLowerCase()
+  const terminalCached = ['completed', 'processed', 'success', 'succeeded', 'failed', 'error'].includes(cachedStatus)
+  const hasCanonicalParams = Boolean(cachedDetail?.simulation_params)
+  const hasCaseResults = cachedDetail?.type !== 'Case' || Array.isArray(cachedDetail.results?.records)
+  const hasCriticalErrors = Object.keys(cachedDetail?.errors ?? {}).some((key) => key !== 'summary')
+  const reusablePartialCase = cachedDetail?.type === 'Case'
+    && Array.isArray(cachedDetail.results?.records)
+    && Object.keys(cachedDetail.errors ?? {}).every((key) => key === 'summary' || key === 'simulation_params')
+  if (cachedDetail && terminalCached && hasCaseResults
+    && ((hasCanonicalParams && !hasCriticalErrors) || reusablePartialCase)) {
+    return { cachedLoaded: true, liveLoaded: false }
   }
 
   try {

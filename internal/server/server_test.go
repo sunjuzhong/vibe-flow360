@@ -908,6 +908,18 @@ esac
 	if detail.Errors["simulation_params"] == "" {
 		t.Fatalf("expected the partial SimulationParams error to remain visible")
 	}
+
+	cachedRecorder := httptest.NewRecorder()
+	cachedContext, _ := gin.CreateTestContext(cachedRecorder)
+	cachedContext.Request = httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-partial", nil)
+	cachedContext.Params = context.Params
+	app.flow360ResourceDetail(cachedContext)
+	if cachedRecorder.Code != http.StatusOK || cachedRecorder.Header().Get("X-VibeSim-Data-Source") != "cache" {
+		t.Fatalf("cached partial got %d: %s", cachedRecorder.Code, cachedRecorder.Body)
+	}
+	if cachedRecorder.Header().Get("X-VibeSim-Detail-Partial") != "true" {
+		t.Fatalf("cached partial header missing: %#v", cachedRecorder.Header())
+	}
 }
 
 func TestResourceDetailCacheOnlyFallsBackToProjectMirror(t *testing.T) {

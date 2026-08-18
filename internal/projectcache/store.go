@@ -12,14 +12,16 @@ import (
 )
 
 var allowedKinds = map[string]struct{}{
-	"project-info":    {},
-	"project-tree":    {},
-	"project-items":   {},
-	"draft-list":      {},
-	"resource-detail": {},
-	"folder-tree":     {},
-	"project-list":    {},
-	"folder-projects": {},
+	"project-info":            {},
+	"project-tree":            {},
+	"project-items":           {},
+	"draft-list":              {},
+	"resource-detail":         {},
+	"resource-detail-partial": {},
+	"visualization-error":     {},
+	"folder-tree":             {},
+	"project-list":            {},
+	"folder-projects":         {},
 }
 
 const (
