@@ -56,6 +56,7 @@ export type OverlayPrimitive =
       readonly position: Vector3Tuple
       readonly color?: string
       readonly size?: number
+      readonly opacity?: number
     }
   | {
       readonly kind: 'polyline'

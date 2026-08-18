@@ -26,7 +26,7 @@ describe('ViewerOverlayLayer', () => {
       resourceRef: resource,
       saved: [
         annotation('all', [
-          { kind: 'point', key: 'point', position: [1, 2, 3], size: 11 },
+          { kind: 'point', key: 'point', position: [1, 2, 3], size: 11, opacity: 0.4 },
           { kind: 'polyline', key: 'line-2', points: [[0, 0, 0], [1, 0, 0]] },
           {
             kind: 'polyline',
@@ -55,6 +55,8 @@ describe('ViewerOverlayLayer', () => {
     expect((point.material as THREE.PointsMaterial).size).toBe(11)
     expect((point.material as THREE.PointsMaterial).depthTest).toBe(false)
     expect((point.material as THREE.PointsMaterial).depthWrite).toBe(false)
+    expect((point.material as THREE.PointsMaterial).opacity).toBe(0.4)
+    expect((point.material as THREE.PointsMaterial).transparent).toBe(true)
     const line = layer.getObject('all', 'line-2') as THREE.Line
     expect((line.material as THREE.LineBasicMaterial).depthTest).toBe(true)
     expect((line.material as THREE.LineBasicMaterial).depthWrite).toBe(false)

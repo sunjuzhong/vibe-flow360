@@ -250,7 +250,8 @@ export class ViewerOverlayLayer {
           sizeAttenuation: false,
           depthTest: false,
           depthWrite: false,
-          transparent: true,
+          transparent: (primitive.opacity ?? 1) < 1,
+          opacity: primitive.opacity ?? 1,
         }),
       )
     } else if (primitive.kind === 'polyline') {
@@ -345,6 +346,8 @@ export class ViewerOverlayLayer {
       const material = object.material as THREE.PointsMaterial
       material.color.set(color)
       material.size = primitive.size ?? this.options.pointSize
+      material.opacity = primitive.opacity ?? 1
+      material.transparent = material.opacity < 1
       material.needsUpdate = true
       return
     }

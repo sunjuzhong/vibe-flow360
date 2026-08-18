@@ -91,6 +91,26 @@ describe('Viewer3D layout state', () => {
     expect(html).toContain('overscroll-behavior:contain')
   })
 
+  it('shows the pick crosshair cursor class only while a pick tool is collecting points', () => {
+    const active = renderViewer(
+      <Viewer3D
+        manifest={null}
+        state={{ status: 'loading' }}
+        toolInput={{ onPick: () => false, isActive: () => true }}
+      />,
+    )
+    const idle = renderViewer(
+      <Viewer3D
+        manifest={null}
+        state={{ status: 'loading' }}
+        toolInput={{ onPick: () => false, isActive: () => false }}
+      />,
+    )
+
+    expect(active).toContain('viewer-tool-picking')
+    expect(idle).not.toContain('viewer-tool-picking')
+  })
+
   it('allows resource pages to suppress a duplicate manifest warning', () => {
     const manifest = {
       format: 'flow360-uvf',

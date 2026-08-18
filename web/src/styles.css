@@ -2989,6 +2989,8 @@ button { color: inherit; }
 .viewer-3d.viewer-camera-navigating canvas { cursor: grabbing; }
 .viewer-3d.viewer-probe-active,
 .viewer-3d.viewer-probe-active canvas { cursor: crosshair; }
+.viewer-3d.viewer-tool-picking:not(:active),
+.viewer-3d.viewer-tool-picking:not(:active) canvas { cursor: crosshair; }
 .viewer-pivot-feedback {
   position: absolute;
   z-index: 9;

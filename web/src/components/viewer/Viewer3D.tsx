@@ -41,6 +41,7 @@ import {
   type CadTopologyProvider,
   type CadTopologyCandidates,
   type OverlayAnnotation,
+  type OverlayPrimitive,
   type PickResult,
   type ResourceRef,
   type SnapCycleState,
@@ -460,6 +461,12 @@ export function Viewer3D({
   } | null>(null)
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [snapStatus, setSnapStatus] = useState<SnapStatusModel | null>(null)
+  /** True while a pick tool is collecting points — drives the crosshair cursor. */
+  const toolPickActive = useMemo(
+    () => Boolean(toolInput)
+      && ((toolInput?.isActive?.() ?? true) || Boolean(toolInput?.controlPoints?.length)),
+    [toolInput],
+  )
   const [draggingControlPoint, setDraggingControlPoint] = useState<number | null>(null)
   const [cameraNavigating, setCameraNavigating] = useState(false)
   const cameraNavigatingRef = useRef(false)
@@ -607,15 +614,24 @@ export function Viewer3D({
   const fitTargetsSelection = fitSelectionWhenSelected && Boolean(selection?.groupId)
   const snapIndicatorAnnotations = useMemo<readonly OverlayAnnotation[]>(() => {
     const indicator = snapStatus?.indicator
-    if (!indicator || snapStatus.mode === 'surface' || snapStatus.mode === 'unavailable') return []
+    if (!indicator || snapStatus.mode === 'unavailable') return []
+    // Feature snaps (CAD vertex/edge, mesh vertex/feature) get a strong highlighted
+    // marker with halo; plain surface hits get a subtle landing hint.
+    const isFeature = snapStatus.mode === 'active'
+    const primitives: OverlayPrimitive[] = isFeature
+      ? [
+        { kind: 'point', key: 'snap-halo', position: indicator.position, color: '#22d3ee', size: 16, opacity: 0.3 },
+        { kind: 'point', key: 'snap-point', position: indicator.position, color: '#22d3ee', size: 7 },
+        { kind: 'label', key: 'snap-label', position: indicator.position, text: indicator.label, color: '#67e8f9' },
+      ]
+      : [
+        { kind: 'point', key: 'snap-point', position: indicator.position, color: '#67e8f9', size: 5, opacity: 0.6 },
+      ]
     return [{
       annotationId: '__snap_candidate__',
       coordinateFrame: { kind: 'world' },
       state: 'hover',
-      primitives: [
-        { kind: 'point', key: 'snap-point', position: indicator.position, color: '#22d3ee', size: 8 },
-        { kind: 'label', key: 'snap-label', position: indicator.position, text: indicator.label, color: '#67e8f9' },
-      ],
+      primitives,
     }]
   }, [snapStatus])
   const manifestEntityVisibility = useMemo(() => [
@@ -2178,7 +2194,7 @@ export function Viewer3D({
     >
       <div
         ref={containerRef}
-        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''} ${cameraNavigating ? 'viewer-camera-navigating' : ''} ${probeToolActive ? 'viewer-probe-active' : ''}`}
+        className={`viewer-3d ${draggingControlPoint !== null ? 'viewer-tool-point-dragging' : ''} ${cameraNavigating ? 'viewer-camera-navigating' : ''} ${probeToolActive ? 'viewer-probe-active' : ''} ${toolPickActive && !cameraNavigating ? 'viewer-tool-picking' : ''}`}
         onPointerDownCapture={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
