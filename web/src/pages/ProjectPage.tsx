@@ -120,10 +120,14 @@ export function resourceTransitionProgress(
   viewerState?: ViewerState,
 ): { active: boolean; progress: number; phase: 'detail' | 'preview' | 'asset' | 'complete' } {
   if (detailFailed) return { active: false, progress: 100, phase: 'complete' }
+  // A preview can become ready from cached visualization files before the
+  // resource detail request has finished. Keep the entry transition in front
+  // until both are stable so Case metrics do not briefly render from a partial
+  // cache snapshot (for example, zero result artifacts).
+  if (!detailReady) return { active: true, progress: 38, phase: 'detail' }
   if (viewerState?.status === 'ready' || viewerState?.status === 'error') {
     return { active: false, progress: 100, phase: 'complete' }
   }
-  if (!detailReady) return { active: true, progress: 38, phase: 'detail' }
   if (!viewerState || viewerState.status === 'idle') return { active: true, progress: 52, phase: 'preview' }
   const assetProgress = viewerState.progress
   return {
@@ -686,7 +690,6 @@ export default function ProjectPage() {
         setDetail(response.data)
         setDetailDataSource(response.source)
         setDetailCachedAt(response.cachedAt || '')
-        if (response.source === 'cache') setDetailLoading(false)
       },
     )
     if (requestId !== detailRequestRef.current) return

@@ -78,12 +78,19 @@ describe('resourceTransitionProgress', () => {
       .toEqual({ active: true, progress: 78, phase: 'asset' })
   })
 
-  it('finishes for ready or failed resources instead of leaving a blocking overlay', () => {
+  it('finishes only after detail hydration, or immediately after a detail failure', () => {
     expect(resourceTransitionProgress(true, false, { status: 'ready' })).toEqual({ active: false, progress: 100, phase: 'complete' })
-    expect(resourceTransitionProgress(false, false, { status: 'ready' })).toEqual({ active: false, progress: 100, phase: 'complete' })
+    expect(resourceTransitionProgress(false, false, { status: 'ready' })).toEqual({ active: true, progress: 38, phase: 'detail' })
     expect(resourceTransitionProgress(false, false, { status: 'error', message: 'preview unavailable' }))
-      .toEqual({ active: false, progress: 100, phase: 'complete' })
+      .toEqual({ active: true, progress: 38, phase: 'detail' })
     expect(resourceTransitionProgress(false, true)).toEqual({ active: false, progress: 100, phase: 'complete' })
+  })
+
+  it('keeps entry covered when cached preview wins the race with Case detail hydration', () => {
+    const transition = resourceTransitionProgress(false, false, { status: 'ready' })
+
+    expect(transition.active).toBe(true)
+    expect(transition.phase).toBe('detail')
   })
 })
 
