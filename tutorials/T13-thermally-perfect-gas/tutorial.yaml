@@ -1,0 +1,36 @@
+schema_version: 2
+id: T13
+slug: thermally-perfect-gas
+title: Model a probe in 1800 K turbine exhaust
+summary: Compare constant-gamma air with a frozen N2-O2 NASA-9 mixture and connect temperature-dependent thermodynamics to Mach, shock, pressure, and heat flux.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:ThermallyPerfectGas', section: constant-gamma-baseline, artifact: simulation.json}
+  - {feature: 'schema:type:FrozenSpecies', section: frozen-mixture, artifact: variants/nasa9-mixture.patch.json}
+  - {feature: 'schema:type:NASA9Coefficients', section: temperature-dependent-thermodynamics, artifact: variants/nasa9-mixture.patch.json}
+  - {feature: 'schema:type:NASA9CoefficientSet', section: temperature-ranges, artifact: variants/nasa9-mixture.patch.json}
+  - {feature: 'schema:type:Sutherland', section: viscosity-model, artifact: simulation.json}
+assets:
+  - path: assets/exhaust-probe.csm
+    sha256: a180c30c3023038e86cfde18df8f61c18ff277327710dbeb40564338d2e8c794
+    source: Tutorial-owned lightweight cylindrical probe geometry
+    license: Apache-2.0
+variants:
+  - id: nasa9-mixture
+    title: Replace constant gamma with a frozen N2-O2 NASA-9 mixture
+    patch: variants/nasa9-mixture.patch.json
+    evidence: variants/nasa9-mixture.evidence.yaml

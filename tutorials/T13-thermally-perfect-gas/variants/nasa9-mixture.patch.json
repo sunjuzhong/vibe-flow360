@@ -1,0 +1,240 @@
+{
+  "operating_condition": {
+    "private_attribute_input_cache": {
+      "thermal_state": {
+        "material": {
+          "name": "Frozen N2-O2 air",
+          "thermally_perfect_gas": {
+            "species": [
+              {
+                "mass_fraction": 0.767,
+                "name": "N2",
+                "nasa_9_coefficients": {
+                  "temperature_ranges": [
+                    {
+                      "coefficients": [
+                        22103.715,
+                        -381.846182,
+                        6.08273836,
+                        -0.00853091441,
+                        1.3846461e-05,
+                        -9.62579362e-09,
+                        2.51970561e-12,
+                        -1043.96091,
+                        -10.4765254
+                      ],
+                      "temperature_range_max": {
+                        "units": "K",
+                        "value": 1000.0
+                      },
+                      "temperature_range_min": {
+                        "units": "K",
+                        "value": 200.0
+                      },
+                      "type_name": "NASA9CoefficientSet"
+                    },
+                    {
+                      "coefficients": [
+                        587712.406,
+                        -2239.24969,
+                        6.06694922,
+                        -0.000613968556,
+                        1.49180673e-07,
+                        -1.92309843e-11,
+                        1.06194817e-15,
+                        12832.0618,
+                        -15.8637463
+                      ],
+                      "temperature_range_max": {
+                        "units": "K",
+                        "value": 6000.0
+                      },
+                      "temperature_range_min": {
+                        "units": "K",
+                        "value": 1000.0
+                      },
+                      "type_name": "NASA9CoefficientSet"
+                    }
+                  ],
+                  "type_name": "NASA9Coefficients"
+                },
+                "type_name": "FrozenSpecies"
+              },
+              {
+                "mass_fraction": 0.233,
+                "name": "O2",
+                "nasa_9_coefficients": {
+                  "temperature_ranges": [
+                    {
+                      "coefficients": [
+                        -34255.6342,
+                        484.700097,
+                        1.119010961,
+                        0.00429388924,
+                        -6.83630052e-07,
+                        -2.0233727e-09,
+                        1.039040018e-12,
+                        -3391.45487,
+                        18.4969947
+                      ],
+                      "temperature_range_max": {
+                        "units": "K",
+                        "value": 1000.0
+                      },
+                      "temperature_range_min": {
+                        "units": "K",
+                        "value": 200.0
+                      },
+                      "type_name": "NASA9CoefficientSet"
+                    },
+                    {
+                      "coefficients": [
+                        -1037939.022,
+                        2344.830282,
+                        1.819732036,
+                        0.001267847582,
+                        -2.188067988e-07,
+                        2.053719572e-11,
+                        -8.19346705e-16,
+                        -16890.10929,
+                        17.38716506
+                      ],
+                      "temperature_range_max": {
+                        "units": "K",
+                        "value": 6000.0
+                      },
+                      "temperature_range_min": {
+                        "units": "K",
+                        "value": 1000.0
+                      },
+                      "type_name": "NASA9CoefficientSet"
+                    }
+                  ],
+                  "type_name": "NASA9Coefficients"
+                },
+                "type_name": "FrozenSpecies"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "thermal_state": {
+      "material": {
+        "name": "Frozen N2-O2 air",
+        "thermally_perfect_gas": {
+          "species": [
+            {
+              "mass_fraction": 0.767,
+              "name": "N2",
+              "nasa_9_coefficients": {
+                "temperature_ranges": [
+                  {
+                    "coefficients": [
+                      22103.715,
+                      -381.846182,
+                      6.08273836,
+                      -0.00853091441,
+                      1.3846461e-05,
+                      -9.62579362e-09,
+                      2.51970561e-12,
+                      -1043.96091,
+                      -10.4765254
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 1000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 200.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  },
+                  {
+                    "coefficients": [
+                      587712.406,
+                      -2239.24969,
+                      6.06694922,
+                      -0.000613968556,
+                      1.49180673e-07,
+                      -1.92309843e-11,
+                      1.06194817e-15,
+                      12832.0618,
+                      -15.8637463
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 6000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 1000.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  }
+                ],
+                "type_name": "NASA9Coefficients"
+              },
+              "type_name": "FrozenSpecies"
+            },
+            {
+              "mass_fraction": 0.233,
+              "name": "O2",
+              "nasa_9_coefficients": {
+                "temperature_ranges": [
+                  {
+                    "coefficients": [
+                      -34255.6342,
+                      484.700097,
+                      1.119010961,
+                      0.00429388924,
+                      -6.83630052e-07,
+                      -2.0233727e-09,
+                      1.039040018e-12,
+                      -3391.45487,
+                      18.4969947
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 1000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 200.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  },
+                  {
+                    "coefficients": [
+                      -1037939.022,
+                      2344.830282,
+                      1.819732036,
+                      0.001267847582,
+                      -2.188067988e-07,
+                      2.053719572e-11,
+                      -8.19346705e-16,
+                      -16890.10929,
+                      17.38716506
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 6000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 1000.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  }
+                ],
+                "type_name": "NASA9Coefficients"
+              },
+              "type_name": "FrozenSpecies"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+schema_version: 1
+criteria:
+  - id: mixture-valid
+    category: provenance
+    description: N2 and O2 mass fractions are 0.767 and 0.233 and sum to one.
+    artifact: variants/nasa9-mixture.patch.json
+    required: true
+    check: {method: present, metric: gas.mass-fraction-sum}
+  - id: temperature-range
+    category: provenance
+    description: Both species provide continuous NASA-9 ranges from 200 to 6000 K containing 1800 K.
+    artifact: variants/nasa9-mixture.patch.json
+    required: true
+    check: {method: present, metric: gas.temperature-range}
+  - id: thermo-effect
+    category: field
+    description: The reference gamma and Mach changes are visible before interpreting generated fields.
+    artifact: derived parameter comparison
+    required: true
+    check: {method: manual, metric: gas.reference-state-change}
+limitations:
+  - Schema validity does not establish coefficient provenance or result accuracy by itself.

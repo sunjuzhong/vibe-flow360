@@ -1,0 +1,117 @@
+schema_version: 2
+audience: Beginners analysing hot-gas external flow who need to choose an appropriate thermodynamic material model and interpret its effect on Mach number, shocks, pressure, and heat transfer.
+prerequisites:
+  - Know that Mach number is velocity divided by the local speed of sound.
+  - Recognize temperature, pressure, density, and viscosity as gas-state properties.
+learning_objectives:
+  - id: model-choice
+    objective: Distinguish a constant-gamma calorically perfect gas from a thermally perfect gas with temperature-dependent heat capacity.
+    assessment: Explain why the same 1800 K state and 900 m/s velocity produce different sound speeds and Mach numbers.
+  - id: frozen-mixture
+    objective: Configure a fixed-composition N2-O2 mixture with NASA-9 coefficient ranges and Sutherland viscosity.
+    assessment: Locate both species, verify their mass fractions sum to one, and confirm that 1800 K lies in a valid coefficient range.
+  - id: scales
+    objective: Calculate mixture gas constant, gamma, sound speed, Mach number, Reynolds number, and dynamic pressure before solving.
+    assessment: Reproduce the supplied 1800 K scale analysis and identify which quantities change between the two material models.
+  - id: evidence
+    objective: Use shock, pressure, temperature, heat-flux, mesh, and convergence evidence to assess the material-model effect.
+    assessment: Apply the evidence rubric without claiming combustion, dissociation, or transported composition.
+concepts:
+  cfd:
+    - id: caloric-model
+      title: High-temperature heat capacity changes the acoustic scale
+      explanation: A thermally perfect gas keeps the ideal-gas relation while allowing species heat capacities and mixture gamma to vary with temperature.
+      misconception: An ideal-gas equation of state requires gamma and heat capacity to remain constant at every temperature.
+    - id: mach
+      title: Mach number depends on the material model
+      explanation: At fixed velocity and temperature, a lower mixture gamma lowers the speed of sound and raises Mach number, changing compressibility and shock strength.
+      misconception: Mach number is fixed once velocity is specified.
+    - id: frozen
+      title: Frozen composition is not reacting flow
+      explanation: Fixed N2 and O2 mass fractions determine mixture properties but do not evolve through transport, chemistry, dissociation, or combustion.
+      misconception: Listing several species automatically solves species transport and chemical reactions.
+  flow360:
+    - id: material
+      title: ThermallyPerfectGas owns species thermodynamics
+      explanation: Flow360 stores FrozenSpecies definitions under the gas material, with NASA-9 coefficients defining temperature-dependent specific heat.
+      misconception: NASA-9 coefficients are solver controls or boundary-condition values.
+    - id: ranges
+      title: NASA-9 ranges must cover the operating temperature continuously
+      explanation: Each species uses adjacent coefficient sets from 200 to 1000 K and 1000 to 6000 K, so the 1800 K state is covered without a gap.
+      misconception: A coefficient set can be used outside its declared temperature interval without affecting validity.
+    - id: viscosity
+      title: Sutherland viscosity is held fixed across the comparison
+      explanation: Both Drafts use the same Sutherland reference values so the controlled change is thermodynamic heat-capacity modelling rather than a viscosity change.
+      misconception: Every material comparison must change both thermodynamics and transport properties.
+parameter_derivations:
+  - id: gas-constant
+    parameter: Frozen-mixture gas constant
+    basis: Use N2 and O2 mass fractions of 0.767 and 0.233 with their species molecular weights.
+    calculation: R_mix = sum(Y_i R_i) = 288.19 J/(kg*K)
+    transfer: Recompute from the actual fixed composition when using exhaust dilution, humidity, or another gas blend.
+  - id: gamma
+    parameter: Mixture gamma at 1800 K
+    basis: Evaluate each active NASA-9 polynomial at 1800 K, mass-average cp, and use gamma = cp/(cp - R_mix).
+    calculation: gamma_mix = 1.3004, compared with the baseline constant value 1.4
+    transfer: Evaluate properties at the temperature range that controls the local compressible-flow behaviour.
+  - id: acoustic
+    parameter: Speed of sound and Mach number
+    basis: Use a = sqrt(gamma R T) at T = 1800 K and M = U/a at U = 900 m/s.
+    calculation: Baseline a = 850.5 m/s and M = 1.058; NASA-9 mixture a = 819.7 m/s and M = 1.098
+    transfer: Recalculate Mach after changing temperature, composition, or the caloric model; velocity alone does not determine it.
+  - id: flow-scales
+    parameter: Reynolds number and dynamic pressure
+    basis: Use rho = 0.19610 kg/m^3, U = 900 m/s, D = 0.05 m, and mu = 5.828e-5 Pa*s.
+    calculation: Re_D = 1.51e5 and q = 79.4 kPa
+    transfer: Keep geometry, state, speed, and viscosity identical when isolating only the thermodynamic-model effect.
+experiments:
+  - id: gas-model
+    prediction: What changes when constant-gamma air is replaced by a frozen N2-O2 NASA-9 mixture while the 1800 K state and 900 m/s velocity remain fixed?
+    options:
+      - Sound speed decreases and Mach number increases because gamma is lower at 1800 K
+      - Velocity automatically decreases until both Drafts have the same Mach number
+    controlled_variable: Probe Geometry, density, temperature, velocity, Sutherland viscosity, wall temperature, mesh, boundaries, solver steps, and outputs remain fixed.
+    observation: Compare the semantic material diff, derived acoustic scales, bow-shock position and strength, probe pressure and heat flux, mesh sensitivity, and convergence.
+failure_modes:
+  - id: range
+    symptom: Material validation fails or properties become nonphysical near the operating temperature.
+    cause: NASA-9 coefficient intervals have a gap, overlap incorrectly, or do not cover 1800 K.
+    correction: Verify ordered and continuous 200-1000 K and 1000-6000 K ranges for every species.
+  - id: composition
+    symptom: Mixture density or acoustic estimates disagree with the configured Case.
+    cause: Species mass fractions do not sum to one or the wrong molecular weights were used.
+    correction: Verify N2 = 0.767 and O2 = 0.233 and recompute the mass-weighted mixture gas constant.
+  - id: uncontrolled
+    symptom: A shock or heat-flux difference cannot be attributed to the caloric model.
+    cause: Velocity, density, viscosity, mesh, wall temperature, or numerics changed with the gas material.
+    correction: Use the semantic diff and restore every non-material field to the shared baseline.
+  - id: scope
+    symptom: Results are reported as species mixing, dissociation, combustion, or emissions predictions.
+    cause: FrozenSpecies inputs were mistaken for transported or reacting species.
+    correction: State that composition is fixed; use a Flow360 release and workflow with supported species transport and chemistry for those questions.
+evidence_rubric:
+  - id: diff
+    observation: Semantic parameter comparison
+    pass: Only the gas thermodynamic species definition changes; state, viscosity, Geometry, mesh, models, numerics, and outputs match.
+    fail: Another physical or numerical input changes between the Drafts.
+  - id: properties
+    observation: Pre-solve thermodynamic calculation
+    pass: NASA-9 ranges cover 1800 K and the computed gamma, sound speed, and Mach agree with the documented values.
+    fail: The comparison relies only on the material label without checking the active coefficients and composition.
+  - id: shock
+    observation: Center-plane Mach and pressure fields
+    pass: Shock position and pressure rise are compared on the same scale and remain stable under refinement.
+    fail: Different contour ranges or an unresolved shock are used to claim a material-model effect.
+  - id: wall
+    observation: Probe pressure and heat flux
+    pass: Cp, dimensional pressure, temperature, heat flux, and y+ are reviewed together with wall-temperature and sign conventions.
+    fail: One peak cell or an unknown heat-flux sign is treated as an engineering load.
+  - id: numerical
+    observation: Mesh and convergence evidence
+    pass: Shock resolution, near-wall spacing, residuals, and monitored loads pass sensitivity and stability checks in both Cases.
+    fail: A difference between unconverged or differently resolved Cases is attributed to thermodynamics.
+transfer_questions:
+  - prompt: If the exhaust temperature falls while velocity stays at 900 m/s, which quantities must be recalculated before interpreting the shock?
+    expected: Re-evaluate the active NASA-9 heat capacities, gamma, speed of sound, Mach number, viscosity, and Reynolds number at the new temperature.
+  - prompt: What additional physics is required to predict changing N2 and O2 concentrations through the domain?
+    expected: A supported transported-species model with initial and boundary composition fields; chemical reactions are additionally required if composition changes through chemistry.

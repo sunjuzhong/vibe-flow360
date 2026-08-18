@@ -13,6 +13,7 @@ import { t08Evidence, t08ParameterCards, t08Steps, t08Params, t08Pedagogy, valid
 import { t09Evidence, t09ParameterCards, t09Steps, t09Params, t09Pedagogy, validateT09Setup } from '../tutorials/t09'
 import { t10Evidence, t10ParameterCards, t10Steps, t10Params, t10Pedagogy, validateT10Setup } from '../tutorials/t10'
 import { t12Evidence, t12ParameterCards, t12Steps, t12Params, t12Pedagogy, validateT12Setup } from '../tutorials/t12'
+import { t13Evidence, t13ParameterCards, t13Steps, t13Params, t13Pedagogy, validateT13Setup } from '../tutorials/t13'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -282,6 +283,12 @@ describe('language settings', () => {
       ...validateT12Setup(t12Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT12Setup(t12Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t12Pedagogy),
+      ...t13Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t13ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t13Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT13Setup(t13Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT13Setup(t13Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t13Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -382,6 +389,21 @@ describe('language settings', () => {
       'The bundled T12 parameters contain an invalid liquid, gravity, boundary, or evidence contract.',
       'The bundled T12 submerged-pile Geometry could not be loaded.',
       'Flow360 created the T12 Project without returning its Geometry identifiers.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T13 environment builder in Chinese', () => {
+    const messages = [
+      'HIGH-TEMPERATURE CFD', 'THERMODYNAMIC MODELLING', 'MATERIAL DIFF',
+      'Build the T13 thermodynamic-model comparison',
+      'The app uploads the bundled probe and creates constant-gamma and frozen N2-O2 NASA-9 Case Drafts.',
+      '1800 K and 900 m/s reference state, Sutherland viscosity, AutomatedFarfield, 600 K probe Wall, center Slice, aerothermal outputs',
+      'Constant-gamma hot air', 'Frozen N2-O2 NASA-9 mixture',
+      'Tutorial T13 · hot exhaust probe',
+      'The bundled T13 parameters contain an invalid gas, coefficient-range, composition, or evidence contract.',
+      'The bundled T13 exhaust-probe Geometry could not be loaded.',
+      'Flow360 created the T13 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

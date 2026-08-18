@@ -1,0 +1,15 @@
+schema_version: 1
+engineering_question: Does constant-gamma air remain adequate for predicting the shock and aerothermal load on a probe in 1800 K turbine exhaust?
+decision: Use a frozen N2-O2 NASA-9 mixture when temperature-dependent gamma materially changes Mach, shock structure, pressure, or heat flux over the operating range.
+inputs:
+  geometry: assets/exhaust-probe.csm
+  length_unit: m
+  temperature: 1800 K
+  density: 0.19610206574 kg/m^3
+  velocity: 900 m/s
+  probe_diameter: 0.05 m
+  wall_temperature: 600 K
+deliverables:
+  - Constant-gamma and frozen N2-O2 NASA-9 Case Drafts
+  - Gamma, speed-of-sound, Mach, Reynolds-number, and dynamic-pressure derivations
+  - Shock, pressure, heat-flux, wall-resolution, and convergence evidence
