@@ -37,14 +37,13 @@ describe('ParameterSelectionGroups', () => {
     expect(html).toContain('aria-pressed="true" title="Select Wing')
     expect(html).toContain('aria-pressed="mixed" title="Select Body')
     expect(html).toContain('Named groups')
-    expect(html).toContain('<small>groupName</small>')
     expect(html).toContain('class="parameter-selection-set" open=""')
     expect(html).toContain('class="parameter-selection-set__toggle"')
     expect(html).not.toContain('type="checkbox"')
     expect(html).toContain('2 items')
     expect(html).toContain('aria-label="Hide group Wing"')
-    expect(html).toContain('Faces<small>2</small>')
-    expect(html).toContain('Edges<small>1</small>')
+    expect(html).not.toContain('Faces<small>')
+    expect(html).not.toContain('Edges<small>')
   })
 
   it('disables presets that could not be mapped completely', () => {

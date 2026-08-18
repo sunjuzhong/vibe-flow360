@@ -1,4 +1,4 @@
-import { CheckSquare2, ChevronDown, Eye, EyeOff, Layers3, MinusSquare } from 'lucide-react'
+import { CheckSquare2, ChevronDown, Eye, EyeOff, Folder, Layers3, MinusSquare } from 'lucide-react'
 import { useMemo } from 'react'
 import { useI18n } from '../i18n'
 import type { ParameterSelectionPreset } from '../lib/parameterSelectionGroups'
@@ -55,8 +55,9 @@ export function ParameterSelectionGroups({
           <details className="parameter-selection-set" key={tag} open>
             <summary className="parameter-selection-set__toggle">
               <ChevronDown size={11} aria-hidden="true" />
+              <Folder size={12} aria-hidden="true" />
               <strong>{t(parameterSelectionTagLabel(tag))}</strong>
-              <small>{tag}</small>
+              <small>{tagPresets.length}</small>
             </summary>
             <div className="parameter-selection-set__content">
               {tagPresets.map((preset) => {
@@ -65,10 +66,6 @@ export function ParameterSelectionGroups({
           const selectionState = selectedCount === 0 ? 'false' : selectedCount === preset.memberIds.length ? 'true' : 'mixed'
           const anyVisible = preset.memberIds.some((id) => visibility[id] !== false)
           const SelectionIcon = selectionState === 'true' ? CheckSquare2 : selectionState === 'mixed' ? MinusSquare : Layers3
-          const subsets = [
-            { label: t('Faces'), ids: preset.faceIds ?? [] },
-            { label: t('Edges'), ids: preset.edgeIds ?? [] },
-          ].filter((subset) => subset.ids.length > 0)
           return (
             <div className={`parameter-selection-group ${selectionState === 'true' ? 'selected' : selectionState === 'mixed' ? 'partial' : ''} ${available ? '' : 'unavailable'}`} key={preset.id}>
               <button
@@ -100,29 +97,6 @@ export function ParameterSelectionGroups({
               >
                 {anyVisible ? <Eye size={13} aria-hidden="true" /> : <EyeOff size={13} aria-hidden="true" />}
               </button>
-              {subsets.length > 1 && (
-                <div className="parameter-selection-group__children">
-                  {subsets.map((subset) => {
-                    const subsetSelected = subset.ids.filter((id) => selectedSet.has(id)).length
-                    const subsetState = subsetSelected === 0 ? 'false' : subsetSelected === subset.ids.length ? 'true' : 'mixed'
-                    return (
-                      <button
-                        type="button"
-                        key={subset.label}
-                        aria-pressed={subsetState}
-                        disabled={!available}
-                        onClick={(event) => onSelectionChange(nextParameterPresetSelection(
-                          selectedIds,
-                          subset.ids,
-                          event.ctrlKey || event.metaKey || event.shiftKey,
-                        ))}
-                      >
-                        {subset.label}<small>{subset.ids.length}</small>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
             </div>
           )
               })}
