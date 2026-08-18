@@ -171,19 +171,10 @@ describe('buildParameterSelectionPresets', () => {
         edgeIds: ['edge-1', 'edge-2'],
         available: true,
       },
-      {
-        id: 'geometry:groupByFile:model.step',
-        label: 'model.step',
-        tag: 'groupByFile',
-        memberIds: [],
-        faceIds: [],
-        edgeIds: [],
-        available: false,
-      },
     ])
   })
 
-  it('keeps unmappable semantic groups visible and derives bodies from the topology index', () => {
+  it('omits unmappable semantic groups and derives bodies from the topology index', () => {
     const semanticParams = {
       private_attribute_asset_cache: {
         project_entity_info: {
@@ -217,24 +208,6 @@ describe('buildParameterSelectionPresets', () => {
       ],
       [{ id: 'edge-1', path: ['Default CAD'] }],
     )).toEqual([
-      {
-        id: 'edge:edgeName:leading-group',
-        label: 'leadingEdges',
-        tag: 'edgeName',
-        memberIds: [],
-        faceIds: [],
-        edgeIds: [],
-        available: false,
-      },
-      {
-        id: 'face:faceName:wing-group',
-        label: 'wing',
-        tag: 'faceName',
-        memberIds: [],
-        faceIds: [],
-        edgeIds: [],
-        available: false,
-      },
       {
         id: 'geometry:bodyId:body00001',
         label: 'body00001',

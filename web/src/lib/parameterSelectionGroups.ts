@@ -56,12 +56,10 @@ export function buildGeometryParameterSelectionPresets(
         tag: 'bodyId',
         components: [bodyId],
       }))
-  const mappedFacePresets = buildParameterSelectionPresets(simulationParams, 'face', faces)
+  const facePresets = buildParameterSelectionPresets(simulationParams, 'face', faces)
     .map((preset) => ({ ...preset, faceIds: preset.memberIds, edgeIds: [] }))
-  const mappedEdgePresets = buildParameterSelectionPresets(simulationParams, 'edge', edges)
+  const edgePresets = buildParameterSelectionPresets(simulationParams, 'edge', edges)
     .map((preset) => ({ ...preset, faceIds: [], edgeIds: preset.memberIds }))
-  const facePresets = includeUnavailableEntityPresets('face', faceEntities, mappedFacePresets)
-  const edgePresets = includeUnavailableEntityPresets('edge', edgeEntities, mappedEdgePresets)
   const faceComponents = memberComponentIndex(faces, faceEntities, text(info.face_group_tag))
   const edgeComponents = memberComponentIndex(edges, edgeEntities, text(info.edge_group_tag))
 
@@ -99,33 +97,8 @@ export function buildGeometryParameterSelectionPresets(
   return dedupePresets([
     ...facePresets.filter((preset) => !isReplacedByBodyPreset(preset)),
     ...edgePresets.filter((preset) => !isReplacedByBodyPreset(preset)),
-    ...bodyPresets,
+    ...bodyPresets.filter((preset) => preset.available),
   ])
-}
-
-function includeUnavailableEntityPresets(
-  kind: Exclude<ParameterSelectionKind, 'body'>,
-  entities: ParameterEntity[],
-  mapped: ParameterSelectionPreset[],
-): ParameterSelectionPreset[] {
-  const mappedIds = new Set(mapped.map((preset) => preset.id))
-  const rawTags = new Set(['faceId', 'edgeId', '__standalone__'])
-  return [
-    ...mapped,
-    ...entities.flatMap((entity) => {
-      const id = `${kind}:${entity.tag}:${entity.id}`
-      if (mappedIds.has(id) || rawTags.has(entity.tag)) return []
-      return [{
-        id,
-        label: entity.name || entity.id,
-        tag: entity.tag,
-        memberIds: [],
-        faceIds: [],
-        edgeIds: [],
-        available: false,
-      }]
-    }),
-  ]
 }
 
 export function buildParameterSelectionPresets(
