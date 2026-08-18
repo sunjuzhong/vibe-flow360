@@ -74,9 +74,64 @@ import {
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
+const assetTopologyKeys = [
+  'bodies_face_edge_ids',
+  'body_attribute_names',
+  'body_group_tag',
+  'body_ids',
+  'edge_attribute_names',
+  'edge_group_tag',
+  'edge_ids',
+  'face_attribute_names',
+  'face_group_tag',
+  'face_ids',
+  'grouped_bodies',
+  'grouped_edges',
+  'grouped_faces',
+  'global_bounding_box',
+] as const
+
 type ProjectPanel = 'resources' | 'details' | 'annotations' | 'parameters' | 'drafts'
 
 export const initialProjectPanel = null
+
+export function mergeDraftAssetTopology(
+  sourceParams: Record<string, unknown> | undefined,
+  draftParams: Record<string, unknown>,
+): Record<string, unknown> {
+  const sourceCache = objectValue(sourceParams?.private_attribute_asset_cache)
+  const sourceInfo = objectValue(sourceCache.project_entity_info)
+  if (Object.keys(sourceInfo).length === 0) return draftParams
+
+  const draftCache = objectValue(draftParams.private_attribute_asset_cache)
+  const draftInfo = objectValue(draftCache.project_entity_info)
+  const mergedInfo = { ...draftInfo }
+  for (const key of assetTopologyKeys) {
+    if (!hasTopologyValue(draftInfo[key]) && hasTopologyValue(sourceInfo[key])) {
+      mergedInfo[key] = sourceInfo[key]
+    }
+  }
+  return {
+    ...draftParams,
+    private_attribute_asset_cache: {
+      ...draftCache,
+      project_entity_info: mergedInfo,
+    },
+  }
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function hasTopologyValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0
+  if (value && typeof value === 'object') return Object.keys(value).length > 0
+  if (typeof value === 'string') return value.trim().length > 0
+  return value !== undefined && value !== null
+}
 
 export function panelDismissesFromAmbientInteraction(panel: ProjectPanel | null): boolean {
   return panel !== 'parameters'
@@ -566,7 +621,10 @@ export default function ProjectPage() {
   )
   const workspaceDetail = useMemo(() => (
     detail && draftMode && draftDetail?.simulation_params
-      ? { ...detail, simulation_params: draftDetail.simulation_params }
+      ? {
+          ...detail,
+          simulation_params: mergeDraftAssetTopology(detail.simulation_params, draftDetail.simulation_params),
+        }
       : detail
   ), [detail, draftDetail?.simulation_params, draftMode])
   const mutateDraftEntity = useCallback(async (mutation: DraftEntityMutation) => {

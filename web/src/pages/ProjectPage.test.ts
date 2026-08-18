@@ -8,6 +8,7 @@ import {
   hydrateResourceDetail,
   initialProjectPanel,
   isDraftDetailFor,
+  mergeDraftAssetTopology,
   panelDismissesFromAmbientInteraction,
   projectDraftResourcePath,
   projectDraftRootPath,
@@ -258,6 +259,54 @@ describe('Current Draft identity', () => {
     expect(isDraftDetailFor('draft-current', { id: 'draft-current', type: 'Draft' })).toBe(true)
     expect(isDraftDetailFor('draft-current', { id: 'draft-other', type: 'Draft' })).toBe(false)
     expect(isDraftDetailFor('draft-current', { id: 'draft-current', type: 'Case' })).toBe(false)
+  })
+})
+
+describe('Draft Geometry topology context', () => {
+  it('restores missing selection-group metadata from the source Geometry', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          face_group_tag: 'faceName',
+          grouped_faces: [[{ name: 'wing' }]],
+          grouped_bodies: [[{ name: 'body00001' }]],
+          bodies_face_edge_ids: { body00001: { face_ids: ['face-1'], edge_ids: ['edge-1'] } },
+          draft_entities: [{ name: 'source-only' }],
+        },
+      },
+    }
+    const draft = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          grouped_faces: [],
+          draft_entities: [{ name: 'draft-box' }],
+        },
+      },
+    }
+
+    const merged = mergeDraftAssetTopology(source, draft)
+    const info = (merged.private_attribute_asset_cache as any).project_entity_info
+    expect(info.face_group_tag).toBe('faceName')
+    expect(info.grouped_faces).toEqual([[{ name: 'wing' }]])
+    expect(info.grouped_bodies).toEqual([[{ name: 'body00001' }]])
+    expect(info.bodies_face_edge_ids.body00001.edge_ids).toEqual(['edge-1'])
+    expect(info.draft_entities).toEqual([{ name: 'draft-box' }])
+  })
+
+  it('keeps non-empty Draft topology metadata authoritative', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: { grouped_faces: [[{ name: 'source-wing' }]] },
+      },
+    }
+    const draft = {
+      private_attribute_asset_cache: {
+        project_entity_info: { grouped_faces: [[{ name: 'draft-wing' }]] },
+      },
+    }
+
+    expect((mergeDraftAssetTopology(source, draft).private_attribute_asset_cache as any)
+      .project_entity_info.grouped_faces).toEqual([[{ name: 'draft-wing' }]])
   })
 })
 
