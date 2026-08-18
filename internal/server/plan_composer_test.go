@@ -87,6 +87,49 @@ func TestPlanComposerDraftCanSupplyBaselineWhenSourceHasNoSimulationParams(t *te
 	}
 }
 
+func TestPlanComposerDraftIdentityAuthorizesMissingSourceInfo(t *testing.T) {
+	request := planComposerRequest{
+		ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry", SourceName: "Cached Geometry",
+	}
+	draftInfo := map[string]any{
+		"project_id":       "prj-1",
+		"source_item_id":   "geo-1",
+		"source_item_type": "Geometry",
+	}
+	if err := validatePlanComposerDraftIdentity(request, draftInfo); err != nil {
+		t.Fatal(err)
+	}
+	name, err := planComposerSourceName(request, nil, true)
+	if err != nil || name != "Cached Geometry" {
+		t.Fatalf("verified Draft could not tolerate unavailable source info: name=%q err=%v", name, err)
+	}
+	if _, err := planComposerSourceName(request, nil, false); err == nil || !strings.Contains(err.Error(), "source metadata") {
+		t.Fatalf("unverified resource request accepted missing source info: %v", err)
+	}
+}
+
+func TestPlanComposerDraftIdentityRejectsMismatchedProjectSourceAndType(t *testing.T) {
+	request := planComposerRequest{ProjectID: "prj-1", SourceID: "geo-1", SourceType: "Geometry"}
+	valid := map[string]any{"project_id": "prj-1", "source_item_id": "geo-1", "source_item_type": "Geometry"}
+	for field, value := range map[string]any{
+		"project_id":       "prj-other",
+		"source_item_id":   "geo-other",
+		"source_item_type": "Case",
+	} {
+		candidate := make(map[string]any, len(valid))
+		for key, original := range valid {
+			candidate[key] = original
+		}
+		candidate[field] = value
+		if err := validatePlanComposerDraftIdentity(request, candidate); err == nil {
+			t.Fatalf("Draft identity mismatch %s=%v was accepted", field, value)
+		}
+	}
+	if _, err := planComposerSourceName(request, json.RawMessage(`{"project_id":"prj-other","name":"Wrong"}`), true); err == nil {
+		t.Fatal("explicit conflicting source metadata was ignored")
+	}
+}
+
 func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"},"step_size":{"type":"quantity","unit":"s","value_schema":{"type":"number"}},"max_steps":{"type":"json"}}}}}`)
 	composer := planComposerContext{

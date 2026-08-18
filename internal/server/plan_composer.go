@@ -736,38 +736,40 @@ func normalizePlanAssistHistory(history []agent.Message) []agent.Message {
 }
 
 func (s *Server) loadPlanComposerContext(ctx context.Context, request planComposerRequest) (planComposerContext, error) {
-	detail, err := s.flow360.ResourceDetail(ctx, request.SourceType, request.SourceID)
-	if err != nil {
-		return planComposerContext{}, err
-	}
-	var info struct {
-		ProjectID string `json:"project_id"`
-		Name      string `json:"name"`
-	}
-	if len(detail.Info) == 0 || json.Unmarshal(detail.Info, &info) != nil {
-		return planComposerContext{}, errors.New("Flow360 source metadata is unavailable")
-	}
-	if info.ProjectID != request.ProjectID {
-		return planComposerContext{}, errors.New("source resource does not belong to this project")
-	}
 	draftID := strings.TrimSpace(request.DraftID)
 	var draftParams json.RawMessage
+	var draftInfo map[string]any
 	if draftID != "" {
 		draftDetail, draftErr := s.flow360.ResourceDetail(ctx, "Draft", draftID)
 		if draftErr != nil {
 			return planComposerContext{}, draftErr
 		}
-		var draftInfo map[string]any
 		if len(draftDetail.Info) == 0 || json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
 			return planComposerContext{}, errors.New("Draft metadata is unavailable")
 		}
-		if draftProjectID := firstStringField(draftInfo, "project_id", "projectId"); draftProjectID != "" && draftProjectID != request.ProjectID {
-			return planComposerContext{}, errors.New("Draft does not belong to this project")
-		}
-		if draftSourceID := firstStringField(draftInfo, "source_id", "source_item_id"); draftSourceID != "" && draftSourceID != request.SourceID {
-			return planComposerContext{}, errors.New("Draft is not based on this source resource")
+		if err := validatePlanComposerDraftIdentity(request, draftInfo); err != nil {
+			return planComposerContext{}, err
 		}
 		draftParams = draftDetail.SimulationParams
+	}
+
+	// A Draft already owns the canonical SimulationParams, so loading the
+	// source's potentially large parameter document again adds latency and an
+	// unnecessary failure mode. Its lightweight metadata remains useful when
+	// available, while the Draft's project/source identity is authoritative.
+	var detail flow360.ResourceDetail
+	var err error
+	if draftID != "" {
+		detail, err = s.flow360.ResourceMetadata(ctx, request.SourceType, request.SourceID)
+	} else {
+		detail, err = s.flow360.ResourceDetail(ctx, request.SourceType, request.SourceID)
+	}
+	if err != nil {
+		return planComposerContext{}, err
+	}
+	name, err := planComposerSourceName(request, detail.Info, draftID != "")
+	if err != nil {
+		return planComposerContext{}, err
 	}
 	detail.SimulationParams, err = planComposerBaseline(detail.SimulationParams, draftParams, draftID != "")
 	if err != nil {
@@ -782,7 +784,50 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 		return planComposerContext{}, err
 	}
 	request.SourceType = detail.Type
-	return planComposerContext{Request: request, Name: info.Name, Baseline: baseline, Form: form}, nil
+	return planComposerContext{Request: request, Name: name, Baseline: baseline, Form: form}, nil
+}
+
+func planComposerSourceName(request planComposerRequest, rawInfo json.RawMessage, draftIdentityVerified bool) (string, error) {
+	var info struct {
+		ProjectID string `json:"project_id"`
+		Name      string `json:"name"`
+	}
+	sourceInfoAvailable := len(rawInfo) > 0 && json.Unmarshal(rawInfo, &info) == nil && strings.TrimSpace(info.ProjectID) != ""
+	if !sourceInfoAvailable && !draftIdentityVerified {
+		return "", errors.New("Flow360 source metadata is unavailable")
+	}
+	if sourceInfoAvailable && info.ProjectID != request.ProjectID {
+		return "", errors.New("source resource does not belong to this project")
+	}
+	if name := strings.TrimSpace(info.Name); name != "" {
+		return name, nil
+	}
+	if name := strings.TrimSpace(request.SourceName); name != "" {
+		return name, nil
+	}
+	return request.SourceID, nil
+}
+
+func validatePlanComposerDraftIdentity(request planComposerRequest, draftInfo map[string]any) error {
+	draftProjectID := firstStringField(draftInfo, "project_id", "projectId")
+	if draftProjectID == "" {
+		return errors.New("Draft project metadata is unavailable")
+	}
+	if draftProjectID != request.ProjectID {
+		return errors.New("Draft does not belong to this project")
+	}
+	draftSourceID := firstStringField(draftInfo, "source_id", "source_item_id", "sourceId", "sourceItemId")
+	if draftSourceID == "" {
+		return errors.New("Draft source metadata is unavailable")
+	}
+	if draftSourceID != request.SourceID {
+		return errors.New("Draft is not based on this source resource")
+	}
+	draftSourceType := firstStringField(draftInfo, "source_type", "source_item_type", "sourceType", "sourceItemType")
+	if draftSourceType != "" && !strings.EqualFold(draftSourceType, request.SourceType) {
+		return errors.New("Draft source type does not match this source resource")
+	}
+	return nil
 }
 
 func planComposerBaseline(sourceParams, draftParams json.RawMessage, draftRequested bool) (json.RawMessage, error) {
