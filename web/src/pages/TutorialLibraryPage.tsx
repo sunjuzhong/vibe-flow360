@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Box, Boxes, CarFront, CheckCircle2, CircleDot, Clock3, Droplets, Flame, Gauge, Plane, Rotate3D, ShieldCheck, Target, Waypoints } from 'lucide-react'
+import { ArrowRight, BookOpen, Box, Boxes, CarFront, CheckCircle2, CircleDot, Clock3, Droplets, Flame, Gauge, Plane, Rotate3D, ShieldCheck, Target, Waves, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>12 available</span>
+          <span>13 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -109,6 +109,10 @@ export default function TutorialLibraryPage() {
           <Link className="tutorial-card" to="/tutorials/T13">
             <div className="tutorial-card-visual airfoil-card-visual"><Flame size={52} strokeWidth={1.1}/><span className="tutorial-id">T13</span><span className="tutorial-level">HIGH-TEMPERATURE CFD</span></div>
             <div className="tutorial-card-content"><p className="eyebrow">THERMODYNAMIC MODELLING</p><h2>Compare constant gamma with NASA-9 gas properties</h2><p>Derive how temperature-dependent heat capacity changes sound speed and Mach, then compare a frozen N2-O2 mixture around a hot-exhaust probe.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 20–25 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T14">
+            <div className="tutorial-card-visual mesh-card-visual"><Waves size={52} strokeWidth={1.1}/><span className="tutorial-id">T14</span><span className="tutorial-level">TURBULENCE MODELLING</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">RANS MODEL SENSITIVITY</p><h2>Compare SA and k-omega SST on a separated wake</h2><p>Relate closure variables to freestream turbulence inputs, then compare separation, base pressure, drag, wall treatment, mesh, convergence, and reference evidence.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 20–25 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>

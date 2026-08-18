@@ -1,0 +1,8 @@
+schema_version: 1
+criteria:
+  - {id: solver-change, category: provenance, description: Fluid turbulence_model_solver changes from SpalartAllmaras to kOmegaSST., artifact: variants/k-omega-sst.patch.json, required: true, check: {method: present, metric: turbulence.solver-change}}
+  - {id: inlet-change, category: provenance, description: Freestream turbulence quantities change to intensity 0.005 and length scale 0.01 m., artifact: variants/k-omega-sst.patch.json, required: true, check: {method: present, metric: turbulence.freestream-change}}
+  - {id: held-constant, category: provenance, description: Geometry state mesh reference values wall steps and outputs remain fixed., artifact: semantic parameter diff, required: true, check: {method: manual, metric: params.held-constant}}
+limitations:
+  - Schema validity does not establish turbulence-model accuracy.
+  - Freestream turbulence quantities require facility-specific justification for production use.

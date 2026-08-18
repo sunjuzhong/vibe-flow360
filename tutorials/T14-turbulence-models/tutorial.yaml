@@ -1,0 +1,38 @@
+schema_version: 2
+id: T14
+slug: turbulence-models
+title: Compare RANS models on a separated rear-step wake
+summary: Compare Spalart-Allmaras and k-omega SST while connecting closure assumptions, freestream turbulence quantities, separation, pressure drag, wall shear, and model-form uncertainty.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:Fluid', section: turbulence-closure, artifact: simulation.json}
+  - {feature: 'schema:type:SpalartAllmaras', section: sa-baseline, artifact: simulation.json}
+  - {feature: 'schema:type:SpalartAllmarasModelConstants', section: sa-constants, artifact: simulation.json}
+  - {feature: 'schema:type:ModifiedTurbulentViscosityRatio', section: sa-freestream, artifact: simulation.json}
+  - {feature: 'schema:type:KOmegaSST', section: sst-variant, artifact: variants/k-omega-sst.patch.json}
+  - {feature: 'schema:type:KOmegaSSTModelConstants', section: sst-constants, artifact: variants/k-omega-sst.patch.json}
+  - {feature: 'schema:type:TurbulentIntensityAndTurbulentLengthScale', section: sst-freestream, artifact: variants/k-omega-sst.patch.json}
+assets:
+  - path: assets/rear-step-body.csm
+    sha256: 991f918318d69811a65ef8a14832d3f9e15edacc1e1d35d9ffe56fba85910c6a
+    source: Tutorial-owned analytic rear-step bluff-body geometry
+    license: Apache-2.0
+variants:
+  - id: k-omega-sst
+    title: Replace SA with k-omega SST and its compatible freestream quantities
+    patch: variants/k-omega-sst.patch.json
+    evidence: variants/k-omega-sst.evidence.yaml

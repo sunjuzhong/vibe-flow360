@@ -14,6 +14,7 @@ import { t09Evidence, t09ParameterCards, t09Steps, t09Params, t09Pedagogy, valid
 import { t10Evidence, t10ParameterCards, t10Steps, t10Params, t10Pedagogy, validateT10Setup } from '../tutorials/t10'
 import { t12Evidence, t12ParameterCards, t12Steps, t12Params, t12Pedagogy, validateT12Setup } from '../tutorials/t12'
 import { t13Evidence, t13ParameterCards, t13Steps, t13Params, t13Pedagogy, validateT13Setup } from '../tutorials/t13'
+import { t14Evidence, t14ParameterCards, t14Steps, t14Params, t14Pedagogy, validateT14Setup } from '../tutorials/t14'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -289,6 +290,12 @@ describe('language settings', () => {
       ...validateT13Setup(t13Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT13Setup(t13Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t13Pedagogy),
+      ...t14Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t14ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t14Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT14Setup(t14Params(false)).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT14Setup(t14Params(true)).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t14Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -404,6 +411,21 @@ describe('language settings', () => {
       'The bundled T13 parameters contain an invalid gas, coefficient-range, composition, or evidence contract.',
       'The bundled T13 exhaust-probe Geometry could not be loaded.',
       'Flow360 created the T13 Project without returning its Geometry identifiers.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T14 environment builder in Chinese', () => {
+    const messages = [
+      'TURBULENCE MODELLING', 'RANS MODEL SENSITIVITY', 'CLOSURE DIFF',
+      'Build the T14 turbulence-model comparison',
+      'The app uploads the bundled rear-step body and creates Spalart-Allmaras and k-omega SST Case Drafts.',
+      '30 m/s air, shared wall and wake mesh, SA or SST closure, compatible freestream turbulence quantities, separation and drag outputs',
+      'Spalart-Allmaras rear-step wake', 'k-omega SST rear-step wake',
+      'Tutorial T14 · rear-step RANS comparison',
+      'The bundled T14 parameters contain an invalid turbulence closure, freestream specification, entity, or evidence contract.',
+      'The bundled T14 rear-step Geometry could not be loaded.',
+      'Flow360 created the T14 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

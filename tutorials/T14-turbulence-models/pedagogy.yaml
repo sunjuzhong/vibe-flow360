@@ -1,0 +1,44 @@
+schema_version: 2
+audience: Beginners selecting a steady RANS closure for an attached boundary layer that encounters a sharp rear step and forms a separated wake.
+prerequisites:
+  - Know that a no-slip wall creates a boundary layer and wall shear.
+  - Recognize that Reynolds averaging introduces turbulent stresses that require modelling.
+learning_objectives:
+  - {id: closure, objective: Explain why steady RANS needs a turbulence closure and why two closures can predict different separation., assessment: Identify modeled rather than resolved quantities in both Drafts.}
+  - {id: models, objective: Distinguish the one-equation Spalart-Allmaras model from the two-equation k-omega SST model., assessment: Locate each Flow360 turbulence_model_solver and its default constants.}
+  - {id: inlet, objective: Connect the selected closure to a compatible freestream turbulence specification., assessment: 'Reproduce the supplied intensity, length-scale, k, omega, and viscosity-ratio reasoning.'}
+  - {id: evidence, objective: 'Evaluate model-form sensitivity using separation, wake, pressure drag, wall shear, mesh, convergence, and reference data.', assessment: Apply the evidence rubric without declaring either closure correct from model agreement alone.}
+concepts:
+  cfd:
+    - {id: rans, title: RANS closes unresolved turbulent stresses, explanation: Reynolds averaging exposes correlations that the closure relates to the mean flow through modeled transport variables and eddy viscosity., misconception: A steady RANS solution directly resolves turbulent eddies and shedding.}
+    - {id: separation, title: Adverse pressure and sharp geometry challenge closure assumptions, explanation: 'The rear roof step forces separation; modeled turbulent transport influences shear-layer growth, reattachment, base pressure, and drag.', misconception: Separation location is determined only by geometry and cannot depend on the turbulence model.}
+    - {id: uncertainty, title: Model spread is sensitivity rather than truth, explanation: SA and SST encode different assumptions; their difference estimates one source of model-form uncertainty but requires reference evidence., misconception: 'If both models agree, the result is automatically validated.'}
+  flow360:
+    - {id: fluid, title: Fluid owns the turbulence solver, explanation: Flow360 stores SpalartAllmaras or kOmegaSST under Fluid.turbulence_model_solver alongside its numerical controls and constants., misconception: The turbulence model is a wall boundary condition.}
+    - {id: quantities, title: Freestream owns turbulence quantities, explanation: The SA Draft declares a modified-viscosity ratio while the SST Draft declares intensity and length scale; these initialize different closure variables., misconception: One numeric turbulence input has the same meaning for every closure.}
+    - {id: outputs, title: Shared outputs support a fair comparison, explanation: 'Cp, Cf, yPlus, velocity, pressure, vorticity, mut, mutRatio, and CD remain requested in both Drafts.', misconception: Native nuHat and k-omega fields can be compared as if they were the same variable.}
+parameter_derivations:
+  - {id: reynolds, parameter: Height Reynolds number, basis: 'Use rho = 1.225 kg/m^3, U = 30 m/s, H = 1.2 m, and mu approximately 1.789e-5 Pa*s.', calculation: Re_H = rho U H / mu = 2.46e6, transfer: Recompute with the dimension governing boundary-layer development and separation on the new body.}
+  - {id: pressure, parameter: Dynamic pressure, basis: Use the shared density and wind-tunnel speed., calculation: q = 0.5 rho U^2 = 551.25 Pa, transfer: Keep q and the 1.44 m^2 reference area fixed when comparing CD and pressure coefficients.}
+  - {id: tke, parameter: SST turbulent kinetic energy scale, basis: Use turbulent intensity I = 0.005 and U = 30 m/s., calculation: k = 1.5 (U I)^2 = 0.03375 m^2/s^2, transfer: Derive k from a measured or justified facility intensity rather than a convenient default.}
+  - {id: omega, parameter: SST specific dissipation scale, basis: Use length scale L = 0.01 m and C_mu = 0.09 for the explanatory estimate., calculation: omega approximately sqrt(k)/(C_mu^0.25 L) = 33.5 1/s, transfer: Choose length scale from the facility or upstream eddy scale and document the conversion convention.}
+experiments:
+  - id: closure
+    prediction: What should be concluded if SA and SST predict different rear-step reattachment lengths and CD values?
+    options: [The spread is model-form sensitivity that must be checked against mesh and reference evidence, The model with the lower drag is more accurate]
+    controlled_variable: Geometry, air state, velocity, reference values, mesh, farfield, wall, steady steps, and output requests remain fixed.
+    observation: Compare the semantic diff, zero-Cf locations, reverse-flow length, base pressure, CD, mutRatio, yPlus, mesh sensitivity, and convergence.
+failure_modes:
+  - {id: inlet, symptom: SST wake behaviour changes strongly when the farfield is moved., cause: Turbulence intensity or length scale is poorly justified and decays before reaching the body., correction: Use facility data or a defensible upstream scale and check turbulence quantities at the body.}
+  - {id: wall, symptom: Model differences are dominated by inconsistent near-wall treatment., cause: yPlus and wall-layer resolution do not support the chosen wall-function strategy in both Cases., correction: Report yPlus distributions and repeat with a consistent refined near-wall mesh.}
+  - {id: steady, symptom: Residuals or CD oscillate and never settle to a steady mean., cause: The separated wake is intrinsically unsteady while the setup uses steady RANS., correction: Do not average an arbitrary tail; move to a justified unsteady workflow and sampling window.}
+  - {id: verdict, symptom: One closure is declared correct because it predicts a preferred value., cause: Model selection was made without experimental or higher-fidelity reference evidence., correction: Compare against reference observables and report the remaining model-form and grid uncertainty.}
+evidence_rubric:
+  - {id: diff, observation: Semantic parameter comparison, pass: Only turbulence closure and its declared compatible freestream quantities change., fail: 'Mesh, state, reference values, boundaries, or numerics also change.'}
+  - {id: separation, observation: Surface Cf and center-plane reverse flow, pass: Separation and reattachment positions use the same coordinate convention and pass mesh sensitivity., fail: A colored wake image replaces signed shear and velocity evidence.}
+  - {id: drag, observation: Base pressure and CD, pass: Common pressure and force references are used and histories stabilize., fail: Different references or drifting force histories are compared.}
+  - {id: wall, observation: yPlus and near-wall resolution, pass: Both models use documented and comparable wall treatment with sensitivity evidence., fail: One Case changes effective wall resolution or has unreviewed yPlus.}
+  - {id: validation, observation: External reference comparison, pass: 'Relevant pressure, reattachment, or drag data support the selected closure and uncertainty statement.', fail: Agreement between SA and SST is treated as validation.}
+transfer_questions:
+  - {prompt: 'Why can a closure comparison be misleading if the mesh changes with the model?', expected: 'Grid error and model-form effects become confounded, so the observed difference cannot be attributed to the closure.'}
+  - {prompt: 'What must change if the wake remains periodically unsteady in both steady Drafts?', expected: 'Use a justified unsteady method, establish time-step and sampling independence, and compare time-averaged observables rather than forcing steady convergence.'}

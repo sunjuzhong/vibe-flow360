@@ -1,0 +1,14 @@
+schema_version: 1
+engineering_question: How sensitive are rear-step separation, wake recovery, and pressure drag to the selected steady RANS turbulence closure?
+decision: Treat the SA-versus-SST spread as model-form sensitivity and require reference evidence before choosing either model for a design decision.
+inputs:
+  geometry: assets/rear-step-body.csm
+  length_unit: m
+  body_height: 1.2 m
+  velocity: 30 m/s
+  air_state: 288.15 K and 1.225 kg/m^3
+deliverables:
+  - A controlled SA and k-omega SST parameter comparison
+  - Derived Reynolds, dynamic-pressure, turbulent-energy, and dissipation scales
+  - Separation, wake, drag, mesh, and convergence evidence criteria
+  - One Project with two configured Case Drafts and no cloud computation
