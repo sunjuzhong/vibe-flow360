@@ -169,6 +169,47 @@ export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
   return Math.min(100, Math.max(4, Math.round((finished / manifest.total_resources) * 100)))
 }
 
+function positiveBytes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function declaredSizeBytes(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
+  const record = value as Record<string, unknown>
+  return Math.max(
+    positiveBytes(record.size_bytes),
+    positiveBytes(record.file_size),
+    positiveBytes(record.storage_size_bytes),
+    positiveBytes(record.total_size_bytes),
+  )
+}
+
+export function resourceEstimatedSizeBytes(
+  item: ProjectItem | null,
+  detail: ResourceDetail | null,
+  manifest: ProjectSyncManifest | null,
+): number | undefined {
+  if (!item) return undefined
+  const syncedResource = manifest?.resources[`${item.type}/${item.id}`]
+  const artifactBytes = Object.values(syncedResource?.artifacts ?? {})
+    .reduce((total, artifact) => total + positiveBytes(artifact.size_bytes), 0)
+  const itemBytes = declaredSizeBytes(item)
+  const detailBytes = Math.max(declaredSizeBytes(detail?.info), declaredSizeBytes(detail?.summary))
+  const resultBytes = detail?.results?.records?.reduce(
+    (total, record) => total + positiveBytes(record.size_bytes),
+    0,
+  ) ?? 0
+  const estimate = Math.max(artifactBytes, itemBytes, detailBytes, resultBytes)
+  return estimate > 0 ? estimate : undefined
+}
+
+export function estimatedResourceLoadDurationMs(sizeBytes?: number): number {
+  if (!sizeBytes || !Number.isFinite(sizeBytes) || sizeBytes <= 0) return 12_000
+  const estimatedThroughputBytesPerSecond = 6 * 1024 * 1024
+  const duration = 3_000 + (sizeBytes / estimatedThroughputBytesPerSecond) * 1_000
+  return Math.round(Math.min(60_000, Math.max(6_000, duration)))
+}
+
 export function resourceTransitionProgress(
   detailReady: boolean,
   detailFailed: boolean,
@@ -179,17 +220,17 @@ export function resourceTransitionProgress(
   // resource detail request has finished. Keep the entry transition in front
   // until both are stable so Case metrics do not briefly render from a partial
   // cache snapshot (for example, zero result artifacts).
-  if (!detailReady) return { active: true, progress: 38, phase: 'detail' }
+  if (!detailReady) return { active: true, progress: 4, phase: 'detail' }
   if (viewerState?.status === 'ready' || viewerState?.status === 'error') {
     return { active: false, progress: 100, phase: 'complete' }
   }
-  if (!viewerState || viewerState.status === 'idle') return { active: true, progress: 52, phase: 'preview' }
+  if (!viewerState || viewerState.status === 'idle') return { active: true, progress: 4, phase: 'preview' }
   const assetProgress = viewerState.progress
   return {
     active: true,
     progress: assetProgress !== undefined && Number.isFinite(assetProgress)
-      ? 58 + Math.min(1, Math.max(0, assetProgress)) * 40
-      : 58,
+      ? 4 + Math.min(1, Math.max(0, assetProgress)) * 90
+      : 4,
     phase: assetProgress !== undefined ? 'asset' : 'preview',
   }
 }
@@ -772,6 +813,9 @@ export default function ProjectPage() {
   const transitionProgress = projectTransitionActive
     ? 6 + projectSyncProgress(syncManifest) * 0.26
     : resourceTransition.progress
+  const estimatedLoadDurationMs = estimatedResourceLoadDurationMs(
+    resourceEstimatedSizeBytes(selectedItem, detail, syncManifest),
+  )
   const transitionTitle = projectTransitionActive
     ? t('Opening Project')
     : resourceTransition.phase === 'detail'
@@ -877,8 +921,10 @@ export default function ProjectPage() {
       </header>
 
       <ProjectLoadingOverlay
+        sessionKey={`${projectId}:${selected?.id ?? (resourceId || 'project')}`}
         active={transitionActive}
         progress={transitionProgress}
+        estimatedDurationMs={estimatedLoadDurationMs}
         title={transitionTitle}
         detail={transitionDetail}
         completeTitle={t('Ready')}

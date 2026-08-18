@@ -15,7 +15,9 @@ import {
   projectSyncProgress,
   resolveActiveDraftId,
   resourceContextLabel,
+  resourceEstimatedSizeBytes,
   resourceTransitionProgress,
+  estimatedResourceLoadDurationMs,
 } from './ProjectPage'
 
 describe('Project panel defaults', () => {
@@ -71,19 +73,47 @@ describe('projectSyncProgress', () => {
   })
 })
 
+describe('resource load estimates', () => {
+  it('prefers the largest available resource-size signal', () => {
+    const sync = manifest({
+      resources: {
+        'Geometry/geo-1': {
+          id: 'geo-1',
+          type: 'Geometry',
+          status: 'completed',
+          artifacts: {
+            mesh: { path: 'mesh.bin', local_path: 'mesh.bin', size_bytes: 24_000_000, status: 'ready', synced_at: '' },
+          },
+        },
+      },
+    })
+    expect(resourceEstimatedSizeBytes(
+      { id: 'geo-1', name: 'Wing', type: 'Geometry', parent_id: null, size_bytes: 8_000_000 },
+      { id: 'geo-1', type: 'Geometry', info: { size_bytes: 12_000_000 } },
+      sync,
+    )).toBe(24_000_000)
+  })
+
+  it('uses a conservative fallback and caps very large estimates', () => {
+    expect(estimatedResourceLoadDurationMs()).toBe(12_000)
+    expect(estimatedResourceLoadDurationMs(1024)).toBe(6_000)
+    expect(estimatedResourceLoadDurationMs(10 * 1024 * 1024 * 1024)).toBe(60_000)
+  })
+})
+
 describe('resourceTransitionProgress', () => {
   it('advances through detail, manifest, and measured asset loading', () => {
-    expect(resourceTransitionProgress(false, false)).toEqual({ active: true, progress: 38, phase: 'detail' })
-    expect(resourceTransitionProgress(true, false, { status: 'idle' })).toEqual({ active: true, progress: 52, phase: 'preview' })
+    expect(resourceTransitionProgress(false, false)).toEqual({ active: true, progress: 4, phase: 'detail' })
+    expect(resourceTransitionProgress(true, false, { status: 'idle' })).toEqual({ active: true, progress: 4, phase: 'preview' })
     expect(resourceTransitionProgress(true, false, { status: 'loading', progress: 0.5 }))
-      .toEqual({ active: true, progress: 78, phase: 'asset' })
+      .toEqual({ active: true, progress: 49, phase: 'asset' })
   })
 
   it('finishes only after detail hydration, or immediately after a detail failure', () => {
     expect(resourceTransitionProgress(true, false, { status: 'ready' })).toEqual({ active: false, progress: 100, phase: 'complete' })
-    expect(resourceTransitionProgress(false, false, { status: 'ready' })).toEqual({ active: true, progress: 38, phase: 'detail' })
+    expect(resourceTransitionProgress(false, false, { status: 'ready' })).toEqual({ active: true, progress: 4, phase: 'detail' })
     expect(resourceTransitionProgress(false, false, { status: 'error', message: 'preview unavailable' }))
-      .toEqual({ active: true, progress: 38, phase: 'detail' })
+      .toEqual({ active: true, progress: 4, phase: 'detail' })
     expect(resourceTransitionProgress(false, true)).toEqual({ active: false, progress: 100, phase: 'complete' })
   })
 

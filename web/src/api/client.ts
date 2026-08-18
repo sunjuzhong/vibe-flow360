@@ -426,6 +426,9 @@ export type ProjectItem = {
   name: string
   type: string
   parent_id: string | null
+  size_bytes?: number
+  file_size?: number
+  storage_size_bytes?: number
 }
 
 export type ProjectItemsResponse = {
