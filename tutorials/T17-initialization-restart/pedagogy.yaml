@@ -1,0 +1,51 @@
+schema_version: 2
+audience: Engineers moving from a converged source condition to a nearby target condition who need to reduce startup cost without losing solution independence.
+prerequisites:
+  - Understand steady residual force and field convergence evidence.
+  - Know that a Project tree distinguishes Geometry meshes Cases forks and Drafts.
+learning_objectives:
+  - {id: distinguish, objective: Distinguish expression initialization modified restart fork and interpolation., assessment: Route four scenarios to the correct field and workflow mechanism.}
+  - {id: expressions, objective: Write bounded nondimensional initial-condition expressions., assessment: Derive the velocity multiplier lower bound and state-variable meaning.}
+  - {id: parent, objective: Qualify a parent Case before reusing its state., assessment: Assemble the required provenance convergence mesh and physics evidence.}
+  - {id: independence, objective: Prove both acceleration and final-state independence., assessment: Apply cost load field and interpolation gates.}
+concepts:
+  cfd:
+    - {id: memory, title: An initial field changes the path rather than the target equations, explanation: A seed can reduce startup transients but the converged state must satisfy the target equations and boundaries., misconception: A plausible initial field guarantees the correct final solution.}
+    - {id: basin, title: Multiple initialization paths expose sensitivity, explanation: Cold start analytic seed and restart should approach the same stable target when the problem has one relevant attractor., misconception: The fastest branch is automatically the most accurate branch.}
+    - {id: transfer, title: Mesh interpolation introduces a second approximation, explanation: Mapping a developed solution onto new cells can create conservation error and local extrema., misconception: Interpolation is a lossless copy.}
+  flow360:
+    - {id: initial, title: NavierStokesInitialCondition defines a new field, explanation: Nondimensional expressions may use rho velocity pressure coordinates constants and supported functions., misconception: Default rho u v w and p expressions mean zero flow.}
+    - {id: modified, title: Modified restart transforms an imported parent state, explanation: NavierStokesModifiedRestartSolution supplies expressions while the fork workflow selects the parent Case., misconception: The SimulationParams patch contains the Case ID.}
+    - {id: fork, title: Fork and interpolation are different workflow choices, explanation: A same-mesh fork continues a parent state and interpolation is added only for another Volume Mesh., misconception: Every fork requires a target mesh.}
+parameter_derivations:
+  - {id: angle, parameter: Restart velocity rotation, basis: The accepted source is 8 degrees and the target is 12 degrees., calculation: Delta alpha is 4 degrees or 0.069813 rad, transfer: Rotate only when axes and angle convention match.}
+  - {id: rotation, parameter: x-z velocity transform, basis: Use parent velocity components u and w., calculation: u prime equals cos delta times u minus sin delta times w and w prime uses the complementary rotation, transfer: Preserve rho and p only when physically defensible.}
+  - {id: deficit, parameter: Expression-seed lower bound, basis: The Gaussian multiplier has a maximum deficit of 0.15., calculation: u seed divided by u infinity is at least 0.85, transfer: Derive bounds before submitting spatial expressions.}
+  - {id: agreement, parameter: Load independence gate, basis: Use the cold-start converged load as the independent reference., calculation: Relative load difference must be no more than 0.01, transfer: Set tolerance from the decision and numerical uncertainty before seeing results.}
+experiments:
+  - id: choice
+    prediction: The target uses the same mesh and only angle of attack changes after a trusted source Case. Which path should be tested?
+    options: [Same-mesh fork with a controlled modified restart, Cross-mesh interpolation]
+    controlled_variable: Geometry mesh Mach models and outputs remain fixed.
+    observation: Compare the fork with an independent 12-degree cold start before accepting saved work.
+  - id: mesh
+    prediction: A refined target Volume Mesh is introduced. What new evidence is required?
+    options: [Overlap conservation region correspondence and post-transfer extrema, Only a successful submission status]
+    controlled_variable: Use the same accepted parent Case while changing only the target mesh.
+    observation: Treat transfer error separately from solver convergence on the target mesh.
+failure_modes:
+  - {id: fake-parent, symptom: A restart Draft is created before a source Case exists., cause: Schema configuration was confused with workflow provenance., correction: Run and accept the source then fork from its real Case node.}
+  - {id: bad-parent, symptom: The child converges quickly to an incorrect load., cause: The parent was incomplete incompatible or physically wrong., correction: Audit parent convergence mesh models bounds and target delta.}
+  - {id: expression, symptom: Early steps show severe pressure or density excursions., cause: The expression is discontinuous dimensional or unbounded., correction: Use nondimensional variables smooth transitions and derived bounds.}
+  - {id: path, symptom: Cold start and restart settle at materially different loads., cause: A branch is incomplete the flow is multistable or the continuation step is too large., correction: Extend histories reduce the step and inspect fields.}
+  - {id: interpolation, symptom: Transferred fields contain spikes near boundaries or interfaces., cause: Mesh overlap or physical-region correspondence is insufficient., correction: Inspect transfer coverage and extrema then revise the mesh or initialize affected regions.}
+evidence_rubric:
+  - {id: provenance, observation: Parent provenance, pass: Real parent Case and mesh IDs plus acceptance evidence are recorded., fail: Only a project name or snapshot is available.}
+  - {id: bounds, observation: Startup state, pass: rho and p remain positive and extrema are explained., fail: The branch advances with unexplained clipping or spikes.}
+  - {id: cost, observation: Acceleration, pass: Accepted steps or wall time improve under equal convergence criteria., fail: A steeper early residual is the only evidence.}
+  - {id: loads, observation: Final loads, pass: CL and CD agree with the independent cold start within one percent., fail: The faster branch retains a material load offset.}
+  - {id: fields, observation: Final fields, pass: Cp and midspan field differences meet tolerance., fail: Only integral loads are compared.}
+  - {id: mapping, observation: Cross-mesh transfer, pass: Coverage conservation region mapping and extrema pass., fail: Interpolation is accepted because the run started.}
+transfer_questions:
+  - {prompt: 'Where does the restart parent identity belong?', expected: In the fork workflow through the selected parent Case while ModifiedRestartSolution only transforms the imported state.}
+  - {prompt: 'What proves that initialization accelerated rather than biased the result?', expected: Lower measured work together with converged load and field agreement against an independent initialization.}

@@ -1,0 +1,51 @@
+schema_version: 2
+id: T17
+slug: initialization-restart
+title: Initialize a target condition and reuse a trusted Case
+summary: Compare target-freestream, analytic-expression, and parent-Case initialization while preserving provenance and final-state independence.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:NavierStokesInitialCondition', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:variant:Fluid.initial_condition=NavierStokesInitialCondition', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.type_name', section: baseline, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.constants', section: expression, artifact: variants/target-expression.patch.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.rho', section: expression, artifact: variants/target-expression.patch.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.u', section: expression, artifact: variants/target-expression.patch.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.v', section: expression, artifact: variants/target-expression.patch.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.w', section: expression, artifact: variants/target-expression.patch.json}
+  - {feature: 'schema:field:NavierStokesInitialCondition.p', section: expression, artifact: variants/target-expression.patch.json}
+  - {feature: 'schema:type:NavierStokesModifiedRestartSolution', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:variant:Fluid.initial_condition=NavierStokesModifiedRestartSolution', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.type_name', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.constants', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.rho', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.u', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.v', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.w', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'schema:field:NavierStokesModifiedRestartSolution.p', section: restart, artifact: variants/target-modified-restart.patch.json}
+  - {feature: 'workflow:case-fork', section: restart, artifact: plan.md}
+  - {feature: 'workflow:case-restart', section: restart, artifact: plan.md}
+  - {feature: 'workflow:mesh-interpolation', section: interpolation, artifact: plan.md}
+assets:
+  - path: assets/continuation-vane.csm
+    sha256: 7f3c76bc2eb16d11d54d5d02c7f6f673dc3c1a354e36bbcddf72f9e972a91e4d
+    source: Tutorial-owned analytic finite-span continuation vane geometry
+    license: Apache-2.0
+variants:
+  - {id: target-uniform, title: Target cold start, patch: variants/target-uniform.patch.json, evidence: variants/target-uniform.evidence.yaml}
+  - {id: target-expression, title: Target analytic wake seed, patch: variants/target-expression.patch.json, evidence: variants/target-expression.evidence.yaml}
+  - {id: target-modified-restart, title: Target modified restart, patch: variants/target-modified-restart.patch.json, evidence: variants/target-modified-restart.evidence.yaml}

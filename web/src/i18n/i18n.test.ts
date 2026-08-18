@@ -17,6 +17,7 @@ import { t13Evidence, t13ParameterCards, t13Steps, t13Params, t13Pedagogy, valid
 import { t14Evidence, t14ParameterCards, t14Steps, t14Params, t14Pedagogy, validateT14Setup } from '../tutorials/t14'
 import { t15Evidence, t15ParameterCards, t15Steps, t15Params, t15Pedagogy, validateT15Setup } from '../tutorials/t15'
 import { t16Evidence, t16ParameterCards, t16Steps, t16Params, t16Pedagogy, validateT16Setup } from '../tutorials/t16'
+import { t17Evidence, t17ParameterCards, t17Steps, t17Params, t17Pedagogy, validateT17Setup } from '../tutorials/t17'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -312,6 +313,14 @@ describe('language settings', () => {
       ...validateT16Setup(t16Params('accuracy')).flatMap(({ label, detail }) => [label, detail]),
       ...validateT16Setup(t16Params('krylov')).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t16Pedagogy),
+      ...t17Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t17ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t17Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT17Setup(t17Params('source')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT17Setup(t17Params('uniform')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT17Setup(t17Params('expression')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT17Setup(t17Params('restart')).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t17Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -475,6 +484,23 @@ describe('language settings', () => {
       'The bundled T16 parameters contain an invalid numerical stage, compatibility rule, entity, or evidence contract.',
       'The bundled T16 loaded-vane Geometry could not be loaded.',
       'Flow360 created the T16 Project without returning its Geometry identifiers.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T17 environment builder in Chinese', () => {
+    const messages = [
+      'CASE CONTINUATION', 'INITIALIZATION AND RESTART', 'RESOURCE CONTRACT',
+      'Build the T17 initialization environment',
+      'The app uploads the bundled vane and creates source, target cold-start, and target expression-seed Case Drafts.',
+      'Mach 0.30, 8° source, 12° uniform target, bounded 12° expression seed, shared mesh and comparison outputs',
+      'Source · 8° uniform start', 'Target · 12° uniform start', 'Target · 12° expression seed',
+      '8° source', '12° uniform', '12° expression seed', '12° modified restart',
+      'Tutorial T17 · initialization and restart',
+      'All three pre-run Case Drafts are synced. Create the modified-restart branch only from the real source Case after it has run and passed review.',
+      'The bundled T17 parameters contain an invalid initialization, restart transformation, entity, or evidence contract.',
+      'The bundled T17 continuation-vane Geometry could not be loaded.',
+      'Flow360 created the T17 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

@@ -298,15 +298,37 @@ mappings:
     selector:
       feature_pattern: '^schema:(type:(SLAU2Flux|KrylovLinearSolver|LineSearch)|enum:SLAU2Flux\.jacobian|field:(SLAU2Flux|KrylovLinearSolver|LineSearch)\..*|field:NavierStokesSolver\.line_search|variant:NavierStokesSolver\.(linear_solver=KrylovLinearSolver|riemann_solver=SLAU2Flux))$'
   - tutorial: T17
-    section: variants
-    status: planned
+    section: baseline
+    status: verified
+    artifact: tutorials/T17-initialization-restart/simulation.json
+    override: true
     selector:
-      owners: [HeatEquationInitialCondition, NavierStokesInitialCondition, NavierStokesModifiedRestartSolution]
+      feature_pattern: '^schema:(type:NavierStokesInitialCondition|variant:Fluid\.initial_condition=NavierStokesInitialCondition|field:NavierStokesInitialCondition\.type_name)$'
+  - tutorial: T17
+    section: expression
+    status: verified
+    artifact: tutorials/T17-initialization-restart/variants/target-expression.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:field:NavierStokesInitialCondition\.(constants|rho|u|v|w|p)$'
+  - tutorial: T17
+    section: restart
+    status: verified
+    artifact: tutorials/T17-initialization-restart/variants/target-modified-restart.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:NavierStokesModifiedRestartSolution|variant:Fluid\.initial_condition=NavierStokesModifiedRestartSolution|field:NavierStokesModifiedRestartSolution\..*)$'
+  - tutorial: T17
+    section: workflow
+    status: verified
+    artifact: tutorials/T17-initialization-restart/plan.md
+    override: true
+    selector: {feature_pattern: '^workflow:(case-fork|case-restart|mesh-interpolation)$'}
   - tutorial: T18
     section: baseline
     status: planned
     selector:
-      owners: [HeatEquationSolver, Solid, SolidMaterial]
+      owners: [HeatEquationInitialCondition, HeatEquationSolver, Solid, SolidMaterial]
   - tutorial: T19
     section: baseline
     status: planned

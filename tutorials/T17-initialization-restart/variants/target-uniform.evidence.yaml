@@ -1,0 +1,6 @@
+schema_version: 1
+criteria:
+  - {id: bounded-startup, category: convergence, description: The target freestream cold start keeps density and pressure positive., artifact: cold-start state histories, required: true, check: {method: manual, metric: convergence.cold-start-bounds}}
+  - {id: reference-state, category: field, description: The converged cold start supplies an independent reference for load and field comparisons., artifact: cold-start target solution, required: true, check: {method: present, metric: field.cold-start-reference}}
+limitations:
+  - The cold start may require more startup work and is not assumed to be the cheapest branch.
