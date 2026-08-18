@@ -275,7 +275,7 @@ function SchemaField({
     const requiredKeys = Array.isArray(schema.required) ? schema.required : []
     const fields = (
       <>
-        {schema.description && path && !collapsibleObjects && <p>{schema.description}</p>}
+        {schema.description && path && !collapsibleObjects && !embeddedObjectContent && <p>{cleanSchemaDescription(schema.description)}</p>}
         {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
@@ -298,7 +298,7 @@ function SchemaField({
             )
           }
           const editor = (
-            <div className="schema-edit-field" key={key}>
+            <div className={`schema-edit-field schema-edit-field-${child.type} schema-field-key-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`} key={key}>
               <SchemaField
                 schema={child}
                 path={childPath}
@@ -549,7 +549,7 @@ function SchemaField({
     }
     const selectedEditor = selected.type === 'expression' && valueOrExpression
       ? <ExpressionField schema={selected} value={draft.value} path={path} title={title} embedded onChange={(next) => onChange({ ...draft, value: next })} />
-      : <SchemaField schema={selected} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} onChange={(next) => onChange({ ...draft, value: next })} />
+      : <SchemaField schema={selected} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent onChange={(next) => onChange({ ...draft, value: next })} />
     const unionEditor = (
       <>
         {valueOrExpression ? (
@@ -692,7 +692,7 @@ function ComplexArrayField({
 
   const dialog = editor && <div className="schema-item-editor-backdrop" role="presentation">
     <section className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`}>
-      <header><div><small>{editor.index === null ? 'NEW ITEM' : 'EDIT ITEM'}</small><h3>{editor.schema.title || title}</h3></div><button type="button" className="icon-button" onClick={() => setEditor(null)} aria-label="Close item editor"><X size={17} /></button></header>
+      <header><div><span className="schema-item-editor-kicker">{editor.index === null ? 'NEW OUTPUT' : 'EDIT OUTPUT'}</span><h3>{humanize(editor.schema.title || title)}</h3><small>Output type is fixed after creation.</small></div><button type="button" className="icon-button" onClick={() => setEditor(null)} aria-label="Close item editor"><X size={17} /></button></header>
       <div className="schema-item-editor-body"><SchemaField
         schema={editor.schema}
         path={`${path}.${editor.index ?? array.length}`}
@@ -702,8 +702,9 @@ function ComplexArrayField({
         configured
         addLabel={addLabel}
         removeLabel={removeLabel}
-        collapsibleObjects={collapsibleObjects}
-        rootTabContent={editor.schema.type === 'object'}
+        collapsibleObjects
+        rootTabContent={false}
+        embeddedObjectContent={editor.schema.type === 'object'}
         onChange={(next) => setEditor((current) => current ? {
           ...current,
           value: itemSchema.type === 'union' && isUnionDraft(current.value) ? { ...current.value, value: next } : next,
@@ -1313,7 +1314,10 @@ function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean 
 }
 
 function humanize(value: string) {
-  return value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function compactValue(value: unknown) {

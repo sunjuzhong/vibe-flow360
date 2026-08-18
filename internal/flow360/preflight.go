@@ -758,11 +758,20 @@ def normalize(node, inherited_unit=None):
                 "value_schema": numeric,
             }
         required = set(node.get("required", []))
+        def normalized_property(name, child):
+            result = normalize(child)
+            # A referenced $defs model often carries an implementation title
+            # such as EntityList[...] or UniqueItemList[Union]. At a concrete
+            # property site the field name is the useful user-facing label.
+            property_title = metadata(child).get("title")
+            result["title"] = property_title or name.replace("_", " ").title()
+            result["required"] = name in required
+            return result
         return {
             **base,
             "type": "object",
             "properties": {
-                name: {**normalize(child), "required": name in required}
+                name: normalized_property(name, child)
                 for name, child in properties.items()
                 if not name.startswith("private_attribute")
             },

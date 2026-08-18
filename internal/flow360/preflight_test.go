@@ -278,8 +278,12 @@ func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testin
 		entities, _ = properties["entities"].(map[string]any)
 	}
 	choices, _ := entities["entity_choices"].([]any)
-	if entities["type"] != "entity_list" || len(choices) < 1 {
+	if entities["type"] != "entity_list" || entities["title"] != "Surfaces" || len(choices) < 1 {
 		t.Fatalf("SurfaceOutput did not project selectable canonical surfaces: %#v", entities)
+	}
+	outputFields, _ := properties["output_fields"].(map[string]any)
+	if outputFields["title"] != "Output Fields" {
+		t.Fatalf("referenced schema implementation title leaked into Output fields: %#v", outputFields)
 	}
 	var surfaceChoice map[string]any
 	for _, raw := range choices {
@@ -303,7 +307,7 @@ func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testin
 		slices, _ = sliceProperties["entities"].(map[string]any)
 	}
 	sliceChoices, _ := slices["entity_choices"].([]any)
-	if slices["type"] != "entity_list" || len(sliceChoices) != 1 {
+	if slices["type"] != "entity_list" || slices["title"] != "Slices" || len(sliceChoices) != 1 {
 		t.Fatalf("SliceOutput did not restrict selection to registered Slice entities: %#v", slices)
 	}
 	slicePayload := sliceChoices[0].(map[string]any)["payload"].(map[string]any)
