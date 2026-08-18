@@ -239,6 +239,20 @@ mappings:
     selector:
       owners: [FrozenSpecies, NASA9CoefficientSet, NASA9Coefficients, Sutherland, ThermallyPerfectGas]
   - tutorial: T14
+    section: sa-baseline
+    status: verified
+    artifact: tutorials/T14-turbulence-models/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(Fluid|SpalartAllmaras|SpalartAllmarasModelConstants|ModifiedTurbulentViscosityRatio)$'
+  - tutorial: T14
+    section: sst-variant
+    status: verified
+    artifact: tutorials/T14-turbulence-models/variants/k-omega-sst.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(KOmegaSST|KOmegaSSTModelConstants|TurbulentIntensityAndTurbulentLengthScale)$'
+  - tutorial: T14
     section: variants
     status: planned
     selector:

@@ -1,0 +1,25 @@
+schema_version: 1
+geometry:
+  surface_group: body
+  wake_entity: Separated wake corridor
+  slice_entity: Wake center plane
+meshing:
+  surface_max_edge_length: 0.12 m
+  body_max_edge_length: 0.06 m
+  first_layer_thickness: 0.00025 m
+  wake_spacing: 0.0625 m
+physics:
+  velocity: 30 m/s
+  density: 1.225 kg/m^3
+  temperature: 288.15 K
+  baseline_model: SpalartAllmaras
+  baseline_freestream: modified turbulent viscosity ratio 70
+  variant_model: kOmegaSST
+  variant_freestream: turbulent intensity 0.005 and length scale 0.01 m
+numerics:
+  regime: steady RANS
+  maximum_steps: 1500
+outputs:
+  surface: [Cp, Cf, CfVec, yPlus, wall_shear_stress_magnitude_pa]
+  slice: [velocity_m_per_s, pressure_pa, vorticityMagnitude, mut, mutRatio]
+  force: [CD]

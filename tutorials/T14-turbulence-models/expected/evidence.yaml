@@ -1,0 +1,13 @@
+schema_version: 1
+criteria:
+  - {id: controlled-diff, category: provenance, description: Only the turbulence closure and its declared compatible freestream quantities differ., artifact: semantic parameter diff, required: true, check: {method: present, metric: params.controlled-diff}}
+  - {id: separation, category: field, description: Zero-Cf separation and reattachment plus center-plane reverse-flow length are compared on common scales., artifact: paired surface and Slice fields, required: true, check: {method: manual, metric: field.separation-comparison}}
+  - {id: pressure-drag, category: force, description: Base pressure and stable CD histories use the same 1.44 m^2 reference area., artifact: paired pressure and force outputs, required: true, check: {method: manual, metric: force.pressure-drag}}
+  - {id: turbulence-field, category: field, description: mut and mutRatio are compared while native SA and SST variables remain distinct., artifact: paired Wake center plane outputs, required: true, check: {method: manual, metric: field.turbulent-viscosity}}
+  - {id: mesh, category: mesh, description: Wake and near-wall sensitivity plus yPlus are reported for both closures., artifact: mesh sensitivity study, required: true, check: {method: manual, metric: mesh.sensitivity}}
+  - {id: convergence, category: convergence, description: Residuals and separation base-pressure and CD monitors stabilize in both Cases., artifact: paired convergence histories, required: true, check: {method: manual, metric: convergence.observable-stability}}
+  - {id: reference, category: report, description: Experimental or higher-fidelity reference evidence supports any model selection., artifact: engineering comparison report, required: true, check: {method: manual, metric: report.reference-evidence}}
+limitations:
+  - Steady RANS represents a modeled mean and does not resolve vortex shedding.
+  - Two-model agreement does not establish validation or grid independence.
+  - The Web action creates configured Drafts but does not submit paid computation.
