@@ -16,6 +16,7 @@ import { t12Evidence, t12ParameterCards, t12Steps, t12Params, t12Pedagogy, valid
 import { t13Evidence, t13ParameterCards, t13Steps, t13Params, t13Pedagogy, validateT13Setup } from '../tutorials/t13'
 import { t14Evidence, t14ParameterCards, t14Steps, t14Params, t14Pedagogy, validateT14Setup } from '../tutorials/t14'
 import { t15Evidence, t15ParameterCards, t15Steps, t15Params, t15Pedagogy, validateT15Setup } from '../tutorials/t15'
+import { t16Evidence, t16ParameterCards, t16Steps, t16Params, t16Pedagogy, validateT16Setup } from '../tutorials/t16'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -304,6 +305,13 @@ describe('language settings', () => {
       ...validateT15Setup(t15Params('transition')).flatMap(({ label, detail }) => [label, detail]),
       ...validateT15Setup(t15Params('ddes')).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t15Pedagogy),
+      ...t16Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t16ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t16Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT16Setup(t16Params('recovery')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT16Setup(t16Params('accuracy')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT16Setup(t16Params('krylov')).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t16Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -450,6 +458,23 @@ describe('language settings', () => {
       'The bundled T15 high-lift Geometry could not be loaded.',
       'Flow360 created the T15 Project without returning its Geometry identifiers.',
       'I reviewed the destination and authorize creation of this remote Flow360 Project and three configured Case Drafts. Nothing is submitted until I review and run a Draft.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T16 environment builder in Chinese', () => {
+    const messages = [
+      'SOLVER NUMERICS', 'NUMERICAL DIAGNOSTICS', 'STAGE CONTRACT',
+      'Build the T16 numerical-diagnostics environment',
+      'The app uploads the bundled loaded vane and creates recovery, second-order, and steady Krylov/SLAU2 Case Drafts.',
+      'Mach 0.30 at 12°, shared mesh and outputs, staged Roe recovery, second-order reporting candidate, Krylov/SLAU2 evaluation',
+      'Stage 1 · conservative recovery', 'Stage 2 · restored second order', 'Stage 3 · steady Krylov + SLAU2',
+      'conservative recovery', 'restored second order', 'steady Krylov + SLAU2',
+      'Roe · 1st order · CFL × 0.25', 'Roe · 2nd order · κ = −1', '0.85 · 1.10 · step 100', 'interior SLAU2 · Roe Jacobian',
+      'Tutorial T16 · numerical diagnostics',
+      'The bundled T16 parameters contain an invalid numerical stage, compatibility rule, entity, or evidence contract.',
+      'The bundled T16 loaded-vane Geometry could not be loaded.',
+      'Flow360 created the T16 Project without returning its Geometry identifiers.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

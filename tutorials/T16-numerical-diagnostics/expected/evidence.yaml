@@ -1,0 +1,12 @@
+schema_version: 1
+criteria:
+  - {id: diagnosis, category: convergence, description: The first failing location and evidence channel are identified before a numerical change., artifact: numerical diagnosis record, required: true, check: {method: manual, metric: convergence.first-failure}}
+  - {id: bounded-recovery, category: convergence, description: Recovery settings produce bounded states and interpretable histories without being used for final loads., artifact: recovery histories, required: true, check: {method: manual, metric: convergence.bounded-recovery}}
+  - {id: restored-accuracy, category: field, description: Second-order Cp CL and CD stabilize and remain mesh credible., artifact: second-order field and force review, required: true, check: {method: manual, metric: field.second-order}}
+  - {id: linear-efficiency, category: convergence, description: Linear reduction and wall time justify the chosen linear solver., artifact: linear solver comparison, required: true, check: {method: manual, metric: convergence.linear-efficiency}}
+  - {id: krylov-compatibility, category: provenance, description: The case is steady both limiters are off and line-search and CFL behavior are reviewed., artifact: Krylov compatibility audit, required: true, check: {method: present, metric: params.krylov-compatibility}}
+  - {id: external-validation, category: report, description: Loads or pressure distributions are compared with relevant reference evidence., artifact: validation comparison, required: true, check: {method: manual, metric: report.reference-evidence}}
+limitations:
+  - First-order recovery is diagnostic and cannot support final loads.
+  - Numerical controls cannot repair mesh boundary-condition or physical-model defects.
+  - The Web action creates configured Drafts but does not submit paid computation.

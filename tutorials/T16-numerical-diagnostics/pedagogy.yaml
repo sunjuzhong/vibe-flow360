@@ -1,0 +1,51 @@
+schema_version: 2
+audience: Engineers diagnosing a difficult steady CFD case who need to recover stability without sacrificing the accuracy required for vane loads.
+prerequisites:
+  - Understand residual histories and the distinction between physical and pseudo time.
+  - Recognize that mesh boundary conditions and physical models must be checked before numerical tuning.
+learning_objectives:
+  - {id: diagnose, objective: Classify nonlinear linear and local-state failure signatures before changing controls., assessment: Route observed symptoms to the responsible evidence channel.}
+  - {id: flux, objective: Explain the roles of Roe SLAU2 spatial order MUSCL dissipation and low-Mach preconditioning., assessment: Match each control to the discrete operation it changes.}
+  - {id: accuracy, objective: Use conservative recovery without reporting first-order loads as final evidence., assessment: Apply the recovery and second-order acceptance gates in sequence.}
+  - {id: krylov, objective: Apply Krylov and line search only to compatible steady cases., assessment: Audit limiter time-stepping and line-search compatibility.}
+concepts:
+  cfd:
+    - {id: nonlinear, title: Residual growth is a symptom rather than a diagnosis, explanation: A spike can begin at a bad cell boundary inconsistency physical transient or over-aggressive update., misconception: The Riemann solver is wrong whenever continuity rises.}
+    - {id: order, title: First order trades resolution for robustness, explanation: Diffusive reconstruction may establish bounded flow and expose the failure location but changes gradients and loads., misconception: A low first-order residual proves the engineering answer.}
+    - {id: linear, title: Linear and nonlinear convergence answer different questions, explanation: Linear reduction measures each implicit solve while nonlinear histories measure progress between pseudo-steps., misconception: More linear iterations always fix nonlinear instability.}
+  flow360:
+    - {id: flux, title: Roe and SLAU2 control interior inviscid fluxes, explanation: Roe is the general starting point and SLAU2 is an alternative interior flux while boundary fluxes remain Roe., misconception: Selecting SLAU2 replaces every boundary flux.}
+    - {id: krylov, title: Krylov is a steady-only linear solver branch, explanation: Its preconditioner relative tolerance adaptive CFL behaviour and line search form one coupled convergence strategy., misconception: Krylov is a drop-in option for unsteady or limiter-enabled cases.}
+    - {id: frequency, title: Equation and Jacobian frequencies trade update cost for freshness, explanation: Less frequent updates save work only when the stale system still produces accepted progress., misconception: Larger frequency values always accelerate a case.}
+parameter_derivations:
+  - {id: velocity, parameter: Freestream speed, basis: Use Mach 0.30 and sound speed approximately 340.3 m/s at 288.15 K., calculation: U = M a = 102.1 m/s, transfer: Recompute from the actual thermal state.}
+  - {id: reynolds, parameter: Chord Reynolds number, basis: 'Use rho = 1.225 kg/m^3 U = 102.1 m/s c = 1.0 m and mu approximately 1.789e-5 Pa*s.', calculation: Re_c approximately 6.99e6, transfer: Use this scale when checking boundary-layer resolution and reference similarity.}
+  - {id: krylov-work, parameter: Krylov preconditioner budget, basis: Use 15 Krylov iterations with at most 25 preconditioner sweeps each., calculation: Nominal ceiling is 375 sweeps per pseudo-step, transfer: Compare actual residual reduction and wall time because the ceiling is not a performance guarantee.}
+  - {id: line-search, parameter: Line-search hard cap, basis: The maximum residual-growth ratio is 1.10 after activation step 100., calculation: One accepted step may grow the monitored norm by at most 10 percent, transfer: Repeated cutbacks require renewed diagnosis.}
+experiments:
+  - id: linear
+    prediction: The nonlinear residual decreases smoothly but each linear solve barely reduces its residual. What should be inspected first?
+    options: [Linear reduction preconditioner work and iteration budget, Switch immediately from Roe to SLAU2]
+    controlled_variable: Flux order CFL mesh and physics remain unchanged while linear-solver evidence is reviewed.
+    observation: Increase linear work only if extra reduction improves nonlinear progress per wall time.
+  - id: order
+    prediction: The case is bounded at first order but spikes immediately after second order is restored. What is the next action?
+    options: [Locate the first failing cell and inspect mesh boundaries and reconstruction evidence, Accept the first-order CL as the final answer]
+    controlled_variable: Recovery and accuracy Drafts differ only in declared numerical-stage settings.
+    observation: Use state bounds and maximum-residual location before adding arbitrary damping.
+failure_modes:
+  - {id: single-trace, symptom: A setting changes after viewing only continuity residual., cause: The failure channel and location were not classified., correction: Correlate nonlinear linear CFL force state-bound and maximum-residual evidence.}
+  - {id: first-order, symptom: Loads are reported from the recovery Draft., cause: Robustness was confused with discretization accuracy., correction: Restore second order and repeat mesh and load-stability gates.}
+  - {id: dissipation, symptom: Dissipation is reduced until the field looks sharper., cause: No controlled sensitivity or validation criterion was defined., correction: Change one variable at a time and compare stable observables with reference evidence.}
+  - {id: krylov-rules, symptom: Krylov validation fails or convergence behaves erratically., cause: The run is unsteady or a velocity or pressure-density limiter is active., correction: Use the standard linear solver or remove the incompatible choice only when physically justified.}
+  - {id: line-search, symptom: Line search repeatedly cuts steps and CFL cannot grow., cause: The nonlinear update remains too aggressive or the setup is defective., correction: Return to the accuracy Draft and inspect the first rejected-step location and state.}
+evidence_rubric:
+  - {id: diagnosis, observation: Failure classification, pass: The first failing channel step and location are recorded., fail: A setting changes from residual shape alone.}
+  - {id: recovery, observation: Bounded diagnostic recovery, pass: States remain physical and histories become interpretable., fail: First-order convergence is treated as final accuracy.}
+  - {id: accuracy, observation: Second-order restoration, pass: Cp and forces stabilize and pass mesh sensitivity., fail: Loads shift materially or depend on recovery settings.}
+  - {id: linear, observation: Linear work efficiency, pass: Additional linear work improves nonlinear progress per wall time., fail: Iteration counts increase without useful reduction.}
+  - {id: krylov, observation: Krylov and SLAU2 branch, pass: Compatibility accepted steps line search and load agreement pass., fail: Speed alone is called success.}
+  - {id: validation, observation: Engineering validation, pass: Second-order pressure or load evidence agrees with a relevant reference., fail: Agreement among Drafts is called validation.}
+transfer_questions:
+  - {prompt: 'Why can a smooth residual history still be untrustworthy?', expected: It can be smooth under excessive dissipation first-order reconstruction poor mesh resolution or an incorrect physical setup so stable loads and external evidence are still required.}
+  - {prompt: 'Which evidence distinguishes poor linear reduction from nonlinear instability?', expected: Compare within-step linear residual reduction with between-step nonlinear residual CFL acceptance and state histories.}

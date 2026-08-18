@@ -1,0 +1,81 @@
+schema_version: 2
+id: T16
+slug: numerical-diagnostics
+title: Diagnose difficult cases and stage numerical stabilization
+summary: Classify a difficult steady solve from residual, linear, CFL, force, and local-state evidence before restoring accuracy or testing Krylov/SLAU2.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:NavierStokesSolver', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:type:RoeFlux', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:type:LinearSolver', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:type:SLAU2Flux', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:type:KrylovLinearSolver', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:type:LineSearch', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:enum:NavierStokesSolver.order_of_accuracy', section: diagnostics, artifact: variants/accuracy.patch.json}
+  - {feature: 'schema:enum:NavierStokesSolver.type_name', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:enum:SLAU2Flux.jacobian', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:NavierStokesSolver.CFL_multiplier', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.absolute_tolerance', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.equation_evaluation_frequency', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.kappa_MUSCL', section: diagnostics, artifact: variants/accuracy.patch.json}
+  - {feature: 'schema:field:NavierStokesSolver.limit_pressure_density', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.limit_velocity', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.line_search', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:NavierStokesSolver.linear_solver', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.max_force_jac_update_physical_steps', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.order_of_accuracy', section: diagnostics, artifact: variants/accuracy.patch.json}
+  - {feature: 'schema:field:NavierStokesSolver.private_attribute_dict', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.relative_tolerance', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.riemann_solver', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.type_name', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:NavierStokesSolver.update_jacobian_frequency', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:RoeFlux.low_mach_preconditioner', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:RoeFlux.low_mach_preconditioner_threshold', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:RoeFlux.numerical_dissipation_factor', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:RoeFlux.type_name', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:SLAU2Flux.jacobian', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:SLAU2Flux.type_name', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:LinearSolver.absolute_tolerance', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:LinearSolver.max_iterations', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:LinearSolver.relative_tolerance', section: diagnostics, artifact: variants/accuracy.patch.json}
+  - {feature: 'schema:field:LinearSolver.type_name', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:field:KrylovLinearSolver.absolute_tolerance', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:KrylovLinearSolver.max_iterations', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:KrylovLinearSolver.max_preconditioner_iterations', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:KrylovLinearSolver.relative_tolerance', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:KrylovLinearSolver.type_name', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:LineSearch.activation_step', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:LineSearch.max_residual_growth', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:field:LineSearch.residual_growth_threshold', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:variant:NavierStokesSolver.linear_solver=LinearSolver', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:variant:NavierStokesSolver.linear_solver=KrylovLinearSolver', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+  - {feature: 'schema:variant:NavierStokesSolver.riemann_solver=RoeFlux', section: diagnostics, artifact: simulation.json}
+  - {feature: 'schema:variant:NavierStokesSolver.riemann_solver=SLAU2Flux', section: diagnostics, artifact: variants/krylov-slau2.patch.json}
+assets:
+  - path: assets/loaded-vane.csm
+    sha256: 10e35f4ebe9c6c15accee4e647f7b21abe8ad99be13150048749aa23d165d9fe
+    source: Tutorial-owned analytic finite-span loaded-vane geometry
+    license: Apache-2.0
+variants:
+  - id: accuracy
+    title: Restore second-order spatial accuracy
+    patch: variants/accuracy.patch.json
+    evidence: variants/accuracy.evidence.yaml
+  - id: krylov-slau2
+    title: Evaluate steady Krylov and SLAU2
+    patch: variants/krylov-slau2.patch.json
+    evidence: variants/krylov-slau2.evidence.yaml

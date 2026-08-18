@@ -1,0 +1,7 @@
+schema_version: 1
+criteria:
+  - {id: controlled-stage, category: provenance, description: Evaluate steady Krylov line search and SLAU2 interior flux with Roe Jacobian as a separate efficiency branch., artifact: variants/krylov-slau2.patch.json, required: true, check: {method: present, metric: params.krylov-slau2}}
+  - {id: compatibility, category: convergence, description: Compatibility rules pass line search remains controlled and second-order loads agree within tolerance., artifact: Krylov efficiency review, required: true, check: {method: manual, metric: convergence.krylov-efficiency}}
+limitations:
+  - Krylov is steady-only and incompatible with velocity and pressure-density limiters.
+  - Use the second-order Roe Draft when line search repeatedly cuts steps or observables shift materially.
