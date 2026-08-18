@@ -18,6 +18,17 @@ VIBESIM_DATA_DIR=/absolute/path/to/.vibesim
 
 如果服务可能从不同工作目录启动，建议为 `VIBESIM_DATA_DIR` 使用绝对路径。
 
+## 时序播放器缓存
+
+```dotenv
+VIBESIM_SLICE_PLAYER_CACHE_MAX_BYTES=268435456000
+VIBESIM_SLICE_PLAYER_CACHE_RETENTION_HOURS=720
+```
+
+Slice、Surface 归档及转换后的帧资源会按当前 Flow360 环境和 Profile 隔离。默认每个隔离缓存
+最多使用 250 GiB，并保留 30 天未使用的条目。服务启动时及之后每六小时执行清理，优先淘汰
+最近最少使用的条目，且不会删除正在准备或读取的资源。
+
 ## 内置或 OpenAI 兼容 Agent
 
 ```dotenv

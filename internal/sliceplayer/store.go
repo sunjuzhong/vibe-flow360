@@ -26,15 +26,31 @@ const (
 )
 
 type Report struct {
-	IndexVersion      int            `json:"index_version"`
-	CompressedBytes   int64          `json:"compressed_bytes"`
-	UncompressedBytes int64          `json:"uncompressed_bytes"`
-	EntryCount        int            `json:"entry_count"`
-	Slices            []SliceSummary `json:"slices"`
-	Formats           []string       `json:"formats"`
-	IndexReady        bool           `json:"index_ready"`
-	PartialReady      bool           `json:"partial_ready,omitempty"`
-	Playback          *Playback      `json:"playback,omitempty"`
+	IndexVersion      int                 `json:"index_version"`
+	CompressedBytes   int64               `json:"compressed_bytes"`
+	UncompressedBytes int64               `json:"uncompressed_bytes"`
+	EntryCount        int                 `json:"entry_count"`
+	Slices            []SliceSummary      `json:"slices"`
+	Formats           []string            `json:"formats"`
+	IndexReady        bool                `json:"index_ready"`
+	PartialReady      bool                `json:"partial_ready,omitempty"`
+	Playback          *Playback           `json:"playback,omitempty"`
+	Metrics           *PreparationMetrics `json:"metrics,omitempty"`
+}
+
+type PreparationMetrics struct {
+	CacheHit                 bool  `json:"cache_hit"`
+	DownloadMilliseconds     int64 `json:"download_milliseconds"`
+	PrepareMilliseconds      int64 `json:"prepare_milliseconds"`
+	PersistMilliseconds      int64 `json:"persist_milliseconds"`
+	CacheRestoreMilliseconds int64 `json:"cache_restore_milliseconds"`
+	TotalMilliseconds        int64 `json:"total_milliseconds"`
+}
+
+type CacheCleanupResult struct {
+	RemovedEntries int
+	RemovedBytes   int64
+	RemainingBytes int64
 }
 
 type Job struct {
@@ -57,12 +73,14 @@ type Store struct {
 	mu                                  sync.Mutex
 	root, jobsDir, cacheDir, archiveDir string
 	jobs                                map[string]Job
+	leases                              map[string]int
+	accesses                            map[string]time.Time
 }
 
 var validJobID = regexp.MustCompile(`^slice-player-[a-f0-9]{24}$`)
 
 func NewStore(root string) (*Store, error) {
-	store := &Store{root: root, jobsDir: filepath.Join(root, "jobs"), cacheDir: filepath.Join(root, "cache"), archiveDir: filepath.Join(root, "archives"), jobs: map[string]Job{}}
+	store := &Store{root: root, jobsDir: filepath.Join(root, "jobs"), cacheDir: filepath.Join(root, "cache"), archiveDir: filepath.Join(root, "archives"), jobs: map[string]Job{}, leases: map[string]int{}, accesses: map[string]time.Time{}}
 	for _, directory := range []string{store.jobsDir, store.cacheDir, store.archiveDir} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return nil, err
@@ -162,9 +180,12 @@ func SourceKey(caseID, resultPath string, size int64) string {
 }
 
 func (s *Store) ArchiveDirectory(sourceKey string) (string, error) {
-	digest := sha256.Sum256([]byte(sourceKey))
-	directory := filepath.Join(s.archiveDir, hex.EncodeToString(digest[:]))
-	return directory, os.MkdirAll(directory, 0o700)
+	directory := s.archiveDirectory(sourceKey)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return directory, err
+	}
+	s.touchDirectory(directory)
+	return directory, nil
 }
 
 func (s *Store) RecoverableJobs() []Job {
@@ -239,16 +260,31 @@ func (s *Store) Update(id string, progress int, stage string) (Job, error) {
 }
 
 func (s *Store) Complete(id string, index Index, playback *Playback) (Job, error) {
-	if err := s.putIndex(index, s.cacheKeyForJob(id)); err != nil {
+	return s.CompleteWithMetrics(id, index, playback, PreparationMetrics{})
+}
+
+func (s *Store) CompleteWithMetrics(id string, index Index, playback *Playback, metrics PreparationMetrics) (Job, error) {
+	job, ok := s.Get(id)
+	if !ok {
+		return Job{}, errors.New("time-series preparation job was not found")
+	}
+	if job.Status == JobCancelled {
+		return Job{}, errors.New("time-series preparation was cancelled")
+	}
+	cacheKey := job.CacheKey
+	persistStarted := time.Now()
+	if err := s.putIndex(index, cacheKey); err != nil {
 		return Job{}, err
 	}
 	if playback != nil {
-		if err := s.putPlayback(*playback, s.cacheKeyForJob(id)); err != nil {
+		if err := s.putPlayback(*playback, cacheKey); err != nil {
 			return Job{}, err
 		}
-		_ = os.Remove(filepath.Join(s.cacheDirectory(s.cacheKeyForJob(id)), "playback.partial.json"))
+		_ = os.Remove(filepath.Join(s.cacheDirectory(cacheKey), "playback.partial.json"))
 	}
-	report := Report{IndexVersion: index.Version, CompressedBytes: index.CompressedBytes, UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount, Slices: index.Slices, Formats: index.Formats, IndexReady: true, Playback: playback}
+	metrics.PersistMilliseconds += elapsedMilliseconds(persistStarted)
+	metrics.TotalMilliseconds = metrics.DownloadMilliseconds + metrics.PrepareMilliseconds + metrics.PersistMilliseconds + metrics.CacheRestoreMilliseconds
+	report := Report{IndexVersion: index.Version, CompressedBytes: index.CompressedBytes, UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount, Slices: index.Slices, Formats: index.Formats, IndexReady: true, Playback: playback, Metrics: &metrics}
 	return s.change(id, func(job *Job) error {
 		if job.Status == JobCancelled {
 			return errors.New("time-series preparation was cancelled")
@@ -336,6 +372,7 @@ func (s *Store) Cached(cacheKey string) (Index, bool) {
 	if json.Unmarshal(payload, &index) != nil || index.Version != IndexVersion {
 		return Index{}, false
 	}
+	s.touchDirectory(s.cacheDirectory(cacheKey))
 	return index, true
 }
 
@@ -348,6 +385,7 @@ func (s *Store) CachedPlayback(cacheKey string) (*Playback, bool) {
 	if json.Unmarshal(payload, &playback) != nil || !playback.Ready {
 		return nil, false
 	}
+	s.touchDirectory(s.cacheDirectory(cacheKey))
 	return &playback, true
 }
 
@@ -373,7 +411,161 @@ func (s *Store) AssetPath(jobID, relative string) (string, error) {
 	if !info.Mode().IsRegular() {
 		return "", errors.New("slice player asset is not a regular file")
 	}
+	s.touchDirectory(s.cacheDirectory(job.CacheKey))
 	return target, nil
+}
+
+func (s *Store) Protect(jobID string) (func(), bool) {
+	s.mu.Lock()
+	job, ok := s.jobs[jobID]
+	if !ok {
+		s.mu.Unlock()
+		return func() {}, false
+	}
+	paths := []string{s.cacheDirectory(job.CacheKey), s.archiveDirectory(SourceKey(job.CaseID, job.ResultPath, job.SourceSize))}
+	for _, path := range paths {
+		s.leases[path]++
+	}
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, path := range paths {
+			s.leases[path]--
+			if s.leases[path] <= 0 {
+				delete(s.leases, path)
+			}
+		}
+	}, true
+}
+
+func (s *Store) Cleanup(maxBytes int64, retention time.Duration) (CacheCleanupResult, error) {
+	candidates, total, err := s.cacheCandidates()
+	if err != nil {
+		return CacheCleanupResult{}, err
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].accessed.Before(candidates[j].accessed) })
+	result := CacheCleanupResult{RemainingBytes: total}
+	cutoff := time.Now().UTC().Add(-retention)
+	for _, candidate := range candidates {
+		expired := retention > 0 && candidate.accessed.Before(cutoff)
+		overQuota := maxBytes > 0 && result.RemainingBytes > maxBytes
+		if !expired && !overQuota {
+			continue
+		}
+		removed, removeErr := s.removeCacheCandidate(candidate.path, candidate.cache)
+		if removeErr != nil {
+			return result, removeErr
+		}
+		if !removed {
+			continue
+		}
+		result.RemovedEntries++
+		result.RemovedBytes += candidate.bytes
+		result.RemainingBytes -= candidate.bytes
+	}
+	return result, nil
+}
+
+type cacheCandidate struct {
+	path     string
+	bytes    int64
+	accessed time.Time
+	cache    bool
+}
+
+func (s *Store) cacheCandidates() ([]cacheCandidate, int64, error) {
+	var candidates []cacheCandidate
+	var total int64
+	for _, root := range []struct {
+		path  string
+		cache bool
+	}{{s.cacheDir, true}, {s.archiveDir, false}} {
+		entries, err := os.ReadDir(root.path)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(root.path, entry.Name())
+			bytes, accessed, err := directoryUsage(path)
+			if err != nil {
+				continue
+			}
+			candidates = append(candidates, cacheCandidate{path: path, bytes: bytes, accessed: accessed, cache: root.cache})
+			total += bytes
+		}
+	}
+	return candidates, total, nil
+}
+
+func directoryUsage(root string) (int64, time.Time, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	accessed := info.ModTime()
+	var bytes int64
+	err = filepath.Walk(root, func(_ string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode().IsRegular() {
+			bytes += info.Size()
+		}
+		return nil
+	})
+	return bytes, accessed, err
+}
+
+func (s *Store) removeCacheCandidate(path string, cache bool) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.protectedLocked(path) {
+		return false, nil
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return false, err
+	}
+	delete(s.accesses, path)
+	if cache {
+		for id, job := range s.jobs {
+			if s.cacheDirectory(job.CacheKey) == path && terminal(job.Status) {
+				delete(s.jobs, id)
+				_ = os.Remove(filepath.Join(s.jobsDir, id+".json"))
+			}
+		}
+	}
+	return true, nil
+}
+
+func (s *Store) protectedLocked(path string) bool {
+	if s.leases[path] > 0 {
+		return true
+	}
+	for _, job := range s.jobs {
+		if terminal(job.Status) {
+			continue
+		}
+		if s.cacheDirectory(job.CacheKey) == path || s.archiveDirectory(SourceKey(job.CaseID, job.ResultPath, job.SourceSize)) == path {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) touchDirectory(path string) {
+	now := time.Now()
+	s.mu.Lock()
+	if previous := s.accesses[path]; !previous.IsZero() && now.Sub(previous) < time.Minute {
+		s.mu.Unlock()
+		return
+	}
+	s.accesses[path] = now
+	s.mu.Unlock()
+	_ = os.Chtimes(path, now, now)
 }
 
 func (s *Store) change(id string, update func(*Job) error) (Job, error) {
@@ -433,19 +625,25 @@ func (s *Store) putPartialPlayback(playback Playback, cacheKey string) error {
 	}
 	return atomicWrite(filepath.Join(directory, "playback.partial.json"), payload)
 }
-func (s *Store) cacheKeyForJob(id string) string {
-	job, ok := s.Get(id)
-	if !ok {
-		return "missing"
-	}
-	return job.CacheKey
-}
 func (s *Store) indexPath(cacheKey string) string {
 	return filepath.Join(s.cacheDirectory(cacheKey), "index.json")
 }
 func (s *Store) cacheDirectory(cacheKey string) string {
 	digest := sha256.Sum256([]byte(cacheKey))
 	return filepath.Join(s.cacheDir, hex.EncodeToString(digest[:]))
+}
+
+func (s *Store) archiveDirectory(sourceKey string) string {
+	digest := sha256.Sum256([]byte(sourceKey))
+	return filepath.Join(s.archiveDir, hex.EncodeToString(digest[:]))
+}
+
+func elapsedMilliseconds(started time.Time) int64 {
+	elapsed := time.Since(started)
+	if elapsed > 0 && elapsed < time.Millisecond {
+		return 1
+	}
+	return elapsed.Milliseconds()
 }
 
 func atomicWrite(target string, payload []byte) error {

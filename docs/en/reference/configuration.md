@@ -21,6 +21,19 @@ are also accepted. `VIBESIM_FLOW360_BINARY` is normally written by `init`.
 Use an absolute `VIBESIM_DATA_DIR` when the service may start from different
 working directories.
 
+## Time-series player cache
+
+```dotenv
+VIBESIM_SLICE_PLAYER_CACHE_MAX_BYTES=268435456000
+VIBESIM_SLICE_PLAYER_CACHE_RETENTION_HOURS=720
+```
+
+Slice and Surface archives plus converted frame assets are isolated by the
+active Flow360 environment and profile. The defaults cap each isolated cache
+at 250 GiB and retain inactive entries for 30 days. Cleanup runs at startup and
+every six hours, evicts least-recently-used entries first, and never removes a
+preparation or asset currently in use.
+
 ## Built-in or OpenAI-compatible agent
 
 ```dotenv

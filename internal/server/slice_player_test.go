@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
@@ -95,5 +96,41 @@ func TestSlicePlayerServesAssetsFromPartialPlayback(t *testing.T) {
 	app.router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK || recorder.Body.String() != "[]" {
 		t.Fatalf("partial asset was not served: status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestSlicePlayerRestoresCachedPlaybackWithTimingMetrics(t *testing.T) {
+	store, err := sliceplayer.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := sliceplayer.CacheKey("case-1", "results/slices.tar.gz", 42)
+	seed, err := store.Create("case-1", "results/slices.tar.gz", 42, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Complete(seed.ID, sliceplayer.Index{Version: sliceplayer.IndexVersion}, &sliceplayer.Playback{Ready: true, FrameCount: 1}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Create("case-1", "results/slices.tar.gz", 42, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{slicePlayerJobs: store}
+	app.runSlicePlayerJob(job.ID, job.CaseID, job.ResultPath, job.CacheKey)
+	restored, ok := store.Get(job.ID)
+	if !ok || restored.Status != sliceplayer.JobCompleted || restored.Report == nil || restored.Report.Metrics == nil || !restored.Report.Metrics.CacheHit || restored.Report.Metrics.CacheRestoreMilliseconds < 1 {
+		t.Fatalf("unexpected cached restoration: %#v", restored)
+	}
+}
+
+func TestSlicePlayerCacheConfiguration(t *testing.T) {
+	t.Setenv("VIBESIM_SLICE_PLAYER_CACHE_MAX_BYTES", "12345")
+	t.Setenv("VIBESIM_SLICE_PLAYER_CACHE_RETENTION_HOURS", "1.5")
+	if got := slicePlayerCacheMaxBytes(); got != 12345 {
+		t.Fatalf("unexpected cache quota: %d", got)
+	}
+	if got := slicePlayerCacheRetention(); got != 90*time.Minute {
+		t.Fatalf("unexpected cache retention: %s", got)
 	}
 }

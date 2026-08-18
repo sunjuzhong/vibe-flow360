@@ -540,6 +540,14 @@ export type SlicePlayerJob = {
     formats: string[]
     index_ready: boolean
     partial_ready?: boolean
+    metrics?: {
+      cache_hit: boolean
+      download_milliseconds: number
+      prepare_milliseconds: number
+      persist_milliseconds: number
+      cache_restore_milliseconds: number
+      total_milliseconds: number
+    }
     playback?: {
       ready: boolean
       frame_count: number

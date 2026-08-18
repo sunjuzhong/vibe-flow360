@@ -260,6 +260,14 @@ func (s *Server) startCacheCleanupLoop() {
 		} else if removed > 0 {
 			log.Printf("Cleaned up %d expired Flow360 cache snapshots", removed)
 		}
+		if s.slicePlayerJobs != nil {
+			result, err := s.slicePlayerJobs.Cleanup(slicePlayerCacheMaxBytes(), slicePlayerCacheRetention())
+			if err != nil {
+				log.Printf("Time-series player cache cleanup error: %v", err)
+			} else if result.RemovedEntries > 0 {
+				log.Printf("Cleaned up %d time-series cache entries (%d bytes); %d bytes remain", result.RemovedEntries, result.RemovedBytes, result.RemainingBytes)
+			}
+		}
 	}
 	cleanup()
 	ticker := time.NewTicker(6 * time.Hour)

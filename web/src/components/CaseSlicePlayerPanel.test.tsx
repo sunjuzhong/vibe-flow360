@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import type { SlicePlayerJob } from '../api/client'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -18,6 +18,12 @@ describe('CaseSlicePlayerPanel', () => {
   it('uses archive-specific player titles', () => {
     expect(caseTimeSeriesPlayerTitle('slices')).toBe('Time-series Slice player')
     expect(caseTimeSeriesPlayerTitle('surfaces')).toBe('Time-series Surface player')
+  })
+
+  it('formats cache timing metrics for quick and long preparations', () => {
+    expect(formatSlicePlayerDuration(47)).toBe('47 ms')
+    expect(formatSlicePlayerDuration(1470)).toBe('1.5 s')
+    expect(formatSlicePlayerDuration(125_000)).toBe('2m 5s')
   })
 
   it('recognizes a progressive playback report before final indexing completes', () => {

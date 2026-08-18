@@ -12,6 +12,15 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** order).toFixed(order > 1 ? 1 : 0)} ${units[order]}`
 }
 
+export function formatSlicePlayerDuration(milliseconds: number) {
+  if (milliseconds < 1000) return `${Math.max(0, milliseconds).toLocaleString()} ms`
+  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`
+  const totalSeconds = Math.round(milliseconds / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}m ${seconds}s`
+}
+
 export type CaseTimeSeriesArchiveKind = 'slices' | 'surfaces'
 
 export function caseTimeSeriesPlayerTitle(kind: CaseTimeSeriesArchiveKind) {
@@ -455,6 +464,15 @@ export default function CaseSlicePlayerPanel({
             <div><dt>{t('Archive entries')}</dt><dd>{job.report.entry_count.toLocaleString()}</dd></div>
             <div><dt>{t('Compressed')}</dt><dd>{formatBytes(job.report.compressed_bytes)}</dd></div>
             <div><dt>{t('Expanded stream')}</dt><dd>{formatBytes(job.report.uncompressed_bytes)}</dd></div>
+            {job.report.metrics && (
+              <>
+                <div><dt>{t('Cache')}</dt><dd>{t(job.report.metrics.cache_hit ? 'Cache hit' : 'Prepared locally')}</dd></div>
+                <div><dt>{t(job.report.metrics.cache_hit ? 'Cache restore' : 'Download')}</dt><dd>{formatSlicePlayerDuration(job.report.metrics.cache_hit ? job.report.metrics.cache_restore_milliseconds : job.report.metrics.download_milliseconds)}</dd></div>
+                <div><dt>{t('Single-pass preparation')}</dt><dd>{formatSlicePlayerDuration(job.report.metrics.prepare_milliseconds)}</dd></div>
+                <div><dt>{t('Cache persistence')}</dt><dd>{formatSlicePlayerDuration(job.report.metrics.persist_milliseconds)}</dd></div>
+                <div><dt>{t('Total local time')}</dt><dd>{formatSlicePlayerDuration(job.report.metrics.total_milliseconds)}</dd></div>
+              </>
+            )}
           </dl>
           <section className="slice-player-slices">
             {playableSlices.map((slice) => (

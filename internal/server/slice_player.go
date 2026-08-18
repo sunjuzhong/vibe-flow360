@@ -118,10 +118,14 @@ func (s *Server) writeSlicePlayerJob(c *gin.Context, cancel bool) {
 }
 
 func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
+	metrics := sliceplayer.PreparationMetrics{}
+	cacheStarted := time.Now()
 	if index, ok := s.slicePlayerJobs.Cached(cacheKey); ok {
 		if playback, playbackOK := s.slicePlayerJobs.CachedPlayback(cacheKey); playbackOK {
+			metrics.CacheHit = true
+			metrics.CacheRestoreMilliseconds = slicePlayerElapsedMilliseconds(cacheStarted)
 			_, _ = s.slicePlayerJobs.Update(jobID, 98, "restoring-player-cache")
-			_, _ = s.slicePlayerJobs.Complete(jobID, index, playback)
+			_, _ = s.slicePlayerJobs.CompleteWithMetrics(jobID, index, playback, metrics)
 			return
 		}
 	}
@@ -139,6 +143,7 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		return
 	}
 	_, _ = s.slicePlayerJobs.Update(jobID, 5, "downloading-archive")
+	downloadStarted := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Minute)
 	s.registerSlicePlayerCancel(jobID, cancel)
 	defer func() {
@@ -156,6 +161,7 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 	if s.slicePlayerJobs.IsCancelled(jobID) {
 		return
 	}
+	metrics.DownloadMilliseconds = slicePlayerElapsedMilliseconds(downloadStarted)
 	_, _ = s.slicePlayerJobs.Update(jobID, 35, "preparing-frames")
 	assetDirectory, err := s.slicePlayerJobs.AssetDirectory(cacheKey)
 	if err != nil {
@@ -164,6 +170,7 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 	}
 	lastProgress := -1
 	partialPublished := false
+	prepareStarted := time.Now()
 	index, playback, err := sliceplayer.PrepareTarGzProgressive(archivePath, assetDirectory, slicePlayerMaxArchiveBytes(), sliceplayer.DefaultLimits, func(percent int, _ int64) bool {
 		if s.slicePlayerJobs.IsCancelled(jobID) {
 			return false
@@ -197,8 +204,9 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 	if s.slicePlayerJobs.IsCancelled(jobID) {
 		return
 	}
+	metrics.PrepareMilliseconds = slicePlayerElapsedMilliseconds(prepareStarted)
 	_, _ = s.slicePlayerJobs.Update(jobID, 97, "persisting-player-cache")
-	if _, err := s.slicePlayerJobs.Complete(jobID, index, &playback); err != nil {
+	if _, err := s.slicePlayerJobs.CompleteWithMetrics(jobID, index, &playback, metrics); err != nil {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
 	}
 }
@@ -229,6 +237,12 @@ func (s *Server) slicePlayerAsset(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Slice player asset was not found"})
 		return
 	}
+	release, protected := s.slicePlayerJobs.Protect(job.ID)
+	if !protected {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Slice player asset was not found"})
+		return
+	}
+	defer release()
 	relative := strings.TrimPrefix(c.Param("asset_path"), "/")
 	target, err := s.slicePlayerJobs.AssetPath(job.ID, relative)
 	if err != nil {
@@ -282,4 +296,38 @@ func slicePlayerMaxArchiveBytes() int64 {
 		return defaultLimit
 	}
 	return value
+}
+
+func slicePlayerCacheMaxBytes() int64 {
+	const defaultLimit = int64(250 << 30)
+	configured := strings.TrimSpace(os.Getenv("VIBESIM_SLICE_PLAYER_CACHE_MAX_BYTES"))
+	if configured == "" {
+		return defaultLimit
+	}
+	value, err := strconv.ParseInt(configured, 10, 64)
+	if err != nil || value <= 0 {
+		return defaultLimit
+	}
+	return value
+}
+
+func slicePlayerCacheRetention() time.Duration {
+	const defaultRetention = 30 * 24 * time.Hour
+	configured := strings.TrimSpace(os.Getenv("VIBESIM_SLICE_PLAYER_CACHE_RETENTION_HOURS"))
+	if configured == "" {
+		return defaultRetention
+	}
+	hours, err := strconv.ParseFloat(configured, 64)
+	if err != nil || hours <= 0 {
+		return defaultRetention
+	}
+	return time.Duration(hours * float64(time.Hour))
+}
+
+func slicePlayerElapsedMilliseconds(started time.Time) int64 {
+	elapsed := time.Since(started)
+	if elapsed > 0 && elapsed < time.Millisecond {
+		return 1
+	}
+	return elapsed.Milliseconds()
 }
