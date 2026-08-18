@@ -77,6 +77,7 @@ import {
   type ViewerAssetStats,
   type ViewerCameraCommand,
   type ViewerSelection,
+  type ViewerState,
 } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { useResourcePreview } from '../hooks/useResourcePreview'
@@ -345,6 +346,7 @@ export default function GeometryWorkspace({
   onCreateAdvancedPlan,
   onPlanSurfaceMesh,
   onMutateDraftEntity,
+  onViewerLoadStateChange,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -360,6 +362,7 @@ export default function GeometryWorkspace({
   ) => Promise<void>
   onPlanSurfaceMesh: () => Promise<void>
   onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
+  onViewerLoadStateChange?: (state: ViewerState) => void
 }) {
   const { t, language } = useI18n()
   const entityTreeRef = useRef<HTMLDivElement>(null)
@@ -1054,6 +1057,7 @@ export default function GeometryWorkspace({
           showFieldPanel={false}
           cameraCommand={cameraCommand}
           onAssetStatsChange={setViewerAssetStats}
+          onLoadStateChange={onViewerLoadStateChange}
           topToolbar={(
               <div className="geometry-camera-toolbar" aria-label="Geometry actions">
                 <ViewerToolsDock model={tools} />

@@ -14,6 +14,7 @@ import {
   projectSyncProgress,
   resolveActiveDraftId,
   resourceContextLabel,
+  resourceTransitionProgress,
 } from './ProjectPage'
 
 describe('Project panel defaults', () => {
@@ -66,6 +67,23 @@ describe('projectSyncProgress', () => {
   it('keeps an indeterminate synchronization visible', () => {
     expect(projectSyncProgress(null)).toBe(4)
     expect(projectSyncProgress(manifest({ total_resources: 0 }))).toBe(4)
+  })
+})
+
+describe('resourceTransitionProgress', () => {
+  it('advances through detail, manifest, and measured asset loading', () => {
+    expect(resourceTransitionProgress(false, false)).toEqual({ active: true, progress: 38, phase: 'detail' })
+    expect(resourceTransitionProgress(true, false, { status: 'idle' })).toEqual({ active: true, progress: 52, phase: 'preview' })
+    expect(resourceTransitionProgress(true, false, { status: 'loading', progress: 0.5 }))
+      .toEqual({ active: true, progress: 78, phase: 'asset' })
+  })
+
+  it('finishes for ready or failed resources instead of leaving a blocking overlay', () => {
+    expect(resourceTransitionProgress(true, false, { status: 'ready' })).toEqual({ active: false, progress: 100, phase: 'complete' })
+    expect(resourceTransitionProgress(false, false, { status: 'ready' })).toEqual({ active: false, progress: 100, phase: 'complete' })
+    expect(resourceTransitionProgress(false, false, { status: 'error', message: 'preview unavailable' }))
+      .toEqual({ active: false, progress: 100, phase: 'complete' })
+    expect(resourceTransitionProgress(false, true)).toEqual({ active: false, progress: 100, phase: 'complete' })
   })
 })
 

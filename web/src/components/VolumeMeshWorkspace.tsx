@@ -15,7 +15,7 @@ import {
 import { useMemo, useState } from 'react'
 import type { ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerSelection } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerSelection, type ViewerState } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { useResourcePreview } from '../hooks/useResourcePreview'
@@ -120,6 +120,7 @@ export default function VolumeMeshWorkspace({
   onPlanCase,
   onShowLogs,
   onMutateDraftEntity,
+  onViewerLoadStateChange,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -130,6 +131,7 @@ export default function VolumeMeshWorkspace({
   onPlanCase: () => Promise<void>
   onShowLogs?: () => void
   onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
+  onViewerLoadStateChange?: (state: ViewerState) => void
 }) {
   const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
   const parameterEntityUnit = useParameterEntityUnit(detail?.simulation_params)
@@ -316,6 +318,7 @@ export default function VolumeMeshWorkspace({
             fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
             onFieldFilterMatchCount={qualityFilter.setMatchCount}
             onAssetStatsChange={setViewerAssetStats}
+            onLoadStateChange={onViewerLoadStateChange}
             focusTarget={review.focusTarget}
             cameraCommand={cameraCommand}
             showFieldPanel={review.mode === 'quality' || review.mode === 'boundary-layer'}

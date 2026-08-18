@@ -334,6 +334,7 @@ type Props = {
   preserveCameraOnAssetChange?: boolean
   uvfAssetCache?: UVFAssetLRU
   onAssetReady?: (assetURL: string) => void
+  onLoadStateChange?: (state: ViewerState) => void
   fitSelectionWhenSelected?: boolean
 }
 
@@ -388,6 +389,7 @@ export function Viewer3D({
   preserveCameraOnAssetChange = false,
   uvfAssetCache,
   onAssetReady,
+  onLoadStateChange,
   fitSelectionWhenSelected = false,
 }: Props) {
   const { t } = useI18n()
@@ -2106,6 +2108,10 @@ export function Viewer3D({
     visibleState.status,
   )
   const viewerReady = visibleState.status === 'ready' || retainingLoadedAsset
+
+  useEffect(() => {
+    onLoadStateChange?.(visibleState)
+  }, [onLoadStateChange, visibleState])
 
   return (
     <div

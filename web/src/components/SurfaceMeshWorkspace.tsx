@@ -17,7 +17,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import type { ProjectItem, ResourceDetail } from '../api/client'
 import { resourceStatus } from './ResourceDetailPanel'
-import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type ViewerAssetStats, type ViewerCameraCommand, type ViewerState } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { useResourcePreview } from '../hooks/useResourcePreview'
@@ -106,6 +106,7 @@ export default function SurfaceMeshWorkspace({
   onCreateRemediationPlan,
   onPlanVolumeMesh,
   onMutateDraftEntity,
+  onViewerLoadStateChange,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -117,6 +118,7 @@ export default function SurfaceMeshWorkspace({
   onCreateRemediationPlan: (recommendation: SurfaceRemediationRecommendation) => Promise<void>
   onPlanVolumeMesh: () => Promise<void>
   onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
+  onViewerLoadStateChange?: (state: ViewerState) => void
 }) {
   const { t } = useI18n()
   const [parameterEntityVisibility, setParameterEntityVisibility] = useParameterEntityVisibility(detail?.simulation_params)
@@ -309,6 +311,7 @@ export default function SurfaceMeshWorkspace({
           fieldFilter={review.mode === 'quality' ? qualityFilter.filter : null}
           onFieldFilterMatchCount={qualityFilter.setMatchCount}
           onAssetStatsChange={setViewerAssetStats}
+          onLoadStateChange={onViewerLoadStateChange}
           focusTarget={review.focusTarget}
           cameraCommand={cameraCommand}
           projectId={projectId}

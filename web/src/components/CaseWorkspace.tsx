@@ -24,7 +24,7 @@ import { resourceStatus } from './ResourceDetailPanel'
 import { api, type ResourceDetail, type SlicePlayerJob } from '../api/client'
 import { useConvergenceAssessment } from '../hooks/useConvergenceAssessment'
 import type { ConvergenceAssessment, ConvergenceMetric, ConvergenceResult } from '../hooks/useConvergenceAssessment'
-import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerManifest, type ViewerSelection } from './viewer/LazyViewer3D'
+import { LazyViewer3D, type MeshGroupData, type ViewerAssetStats, type ViewerCameraCommand, type ViewerManifest, type ViewerSelection, type ViewerState } from './viewer/LazyViewer3D'
 import { ViewerAssetInformation } from './viewer/ViewerAssetInformation'
 import { ViewerFieldDiagnostics } from './viewer/ViewerFieldDiagnostics'
 import { CaseVisualizationSelectionCard } from './CaseVisualizationSelectionCard'
@@ -630,6 +630,7 @@ export default function CaseWorkspace({
   geometryResourceId,
   onPlanCase,
   onMutateDraftEntity,
+  onViewerLoadStateChange,
 }: {
   detail: ResourceDetail | null
   resourceId?: string
@@ -639,6 +640,7 @@ export default function CaseWorkspace({
   geometryResourceId?: string | null
   onPlanCase: () => Promise<void>
   onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
+  onViewerLoadStateChange?: (state: ViewerState) => void
 }) {
   const { t } = useI18n()
   const [activeReviewDialog, setActiveReviewDialog] = useState<'convergence' | 'slices' | null>(null)
@@ -1154,6 +1156,7 @@ export default function CaseWorkspace({
             showEntityLegend={false}
             onEntitiesDiscovered={setViewerEntities}
             onAssetStatsChange={setViewerAssetStats}
+            onLoadStateChange={onViewerLoadStateChange}
             projectId={projectId}
             resourceRef={viewerContext.assetRef}
             toolInput={tools.toolInput}

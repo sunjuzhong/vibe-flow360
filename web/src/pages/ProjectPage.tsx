@@ -38,6 +38,7 @@ import InspectorDisclosure from '../components/InspectorDisclosure'
 import PlanPanel from '../components/PlanPanel'
 import { ProjectShellAction } from '../components/ProjectShellAction'
 import ProjectContextBar from '../components/ProjectContextBar'
+import ProjectLoadingOverlay from '../components/ProjectLoadingOverlay'
 import ProjectDraftBar, { draftRecords } from '../components/ProjectDraftBar'
 import Flow360IdLink from '../components/Flow360IdLink'
 import ResourceDetailPanel, {
@@ -50,6 +51,8 @@ import VolumeMeshWorkspace from '../components/VolumeMeshWorkspace'
 import CaseWorkspace from '../components/CaseWorkspace'
 import { AnnotationPanel } from '../components/annotations'
 import { useProjectAnnotations } from '../hooks/useProjectAnnotations'
+import { useI18n } from '../i18n'
+import type { ViewerState } from '../components/viewer/LazyViewer3D'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import {
   remediationAgentAction,
@@ -109,6 +112,27 @@ export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
   if (!manifest?.total_resources) return 4
   const finished = manifest.synced_resources + manifest.failed_resources
   return Math.min(100, Math.max(4, Math.round((finished / manifest.total_resources) * 100)))
+}
+
+export function resourceTransitionProgress(
+  detailReady: boolean,
+  detailFailed: boolean,
+  viewerState?: ViewerState,
+): { active: boolean; progress: number; phase: 'detail' | 'preview' | 'asset' | 'complete' } {
+  if (detailFailed) return { active: false, progress: 100, phase: 'complete' }
+  if (viewerState?.status === 'ready' || viewerState?.status === 'error') {
+    return { active: false, progress: 100, phase: 'complete' }
+  }
+  if (!detailReady) return { active: true, progress: 38, phase: 'detail' }
+  if (!viewerState || viewerState.status === 'idle') return { active: true, progress: 52, phase: 'preview' }
+  const assetProgress = viewerState.progress
+  return {
+    active: true,
+    progress: assetProgress !== undefined && Number.isFinite(assetProgress)
+      ? 58 + Math.min(1, Math.max(0, assetProgress)) * 40
+      : 58,
+    phase: assetProgress !== undefined ? 'asset' : 'preview',
+  }
 }
 
 export async function hydrateResourceDetail(
@@ -231,6 +255,7 @@ export function resolveActiveDraftId(
 }
 
 export default function ProjectPage() {
+  const { t } = useI18n()
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
   const requestedDraftId = searchParams.get('draft')?.trim() ?? ''
@@ -278,6 +303,7 @@ export default function ProjectPage() {
   const [syncing, setSyncing] = useState(true)
   const [syncError, setSyncError] = useState('')
   const [syncNonce, setSyncNonce] = useState(0)
+  const [viewerLoad, setViewerLoad] = useState<{ resourceId: string; state: ViewerState } | null>(null)
   const annotations = useProjectAnnotations(projectId)
 
   useEffect(() => {
@@ -641,6 +667,11 @@ export default function ProjectPage() {
 
   const selectedStage = Math.max(0, stages.indexOf(selected?.type ?? ''))
 
+  const handleViewerLoadStateChange = useCallback((state: ViewerState) => {
+    if (!selected) return
+    setViewerLoad({ resourceId: selected.id, state })
+  }, [selected])
+
   const loadDetail = useCallback(async (cacheFirst = true) => {
     if (!selected) return
     const requestId = ++detailRequestRef.current
@@ -668,6 +699,34 @@ export default function ProjectPage() {
   useEffect(() => {
     void loadDetail()
   }, [loadDetail])
+
+  const currentViewerState = viewerLoad && viewerLoad.resourceId === selected?.id ? viewerLoad.state : undefined
+  const resourceTransition = resourceTransitionProgress(
+    Boolean(selected && detail?.id === selected.id && !detailLoading),
+    Boolean(detailError),
+    currentViewerState,
+  )
+  const projectTransitionActive = !project && (loading || syncing)
+  const transitionActive = projectTransitionActive || Boolean(selected && resourceTransition.active)
+  const transitionProgress = projectTransitionActive
+    ? 6 + projectSyncProgress(syncManifest) * 0.26
+    : resourceTransition.progress
+  const transitionTitle = projectTransitionActive
+    ? t('Opening Project')
+    : resourceTransition.phase === 'detail'
+      ? t('Loading resource details')
+      : resourceTransition.phase === 'asset'
+        ? t('Loading 3D resource files')
+        : t('Preparing interactive 3D preview')
+  const transitionDetail = projectTransitionActive
+    ? (syncManifest?.current_resource
+        ? t('Synchronizing {resource}').replace('{resource}', syncManifest.current_resource)
+        : t('Reading Project metadata and resource inventory…'))
+    : resourceTransition.phase === 'detail'
+      ? t('Reading {type} metadata and parameters…').replace('{type}', selected?.type ?? t('resource'))
+      : resourceTransition.phase === 'asset'
+        ? t('Downloading and decoding the geometry buffers…')
+        : t('Preparing the visualization manifest…')
 
   useEffect(() => {
     if (!selected || !detail) return
@@ -755,6 +814,15 @@ export default function ProjectPage() {
           </div>
         </div>
       </header>
+
+      <ProjectLoadingOverlay
+        active={transitionActive}
+        progress={transitionProgress}
+        title={transitionTitle}
+        detail={transitionDetail}
+        completeTitle={t('Ready')}
+        completeDetail={t('Project workspace is ready.')}
+      />
 
       {syncing && (
         <div className="project-sync-state">
@@ -922,6 +990,7 @@ export default function ProjectPage() {
                 }}
                 onPlanSurfaceMesh={() => createDraftFromResource(`${selected.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
+                onViewerLoadStateChange={handleViewerLoadStateChange}
               />
             )}
             {selected.type === 'SurfaceMesh' && (
@@ -953,6 +1022,7 @@ export default function ProjectPage() {
                 }}
                 onPlanVolumeMesh={() => createDraftFromResource(`${selected.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
+                onViewerLoadStateChange={handleViewerLoadStateChange}
               />
             )}
             {selected.type === 'VolumeMesh' && (
@@ -966,6 +1036,7 @@ export default function ProjectPage() {
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
+                onViewerLoadStateChange={handleViewerLoadStateChange}
                 onShowLogs={() => {
                   setDetailTab('logs')
                   setActivePanel('details')
@@ -983,6 +1054,7 @@ export default function ProjectPage() {
                 geometryResourceId={contextGeometryId}
                 onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
+                onViewerLoadStateChange={handleViewerLoadStateChange}
               />
             )}
 
