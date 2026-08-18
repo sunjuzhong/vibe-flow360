@@ -1,0 +1,12 @@
+schema_version: 1
+criteria:
+  - {id: parent-provenance, category: provenance, description: Parent Case mesh solver version completion state and acceptance evidence are recorded., artifact: parent qualification record, required: true, check: {method: present, metric: provenance.parent-case}}
+  - {id: bounded-startup, category: convergence, description: Density and pressure remain positive and startup extrema are physically explainable., artifact: minimum and maximum state histories, required: true, check: {method: manual, metric: convergence.startup-bounds}}
+  - {id: force-agreement, category: force, description: Final CL and CD from accepted initialization paths agree within one percent., artifact: force comparison, required: true, check: {method: relative_change, metric: force.initialization-independence, tolerance: 0.01}}
+  - {id: field-agreement, category: field, description: Cp and midspan velocity and pressure differences meet the declared spatial tolerance., artifact: field difference review, required: true, check: {method: manual, metric: field.initialization-independence}}
+  - {id: acceleration, category: convergence, description: Restart or expression initialization reduces accepted pseudo-steps or wall time under equal convergence criteria., artifact: cost comparison, required: true, check: {method: manual, metric: convergence.initialization-cost}}
+  - {id: interpolation, category: conservation, description: A cross-mesh transfer passes overlap conservation region-correspondence and local-extrema checks., artifact: interpolation transfer audit, required: false, check: {method: manual, metric: conservation.interpolation}}
+limitations:
+  - No pseudo-step or wall-time savings are claimed before the controlled comparison is run.
+  - Modified restart requires a real accepted parent Case selected by the fork workflow.
+  - Successful interpolation submission does not prove transfer quality.

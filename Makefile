@@ -62,6 +62,7 @@ tutorials-test:
 	python3 tutorials/T14-turbulence-models/build_simulation.py --check
 	python3 tutorials/T15-transition-des/build_simulation.py --check
 	python3 tutorials/T16-numerical-diagnostics/build_simulation.py --check
+	python3 tutorials/T17-initialization-restart/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:

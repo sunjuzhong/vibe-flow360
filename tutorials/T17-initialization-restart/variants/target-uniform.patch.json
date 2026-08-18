@@ -1,0 +1,12 @@
+{
+  "operating_condition": {
+    "alpha": {
+      "value": 12.0
+    },
+    "private_attribute_input_cache": {
+      "alpha": {
+        "value": 12.0
+      }
+    }
+  }
+}

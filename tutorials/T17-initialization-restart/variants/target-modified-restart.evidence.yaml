@@ -1,0 +1,8 @@
+schema_version: 1
+criteria:
+  - {id: real-parent, category: provenance, description: The restart is created as a fork from a real accepted 8-degree parent Case., artifact: parent and child resource identities, required: true, check: {method: present, metric: provenance.restart-parent}}
+  - {id: transformed-bounds, category: convergence, description: The four-degree velocity transform preserves a bounded startup state., artifact: restart state histories, required: true, check: {method: manual, metric: convergence.restart-bounds}}
+  - {id: target-agreement, category: force, description: The converged restart loads agree with the independent cold start within one percent., artifact: restart versus cold-start force comparison, required: true, check: {method: relative_change, metric: force.restart-agreement, tolerance: 0.01}}
+limitations:
+  - This patch is not a standalone pre-run Draft and must be applied while forking a real parent Case.
+  - A different target mesh additionally requires interpolation evidence.

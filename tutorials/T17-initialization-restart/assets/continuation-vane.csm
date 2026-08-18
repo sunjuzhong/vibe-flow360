@@ -1,0 +1,16 @@
+# Analytic finite-span vane for the T17 initialization and restart lesson.
+# x is chordwise, y is spanwise, and z is normal to the nominal chord plane.
+skbeg 0.00 0 0.000
+linseg 0.10 0 0.055
+linseg 0.42 0 0.090
+linseg 0.78 0 0.050
+linseg 1.00 0 0.000
+linseg 0.76 0 -0.035
+linseg 0.38 0 -0.045
+linseg 0.08 0 -0.025
+linseg 0.00 0 0.000
+skend
+extrude 0 0.25 0
+attribute faceName $vane
+attribute groupName $vane
+end

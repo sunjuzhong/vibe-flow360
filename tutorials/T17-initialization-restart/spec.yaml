@@ -1,0 +1,17 @@
+root_item_type: Geometry
+geometry_unit: m
+project_name: Tutorial T17 - initialization and restart
+conditions:
+  source: {mach: 0.30, alpha_deg: 8}
+  target: {mach: 0.30, alpha_deg: 12}
+initialization_paths:
+  source_uniform: freestream variables rho, u, v, w, p
+  target_uniform: target freestream variables rho, u, v, w, p
+  target_expression: smooth 15-percent analytic wake deficit centered near the trailing edge
+  target_modified_restart: four-degree velocity-vector rotation applied to a real parent Case state
+required_evidence:
+  - parent Case is converged and physically accepted before forking
+  - density and pressure remain positive during startup
+  - CL, CD, Cp, and midspan fields reach the same final state from independent initializations
+  - restart saves wall time without hiding unresolved drift
+  - mesh interpolation passes domain coverage and conservation checks before use

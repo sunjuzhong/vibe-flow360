@@ -1,0 +1,6 @@
+schema_version: 1
+criteria:
+  - {id: expression-bounds, category: convergence, description: The analytic wake multiplier remains at or above 0.85 and introduces no negative state., artifact: expression bound derivation and state histories, required: true, check: {method: greater_equal, metric: params.minimum-velocity-multiplier, value: 0.85}}
+  - {id: target-agreement, category: field, description: The converged expression-seeded target agrees with the independent uniform cold start., artifact: expression versus cold-start comparison, required: true, check: {method: manual, metric: field.expression-agreement}}
+limitations:
+  - A measured cost reduction is required; the analytic seed is not assumed to accelerate convergence.

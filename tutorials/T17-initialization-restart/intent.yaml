@@ -1,0 +1,13 @@
+engineering_question: Which initialization path gives a trustworthy 12-degree vane solution at the lowest computational cost?
+decision:
+  source: establish a converged 8-degree parent Case on the shared mesh
+  cold_start: initialize the 12-degree target from its own freestream state
+  expression_seed: test a bounded analytic wake deficit without importing previous results
+  modified_restart: rotate velocity from a real 8-degree parent solution while preserving density and pressure
+deliverables:
+  - three configured Web Drafts that can exist before any solver run
+  - a schema-validated modified-restart patch for use only during a real Case fork
+  - evidence gates for convergence speed, final-state independence, and interpolation quality
+non_goals:
+  - claiming a restart exists before a source Case completes
+  - accepting a faster branch when its final loads or fields depend materially on the seed

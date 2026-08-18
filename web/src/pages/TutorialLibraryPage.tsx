@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, BookOpen, Box, Boxes, CarFront, CheckCircle2, CircleDot, Clock3, Droplets, Flame, Gauge, Plane, Rotate3D, ShieldCheck, Target, Waves, Waypoints } from 'lucide-react'
+import { Activity, ArrowRight, BookOpen, Box, Boxes, CarFront, CheckCircle2, CircleDot, Clock3, Droplets, Flame, Gauge, GitBranch, Plane, Rotate3D, ShieldCheck, Target, Waves, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Flow360Status } from '../api/client'
@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>15 available</span>
+          <span>16 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -121,6 +121,10 @@ export default function TutorialLibraryPage() {
           <Link className="tutorial-card" to="/tutorials/T16">
             <div className="tutorial-card-visual airfoil-card-visual"><Activity size={52} strokeWidth={1.1}/><span className="tutorial-id">T16</span><span className="tutorial-level">SOLVER NUMERICS</span></div>
             <div className="tutorial-card-content"><p className="eyebrow">NUMERICAL DIAGNOSTICS</p><h2>Recover stability, then restore accuracy</h2><p>Classify nonlinear, linear, CFL, force, and local-state evidence before staging Roe recovery, second order, or a steady Krylov/SLAU2 evaluation.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 25–30 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T17">
+            <div className="tutorial-card-visual mesh-card-visual"><GitBranch size={52} strokeWidth={1.1}/><span className="tutorial-id">T17</span><span className="tutorial-level">CASE CONTINUATION</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">INITIALIZATION AND RESTART</p><h2>Reuse a trusted solution without biasing the target</h2><p>Compare a target-freestream field, a bounded analytic wake seed, and a real parent-Case fork while auditing acceleration and final-state agreement.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 25–30 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>
