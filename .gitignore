@@ -14,3 +14,4 @@ __pycache__/
 *.db
 .beads-credential-key
 .pnpm-store
+.reasonix
