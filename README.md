@@ -65,12 +65,16 @@ Requirements: Go 1.24+, Node.js 22+, and a Flow360 account.
 ```bash
 make build
 ./vibe-flow360 init
-./vibe-flow360 serve
+make serve
 ```
 
 Open [http://localhost:9292](http://localhost:9292). `init` prepares an isolated
 Python 3.11 runtime, installs the pinned Flow360 and CadQuery dependencies,
 creates or updates `.env`, and verifies authentication. It is safe to run again.
+`make serve` rebuilds the Web app and Go server, stops an existing Vibe Flow360
+instance on the same address, and starts the fresh workspace binary in the
+foreground. Override the defaults with `SERVE_ADDR=127.0.0.1:9393` or
+`SERVE_ENV_FILE=/absolute/path/to/.env`.
 
 For source development, run the backend and Vite frontend separately:
 

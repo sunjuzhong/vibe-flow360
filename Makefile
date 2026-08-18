@@ -1,4 +1,7 @@
-.PHONY: dev web server build init test clean cad-runtime install tutorials-registry tutorials-coverage tutorials-validate tutorials-test
+.PHONY: dev web server serve build init test clean cad-runtime install tutorials-registry tutorials-coverage tutorials-validate tutorials-test
+
+SERVE_ADDR ?= :9292
+SERVE_ENV_FILE ?= $(CURDIR)/.env
 
 web:
 	cd web && npm run build
@@ -7,6 +10,9 @@ web:
 
 server: web
 	go run ./cmd/server serve
+
+serve: build
+	sh ./scripts/restart-serve.sh "$(CURDIR)/vibe-flow360" "$(SERVE_ENV_FILE)" "$(SERVE_ADDR)"
 
 dev: web
 	go run ./cmd/server serve

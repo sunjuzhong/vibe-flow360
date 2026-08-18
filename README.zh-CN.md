@@ -52,12 +52,15 @@ Vibe Flow360 在它之上提供可定制的本地工程工作层。
 ```bash
 make build
 ./vibe-flow360 init
-./vibe-flow360 serve
+make serve
 ```
 
 打开 [http://localhost:9292](http://localhost:9292)。`init` 会准备隔离的 Python 3.11
 运行环境，安装固定版本的 Flow360 和 CadQuery 依赖，创建或更新 `.env`，并验证登录。
 该命令可以安全地重复运行。
+`make serve` 会重新构建 Web 与 Go 服务，停止同一地址上已有的 Vibe Flow360 实例，
+然后以前台方式启动当前工作区的新构建。可通过 `SERVE_ADDR=127.0.0.1:9393` 或
+`SERVE_ENV_FILE=/absolute/path/to/.env` 覆盖默认配置。
 
 源码开发时，可以分别启动后端和 Vite 前端：
 
