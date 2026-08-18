@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import type { SlicePlayerJob } from '../api/client'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -39,7 +39,7 @@ describe('CaseSlicePlayerPanel', () => {
     expect(stageLabel('preparing-remaining-frames')).toBe('First frames are ready while remaining frames continue preparing')
   })
 
-  it('uses the same full-resolution asset during playback and pause', () => {
+  it('uses preview assets during playback and full resolution while paused', () => {
     const frame = {
       slice: 'slice_Wake',
       fields: ['Mach'],
@@ -57,6 +57,17 @@ describe('CaseSlicePlayerPanel', () => {
       vertices: 100_000,
       triangles: 200_000,
     })
+    expect(selectPlaybackAsset(frame, true)).toEqual({
+      manifestPath: 'frame.preview.manifest.json',
+      vertices: 30_000,
+      triangles: 40_000,
+    })
+  })
+
+  it('uses wall-clock playback and skips frames when rendering falls behind', () => {
+    expect(slicePlaybackFrameAtTime(3, 0, 10, 100)).toBe(3)
+    expect(slicePlaybackFrameAtTime(3, 450, 10, 100)).toBe(7)
+    expect(slicePlaybackFrameAtTime(98, 350, 10, 100)).toBe(1)
   })
 
   it('offers smooth playback frame rates while retaining low-bandwidth choices', () => {

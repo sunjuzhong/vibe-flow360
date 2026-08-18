@@ -131,6 +131,7 @@ const messages: Record<string, string> = {
   Download: '下载',
   Preview: '预览',
   'Full resolution': '全分辨率',
+  'Preview while playing': '播放时使用流畅预览',
   Open: '打开',
   Hide: '隐藏',
   Show: '显示',

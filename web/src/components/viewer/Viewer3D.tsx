@@ -332,6 +332,8 @@ type Props = {
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
   preserveCameraOnAssetChange?: boolean
+  /** Delay the synchronous picking index while rapidly replacing playback frames. */
+  deferPickingBVH?: boolean
   uvfAssetCache?: UVFAssetLRU
   onAssetReady?: (assetURL: string) => void
   onLoadStateChange?: (state: ViewerState) => void
@@ -387,6 +389,7 @@ export function Viewer3D({
   showNormals = false,
   entityAppearances = EMPTY_ENTITY_APPEARANCES,
   preserveCameraOnAssetChange = false,
+  deferPickingBVH = false,
   uvfAssetCache,
   onAssetReady,
   onLoadStateChange,
@@ -438,7 +441,12 @@ export function Viewer3D({
   const navCubeAnimationRef = useRef<number | null>(null)
   const pivotFeedbackTimeoutRef = useRef<number | null>(null)
   const wheelNavigationTimeoutRef = useRef<number | null>(null)
+  const wheelFrameRef = useRef<number | null>(null)
+  const wheelDeltaRef = useRef(0)
+  const wheelNavigationActiveRef = useRef(false)
   const wheelAnchorRef = useRef<THREE.Vector3 | null>(null)
+  const deferPickingBVHRef = useRef(deferPickingBVH)
+  deferPickingBVHRef.current = deferPickingBVH
   const lastSurfacePivotRef = useRef<THREE.Vector3 | null>(null)
   const navigationDragRef = useRef<{
     pointerId: number
@@ -1053,8 +1061,18 @@ export function Viewer3D({
       if (previousParameterGroup) scene.remove(previousParameterGroup)
       previousDispose?.()
     }
-    const pickingBVH = preparePickingBVH(root)
-    disposers.push(pickingBVH.dispose)
+    let pickingBVHDispose: (() => void) | null = null
+    const ensurePickingBVH = () => {
+      if (pickingBVHDispose) return
+      pickingBVHDispose = preparePickingBVH(root).dispose
+    }
+    if (!deferPickingBVHRef.current) ensurePickingBVH()
+    root.userData.ensureViewerPickingBVH = ensurePickingBVH
+    disposers.push(() => {
+      pickingBVHDispose?.()
+      pickingBVHDispose = null
+      delete root.userData.ensureViewerPickingBVH
+    })
     scene.add(root)
     if (nextParameterGroup) scene.add(nextParameterGroup)
     assetRef.current = root
@@ -1090,6 +1108,12 @@ export function Viewer3D({
       }
     }
   }, [displayManifest, fitCameraToObject, parameterEntities, uvfAssetCache])
+
+  useEffect(() => {
+    if (deferPickingBVH) return
+    const ensure = assetRef.current?.userData.ensureViewerPickingBVH
+    if (typeof ensure === 'function') ensure()
+  }, [assetState.status, deferPickingBVH])
 
   useEffect(() => {
     const container = containerRef.current
@@ -1140,6 +1164,10 @@ export function Viewer3D({
       pivotFeedbackTimeoutRef.current = null
       if (wheelNavigationTimeoutRef.current !== null) window.clearTimeout(wheelNavigationTimeoutRef.current)
       wheelNavigationTimeoutRef.current = null
+      if (wheelFrameRef.current !== null) cancelAnimationFrame(wheelFrameRef.current)
+      wheelFrameRef.current = null
+      wheelDeltaRef.current = 0
+      wheelNavigationActiveRef.current = false
       wheelAnchorRef.current = null
       navigationDragRef.current = null
       navCube.dispose()
@@ -1970,14 +1998,46 @@ export function Viewer3D({
     setHoveredGroup(null)
   }
 
-  const handleWheel = useCallback((event: WheelEvent) => {
+  const flushWheelZoom = useCallback(() => {
+    wheelFrameRef.current = null
     const camera = cameraRef.current
     const controls = controlsRef.current
-    if (!camera || !controls || !controls.enabled || event.deltaY === 0) return
     const anchor = wheelAnchorRef.current
-      ?? pointerNavigationAnchor(event.clientX, event.clientY, true)?.point
-    if (!anchor) return
-    wheelAnchorRef.current = anchor
+    if (!camera || !controls || !anchor) {
+      wheelDeltaRef.current = 0
+      return
+    }
+    const delta = THREE.MathUtils.clamp(wheelDeltaRef.current, -240, 240)
+    wheelDeltaRef.current -= delta
+    if (delta === 0) return
+    const scale = Math.exp(delta * 0.0015 * controls.zoomSpeed)
+    zoomCameraRigToAnchor(
+      camera,
+      controls.target,
+      anchor,
+      scale,
+      controls.minDistance,
+      controls.maxDistance,
+    )
+    // The wheel path already supplies its own frame-to-frame smoothing. Flush any
+    // residual OrbitControls delta without adding a second spring to the gesture.
+    const damping = controls.enableDamping
+    controls.enableDamping = false
+    controls.update()
+    controls.enableDamping = damping
+    if (Math.abs(wheelDeltaRef.current) > 0.01) {
+      wheelFrameRef.current = requestAnimationFrame(flushWheelZoom)
+    }
+  }, [])
+
+  const handleWheel = useCallback((event: WheelEvent) => {
+    const controls = controlsRef.current
+    if (!controls || !controls.enabled || event.deltaY === 0) return
+    if (!wheelAnchorRef.current) {
+      const anchor = pointerNavigationAnchor(event.clientX, event.clientY, true)?.point
+      if (!anchor) return
+      wheelAnchorRef.current = anchor
+    }
     event.preventDefault()
     event.stopPropagation()
     event.stopImmediatePropagation()
@@ -1986,25 +2046,20 @@ export function Viewer3D({
       : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
         ? Math.max(containerRef.current?.clientHeight ?? 1, 1)
         : 1
-    const delta = THREE.MathUtils.clamp(event.deltaY * unit, -240, 240)
-    const scale = Math.exp(delta * 0.0015 * controls.zoomSpeed)
-    if (!zoomCameraRigToAnchor(
-      camera,
-      controls.target,
-      anchor,
-      scale,
-      controls.minDistance,
-      controls.maxDistance,
-    )) return
-    controls.update()
-    setNavigationActive(true)
+    wheelDeltaRef.current += event.deltaY * unit
+    if (wheelFrameRef.current === null) wheelFrameRef.current = requestAnimationFrame(flushWheelZoom)
+    if (!wheelNavigationActiveRef.current) {
+      wheelNavigationActiveRef.current = true
+      setNavigationActive(true)
+    }
     if (wheelNavigationTimeoutRef.current !== null) window.clearTimeout(wheelNavigationTimeoutRef.current)
     wheelNavigationTimeoutRef.current = window.setTimeout(() => {
       wheelNavigationTimeoutRef.current = null
       wheelAnchorRef.current = null
+      wheelNavigationActiveRef.current = false
       setNavigationActive(false)
-    }, 120)
-  }, [pointerNavigationAnchor, setNavigationActive])
+    }, 220)
+  }, [flushWheelZoom, pointerNavigationAnchor, setNavigationActive])
 
   useEffect(() => {
     const container = containerRef.current

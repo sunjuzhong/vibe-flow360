@@ -100,6 +100,31 @@ export class UVFLoader {
   }
 }
 
+const maxTopologyNormalCacheEntries = 64
+const topologyNormalCache = new Map<string, Float32Array>()
+
+function topologySectionKey(buffer: UVFBuffer, section: UVFBufferSection | undefined) {
+  if (!section) return '-'
+  return `${section.path ?? buffer.path}:${section.offset}:${section.length}`
+}
+
+function topologyCacheKey(
+  buffer: UVFBuffer,
+  position: UVFBufferSection,
+  indices: UVFBufferSection | undefined,
+) {
+  return `${topologySectionKey(buffer, position)}|${topologySectionKey(buffer, indices)}`
+}
+
+function rememberTopologyNormals(key: string, normals: Float32Array) {
+  topologyNormalCache.delete(key)
+  topologyNormalCache.set(key, normals)
+  const oldest = topologyNormalCache.keys().next().value
+  if (topologyNormalCache.size > maxTopologyNormalCacheEntries && oldest !== undefined) {
+    topologyNormalCache.delete(oldest)
+  }
+}
+
 export function validateUVFBufferFileCount(paths: readonly string[]): void {
   if (paths.length > maxBufferFiles) throw new Error('UVF manifest references too many buffers')
 }
@@ -222,7 +247,8 @@ export function buildUVFAsset(
     const elementGroupIds = elementGroupSection ? uintSection(sectionBuffer(buffers, bufferInfo, elementGroupSection), elementGroupSection) : null
     vertices += positions.length / 3
     const vertexCount = positions.length / 3
-    const renderNormals = deriveRenderNormals(positions, indices, normals)
+    const topologyKey = topologyCacheKey(bufferInfo, positionSection, indexSection)
+    const renderNormals = deriveRenderNormals(positions, indices, normals, topologyKey)
     const fieldAttributes = new Map<string, THREE.BufferAttribute>()
     for (const section of bufferInfo.sections) {
       if (STRUCTURAL_SECTIONS.has(section.name) || section.dType !== 'float32') continue
@@ -258,6 +284,9 @@ export function buildUVFAsset(
       )
       const faceIndices = indices ? resolveFaceIndices(indices, ranges, solid.id, face.id) : undefined
       const geometry = new THREE.BufferGeometry()
+      geometry.userData.uvfTopologyKey = `${topologyKey}|face:${face.id}|${ranges
+        .map((range) => `${range.startIndex}:${range.endIndex}`)
+        .join(',')}`
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       geometry.setAttribute('normal', renderNormals)
       if (faceIndices) geometry.setIndex(new THREE.BufferAttribute(faceIndices, 1))
@@ -296,6 +325,7 @@ export function buildUVFAsset(
 
     if ((solid.attributions?.faces?.length ?? 0) === 0) {
       const geometry = new THREE.BufferGeometry()
+      geometry.userData.uvfTopologyKey = `${topologyKey}|solid:${solid.id}`
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       geometry.setAttribute('normal', renderNormals)
       if (indices) geometry.setIndex(new THREE.BufferAttribute(indices, 1))
@@ -661,12 +691,20 @@ function deriveRenderNormals(
   positions: Float32Array,
   indices: Uint32Array | null,
   sourceNormals: Float32Array | null,
+  topologyKey?: string,
 ): THREE.BufferAttribute {
   // Some exporters emit triangle-local or inconsistent normals for indexed
   // meshes. Lighting those values directly makes a smooth face look like
   // dark/light camouflage. Indexed topology is the stable rendering source.
   if (!indices && sourceNormals?.length === positions.length) {
     return new THREE.BufferAttribute(sourceNormals, 3)
+  }
+
+  const cached = topologyKey ? topologyNormalCache.get(topologyKey) : undefined
+  if (cached && topologyKey) {
+    topologyNormalCache.delete(topologyKey)
+    topologyNormalCache.set(topologyKey, cached)
+    return new THREE.BufferAttribute(cached, 3)
   }
 
   const topology = new THREE.BufferGeometry()
@@ -676,6 +714,9 @@ function deriveRenderNormals(
   const derived = topology.getAttribute('normal') as THREE.BufferAttribute
   topology.deleteAttribute('normal')
   topology.dispose()
+  if (topologyKey && derived.array instanceof Float32Array) {
+    rememberTopologyNormals(topologyKey, derived.array)
+  }
   return derived
 }
 

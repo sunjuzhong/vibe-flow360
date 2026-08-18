@@ -1,15 +1,17 @@
 import * as THREE from 'three'
 import {
   CENTER,
+  MeshBVH,
   acceleratedRaycast,
   computeBatchedBoundsTree,
   computeBoundsTree,
   disposeBatchedBoundsTree,
   disposeBoundsTree,
 } from 'three-mesh-bvh'
+import type { SerializedBVH } from 'three-mesh-bvh'
 
 type BVHGeometry = THREE.BufferGeometry & {
-  boundsTree?: unknown
+  boundsTree?: MeshBVH | null
   computeBoundsTree?: typeof computeBoundsTree
   disposeBoundsTree?: typeof disposeBoundsTree
 }
@@ -21,6 +23,25 @@ type BVHBatchedMesh = THREE.BatchedMesh & {
 }
 
 let installed = false
+const maxCachedTopologyBVHs = 64
+const topologyBVHCache = new Map<string, SerializedBVH>()
+
+function cachedTopologyBVH(key: string) {
+  const cached = topologyBVHCache.get(key)
+  if (!cached) return null
+  topologyBVHCache.delete(key)
+  topologyBVHCache.set(key, cached)
+  return cached
+}
+
+function rememberTopologyBVH(key: string, bvh: MeshBVH) {
+  topologyBVHCache.delete(key)
+  topologyBVHCache.set(key, MeshBVH.serialize(bvh, { cloneBuffers: false }))
+  const oldest = topologyBVHCache.keys().next().value
+  if (topologyBVHCache.size > maxCachedTopologyBVHs && oldest !== undefined) {
+    topologyBVHCache.delete(oldest)
+  }
+}
 
 function installBVHRaycasting() {
   if (installed) return
@@ -36,6 +57,7 @@ function installBVHRaycasting() {
 export interface BVHBuildStats {
   readonly meshes: number
   readonly triangles: number
+  readonly reusedMeshes: number
   readonly elapsedMs: number
 }
 
@@ -48,6 +70,7 @@ export function preparePickingBVH(root: THREE.Object3D): { stats: BVHBuildStats;
   const ownedBatchedMeshes: BVHBatchedMesh[] = []
   let meshes = 0
   let triangles = 0
+  let reusedMeshes = 0
 
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh) || object.userData.viewerOverlay === true) return
@@ -63,7 +86,19 @@ export function preparePickingBVH(root: THREE.Object3D): { stats: BVHBuildStats;
       }
     } else if (!seenGeometries.has(geometry)) {
       if (!geometry.boundsTree) {
-        geometry.computeBoundsTree?.({ strategy: CENTER, maxDepth: 40, targetLeafSize: 16 })
+        const topologyKey = typeof geometry.userData.uvfTopologyKey === 'string'
+          ? geometry.userData.uvfTopologyKey
+          : ''
+        const cached = topologyKey ? cachedTopologyBVH(topologyKey) : null
+        if (cached) {
+          geometry.boundsTree = MeshBVH.deserialize(cached, geometry)
+          reusedMeshes += 1
+        } else {
+          const builtBVH = geometry.computeBoundsTree?.({ strategy: CENTER, maxDepth: 40, targetLeafSize: 16 })
+          if (topologyKey && builtBVH) {
+            rememberTopologyBVH(topologyKey, builtBVH as MeshBVH)
+          }
+        }
         ownedGeometries.add(geometry)
       }
       seenGeometries.add(geometry)
@@ -71,7 +106,7 @@ export function preparePickingBVH(root: THREE.Object3D): { stats: BVHBuildStats;
   })
 
   return {
-    stats: { meshes, triangles, elapsedMs: performance.now() - startedAt },
+    stats: { meshes, triangles, reusedMeshes, elapsedMs: performance.now() - startedAt },
     dispose: () => {
       for (const mesh of ownedBatchedMeshes) mesh.disposeBoundsTree?.()
       for (const geometry of ownedGeometries) geometry.disposeBoundsTree?.()

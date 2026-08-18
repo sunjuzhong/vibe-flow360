@@ -55,4 +55,28 @@ describe('picking BVH', () => {
     dispose()
     batch.dispose()
   })
+
+  it('reuses a serialized picking tree for matching immutable topology', () => {
+    const first = gridMesh(1_000)
+    first.geometry.userData.uvfTopologyKey = 'topology-shared'
+    const firstBuild = preparePickingBVH(first)
+    expect(firstBuild.stats.reusedMeshes).toBe(0)
+
+    const second = gridMesh(1_000)
+    second.geometry.userData.uvfTopologyKey = 'topology-shared'
+    const secondBuild = preparePickingBVH(second)
+    expect(secondBuild.stats.reusedMeshes).toBe(1)
+    second.updateMatrixWorld(true)
+    expect(pickScene(
+      new THREE.Raycaster(new THREE.Vector3(0.25, 0.25, 5), new THREE.Vector3(0, 0, -1)),
+      [second],
+    )?.faceIndex).toBe(0)
+
+    secondBuild.dispose()
+    firstBuild.dispose()
+    first.geometry.dispose()
+    second.geometry.dispose()
+    ;(first.material as THREE.Material).dispose()
+    ;(second.material as THREE.Material).dispose()
+  })
 })
