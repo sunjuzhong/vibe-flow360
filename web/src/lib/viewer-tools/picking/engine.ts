@@ -61,6 +61,7 @@ export function pickScene(
   roots: readonly THREE.Object3D[],
   options: PickSceneOptions = {},
 ): PickCandidate | null {
+  ;(raycaster as THREE.Raycaster & { firstHitOnly?: boolean }).firstHitOnly = true
   const candidates = raycaster.intersectObjects([...roots], options.recursive ?? true)
   return candidates.find((candidate) =>
     isSurfacePickable(candidate.object, raycaster) && (options.filter?.(candidate.object) ?? true),

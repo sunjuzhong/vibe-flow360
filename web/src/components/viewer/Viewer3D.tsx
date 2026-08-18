@@ -30,6 +30,7 @@ import {
   createSnapCycleState,
   cycleSnapCandidate,
   pickScene,
+  preparePickingBVH,
   replaceSnapCandidates,
   resolveFreePoint,
   resolvePickCandidate,
@@ -418,6 +419,8 @@ export function Viewer3D({
   const inputControllerRef = useRef<ViewerInputController | null>(null)
   const pendingHoverEventRef = useRef<ViewerPointerEvent | null>(null)
   const hoverFrameRef = useRef<number | null>(null)
+  const pendingControlPointEventRef = useRef<ViewerPointerEvent | null>(null)
+  const controlPointFrameRef = useRef<number | null>(null)
   const appliedVisibilityRef = useRef<Map<string, boolean>>(new Map())
   const appliedVisibilityAssetRef = useRef<UVFAsset | null>(null)
   const styledSelectionRef = useRef<Set<string>>(new Set())
@@ -1048,6 +1051,8 @@ export function Viewer3D({
       if (previousParameterGroup) scene.remove(previousParameterGroup)
       previousDispose?.()
     }
+    const pickingBVH = preparePickingBVH(root)
+    disposers.push(pickingBVH.dispose)
     scene.add(root)
     if (nextParameterGroup) scene.add(nextParameterGroup)
     assetRef.current = root
@@ -1671,6 +1676,9 @@ export function Viewer3D({
     pendingHoverEventRef.current = null
     if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current)
     hoverFrameRef.current = null
+    pendingControlPointEventRef.current = null
+    if (controlPointFrameRef.current !== null) cancelAnimationFrame(controlPointFrameRef.current)
+    controlPointFrameRef.current = null
     if (controlsRef.current) controlsRef.current.enabled = true
     setNavigationActive(false)
   }, [setNavigationActive])
@@ -1883,8 +1891,18 @@ export function Viewer3D({
     }
     const dragged = draggedControlPointRef.current
     if (dragged?.pointerId === event.pointerId) {
-      const pick = resolvePointerPick(pointerEvent(event))
-      if (pick) toolInput?.onControlPointChange?.(dragged.index, pick)
+      pendingControlPointEventRef.current = pointerEvent(event)
+      if (controlPointFrameRef.current === null) {
+        controlPointFrameRef.current = requestAnimationFrame(() => {
+          controlPointFrameRef.current = null
+          const pending = pendingControlPointEventRef.current
+          pendingControlPointEventRef.current = null
+          const activeDrag = draggedControlPointRef.current
+          if (!pending || !activeDrag || activeDrag.pointerId !== pending.pointerId) return
+          const pick = resolvePointerPick(pending)
+          if (pick) toolInput?.onControlPointChange?.(activeDrag.index, pick)
+        })
+      }
       event.preventDefault()
       return
     }
@@ -1900,7 +1918,6 @@ export function Viewer3D({
       if (!camera || !controls || !container) return
       const dx = event.clientX - navigation.lastX
       const dy = event.clientY - navigation.lastY
-      inputControllerRef.current?.onPointerMove(pointerEvent(event))
       if (!navigation.moved) {
         if (Math.hypot(
           event.clientX - navigation.startX,
@@ -2423,6 +2440,7 @@ function disposeObject(root: THREE.Object3D) {
       material?: THREE.Material | THREE.Material[]
     }
     if (!renderable.geometry || !renderable.material) return
+    ;(renderable.geometry as THREE.BufferGeometry & { disposeBoundsTree?: () => void }).disposeBoundsTree?.()
     renderable.geometry.dispose()
     const materials = Array.isArray(renderable.material) ? renderable.material : [renderable.material]
     materials.forEach((material) => material.dispose())

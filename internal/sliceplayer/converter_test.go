@@ -2,9 +2,11 @@ package sliceplayer
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -65,6 +67,118 @@ func testVTU() string {
 		`<DataArray Name="offsets" type="UInt32" format="binary">` + vtkBinary(uint32Bytes(4)) + `</DataArray>` +
 		`<DataArray Name="types" type="UInt8" format="binary">` + vtkBinary([]byte{9}) + `</DataArray>` +
 		`</Cells></Piece></UnstructuredGrid></VTKFile>`
+}
+
+type vtkTestArray struct {
+	name       string
+	dataType   string
+	components int
+	section    string
+	payload    []byte
+}
+
+func testVTUArrays() []vtkTestArray {
+	return []vtkTestArray{
+		{name: "Mach", dataType: "Float32", components: 1, section: "PointData", payload: float32Bytes(0, 1, 2, 3)},
+		{dataType: "Float32", components: 3, section: "Points", payload: float32Bytes(0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0)},
+		{name: "connectivity", dataType: "UInt32", components: 1, section: "Cells", payload: uint32Bytes(0, 1, 2, 3)},
+		{name: "offsets", dataType: "UInt32", components: 1, section: "Cells", payload: uint32Bytes(4)},
+		{name: "types", dataType: "UInt8", components: 1, section: "Cells", payload: []byte{9}},
+	}
+}
+
+func vtkCompressed(values []byte) []byte {
+	var compressed bytes.Buffer
+	writer := zlib.NewWriter(&compressed)
+	_, _ = writer.Write(values)
+	_ = writer.Close()
+	header := make([]byte, 32)
+	binary.LittleEndian.PutUint64(header[0:], 1)
+	binary.LittleEndian.PutUint64(header[8:], uint64(len(values)))
+	binary.LittleEndian.PutUint64(header[16:], uint64(len(values)))
+	binary.LittleEndian.PutUint64(header[24:], uint64(compressed.Len()))
+	return append(header, compressed.Bytes()...)
+}
+
+func testVariantVTU(appended, encoded, compressed bool) string {
+	arrays := testVTUArrays()
+	compressor := ""
+	if compressed {
+		compressor = ` compressor="vtkZLibDataCompressor"`
+	}
+	sections := map[string][]string{"PointData": {}, "Points": {}, "Cells": {}}
+	var payload bytes.Buffer
+	for _, array := range arrays {
+		block := append([]byte(nil), array.payload...)
+		if compressed {
+			block = vtkCompressed(block)
+		} else {
+			header := make([]byte, 8)
+			binary.LittleEndian.PutUint64(header, uint64(len(block)))
+			block = append(header, block...)
+		}
+		attributes := fmt.Sprintf(` Name="%s" type="%s" NumberOfComponents="%d"`, array.name, array.dataType, array.components)
+		if appended {
+			offset := payload.Len()
+			if encoded {
+				encodedBlock := base64.StdEncoding.EncodeToString(block)
+				payload.WriteString(encodedBlock)
+			} else {
+				payload.Write(block)
+			}
+			sections[array.section] = append(sections[array.section], fmt.Sprintf(`<DataArray%s format="appended" offset="%d"/>`, attributes, offset))
+		} else {
+			sections[array.section] = append(sections[array.section], `<DataArray`+attributes+` format="binary">`+base64.StdEncoding.EncodeToString(block)+`</DataArray>`)
+		}
+	}
+	body := fmt.Sprintf(`<?xml version="1.0"?><VTKFile type="UnstructuredGrid" byte_order="LittleEndian" header_type="UInt64"%s><UnstructuredGrid><Piece NumberOfPoints="4" NumberOfCells="1"><PointData>%s</PointData><Points>%s</Points><Cells>%s</Cells></Piece></UnstructuredGrid>`, compressor, strings.Join(sections["PointData"], ""), strings.Join(sections["Points"], ""), strings.Join(sections["Cells"], ""))
+	if appended {
+		encoding := "raw"
+		if encoded {
+			encoding = "base64"
+		}
+		body += `<AppendedData encoding="` + encoding + `">_` + payload.String() + `</AppendedData>`
+	}
+	return body + `</VTKFile>`
+}
+
+func TestConvertTarGzSupportsVTKBinaryVariants(t *testing.T) {
+	tests := []struct {
+		name       string
+		appended   bool
+		encoded    bool
+		compressed bool
+	}{
+		{name: "raw appended", appended: true},
+		{name: "base64 appended", appended: true, encoded: true},
+		{name: "zlib inline", encoded: true, compressed: true},
+		{name: "zlib appended raw", appended: true, compressed: true},
+		{name: "zlib appended base64", appended: true, encoded: true, compressed: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			archive := writeArchive(t, []archiveEntry{{name: "slice_Wake_100.vtu", body: testVariantVTU(test.appended, test.encoded, test.compressed)}})
+			playback, err := ConvertTarGz(archive, t.TempDir(), 1<<20, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if playback.FrameCount != 1 || playback.Frames[0].Vertices != 4 || playback.Frames[0].Triangles != 2 || strings.Join(playback.Fields, ",") != "Mach" {
+				t.Fatalf("unexpected playback: %#v", playback)
+			}
+		})
+	}
+}
+
+func TestDecodeVTKBlockRejectsMalformedCompressedHeaderAndCancellation(t *testing.T) {
+	bad := make([]byte, 32)
+	binary.LittleEndian.PutUint64(bad, uint64(MaxDecodedArrayBytes)+1)
+	if _, err := decodeVTKBlock(bytes.NewReader(bad), 8, true, filepath.Join(t.TempDir(), "bad.bin"), nil); err == nil {
+		t.Fatal("oversized compressed block count was accepted")
+	}
+	block := vtkCompressed(bytes.Repeat([]byte{1}, 1024))
+	if _, err := decodeVTKBlock(bytes.NewReader(block), 8, true, filepath.Join(t.TempDir(), "cancel.bin"), func() bool { return true }); !errors.Is(err, ErrCancelled) {
+		t.Fatalf("unexpected cancellation error: %v", err)
+	}
 }
 
 func testLargeVTU(triangles int) string {

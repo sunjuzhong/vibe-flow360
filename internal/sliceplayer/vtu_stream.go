@@ -23,6 +23,7 @@ type streamedArray struct {
 	Section    string
 	Path       string
 	Bytes      int64
+	Offset     int64
 }
 
 type streamedVTU struct {
@@ -43,6 +44,7 @@ func streamVTU(reader io.Reader, entryBytes int64, parent string, cancelled func
 	fail := func(cause error) (*streamedVTU, error) { document.Close(); return nil, cause }
 	buffered := bufio.NewReaderSize(io.LimitReader(reader, entryBytes), streamBufferBytes)
 	headerBytes := 8
+	compressed := false
 	section := ""
 	arrayIndex := 0
 	for {
@@ -73,9 +75,14 @@ func streamVTU(reader io.Reader, entryBytes int64, parent string, cancelled func
 		}
 		switch start.Name.Local {
 		case "VTKFile":
-			if attribute(start, "compressor") != "" {
-				return fail(errors.New("compressed VTU arrays are not supported"))
+			if order := attribute(start, "byte_order"); order != "" && !strings.EqualFold(order, "LittleEndian") {
+				return fail(errors.New("only LittleEndian VTU arrays are supported"))
 			}
+			compressor := attribute(start, "compressor")
+			if compressor != "" && !strings.EqualFold(compressor, "vtkZLibDataCompressor") {
+				return fail(fmt.Errorf("unsupported VTU compressor %q", compressor))
+			}
+			compressed = compressor != ""
 			if strings.EqualFold(attribute(start, "header_type"), "UInt32") {
 				headerBytes = 4
 			}
@@ -91,11 +98,9 @@ func streamVTU(reader io.Reader, entryBytes int64, parent string, cancelled func
 		case "PointData", "Points", "Cells":
 			section = start.Name.Local
 		case "DataArray":
-			if strings.EqualFold(attribute(start, "format"), "appended") {
-				return fail(errors.New("appended VTU arrays are not supported"))
-			}
-			if !strings.EqualFold(attribute(start, "format"), "binary") {
-				return fail(errors.New("only inline binary VTU arrays are supported"))
+			format := attribute(start, "format")
+			if !strings.EqualFold(format, "binary") && !strings.EqualFold(format, "appended") {
+				return fail(errors.New("only binary or appended VTU arrays are supported"))
 			}
 			components := 1
 			if raw := attribute(start, "NumberOfComponents"); raw != "" {
@@ -105,11 +110,25 @@ func streamVTU(reader io.Reader, entryBytes int64, parent string, cancelled func
 			}
 			target := filepath.Join(root, fmt.Sprintf("array-%04d.bin", arrayIndex))
 			arrayIndex++
-			decodedBytes, decodeErr := decodeInlineVTKArray(buffered, headerBytes, target, cancelled)
+			array := streamedArray{Name: attribute(start, "Name"), DType: attribute(start, "type"), Components: components, Section: section, Path: target, Offset: -1}
+			if strings.EqualFold(format, "appended") {
+				if _, scanErr := fmt.Sscan(attribute(start, "offset"), &array.Offset); scanErr != nil || array.Offset < 0 {
+					return fail(errors.New("invalid appended VTU array offset"))
+				}
+				document.Arrays = append(document.Arrays, array)
+				continue
+			}
+			decodedBytes, decodeErr := decodeInlineVTKArray(buffered, headerBytes, compressed, target, cancelled)
 			if decodeErr != nil {
 				return fail(decodeErr)
 			}
-			document.Arrays = append(document.Arrays, streamedArray{Name: attribute(start, "Name"), DType: attribute(start, "type"), Components: components, Section: section, Path: target, Bytes: decodedBytes})
+			array.Bytes = decodedBytes
+			document.Arrays = append(document.Arrays, array)
+		case "AppendedData":
+			if err := materializeAppendedVTK(buffered, root, document.Arrays, headerBytes, compressed, attribute(start, "encoding"), cancelled); err != nil {
+				return fail(err)
+			}
+			return document, nil
 		}
 	}
 	if document.Points <= 0 || document.Cells <= 0 {
@@ -245,7 +264,10 @@ func (d *vtkBase64Decoder) Finish() (int64, error) {
 	return int64(d.written), nil
 }
 
-func decodeInlineVTKArray(reader *bufio.Reader, headerBytes int, target string, cancelled func() bool) (int64, error) {
+func decodeInlineVTKArray(reader *bufio.Reader, headerBytes int, compressed bool, target string, cancelled func() bool) (int64, error) {
+	if compressed {
+		return decodeCompressedInlineVTKArray(reader, headerBytes, target, cancelled)
+	}
 	file, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return 0, err
