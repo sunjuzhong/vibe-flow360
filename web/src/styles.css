@@ -872,6 +872,7 @@ button { color: inherit; }
 .environment-create-button { display: inline-flex; min-height: 39px; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; padding: 0 15px; border: 1px solid #25291f; border-radius: 8px; color: #fff; background: #25291f; font-size: 9px; font-weight: 700; cursor: pointer; }
 .environment-create-button:disabled { color: #989d93; border-color: #dbddd6; background: #eceee8; cursor: not-allowed; }
 .environment-plan-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 16px; }
+.environment-plan-pair.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .environment-plan-pair article { padding: 14px; border: 1px solid #d8deca; border-radius: 8px; background: #f6f9ec; }
 .environment-plan-pair article > span { color: #7c8c44; font-family: 'DM Mono'; font-size: 7px; letter-spacing: .06em; }
 .environment-plan-pair strong,
@@ -897,7 +898,7 @@ button { color: inherit; }
   .tutorial-lesson { min-height: auto; }
   .lesson-content { min-height: auto; padding-top: 36px; }
   .lesson-objectives, .geometry-assumptions, .parameter-learning-grid, .setup-checks, .run-boundary-grid, .concept-bridge-grid, .derivation-grid, .failure-mode-grid, .evidence-rubric, .prediction-options, .farfield-topology-grid { grid-template-columns: 1fr; }
-  .environment-form-grid, .environment-summary, .environment-plan-pair { grid-template-columns: 1fr; }
+  .environment-form-grid, .environment-summary, .environment-plan-pair, .environment-plan-pair.three { grid-template-columns: 1fr; }
   .environment-progress { grid-template-columns: 1fr; gap: 8px; }
   .environment-progress > div { grid-template-columns: 24px 1fr; justify-items: start; align-items: center; text-align: left; }
   .environment-progress > div::before { top: -8px; bottom: auto; left: 10px; width: 1px; height: 16px; }

@@ -1,0 +1,51 @@
+schema_version: 2
+audience: Engineers deciding how to model a low-turbulence high-lift configuration near stall after a fully turbulent steady-RANS result is no longer sufficient.
+prerequisites:
+  - Understand that RANS models turbulent stresses and that separation can be intrinsically unsteady.
+  - Recognize boundary-layer transition as the change from laminar to turbulent flow.
+learning_objectives:
+  - {id: diagnose, objective: Distinguish uncertainty in transition onset from uncertainty caused by unsteady separated structures., assessment: Route two observed symptoms to the correct model branch.}
+  - {id: transition, objective: Configure and audit the amplification-factor transition solver from facility turbulence data., assessment: Explain the intensity-to-N-critical conversion and locate solutionTransition evidence.}
+  - {id: ddes, objective: Explain how DDES shields attached boundary layers while resolving sufficiently large separated eddies., assessment: Identify the shielding and LES grid-size controls and their mesh implications.}
+  - {id: evidence, objective: Apply branch-specific mesh convergence and validation requirements., assessment: Reject a transition or DDES conclusion when its evidence gate is incomplete.}
+concepts:
+  cfd:
+    - {id: transition, title: Transition onset changes skin friction and separation resistance, explanation: A laminar boundary layer has lower wall shear but often less resistance to adverse pressure gradients than a turbulent one., misconception: Transition modelling merely changes the turbulence intensity displayed in results.}
+    - {id: hybrid, title: DDES combines near-wall RANS with separated-region LES behaviour, explanation: Shielding keeps attached boundary layers in RANS while the local grid scale permits large detached structures to be resolved away from the wall., misconception: Turning on DDES makes every cell an LES cell.}
+    - {id: questions, title: Transition and DDES answer different questions, explanation: Transition targets where turbulence begins; DDES targets time-dependent separated structures and statistics., misconception: DDES is always the higher-accuracy replacement for a transition model.}
+  flow360:
+    - {id: transition-solver, title: Fluid owns the AFT transition solver, explanation: TransitionModelSolver sits beside kOmegaSST under Fluid and accepts either facility turbulence intensity or N_crit before serialization., misconception: N_crit and turbulence intensity should both be entered to improve certainty.}
+    - {id: hybrid-model, title: kOmegaSST owns the detached-eddy configuration, explanation: DetachedEddySimulation is the hybrid_model of kOmegaSST and declares shieldingFunction plus gridSizeForLES., misconception: DDES is configured as a separate Fluid model.}
+    - {id: outputs, title: Model-specific outputs complement shared observables, explanation: Cp Cf yPlus velocity pressure q-criterion CL and CD remain shared; the transition branch additionally requests solutionTransition., misconception: One colourful q-criterion frame proves the DDES statistics are converged.}
+parameter_derivations:
+  - {id: reynolds, parameter: Chord Reynolds number, basis: 'Use rho = 1.225 kg/m^3, U = 50 m/s, c = 1.0 m, and mu approximately 1.789e-5 Pa*s.', calculation: Re_c = rho U c / mu = 3.42e6, transfer: Recompute with the chord and facility state governing transition and separation.}
+  - {id: convection, parameter: Convective time, basis: Use c = 1.0 m and U = 50 m/s., calculation: t_c = c/U = 0.020 s, transfer: Express transient removal and averaging windows in convective times.}
+  - {id: timestep, parameter: Tutorial DDES time step, basis: Use Delta t = 0.0002 s and t_c = 0.020 s., calculation: Delta t/t_c = 0.01 and 5000 steps cover 50 t_c, transfer: Demonstrate smaller-step sensitivity and local CFL before production use.}
+  - {id: ncrit, parameter: Transition disturbance input, basis: The facility turbulence intensity is 0.10 percent and Flow360 serializes it to one N_crit value., calculation: The bundled schema conversion gives N_crit approximately 8.15, transfer: Use measured facility turbulence and never prescribe intensity and N_crit simultaneously.}
+experiments:
+  - id: branch
+    prediction: Which observation specifically justifies the transition branch?
+    options: [Measured low freestream turbulence and uncertain laminar-to-turbulent onset, Persistent periodic loads caused by large separated structures]
+    controlled_variable: Geometry state incidence references mesh wall treatment and shared observables remain traceable.
+    observation: Compare transition onset with Cf Cp and force changes; do not use this branch to claim resolved shedding.
+  - id: ddes
+    prediction: What must be demonstrated before using a DDES mean CL value?
+    options: [Time-step sensitivity transient removal and averaging-window convergence, One instantaneous q-criterion image with many vortices]
+    controlled_variable: The DDES branch explicitly changes the hybrid closure and time advancement while retaining the physical configuration.
+    observation: Review shielding LES-region resolution spectra load histories and uncertainty of sampled means.
+failure_modes:
+  - {id: intensity, symptom: Transition location shifts dramatically with an undocumented turbulence input., cause: Facility disturbance level was guessed or intensity and N_crit were confused., correction: Use measured facility turbulence document the conversion and run an input sensitivity.}
+  - {id: trip, symptom: The tunnel model transitions earlier than the clean simulation., cause: Surface roughness contamination or an intentional trip is absent from the model., correction: Represent the trip or bound its effect instead of tuning N_crit to hide it.}
+  - {id: shielding, symptom: DDES switches inside an attached boundary layer., cause: Grid-induced separation or inadequate shielding and anisotropic spacing contaminate the hybrid mode., correction: Inspect hybrid-mode and wall-distance evidence and redesign the mesh before interpreting loads.}
+  - {id: span, symptom: Resolved structures repeat across the 0.30 m span or remain artificially two-dimensional., cause: Spanwise extent or cell count is insufficient for the energetic structures., correction: Repeat with increased span and spanwise resolution and compare spectra and statistics.}
+  - {id: statistics, symptom: Reported mean CL changes when the averaging window moves., cause: The transient was not removed or the sampling interval is too short., correction: Extend the run and demonstrate stable block averages and confidence intervals.}
+evidence_rubric:
+  - {id: branch, observation: Missing-physics diagnosis, pass: The chosen branch matches a measured transition or unsteady-separation uncertainty., fail: A method is selected only because it sounds more advanced.}
+  - {id: shared, observation: Shared configuration audit, pass: Geometry state references wall mesh and common outputs are traceable., fail: Unrelated settings change without explanation.}
+  - {id: transition, observation: AFT onset evidence, pass: Facility input solutionTransition Cf Cp and force effects form one consistent account., fail: Transition is inferred from force difference alone.}
+  - {id: ddes-grid, observation: Hybrid mesh evidence, pass: Shielding wall distance span and LES-region resolution pass sensitivity checks., fail: Nominal spacing is accepted without resolved-structure evidence.}
+  - {id: ddes-time, observation: Unsteady statistical evidence, pass: Time step transient removal window convergence and uncertainty are reported., fail: One frame or an arbitrary tail average is used.}
+  - {id: validation, observation: External reference comparison, pass: Relevant transition pressure force or spectral data support the decision., fail: Agreement among the three Drafts is treated as validation.}
+transfer_questions:
+  - {prompt: 'Why is the DDES Draft not a controlled one-field variant of steady RANS?', expected: DDES requires unsteady time advancement and statistical sampling in addition to the hybrid closure so the method and evidence contract both change.}
+  - {prompt: 'When should the fully turbulent SST Draft remain the selected method?', expected: When validated mean observables answer the engineering decision and neither transition onset nor resolved unsteady structures materially affect it.}

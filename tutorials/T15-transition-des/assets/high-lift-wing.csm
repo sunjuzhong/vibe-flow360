@@ -1,0 +1,39 @@
+# Simplified finite-span three-element high-lift wing for the T15 model-upgrade lesson.
+# x is chordwise, y is spanwise, and z is normal to the nominal chord plane.
+
+# Main element: a blunt leading edge and tapered trailing edge.
+skbeg 0.12 0 0.055
+linseg 0.52 0 0.080
+linseg 0.90 0 0.018
+linseg 0.90 0 -0.012
+linseg 0.50 0 -0.050
+linseg 0.12 0 -0.035
+linseg 0.12 0 0.055
+skend
+extrude 0 0.30 0
+attribute faceName $mainWing
+attribute groupName $mainWing
+
+# Leading-edge slat with an open slot to the main element.
+skbeg -0.08 0 0.030
+linseg 0.07 0 0.045
+linseg 0.11 0 0.010
+linseg 0.02 0 -0.018
+linseg -0.08 0 0.000
+linseg -0.08 0 0.030
+skend
+extrude 0 0.30 0
+attribute faceName $slat
+attribute groupName $slat
+
+# Deflected flap represented in its deployed wind-tunnel position.
+skbeg 0.88 0 -0.025
+linseg 1.18 0 -0.155
+linseg 1.20 0 -0.185
+linseg 0.91 0 -0.075
+linseg 0.88 0 -0.025
+skend
+extrude 0 0.30 0
+attribute faceName $flap
+attribute groupName $flap
+end

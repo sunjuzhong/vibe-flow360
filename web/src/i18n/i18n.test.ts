@@ -15,6 +15,7 @@ import { t10Evidence, t10ParameterCards, t10Steps, t10Params, t10Pedagogy, valid
 import { t12Evidence, t12ParameterCards, t12Steps, t12Params, t12Pedagogy, validateT12Setup } from '../tutorials/t12'
 import { t13Evidence, t13ParameterCards, t13Steps, t13Params, t13Pedagogy, validateT13Setup } from '../tutorials/t13'
 import { t14Evidence, t14ParameterCards, t14Steps, t14Params, t14Pedagogy, validateT14Setup } from '../tutorials/t14'
+import { t15Evidence, t15ParameterCards, t15Steps, t15Params, t15Pedagogy, validateT15Setup } from '../tutorials/t15'
 import { tutorialPedagogyCopy } from '../tutorials/pedagogy'
 
 describe('language settings', () => {
@@ -296,6 +297,13 @@ describe('language settings', () => {
       ...validateT14Setup(t14Params(false)).flatMap(({ label, detail }) => [label, detail]),
       ...validateT14Setup(t14Params(true)).flatMap(({ label, detail }) => [label, detail]),
       ...tutorialPedagogyCopy(t14Pedagogy),
+      ...t15Steps.flatMap(({ title, summary }) => [title, summary]),
+      ...t15ParameterCards.flatMap(({ label, provenance, why }) => [label, provenance, why]),
+      ...t15Evidence.flatMap(({ title, detail }) => [title, detail]),
+      ...validateT15Setup(t15Params('rans')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT15Setup(t15Params('transition')).flatMap(({ label, detail }) => [label, detail]),
+      ...validateT15Setup(t15Params('ddes')).flatMap(({ label, detail }) => [label, detail]),
+      ...tutorialPedagogyCopy(t15Pedagogy),
     ]
 
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
@@ -426,6 +434,22 @@ describe('language settings', () => {
       'The bundled T14 parameters contain an invalid turbulence closure, freestream specification, entity, or evidence contract.',
       'The bundled T14 rear-step Geometry could not be loaded.',
       'Flow360 created the T14 Project without returning its Geometry identifiers.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
+  it('covers the complete T15 environment builder in Chinese', () => {
+    const messages = [
+      'MODEL UPGRADE', 'TRANSITION OR DDES', 'METHOD DIFF',
+      'Build the T15 transition and DDES environment',
+      'The app uploads the bundled high-lift wing and creates fully turbulent SST, AFT transition, and unsteady SST-DDES Case Drafts.',
+      '50 m/s at 16°, common wall-resolved mesh and outputs, AFT onset branch, DDES unsteady branch',
+      'Fully turbulent SST', 'SST + AFT transition', 'Unsteady SST-DDES',
+      'Tutorial T15 · high-lift model upgrade',
+      'The bundled T15 parameters contain an invalid model branch, time method, entity, or evidence contract.',
+      'The bundled T15 high-lift Geometry could not be loaded.',
+      'Flow360 created the T15 Project without returning its Geometry identifiers.',
+      'I reviewed the destination and authorize creation of this remote Flow360 Project and three configured Case Drafts. Nothing is submitted until I review and run a Draft.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

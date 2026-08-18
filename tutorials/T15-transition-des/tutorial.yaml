@@ -1,0 +1,57 @@
+schema_version: 2
+id: T15
+slug: transition-des
+title: Choose between transition modelling and DDES near stall
+summary: Diagnose whether high-lift uncertainty comes from transition onset or unsteady separation, then apply the corresponding Flow360 model and evidence gate.
+flow360:
+  api_version: release-25.10
+  package_version: 25.10.3
+  root_item_type: Geometry
+  validation_level: Case
+artifacts:
+  intent: intent.yaml
+  spec: spec.yaml
+  simulation: simulation.json
+  plan: plan.md
+  report: expected/report.md
+  generator: build_simulation.py
+  pedagogy: pedagogy.yaml
+evidence:
+  contract: expected/evidence.yaml
+coverage:
+  - {feature: 'schema:type:TransitionModelSolver', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.CFL_multiplier', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.N_crit', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.absolute_tolerance', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.equation_evaluation_frequency', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.linear_solver', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.max_force_jac_update_physical_steps', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.order_of_accuracy', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.private_attribute_dict', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.reconstruction_gradient_limiter', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.relative_tolerance', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.trip_regions', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.turbulence_intensity_percent', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.type_name', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:field:TransitionModelSolver.update_jacobian_frequency', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:enum:TransitionModelSolver.order_of_accuracy', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:variant:Fluid.transition_model_solver=TransitionModelSolver', section: transition, artifact: variants/transition.patch.json}
+  - {feature: 'schema:type:DetachedEddySimulation', section: ddes, artifact: variants/ddes.patch.json}
+  - {feature: 'schema:field:DetachedEddySimulation.shielding_function', section: ddes, artifact: variants/ddes.patch.json}
+  - {feature: 'schema:field:DetachedEddySimulation.grid_size_for_LES', section: ddes, artifact: variants/ddes.patch.json}
+  - {feature: 'schema:enum:DetachedEddySimulation.shielding_function', section: ddes, artifact: variants/ddes.patch.json}
+  - {feature: 'schema:enum:DetachedEddySimulation.grid_size_for_LES', section: ddes, artifact: variants/ddes.patch.json}
+assets:
+  - path: assets/high-lift-wing.csm
+    sha256: b92ff6341101d7479c152b73be341f6c148fe605eaa577f4b5dd75d3b4baba33
+    source: Tutorial-owned analytic finite-span three-element wing geometry
+    license: Apache-2.0
+variants:
+  - id: transition
+    title: Add amplification-factor transition transport
+    patch: variants/transition.patch.json
+    evidence: variants/transition.evidence.yaml
+  - id: ddes
+    title: Escalate to unsteady SST-DDES
+    patch: variants/ddes.patch.json
+    evidence: variants/ddes.evidence.yaml

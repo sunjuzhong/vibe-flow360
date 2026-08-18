@@ -1,0 +1,25 @@
+schema_version: 1
+geometry:
+  surface_groups: [mainWing, slat, flap]
+  separated_zone: Three-dimensional separated shear layer
+  slice_entity: Midspan separation plane
+meshing:
+  surface_max_edge_length: 0.04 m
+  element_max_edge_length: 0.02 m
+  first_layer_thickness: 0.000015 m
+  separated_zone_spacing: 0.015625 m
+physics:
+  velocity: 50 m/s
+  alpha: 16 deg
+  turbulence_model: kOmegaSST
+  freestream_turbulence: intensity 0.001 and length scale 0.01 m
+  transition_variant: AmplificationFactorTransport with turbulence intensity 0.10 percent converted to N_crit
+  ddes_variant: DDES shielding with shearLayerAdapted LES grid size
+numerics:
+  rans_and_transition: steady 2000 steps
+  ddes: 5000 physical steps at 0.0002 s with 30 pseudo steps
+outputs:
+  surface: [Cp, Cf, CfVec, yPlus, wall_shear_stress_magnitude_pa]
+  slice: [velocity_m_per_s, pressure_pa, vorticityMagnitude, qcriterion, mutRatio, wallDistance]
+  transition_addition: [solutionTransition]
+  force: [CL, CD]
