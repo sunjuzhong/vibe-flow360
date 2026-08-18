@@ -31,6 +31,7 @@ type planComposerRequest struct {
 	Prompt          string          `json:"prompt,omitempty"`
 	Patch           json.RawMessage `json:"patch,omitempty"`
 	ConfirmedInputs json.RawMessage `json:"confirmed_inputs,omitempty"`
+	History         []agent.Message `json:"history,omitempty"`
 	Autonomous      bool            `json:"autonomous,omitempty"`
 }
 
@@ -105,6 +106,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	}
 	contextPayload, err := json.Marshal(agent.ChatContextPayload{
 		ProjectID: composer.Request.ProjectID, ProjectName: composer.Request.ProjectName,
+		ScopeType: planAssistScopeType(composer.Request), ScopeID: composer.Request.DraftID,
 		SourceID: composer.Request.SourceID, SourceType: composer.Request.SourceType,
 		SourceName: composer.Name, Target: composer.Request.Target,
 		SimulationParams: composer.Baseline, FormSchema: catalog,
@@ -116,7 +118,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	}
 	message := planAssistPrompt(composer.Request)
 	_, action, err := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
-		Message: message, Context: string(contextPayload), Session: "web:plan-composer",
+		Message: message, Context: string(contextPayload), History: composer.Request.History, Session: "web:plan-composer",
 	})
 	if err != nil {
 		return planAssistResponse{}, err
@@ -138,7 +140,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		repairAttempts++
 		repairMessage := planAssistFormRepairPrompt(composer.Request, *action, err, repairAttempts)
 		_, repairedAction, repairErr := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
-			Message: repairMessage, Context: string(contextPayload), Session: "web:plan-composer:form-repair",
+			Message: repairMessage, Context: string(contextPayload), History: composer.Request.History, Session: "web:plan-composer:form-repair",
 		})
 		if repairErr != nil {
 			return planAssistResponse{}, repairErr
@@ -195,6 +197,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		}
 		repairContext, contextErr := json.Marshal(agent.ChatContextPayload{
 			ProjectID: composer.Request.ProjectID, ProjectName: composer.Request.ProjectName,
+			ScopeType: planAssistScopeType(composer.Request), ScopeID: composer.Request.DraftID,
 			SourceID: composer.Request.SourceID, SourceType: composer.Request.SourceType,
 			SourceName: composer.Name, Target: composer.Request.Target,
 			SimulationParams: merged, FormSchema: repairCatalog,
@@ -208,7 +211,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		}
 		repairMessage := planAssistRepairPrompt(composer.Request, proposal, preflight, agentRepairAttempts)
 		_, repairedAction, repairErr := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
-			Message: repairMessage, Context: string(repairContext), Session: "web:plan-composer:repair",
+			Message: repairMessage, Context: string(repairContext), History: composer.Request.History, Session: "web:plan-composer:repair",
 		})
 		if repairErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair stopped because the Agent did not return a valid correction.")
@@ -274,8 +277,16 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	}
 
 	preflight.EditorSchemas = nil
-	if action.Kind == agent.ActionCreatePlan && len(action.Proposals) == 1 {
-		action.Proposals[0] = proposal
+	if len(action.Proposals) == 1 {
+		if action.Kind == agent.ActionUpdateDraft {
+			draftProposal := proposal
+			draftProposal.DraftID = composer.Request.DraftID
+			draftProposal.SourceType = ""
+			draftProposal.Target = "draft"
+			action.Proposals[0] = draftProposal
+		} else if action.Kind == agent.ActionCreatePlan {
+			action.Proposals[0] = proposal
+		}
 	}
 	return planAssistResponse{
 		Action: *action, Proposal: &proposal, Preflight: &preflight,
@@ -352,14 +363,14 @@ func (s *Server) resolveAutonomousPlanAssistQuestions(ctx context.Context, compo
 		}
 		questions, _ := json.Marshal(action.Questions)
 		defaultsJSON, _ := json.Marshal(defaults)
-		message := fmt.Sprintf(`Continue the same autonomous Flow360 plan now. Every requested field now has an authoritative value, supplied either by the user or by an Agent recommendation. Do not request another confirmation for these fields.
+		message := fmt.Sprintf(`Continue the same autonomous Flow360 parameter update now. Every requested field now has an authoritative value, supplied either by the user or by an Agent recommendation. Do not request another confirmation for these fields.
 
 Treat these values as confirmed and authoritative: %s
 Previous questions: %s
 
-Return one complete create-plan proposal using only the active schema catalog. Do not ask for any of these values again.`, defaultsJSON, questions)
+	%s Do not ask for any of these values again.`, defaultsJSON, questions, planAssistActionContract(composer.Request, "Return one complete"))
 		_, next, err := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
-			Message: message, Context: string(contextPayload), Session: "web:plan-composer:autonomous-defaults",
+			Message: message, Context: string(contextPayload), History: composer.Request.History, Session: "web:plan-composer:autonomous-defaults",
 		})
 		if err != nil {
 			return nil, err
@@ -461,7 +472,16 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 		return agent.Proposal{}, errors.New("AI form filling must return exactly one proposal")
 	}
 	proposal := action.Proposals[0]
-	if proposal.SourceType != composer.Request.SourceType || proposal.Target != composer.Request.Target {
+	if action.Kind == agent.ActionUpdateDraft {
+		if composer.Request.DraftID == "" || proposal.DraftID != composer.Request.DraftID || proposal.Target != "draft" {
+			return agent.Proposal{}, errors.New("AI Draft update does not match the active Draft")
+		}
+		// The public action describes a Draft edit. Internally the same sparse
+		// patch still uses the source-to-target route to select and validate all
+		// Flow360 stage schemas before it can be applied to that Draft.
+		proposal.SourceType = composer.Request.SourceType
+		proposal.Target = composer.Request.Target
+	} else if proposal.SourceType != composer.Request.SourceType || proposal.Target != composer.Request.Target {
 		return agent.Proposal{}, errors.New("AI proposal does not match the active source-to-target route")
 	}
 	proposal.ProjectID = composer.Request.ProjectID
@@ -494,12 +514,12 @@ func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action
 	return fmt.Sprintf(`The previous Flow360 form proposal was rejected before preflight because its values do not match the active stage schema.
 This is a schema-mechanical problem. Repair it autonomously; do not ask the user to choose a field name, discriminator, unit wire shape, or model wiring.
 
-Return exactly one create-plan proposal for the same %s-to-%s route. Its patch must use only paths present in the supplied schema catalog. Do not copy internal fields from canonical SimulationParams into an editable patch. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
+%s Its patch must use only paths present in the supplied schema catalog. Do not copy internal fields from canonical SimulationParams into an editable patch. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
 
 Original intent: %s
 Repair attempt: %d of %d
 Validation error: %s
-Rejected action: %s`, request.SourceType, request.Target, request.Intent, attempt, maxPlanAssistRepairAttempts, validationErr.Error(), previous)
+Rejected action: %s`, planAssistActionContract(request, "Return exactly one"), request.Intent, attempt, maxPlanAssistRepairAttempts, validationErr.Error(), previous)
 }
 
 func (s *Server) preflightPlanAssistProposal(ctx context.Context, composer planComposerContext, proposal agent.Proposal) (flow360.PreflightResult, json.RawMessage, error) {
@@ -524,14 +544,14 @@ func planAssistRepairPrompt(request planComposerRequest, proposal agent.Proposal
 	patch, _ := json.Marshal(proposal.Patch)
 	issues, _ := json.Marshal(preflight.Issues)
 	base := fmt.Sprintf(`Your candidate Flow360 parameter patch did not pass schema preflight. Repair it now.
-Return exactly one create-plan proposal containing the COMPLETE corrected patch for the same %s-to-%s route. Use the newly supplied stage schema, which reflects the candidate model variants. Resolve every listed issue rather than merely describing it. Preserve valid candidate values. JSON merge-patch semantics apply: set an obsolete inherited field to null when Flow360 reports it as extra or forbidden. Do not request user input for a schema-mechanical correction such as a missing required field, renamed field, discriminator-dependent field, or removal of a field from the previous model variant.
+%s containing the COMPLETE corrected patch. Use the newly supplied stage schema, which reflects the candidate model variants. Resolve every listed issue rather than merely describing it. Preserve valid candidate values. JSON merge-patch semantics apply: set an obsolete inherited field to null when Flow360 reports it as extra or forbidden. Do not request user input for a schema-mechanical correction such as a missing required field, renamed field, discriminator-dependent field, or removal of a field from the previous model variant.
 
 Use the language of the Original intent for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
 
 Original intent: %s
 Repair attempt: %d
 Candidate patch: %s
-Flow360 preflight issues: %s`, request.SourceType, request.Target, request.Intent, attempt, patch, issues)
+Flow360 preflight issues: %s`, planAssistActionContract(request, "Return exactly one"), request.Intent, attempt, patch, issues)
 	return base
 }
 
@@ -628,7 +648,7 @@ func planAssistPrompt(request planComposerRequest) string {
 	base := fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
 This is parameter assistance, not geometry generation. Never claim CAD dimensions, format, topology, or provenance unless they are explicitly present in the supplied context. Refer to it as the existing %s resource when evidence is absent.
 
-Return exactly one create-plan proposal when the requested values can be supported. The proposal must use source type %s and target %s, and its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
+%s when the requested values can be supported. Its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
 Read the schema catalog field-by-field before composing the patch. Each catalog entry supplies its owning stage, exact dot path, wire type, constraints, units/options, union variants, and sometimes an evidence-backed recommendation. Convert dot paths into nested JSON objects exactly; quantities use {"value":...,"units":"..."}; enum and boundary model values must exactly match the catalog. For a union, choose one supplied variant and emit only the child keys that variant declares. Never invent a nearby field name from memory. If the intent mentions a parameter absent from the active catalog, preserve the baseline and explain or request input instead of fabricating a key.
 
@@ -643,8 +663,22 @@ When the user asks for a basic, baseline, demonstration, or first-pass simulatio
 Use the language of the Plan intent and User form instruction for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
 
 Plan intent: %s
-User form instruction: %s`, request.SourceType, request.SourceType, request.SourceType, request.Target, request.Intent, request.Prompt)
+User form instruction: %s`, request.SourceType, request.SourceType, planAssistActionContract(request, "Return exactly one"), request.Intent, request.Prompt)
 	return base
+}
+
+func planAssistScopeType(request planComposerRequest) string {
+	if request.DraftID != "" {
+		return "draft"
+	}
+	return "resource"
+}
+
+func planAssistActionContract(request planComposerRequest, prefix string) string {
+	if request.DraftID != "" {
+		return fmt.Sprintf(`%s update-draft proposal with draft_id %q and target "draft". This is an editable change to the current Draft and does not run it.`, prefix, request.DraftID)
+	}
+	return fmt.Sprintf("%s create-plan proposal for the same %s-to-%s route.", prefix, request.SourceType, request.Target)
 }
 
 func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
@@ -667,6 +701,7 @@ func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
 	request.Target = strings.TrimSpace(request.Target)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Prompt = strings.TrimSpace(request.Prompt)
+	request.History = normalizePlanAssistHistory(request.History)
 	if request.ProjectID == "" || request.SourceID == "" || request.SourceType == "" || request.Target == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "project, source resource, source type, and target are required"})
 		return planComposerRequest{}, false
@@ -682,6 +717,22 @@ func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
 		}
 	}
 	return request, true
+}
+
+func normalizePlanAssistHistory(history []agent.Message) []agent.Message {
+	if len(history) > 20 {
+		history = history[len(history)-20:]
+	}
+	result := make([]agent.Message, 0, len(history))
+	for _, message := range history {
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		content := strings.TrimSpace(message.Content)
+		if (role != "user" && role != "assistant") || content == "" {
+			continue
+		}
+		result = append(result, agent.Message{Role: role, Content: content})
+	}
+	return result
 }
 
 func (s *Server) loadPlanComposerContext(ctx context.Context, request planComposerRequest) (planComposerContext, error) {
@@ -765,6 +816,7 @@ type promptSchemaField struct {
 	DefaultEntities []any  `json:"default_entities,omitempty"`
 	Recommendation  any    `json:"recommendation,omitempty"`
 	Variants        []any  `json:"variants,omitempty"`
+	Items           any    `json:"items,omitempty"`
 }
 
 func schemaPromptCatalog(form flow360.PlanFormSchema) (json.RawMessage, error) {
@@ -877,7 +929,10 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 		field.Options = options
 	}
 	if variants, ok := node["variants"].([]any); ok && len(variants) <= 8 {
-		field.Variants = variants
+		field.Variants = compactPromptSchemaVariants(variants, 0)
+	}
+	if items, ok := node["items"].(map[string]any); ok {
+		field.Items = compactPromptSchemaContract(items, 0)
 	}
 	if choices, ok := node["model_choices"].([]any); ok && len(choices) <= 16 {
 		field.ModelChoices = choices
@@ -888,4 +943,59 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 	}
 	field.Recommendation = node["recommendation"]
 	*fields = append(*fields, field)
+}
+
+// compactPromptSchemaContract retains the executable shape of array items and
+// nested union variants without copying unrelated schema implementation data
+// into every model call. Array element contracts are essential: a field that
+// is merely described as "array" gives the Agent no evidence that a selected
+// refinement requires faces or that an output variant requires surfaces.
+func compactPromptSchemaContract(node map[string]any, depth int) map[string]any {
+	if depth >= 8 {
+		return map[string]any{"type": "json", "description": "Nested schema depth limit reached."}
+	}
+	result := make(map[string]any)
+	for _, key := range []string{
+		"type", "title", "description", "required", "unit", "unit_options", "options",
+		"default", "minimum", "maximum", "model_choices", "default_model",
+		"default_entities", "recommendation",
+	} {
+		if value, exists := node[key]; exists && value != nil {
+			result[key] = value
+		}
+	}
+	if properties, ok := node["properties"].(map[string]any); ok {
+		keys := make([]string, 0, len(properties))
+		for key := range properties {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		compact := make(map[string]any, len(keys))
+		for _, key := range keys {
+			if child, ok := properties[key].(map[string]any); ok {
+				compact[key] = compactPromptSchemaContract(child, depth+1)
+			}
+		}
+		result["properties"] = compact
+	}
+	if items, ok := node["items"].(map[string]any); ok {
+		result["items"] = compactPromptSchemaContract(items, depth+1)
+	}
+	if variants, ok := node["variants"].([]any); ok {
+		result["variants"] = compactPromptSchemaVariants(variants, depth+1)
+	}
+	return result
+}
+
+func compactPromptSchemaVariants(variants []any, depth int) []any {
+	if len(variants) > 8 {
+		variants = variants[:8]
+	}
+	result := make([]any, 0, len(variants))
+	for _, raw := range variants {
+		if variant, ok := raw.(map[string]any); ok {
+			result = append(result, compactPromptSchemaContract(variant, depth+1))
+		}
+	}
+	return result
 }

@@ -208,6 +208,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         intent: prompt,
         prompt,
         patch: draftAIAssistPatch(baseline, candidate),
+        history: draftAIConversationHistory(aiMessages),
         autonomous: true,
       })
       if (currentDraftIdRef.current !== requestDraftId) return
@@ -614,6 +615,14 @@ export function draftAIAssistPatch(
   candidate: Record<string, unknown> | null,
 ) {
   return createJSONMergePatch(baseline, candidate ?? baseline)
+}
+
+export function draftAIConversationHistory(messages: DraftAISessionMessage[]) {
+  return messages.flatMap((message) => (
+    message.role === 'error' || !message.content.trim()
+      ? []
+      : [{ role: message.role, content: message.content }]
+  ))
 }
 
 export function applyDraftAIProposal(

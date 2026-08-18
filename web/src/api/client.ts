@@ -1398,6 +1398,7 @@ export const api = {
     prompt: string
     patch?: Record<string, unknown>
     confirmed_inputs?: Record<string, unknown>
+    history?: ChatMessage[]
     autonomous?: boolean
   }) => mutate<PlanAssistResponse>('/api/plans/assist', input),
   preflightPlan: (planId: string) =>

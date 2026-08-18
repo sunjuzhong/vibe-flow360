@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { APIError, type DynamicFormSchema } from '../api/client'
-import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
+import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -96,6 +96,17 @@ describe('Draft parameter editor', () => {
       { operating_condition: { alpha: 5, beta: 0 } },
       { operating_condition: { beta: 2 } },
     )).toEqual({ operating_condition: { alpha: 5, beta: 2 } })
+  })
+
+  it('sends prior Draft conversation turns without replaying UI errors', () => {
+    expect(draftAIConversationHistory([
+      { id: '1', role: 'user', content: 'Set alpha to 5 degrees.' },
+      { id: '2', role: 'assistant', content: 'Updated alpha.' },
+      { id: '3', role: 'error', content: 'Temporary request failure.' },
+    ])).toEqual([
+      { role: 'user', content: 'Set alpha to 5 degrees.' },
+      { role: 'assistant', content: 'Updated alpha.' },
+    ])
   })
 
   it('auto-syncs only the latest validated candidate and stops retrying a failed revision', () => {

@@ -106,6 +106,27 @@ func TestPreparePlanAssistProposalAllowsMergePatchRemoval(t *testing.T) {
 	}
 }
 
+func TestPreparePlanAssistProposalNormalizesDraftUpdateForPreflight(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"outputs":{"type":"array","items":{"type":"object"}}}}`)
+	composer := planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", DraftID: "draft-1", Target: "case", Intent: "add outputs",
+		},
+		Name: "Geometry",
+	}
+	action := agent.Action{Kind: agent.ActionUpdateDraft, Proposals: []agent.Proposal{{
+		ID: "edit-1", DraftID: "draft-1", Target: "draft", Name: "Add outputs", Intent: "add outputs",
+		Patch: json.RawMessage(`{"outputs":[]}`),
+	}}}
+	proposal, err := preparePlanAssistProposal(action, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proposal.SourceType != "Geometry" || proposal.Target != "case" || proposal.DraftID != "draft-1" {
+		t.Fatalf("Draft proposal was not normalized onto the validation route: %#v", proposal)
+	}
+}
+
 func TestPreparePlanAssistProposalRemovesCanonicalReferenceAreaDiscriminator(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"reference_geometry":{"type":"object","properties":{"area":{"type":"union","variants":[{"type":"quantity","unit_options":["m**2"],"value_schema":{"type":"number"}},{"type":"string"}]}}}}}`)
 	composer := planComposerContext{Request: planComposerRequest{
@@ -455,6 +476,22 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 	}
 }
 
+func TestPlanAssistPromptUsesDraftUpdateContract(t *testing.T) {
+	request := planComposerRequest{
+		SourceType: "Geometry", Target: "case", DraftID: "draft-17",
+		Intent: "配置参数", Prompt: "配置参数",
+	}
+	prompt := planAssistPrompt(request)
+	for _, expected := range []string{`update-draft`, `draft_id "draft-17"`, `target "draft"`, `does not run it`} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("Draft prompt is missing %q: %s", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Return exactly one create-plan proposal") {
+		t.Fatalf("Draft prompt still requests a create-plan action: %s", prompt)
+	}
+}
+
 func TestCombinedPlanFormSchemaPreservesOverlappingStageObjects(t *testing.T) {
 	form := flow360.PlanFormSchema{
 		Stages: []string{"SurfaceMesh", "VolumeMesh"},
@@ -542,5 +579,44 @@ func TestSchemaPromptCatalogExposesUnionWireVariants(t *testing.T) {
 	}
 	if len(decoded.Fields) != 1 || decoded.Fields[0].Path != "reference_geometry.area" || decoded.Fields[0].Type != "union" || len(decoded.Fields[0].Variants) != 2 {
 		t.Fatalf("union wire variants were omitted from the Agent catalog: %s", catalog)
+	}
+}
+
+func TestSchemaPromptCatalogPreservesArrayItemUnionContracts(t *testing.T) {
+	form := flow360.PlanFormSchema{Stages: []string{"SurfaceMesh", "Case"}, Schemas: map[string]json.RawMessage{
+		"SurfaceMesh": json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"refinements":{"type":"array","items":{"type":"union","variants":[{"type":"object","title":"Surface refinement","properties":{"type":{"type":"enum","options":["SurfaceRefinement"],"required":true},"faces":{"type":"entity_list","required":true},"max_edge_length":{"type":"quantity","unit":"m","required":true}}}]}}}}}}`),
+		"Case":        json.RawMessage(`{"type":"object","properties":{"outputs":{"type":"array","items":{"type":"union","variants":[{"type":"object","title":"Surface output","properties":{"surfaces":{"type":"entity_list","required":true},"output_fields":{"type":"array","items":{"type":"enum","options":["Cp"]},"required":true}}},{"type":"object","title":"Slice output","properties":{"slices":{"type":"entity_list","required":true}}}]}}}}`),
+	}}
+	catalog, err := schemaPromptCatalog(form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Fields []promptSchemaField `json:"fields"`
+	}
+	if err := json.Unmarshal(catalog, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Fields) != 2 {
+		t.Fatalf("unexpected array catalog: %s", catalog)
+	}
+	for _, expected := range []string{`"items"`, `"variants"`, `"faces"`, `"type"`, `"surfaces"`, `"slices"`, `"required":true`} {
+		if !strings.Contains(string(catalog), expected) {
+			t.Fatalf("array item contract omitted %s: %s", expected, catalog)
+		}
+	}
+}
+
+func TestNormalizePlanAssistHistoryKeepsBoundedConversation(t *testing.T) {
+	history := []agent.Message{
+		{Role: "system", Content: "ignore"},
+		{Role: " user ", Content: " first request "},
+		{Role: "assistant", Content: "first answer"},
+		{Role: "error", Content: "transport error"},
+		{Role: "user", Content: ""},
+	}
+	normalized := normalizePlanAssistHistory(history)
+	if len(normalized) != 2 || normalized[0].Role != "user" || normalized[0].Content != "first request" || normalized[1].Role != "assistant" {
+		t.Fatalf("unexpected normalized Draft conversation: %#v", normalized)
 	}
 }
