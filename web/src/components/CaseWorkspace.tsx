@@ -54,6 +54,8 @@ import { ManifestMemberGroup } from './ManifestMemberGroup'
 import { ParameterEntityInventory, useDraftEntities, useGhostEntities, useParameterEntityUnit, useParameterEntityVisibility } from './DraftEntityInventory'
 import type { DraftEntityMutation } from '../lib/draftEntities'
 
+export const TIME_SERIES_PLAYER_CLOSE_ON_BACKDROP_CLICK = false
+
 function formatConvergenceStatus(status: string): string {
   switch (status) {
     case 'converged': return 'Converged — Results are stable'
@@ -1326,6 +1328,7 @@ export default function CaseWorkspace({
               subtitle={t('Large-file preparation and frame index')}
               icon={<Film size={18} />}
               onClose={() => setActiveReviewDialog(null)}
+              closeOnBackdropClick={TIME_SERIES_PLAYER_CLOSE_ON_BACKDROP_CLICK}
             >
               <CaseSlicePlayerPanel
                 caseId={resourceId ?? detail?.id ?? ''}

@@ -7,18 +7,24 @@ import { useI18n } from '../i18n'
 
 export type ResourceReviewDialogKey = string
 
+export function resourceReviewDialogDismissesOnBackdrop(closeOnBackdropClick = true) {
+  return closeOnBackdropClick
+}
+
 export function ResourceReviewDialog({
   title,
   subtitle,
   icon,
   children,
   onClose,
+  closeOnBackdropClick = true,
 }: {
   title: string
   subtitle: string
   icon: ReactNode
   children: ReactNode
   onClose: () => void
+  closeOnBackdropClick?: boolean
 }) {
   const { t } = useI18n()
   const titleId = useId()
@@ -30,7 +36,7 @@ export function ResourceReviewDialog({
       className="resource-review-dialog-overlay"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
+        if (event.target === event.currentTarget && resourceReviewDialogDismissesOnBackdrop(closeOnBackdropClick)) onClose()
       }}
     >
       <div

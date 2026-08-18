@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, caseVisualizationSelectionKey, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, caseVisualizationSelectionKey, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, TIME_SERIES_PLAYER_CLOSE_ON_BACKDROP_CLICK, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -15,6 +15,12 @@ function detail(state: Record<string, unknown>, info?: Record<string, unknown>, 
     results: { records: [] },
   }
 }
+
+describe('time-series player dialog', () => {
+  it('stays open when its backdrop is clicked', () => {
+    expect(TIME_SERIES_PLAYER_CLOSE_ON_BACKDROP_CLICK).toBe(false)
+  })
+})
 
 describe('mapCaseStatus', () => {
   it('maps queued', () => {

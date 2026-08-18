@@ -6,9 +6,15 @@ import {
   ResourceReviewLauncher,
   ResourceReviewLaunchers,
   ResourceReviewToggle,
+  resourceReviewDialogDismissesOnBackdrop,
 } from './ResourceReviewDialog'
 
 describe('ResourceReviewDialog', () => {
+  it('can keep long-running review panels open when the backdrop is clicked', () => {
+    expect(resourceReviewDialogDismissesOnBackdrop(false)).toBe(false)
+    expect(resourceReviewDialogDismissesOnBackdrop()).toBe(true)
+  })
+
   it('renders focused review content in an accessible modal', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
