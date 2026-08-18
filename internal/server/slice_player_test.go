@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,5 +134,22 @@ func TestSlicePlayerCacheConfiguration(t *testing.T) {
 	}
 	if got := slicePlayerCacheRetention(); got != 90*time.Minute {
 		t.Fatalf("unexpected cache retention: %s", got)
+	}
+}
+
+func TestSlicePlayerDownloadCapacityErrorIsActionable(t *testing.T) {
+	if err := slicePlayerDownloadCapacityError(8<<30, 9<<30); err != nil {
+		t.Fatalf("sufficient disk was rejected: %v", err)
+	}
+	err := slicePlayerDownloadCapacityError(8<<30, 250<<20)
+	if err == nil || !strings.Contains(err.Error(), "250 MB") || !strings.Contains(err.Error(), "8.5 GB") {
+		t.Fatalf("unexpected capacity error: %v", err)
+	}
+}
+
+func TestHumanizeSlicePlayerDownloadErrorHidesTraceback(t *testing.T) {
+	err := humanizeSlicePlayerDownloadError(errors.New("Traceback (most recent call last):\n  internal details\nOSError: [Errno 28] No space left on device"))
+	if strings.Contains(err.Error(), "Traceback") || !strings.Contains(err.Error(), "Insufficient local disk space") {
+		t.Fatalf("download error was not humanized: %v", err)
 	}
 }

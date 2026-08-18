@@ -188,6 +188,59 @@ func (s *Store) ArchiveDirectory(sourceKey string) (string, error) {
 	return directory, nil
 }
 
+// ReusableArchive adopts an exact immutable archive from the current store or
+// from the pre-namespace download layout without copying its potentially huge
+// contents. The legacy path is linked into the managed archive directory so
+// subsequent jobs use the normal cache lifecycle.
+func (s *Store) ReusableArchive(caseID, resultPath string, sourceSize int64) (string, bool, error) {
+	if sourceSize <= 0 {
+		return "", false, nil
+	}
+	name := filepath.Base(resultPath)
+	if name == "." || name == "" || name == ".." {
+		return "", false, errors.New("invalid time-series archive path")
+	}
+	targetDirectory, err := s.ArchiveDirectory(SourceKey(caseID, resultPath, sourceSize))
+	if err != nil {
+		return "", false, err
+	}
+	target := filepath.Join(targetDirectory, name)
+	if exactRegularFile(target, sourceSize) {
+		return target, true, nil
+	}
+
+	s.mu.Lock()
+	jobIDs := make([]string, 0)
+	for _, job := range s.jobs {
+		if job.CaseID == caseID && job.ResultPath == resultPath && job.SourceSize == sourceSize && validJobID.MatchString(job.ID) {
+			jobIDs = append(jobIDs, job.ID)
+		}
+	}
+	s.mu.Unlock()
+	sort.Strings(jobIDs)
+	legacyDownloads := filepath.Join(filepath.Dir(s.root), "downloads")
+	for _, jobID := range jobIDs {
+		candidate := filepath.Join(legacyDownloads, jobID, name)
+		if !exactRegularFile(candidate, sourceSize) {
+			continue
+		}
+		if err := os.Link(candidate, target); err != nil && !errors.Is(err, os.ErrExist) {
+			// A cross-device or read-only legacy cache is still safe to consume in place.
+			return candidate, true, nil
+		}
+		if exactRegularFile(target, sourceSize) {
+			_ = os.Chmod(target, 0o600)
+			return target, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func exactRegularFile(path string, expectedSize int64) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() == expectedSize
+}
+
 func (s *Store) RecoverableJobs() []Job {
 	s.mu.Lock()
 	defer s.mu.Unlock()

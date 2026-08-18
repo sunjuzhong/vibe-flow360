@@ -158,6 +158,32 @@ exit 2
 	}
 }
 
+func TestDownloadCaseResultToRemovesFailedTransferTemporaryFiles(t *testing.T) {
+	directory := t.TempDir()
+	binaryPath := filepath.Join(directory, "fake-flow360")
+	script := `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then shift; output="$1"; fi
+  shift
+done
+printf 'partial' > "$output.transfer"
+echo 'OSError: [Errno 28] No space left on device' >&2
+exit 1
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(directory, "results")
+	_, err := (&Client{Binary: binaryPath}).DownloadCaseResultToExpected(context.Background(), "case-1", "results/slices.tar.gz", outputDir, 100, 1<<20)
+	if err == nil {
+		t.Fatal("failed transfer unexpectedly succeeded")
+	}
+	if matches, globErr := filepath.Glob(filepath.Join(outputDir, "slices.tar.gz.*")); globErr != nil || len(matches) != 0 {
+		t.Fatalf("failed transfer temporary files remain: %v %v", matches, globErr)
+	}
+}
+
 func TestResolveFlow360BinaryPrefersExplicitConfiguration(t *testing.T) {
 	t.Setenv("VIBESIM_FLOW360_BINARY", "/opt/flow360/bin/flow360")
 	t.Setenv("VIBESIM_FLOW360_PYTHON", "")

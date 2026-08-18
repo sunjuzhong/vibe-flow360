@@ -799,6 +799,9 @@ func (c *Client) DownloadCaseResultToExpected(ctx context.Context, resourceID, r
 		}
 	}
 	close(monitorDone)
+	if runErr != nil {
+		cleanupDownloadTemporaryFiles(outputPath)
+	}
 	if exceeded.Load() {
 		_ = os.Remove(outputPath)
 		return "", fmt.Errorf("result file exceeds %d byte analysis limit", maxSize)
@@ -818,6 +821,24 @@ func (c *Client) DownloadCaseResultToExpected(ctx context.Context, resourceID, r
 		return "", err
 	}
 	return outputPath, nil
+}
+
+func cleanupDownloadTemporaryFiles(outputPath string) {
+	directory := filepath.Dir(outputPath)
+	prefix := filepath.Base(outputPath) + "."
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		path := filepath.Join(directory, entry.Name())
+		if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() {
+			_ = os.Remove(path)
+		}
+	}
 }
 
 func reusableDownloadedResult(path string, expectedSize int64) bool {

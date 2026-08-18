@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -137,7 +139,8 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		return
 	}
 
-	downloadDir, err := s.slicePlayerJobs.ArchiveDirectory(sliceplayer.SourceKey(caseID, resultPath, s.slicePlayerSourceSize(jobID)))
+	sourceSize := s.slicePlayerSourceSize(jobID)
+	downloadDir, err := s.slicePlayerJobs.ArchiveDirectory(sliceplayer.SourceKey(caseID, resultPath, sourceSize))
 	if err != nil {
 		_, _ = s.slicePlayerJobs.Fail(jobID, err)
 		return
@@ -150,12 +153,22 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		s.unregisterSlicePlayerCancel(jobID)
 		cancel()
 	}()
-	archivePath, err := s.flow360.DownloadCaseResultToExpected(ctx, caseID, resultPath, downloadDir, s.slicePlayerSourceSize(jobID), slicePlayerMaxArchiveBytes())
+	archivePath, archiveReused, err := s.slicePlayerJobs.ReusableArchive(caseID, resultPath, sourceSize)
+	if err == nil && !archiveReused {
+		if available, spaceErr := availableDiskBytes(downloadDir); spaceErr == nil {
+			if capacityErr := slicePlayerDownloadCapacityError(sourceSize, available); capacityErr != nil {
+				err = capacityErr
+			}
+		}
+	}
+	if err == nil && !archiveReused {
+		archivePath, err = s.flow360.DownloadCaseResultToExpected(ctx, caseID, resultPath, downloadDir, sourceSize, slicePlayerMaxArchiveBytes())
+	}
 	if err != nil {
 		if s.slicePlayerJobs.IsCancelled(jobID) {
 			return
 		}
-		_, _ = s.slicePlayerJobs.Fail(jobID, err)
+		_, _ = s.slicePlayerJobs.Fail(jobID, humanizeSlicePlayerDownloadError(err))
 		return
 	}
 	if s.slicePlayerJobs.IsCancelled(jobID) {
@@ -330,4 +343,52 @@ func slicePlayerElapsedMilliseconds(started time.Time) int64 {
 		return 1
 	}
 	return elapsed.Milliseconds()
+}
+
+func availableDiskBytes(path string) (int64, error) {
+	var stats syscall.Statfs_t
+	if err := syscall.Statfs(path, &stats); err != nil {
+		return 0, err
+	}
+	return int64(stats.Bavail) * int64(stats.Bsize), nil
+}
+
+func slicePlayerDownloadCapacityError(sourceSize, available int64) error {
+	if sourceSize <= 0 || available < 0 {
+		return nil
+	}
+	const workingReserve = int64(512 << 20)
+	required := sourceSize + workingReserve
+	if required < sourceSize || available >= required {
+		return nil
+	}
+	return fmt.Errorf("Insufficient local disk space for this time-series archive: %s is available, but the %s download needs at least %s including working space. Free disk space or remove old player caches, then retry", formatSlicePlayerBytes(available), formatSlicePlayerBytes(sourceSize), formatSlicePlayerBytes(required))
+}
+
+func humanizeSlicePlayerDownloadError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	if strings.Contains(strings.ToLower(message), "no space left on device") {
+		return errors.New("Insufficient local disk space while downloading the time-series archive. Free disk space or remove old player caches, then retry")
+	}
+	lines := strings.Split(message, "\n")
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if last == "" {
+		last = "the Flow360 download command failed"
+	}
+	if len(last) > 500 {
+		last = last[:500] + "…"
+	}
+	return fmt.Errorf("Could not download the time-series archive: %s", last)
+}
+
+func formatSlicePlayerBytes(value int64) string {
+	const gib = float64(1 << 30)
+	const mib = float64(1 << 20)
+	if value >= 1<<30 {
+		return strconv.FormatFloat(float64(value)/gib, 'f', 1, 64) + " GB"
+	}
+	return strconv.FormatFloat(float64(value)/mib, 'f', 0, 64) + " MB"
 }

@@ -48,6 +48,64 @@ func TestStorePersistsCompletedIndexAndReusesCache(t *testing.T) {
 	}
 }
 
+func TestStoreAdoptsExactLegacyArchiveWithoutCopying(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "production-default")
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Create("case-legacy", "results/slices.tar.gz", 6, CacheKey("case-legacy", "results/slices.tar.gz", 6))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyDirectory := filepath.Join(filepath.Dir(root), "downloads", job.ID)
+	if err := os.MkdirAll(legacyDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(legacyDirectory, "slices.tar.gz")
+	if err := os.WriteFile(legacyPath, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	adopted, ok, err := store.ReusableArchive(job.CaseID, job.ResultPath, job.SourceSize)
+	if err != nil || !ok {
+		t.Fatalf("legacy archive was not adopted: path=%q ok=%v err=%v", adopted, ok, err)
+	}
+	legacyInfo, err := os.Stat(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adoptedInfo, err := os.Stat(adopted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(legacyInfo, adoptedInfo) {
+		t.Fatal("legacy archive was copied instead of hard-linked")
+	}
+}
+
+func TestStoreRejectsIncompleteLegacyArchive(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "production-default")
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Create("case-legacy", "results/slices.tar.gz", 7, CacheKey("case-legacy", "results/slices.tar.gz", 7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyDirectory := filepath.Join(filepath.Dir(root), "downloads", job.ID)
+	if err := os.MkdirAll(legacyDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDirectory, "slices.tar.gz"), []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if path, ok, err := store.ReusableArchive(job.CaseID, job.ResultPath, job.SourceSize); err != nil || ok || path != "" {
+		t.Fatalf("incomplete legacy archive was reused: path=%q ok=%v err=%v", path, ok, err)
+	}
+}
+
 func TestStorePersistsPreparationMetrics(t *testing.T) {
 	store, err := NewStore(t.TempDir())
 	if err != nil {
