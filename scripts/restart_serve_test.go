@@ -12,8 +12,8 @@ import (
 )
 
 func TestRestartServeReplacesOnlyMatchingAddress(t *testing.T) {
-	if _, err := exec.LookPath("pgrep"); err != nil {
-		t.Skip("pgrep is unavailable")
+	if _, err := exec.LookPath("lsof"); err != nil {
+		t.Skip("lsof is unavailable")
 	}
 	root, err := filepath.Abs("..")
 	if err != nil {
@@ -22,10 +22,7 @@ func TestRestartServeReplacesOnlyMatchingAddress(t *testing.T) {
 	script := filepath.Join(root, "scripts", "restart-serve.sh")
 	temp := t.TempDir()
 	binary := filepath.Join(temp, "vibe-flow360")
-	content := "#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n"
-	if err := os.WriteFile(binary, []byte(content), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	buildListenerBinary(t, temp, binary)
 	envFile := filepath.Join(temp, ".env")
 	if err := os.WriteFile(envFile, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -48,7 +45,8 @@ func TestRestartServeReplacesOnlyMatchingAddress(t *testing.T) {
 			_ = first.Process.Kill()
 		}
 	})
-	time.Sleep(100 * time.Millisecond)
+	waitForListener(t, ":19293")
+	waitForListener(t, ":19294")
 
 	second := exec.Command("sh", script, binary, envFile, ":19293")
 	var output strings.Builder
@@ -67,8 +65,45 @@ func TestRestartServeReplacesOnlyMatchingAddress(t *testing.T) {
 	if !processAlive(second) {
 		t.Fatalf("replacement service is not running; output: %s", output.String())
 	}
+	waitForListener(t, ":19293")
 	if !processAlive(other) {
 		t.Fatal("service on another address was stopped")
+	}
+}
+
+func TestRestartServeRefusesToKillUnrelatedListener(t *testing.T) {
+	if _, err := exec.LookPath("lsof"); err != nil {
+		t.Skip("lsof is unavailable")
+	}
+	root, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := t.TempDir()
+	vibeBinary := filepath.Join(temp, "vibe-flow360")
+	otherBinary := filepath.Join(temp, "other-server")
+	buildListenerBinary(t, temp, vibeBinary)
+	if err := os.Link(vibeBinary, otherBinary); err != nil {
+		t.Fatal(err)
+	}
+
+	other := exec.Command(otherBinary, "serve", "--addr", ":19295")
+	if err := other.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopProcess(other) })
+	waitForListener(t, ":19295")
+
+	command := exec.Command("sh", filepath.Join(root, "scripts", "restart-serve.sh"), vibeBinary, filepath.Join(temp, ".env"), ":19295")
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("restart unexpectedly replaced an unrelated listener: %s", output)
+	}
+	if !strings.Contains(string(output), "is owned by other-server") {
+		t.Fatalf("unexpected error: %s", output)
+	}
+	if !processAlive(other) {
+		t.Fatal("unrelated listener was stopped")
 	}
 }
 
@@ -95,6 +130,60 @@ func processAlive(command *exec.Cmd) bool {
 		return false
 	}
 	return command.Process.Signal(syscall.Signal(0)) == nil
+}
+
+func buildListenerBinary(t *testing.T, temp, output string) {
+	t.Helper()
+	source := filepath.Join(temp, "listener.go")
+	content := `package main
+
+import (
+	"net"
+	"os"
+)
+
+func main() {
+	address := ":9292"
+	for i := 1; i+1 < len(os.Args); i++ {
+		if os.Args[i] == "--addr" {
+			address = os.Args[i+1]
+		}
+	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		panic(err)
+	}
+	defer listener.Close()
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		connection.Close()
+	}
+}
+`
+	if err := os.WriteFile(source, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "build", "-o", output, source)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build listener helper: %v\n%s", err, output)
+	}
+}
+
+func waitForListener(t *testing.T, address string) {
+	t.Helper()
+	port := strings.TrimPrefix(address, ":")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		command := exec.Command("lsof", "-nP", "-tiTCP:"+port, "-sTCP:LISTEN")
+		if err := command.Run(); err == nil {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("listener on %s did not start", address)
 }
 
 func stopProcess(command *exec.Cmd) {
