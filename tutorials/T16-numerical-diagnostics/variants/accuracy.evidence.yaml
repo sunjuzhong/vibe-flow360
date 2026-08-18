@@ -1,0 +1,7 @@
+schema_version: 1
+criteria:
+  - {id: controlled-stage, category: provenance, description: Restore second-order upwind reconstruction and nominal CFL after bounded recovery., artifact: variants/accuracy.patch.json, required: true, check: {method: present, metric: params.second-order}}
+  - {id: stable-loads, category: convergence, description: Cp CL and CD remain stable and mesh credible after second order is restored., artifact: second-order load review, required: true, check: {method: manual, metric: convergence.second-order-loads}}
+limitations:
+  - Return to recovery and inspect the first failing location rather than adding arbitrary damping.
+  - Second-order stability does not replace mesh sensitivity or reference validation.

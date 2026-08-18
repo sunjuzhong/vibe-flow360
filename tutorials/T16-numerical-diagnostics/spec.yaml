@@ -1,0 +1,18 @@
+root_item_type: Geometry
+geometry_unit: m
+project_name: Tutorial T16 - numerical diagnostics
+condition:
+  mach: 0.30
+  alpha_deg: 12
+  reference_chord_m: 1.0
+  reference_area_m2: 0.25
+stages:
+  recovery: Roe, first order, full dissipation, CFL multiplier 0.25, standard linear solver
+  accuracy: Roe, second-order upwind, full dissipation, CFL multiplier 1.0, standard linear solver
+  krylov_slau2: SLAU2 interior flux with Roe Jacobian, second order, Krylov solver and line search
+required_evidence:
+  - nonlinear and linear residual histories
+  - CFL and accepted-step behavior
+  - CL and CD stability
+  - minimum and maximum state variables plus maximum-residual location
+  - Cp, Cf, yPlus, Mach, pressure, and wake structure

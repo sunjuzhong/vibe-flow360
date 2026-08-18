@@ -277,10 +277,26 @@ mappings:
     selector:
       owners: [DetachedEddySimulation, TransitionModelSolver]
   - tutorial: T16
-    section: diagnostics
-    status: planned
+    section: recovery
+    status: verified
+    artifact: tutorials/T16-numerical-diagnostics/simulation.json
+    override: true
     selector:
-      owners: [KrylovLinearSolver, LinearSolver, LineSearch, NavierStokesSolver, RoeFlux, SLAU2Flux]
+      feature_pattern: '^schema:(type:(NavierStokesSolver|RoeFlux|LinearSolver)|enum:NavierStokesSolver\.type_name|field:NavierStokesSolver\.(CFL_multiplier|absolute_tolerance|equation_evaluation_frequency|limit_pressure_density|limit_velocity|linear_solver|max_force_jac_update_physical_steps|relative_tolerance|riemann_solver|type_name|update_jacobian_frequency)|field:RoeFlux\..*|field:LinearSolver\.(absolute_tolerance|max_iterations|type_name)|variant:NavierStokesSolver\.(linear_solver=LinearSolver|riemann_solver=RoeFlux))$'
+  - tutorial: T16
+    section: accuracy
+    status: verified
+    artifact: tutorials/T16-numerical-diagnostics/variants/accuracy.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(enum:NavierStokesSolver\.order_of_accuracy|field:NavierStokesSolver\.(kappa_MUSCL|order_of_accuracy)|field:LinearSolver\.relative_tolerance)$'
+  - tutorial: T16
+    section: krylov
+    status: verified
+    artifact: tutorials/T16-numerical-diagnostics/variants/krylov-slau2.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:(SLAU2Flux|KrylovLinearSolver|LineSearch)|enum:SLAU2Flux\.jacobian|field:(SLAU2Flux|KrylovLinearSolver|LineSearch)\..*|field:NavierStokesSolver\.line_search|variant:NavierStokesSolver\.(linear_solver=KrylovLinearSolver|riemann_solver=SLAU2Flux))$'
   - tutorial: T17
     section: variants
     status: planned

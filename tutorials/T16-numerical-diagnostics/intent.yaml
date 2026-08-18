@@ -1,0 +1,14 @@
+decision: Obtain stable, mesh-credible vane loads without hiding a physical or discretization problem behind numerical damping.
+scenario: A finite-span loaded vane at Mach 0.30 and 12 degrees shows a difficult steady convergence history.
+known_inputs:
+  geometry: Bundled analytic loaded-vane CSM
+  operating_condition: Mach 0.30, alpha 12 deg
+  solver: Steady compressible RANS with k-omega SST
+unknowns:
+  - Whether instability begins in nonlinear, linear, or local-state evidence
+  - Whether second-order accuracy can be restored without changing the engineering conclusion
+  - Whether a steady Krylov/SLAU2 branch improves work per residual reduction
+acceptance_basis:
+  - Residual, linear-solver, CFL, force, and min/max-state histories are jointly reviewed
+  - Final reported loads use a stable second-order configuration
+  - Numerical branches do not replace mesh, boundary-condition, or physical-model checks
