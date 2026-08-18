@@ -1,0 +1,4 @@
+# 50 mm diameter, 200 mm span cylindrical probe in a hot exhaust crossflow.
+cylinder 0 -0.1 0 0 0.1 0 0.025
+attribute groupName $probe
+end

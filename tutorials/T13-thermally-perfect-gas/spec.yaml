@@ -1,0 +1,22 @@
+schema_version: 1
+scenario: hot-turbine-exhaust-probe
+root_item_type: Geometry
+fidelity: tutorial
+values:
+  gas_temperature: {value: 1800, unit: K, provenance: provided}
+  static_pressure: {value: 101325, unit: Pa, provenance: derived from rho R T}
+  gas_density: {value: 0.19610206574, unit: kg/m^3, provenance: derived}
+  velocity: {value: 900, unit: m/s, provenance: provided}
+  probe_diameter: {value: 0.05, unit: m, provenance: provided}
+  wall_temperature: {value: 600, unit: K, provenance: provided}
+  sutherland_viscosity_1800K: {value: 5.8280318e-5, unit: Pa*s, provenance: derived}
+  reynolds_number: {value: 151416, unit: dimensionless, provenance: derived}
+  dynamic_pressure: {value: 79421, unit: Pa, provenance: derived}
+  constant_gamma: {value: 1.4, unit: dimensionless, provenance: baseline model}
+  nasa9_gamma_1800K: {value: 1.3003675, unit: dimensionless, provenance: derived}
+  constant_gamma_mach: {value: 1.05818, unit: dimensionless, provenance: derived}
+  nasa9_mach: {value: 1.09797, unit: dimensionless, provenance: derived}
+review_required:
+  - Confirm both NASA-9 species cover 1800 K and use identical 200-1000 K and 1000-6000 K ranges.
+  - Confirm N2 and O2 mass fractions sum to one and remain fixed throughout the Case.
+  - Compare shock, pressure, and heat flux at identical mesh, viscosity, velocity, density, and wall temperature.

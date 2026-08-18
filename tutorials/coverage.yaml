@@ -220,6 +220,20 @@ mappings:
     selector:
       owners: [Gravity, LiquidOperatingCondition, Water]
   - tutorial: T13
+    section: gas-material
+    status: verified
+    artifact: tutorials/T13-thermally-perfect-gas/simulation.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(ThermallyPerfectGas|Sutherland)$'
+  - tutorial: T13
+    section: frozen-mixture
+    status: verified
+    artifact: tutorials/T13-thermally-perfect-gas/variants/nasa9-mixture.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:type:(FrozenSpecies|NASA9CoefficientSet|NASA9Coefficients)$'
+  - tutorial: T13
     section: baseline
     status: planned
     selector:

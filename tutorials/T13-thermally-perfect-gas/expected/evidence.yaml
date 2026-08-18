@@ -1,0 +1,30 @@
+schema_version: 1
+criteria:
+  - id: pinned-valid
+    category: provenance
+    description: Both parameter sets pass Geometry-to-Case validation with Flow360 25.10.3.
+    artifact: simulation.json and variants/nasa9-mixture.patch.json
+    required: true
+    check: {method: present, metric: flow360.validation.case}
+  - id: controlled-pair
+    category: provenance
+    description: Only the operating-condition material thermodynamics change intentionally.
+    artifact: semantic parameter diff
+    required: true
+    check: {method: present, metric: params.controlled-diff}
+  - id: shock
+    category: field
+    description: Shock position and strength are compared in the identical probe-center plane.
+    artifact: paired Mach and pressure fields
+    required: true
+    check: {method: manual, metric: field.shock-comparison}
+  - id: aerothermal
+    category: force
+    description: Surface pressure, drag, heat flux, and wall resolution are reported together.
+    artifact: paired probe surface outputs
+    required: true
+    check: {method: manual, metric: surface.aerothermal-comparison}
+limitations:
+  - FrozenSpecies defines a fixed mixture; the solver does not transport N2 or O2 mass fractions.
+  - The model is non-reacting and does not predict dissociation, combustion, emissions, or finite-rate chemistry.
+  - The Web action creates configured Drafts but does not submit paid computation.

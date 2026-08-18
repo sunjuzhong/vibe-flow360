@@ -52,6 +52,7 @@ tutorials-test:
 	python3 tutorials/T09-nested-rotation/build_simulation.py --check
 	python3 tutorials/T10-snappy-surface-meshing/build_simulation.py --check
 	python3 tutorials/T12-liquid-gravity/build_simulation.py --check
+	python3 tutorials/T13-thermally-perfect-gas/build_simulation.py --check
 	$(MAKE) tutorials-validate
 
 clean:
