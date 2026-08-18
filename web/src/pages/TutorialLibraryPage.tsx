@@ -30,7 +30,7 @@ export default function TutorialLibraryPage() {
 
         <section className="tutorial-catalog-heading">
           <div><BookOpen size={18} /><div><h2>Golden path tutorials</h2><p>Each tutorial supplies geometry, validated parameters, and a controlled variant.</p></div></div>
-          <span>13 available</span>
+          <span>14 available</span>
         </section>
 
         <section className="tutorial-card-grid">
@@ -113,6 +113,10 @@ export default function TutorialLibraryPage() {
           <Link className="tutorial-card" to="/tutorials/T14">
             <div className="tutorial-card-visual mesh-card-visual"><Waves size={52} strokeWidth={1.1}/><span className="tutorial-id">T14</span><span className="tutorial-level">TURBULENCE MODELLING</span></div>
             <div className="tutorial-card-content"><p className="eyebrow">RANS MODEL SENSITIVITY</p><h2>Compare SA and k-omega SST on a separated wake</h2><p>Relate closure variables to freestream turbulence inputs, then compare separation, base pressure, drag, wall treatment, mesh, convergence, and reference evidence.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 20–25 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
+          </Link>
+          <Link className="tutorial-card" to="/tutorials/T15">
+            <div className="tutorial-card-visual mesh-card-visual"><Waves size={52} strokeWidth={1.1}/><span className="tutorial-id">T15</span><span className="tutorial-level">MODEL UPGRADE</span></div>
+            <div className="tutorial-card-content"><p className="eyebrow">TRANSITION OR DDES</p><h2>Choose the missing physics near stall</h2><p>Distinguish transition-onset uncertainty from unsteady separation, then audit the AFT or DDES mesh, time, statistics, and validation evidence.</p><div className="tutorial-card-meta"><span><Clock3 size={13}/> 25–30 min</span><span><CheckCircle2 size={13}/> Browser guided</span><span>Flow360 25.10</span></div><span className="tutorial-start">Start tutorial <ArrowRight size={15}/></span></div>
           </Link>
         </section>
       </main>

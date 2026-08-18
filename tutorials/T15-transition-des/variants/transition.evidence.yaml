@@ -1,0 +1,8 @@
+schema_version: 1
+criteria:
+  - {id: transition-solver, category: provenance, description: Fluid transition_model_solver changes from None to AmplificationFactorTransport., artifact: variants/transition.patch.json, required: true, check: {method: present, metric: transition.solver}}
+  - {id: facility-input, category: provenance, description: The 0.10 percent facility turbulence intensity is converted to one N_crit value and both are not specified simultaneously., artifact: variants/transition.patch.json, required: true, check: {method: manual, metric: transition.facility-input}}
+  - {id: transition-output, category: field, description: solutionTransition is added to the shared separation Slice outputs., artifact: variants/transition.patch.json, required: true, check: {method: present, metric: transition.output}}
+limitations:
+  - AFT transition predictions require a defensible freestream disturbance environment.
+  - Surface contamination or an intentional trip must be represented separately when relevant.

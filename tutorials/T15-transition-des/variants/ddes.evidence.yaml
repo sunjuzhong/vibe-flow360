@@ -1,0 +1,8 @@
+schema_version: 1
+criteria:
+  - {id: hybrid-model, category: provenance, description: kOmegaSST adds DDES shielding and shearLayerAdapted LES grid size., artifact: variants/ddes.patch.json, required: true, check: {method: present, metric: ddes.hybrid-model}}
+  - {id: time-method, category: provenance, description: Time advancement changes from steady to 5000 steps at 0.0002 s and 30 pseudo steps., artifact: variants/ddes.patch.json, required: true, check: {method: present, metric: ddes.time-method}}
+  - {id: sampling, category: convergence, description: Mean and fluctuating loads are reported only after transient removal and sampling-window convergence., artifact: unsteady convergence report, required: true, check: {method: manual, metric: ddes.statistics}}
+limitations:
+  - DDES does not compensate for inadequate spanwise or separated-shear-layer resolution.
+  - One time history without time-step and window sensitivity is not a converged statistic.

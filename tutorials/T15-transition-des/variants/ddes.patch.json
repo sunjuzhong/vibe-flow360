@@ -1,0 +1,246 @@
+{
+  "models": [
+    {
+      "initial_condition": {
+        "p": "p",
+        "rho": "rho",
+        "type_name": "NavierStokesInitialCondition",
+        "u": "u",
+        "v": "v",
+        "w": "w"
+      },
+      "interface_interpolation_tolerance": 0.2,
+      "material": {
+        "dynamic_viscosity": {
+          "effective_temperature": {
+            "units": "K",
+            "value": 110.4
+          },
+          "reference_temperature": {
+            "units": "K",
+            "value": 273.15
+          },
+          "reference_viscosity": {
+            "units": "Pa*s",
+            "value": 1.716e-05
+          }
+        },
+        "name": "air",
+        "prandtl_number": 0.72,
+        "thermally_perfect_gas": {
+          "species": [
+            {
+              "mass_fraction": 1.0,
+              "name": "Air",
+              "nasa_9_coefficients": {
+                "temperature_ranges": [
+                  {
+                    "coefficients": [
+                      0.0,
+                      0.0,
+                      3.5,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "temperature_range_max": {
+                      "units": "K",
+                      "value": 6000.0
+                    },
+                    "temperature_range_min": {
+                      "units": "K",
+                      "value": 200.0
+                    },
+                    "type_name": "NASA9CoefficientSet"
+                  }
+                ],
+                "type_name": "NASA9Coefficients"
+              },
+              "type_name": "FrozenSpecies"
+            }
+          ],
+          "type_name": "ThermallyPerfectGas"
+        },
+        "turbulent_prandtl_number": 0.9,
+        "type": "air"
+      },
+      "navier_stokes_solver": {
+        "CFL_multiplier": 1.0,
+        "absolute_tolerance": 1e-10,
+        "equation_evaluation_frequency": 1,
+        "kappa_MUSCL": -1.0,
+        "limit_pressure_density": false,
+        "limit_velocity": false,
+        "linear_solver": {
+          "max_iterations": 30,
+          "type_name": "LinearSolver"
+        },
+        "max_force_jac_update_physical_steps": 0,
+        "order_of_accuracy": 2,
+        "relative_tolerance": 0.0,
+        "riemann_solver": {
+          "low_mach_preconditioner": false,
+          "numerical_dissipation_factor": 1.0,
+          "type_name": "Roe"
+        },
+        "type_name": "Compressible",
+        "update_jacobian_frequency": 4
+      },
+      "private_attribute_id": "15000000-0000-4000-8000-000000001511",
+      "transition_model_solver": {
+        "type_name": "None"
+      },
+      "turbulence_model_solver": {
+        "CFL_multiplier": 2.0,
+        "absolute_tolerance": 1e-08,
+        "equation_evaluation_frequency": 4,
+        "hybrid_model": {
+          "grid_size_for_LES": "shearLayerAdapted",
+          "shielding_function": "DDES"
+        },
+        "linear_solver": {
+          "max_iterations": 20,
+          "type_name": "LinearSolver"
+        },
+        "max_force_jac_update_physical_steps": 0,
+        "modeling_constants": {
+          "C_DES1": 0.78,
+          "C_DES2": 0.61,
+          "C_alpha1": 0.31,
+          "C_beta1": 0.075,
+          "C_beta2": 0.0828,
+          "C_beta_star": 0.09,
+          "C_d1": 20.0,
+          "C_d2": 3.0,
+          "C_sigma_k1": 0.85,
+          "C_sigma_k2": 1.0,
+          "C_sigma_omega1": 0.5,
+          "C_sigma_omega2": 0.856,
+          "type_name": "kOmegaSSTConsts"
+        },
+        "order_of_accuracy": 2,
+        "quadratic_constitutive_relation": false,
+        "reconstruction_gradient_limiter": 1.0,
+        "relative_tolerance": 0.0,
+        "rotation_correction": false,
+        "type_name": "kOmegaSST",
+        "update_jacobian_frequency": 4
+      },
+      "type": "Fluid"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "center": [
+              0,
+              0,
+              0
+            ],
+            "max_radius": 100.0,
+            "name": "farfield",
+            "private_attribute_entity_type_name": "GhostSphere",
+            "private_attribute_id": "farfield"
+          }
+        ]
+      },
+      "name": "Low-turbulence approach flow",
+      "private_attribute_id": "15000000-0000-4000-8000-000000001512",
+      "turbulence_quantities": {
+        "turbulent_intensity": 0.001,
+        "turbulent_length_scale": {
+          "units": "m",
+          "value": 0.01
+        },
+        "type_name": "TurbulentIntensityAndTurbulentLengthScale"
+      },
+      "type": "Freestream"
+    },
+    {
+      "entities": {
+        "stored_entities": [
+          {
+            "name": "mainWing",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "15000000-0000-4000-8000-000000001501",
+            "private_attribute_sub_components": [
+              "mainWing_face0001",
+              "mainWing_face0002",
+              "mainWing_face0003",
+              "mainWing_face0004",
+              "mainWing_face0005",
+              "mainWing_face0006",
+              "mainWing_face0007",
+              "mainWing_face0008"
+            ],
+            "private_attribute_tag_key": "groupName"
+          },
+          {
+            "name": "slat",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "15000000-0000-4000-8000-000000001502",
+            "private_attribute_sub_components": [
+              "slat_face0001",
+              "slat_face0002",
+              "slat_face0003",
+              "slat_face0004",
+              "slat_face0005",
+              "slat_face0006",
+              "slat_face0007"
+            ],
+            "private_attribute_tag_key": "groupName"
+          },
+          {
+            "name": "flap",
+            "private_attribute_entity_type_name": "Surface",
+            "private_attribute_id": "15000000-0000-4000-8000-000000001503",
+            "private_attribute_sub_components": [
+              "flap_face0001",
+              "flap_face0002",
+              "flap_face0003",
+              "flap_face0004",
+              "flap_face0005",
+              "flap_face0006",
+              "flap_face0007"
+            ],
+            "private_attribute_tag_key": "groupName"
+          }
+        ]
+      },
+      "heat_spec": {
+        "type_name": "HeatFlux",
+        "value": {
+          "units": "W/m**2",
+          "value": 0.0
+        }
+      },
+      "name": "High-lift element walls",
+      "private_attribute_id": "15000000-0000-4000-8000-000000001513",
+      "roughness_height": {
+        "units": "m",
+        "value": 0.0
+      },
+      "type": "Wall"
+    }
+  ],
+  "time_stepping": {
+    "CFL": {
+      "convergence_limiting_factor": 1.0,
+      "max": 1000000.0,
+      "max_relative_change": 50.0
+    },
+    "max_pseudo_steps": 30,
+    "max_steps": null,
+    "order_of_accuracy": 2,
+    "step_size": {
+      "type_name": "number",
+      "units": "s",
+      "value": 0.0002
+    },
+    "steps": 5000,
+    "type_name": "Unsteady"
+  }
+}

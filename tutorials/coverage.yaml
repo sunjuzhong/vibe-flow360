@@ -258,6 +258,20 @@ mappings:
     selector:
       owner_pattern: '^(Fluid|KOmegaSST|KOmegaSSTModelConstants|NoneSolver|SpalartAllmaras|SpalartAllmarasModelConstants|TurbulenceModelControls|Turbulent.*|SpecificDissipationRate.*|ModifiedTurbulentViscosity.*)$'
   - tutorial: T15
+    section: transition
+    status: verified
+    artifact: tutorials/T15-transition-des/variants/transition.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:TransitionModelSolver|field:TransitionModelSolver\..*|enum:TransitionModelSolver\.order_of_accuracy|variant:Fluid\.transition_model_solver=TransitionModelSolver)$'
+  - tutorial: T15
+    section: ddes
+    status: verified
+    artifact: tutorials/T15-transition-des/variants/ddes.patch.json
+    override: true
+    selector:
+      feature_pattern: '^schema:(type:DetachedEddySimulation|field:DetachedEddySimulation\..*|enum:DetachedEddySimulation\..*)$'
+  - tutorial: T15
     section: variants
     status: planned
     selector:

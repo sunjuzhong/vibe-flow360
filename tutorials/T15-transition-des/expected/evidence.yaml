@@ -1,0 +1,12 @@
+schema_version: 1
+criteria:
+  - {id: decision-branch, category: provenance, description: The report states whether transition onset or unsteady separation is the missing physics., artifact: model-upgrade decision record, required: true, check: {method: present, metric: decision.missing-physics}}
+  - {id: shared-basis, category: provenance, description: Geometry state references wall resolution separated-zone mesh and observables are traceable across all Drafts., artifact: semantic parameter comparison, required: true, check: {method: present, metric: params.shared-basis}}
+  - {id: transition, category: field, description: Transition onset uses solutionTransition together with Cf Cp and facility turbulence evidence., artifact: transition surface and Slice evidence, required: true, check: {method: manual, metric: field.transition-onset}}
+  - {id: des-grid, category: mesh, description: DDES demonstrates wall shielding and three-dimensional LES-region resolution rather than relying on nominal cell count., artifact: DDES grid assessment, required: true, check: {method: manual, metric: mesh.ddes-resolution}}
+  - {id: unsteady, category: convergence, description: DDES removes the initial transient and demonstrates time-step and averaging-window stability for CL and CD., artifact: unsteady convergence report, required: true, check: {method: manual, metric: convergence.statistics}}
+  - {id: reference, category: report, description: Pressure transition or force observables are compared with relevant wind-tunnel or higher-fidelity reference data., artifact: validation comparison, required: true, check: {method: manual, metric: report.reference-evidence}}
+limitations:
+  - Transition modelling and DDES answer different physical questions and are not interchangeable fidelity switches.
+  - The supplied spanwise and temporal settings are tutorial starting points requiring sensitivity studies.
+  - The Web action creates configured Drafts but does not submit paid computation.

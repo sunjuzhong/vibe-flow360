@@ -1,0 +1,16 @@
+schema_version: 1
+engineering_question: Which modelling upgrade is justified when a low-turbulence high-lift wing approaches stall—transition modelling, unsteady DDES, or neither?
+decision: Choose the least expensive method that resolves the missing physics, and reject a transition or DDES result when its facility, mesh, time-step, or statistical evidence gate is unmet.
+inputs:
+  geometry: assets/high-lift-wing.csm
+  length_unit: m
+  reference_chord: 1.0 m
+  span: 0.30 m
+  velocity: 50 m/s
+  incidence: 16 deg
+deliverables:
+  - A fully turbulent SST reference Draft
+  - A steady SST plus amplification-factor transition Draft
+  - An unsteady SST-DDES Draft
+  - Separate transition-onset and unsteady-statistics evidence rubrics
+  - One Project with three configured Case Drafts and no cloud computation

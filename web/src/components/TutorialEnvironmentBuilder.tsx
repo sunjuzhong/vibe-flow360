@@ -36,11 +36,12 @@ export function tutorialEnvironmentPath(
 }
 
 const stageOrder: TutorialEnvironmentStage[] = ['staging', 'creating-project', 'creating-drafts', 'ready']
-function stageCopy(draftKind: string, draftCount: 1 | 2): Record<TutorialEnvironmentStage, string> {
+function countWord(draftCount: 1 | 2 | 3): string { return draftCount === 1 ? 'one' : draftCount === 2 ? 'two' : 'three' }
+function stageCopy(draftKind: string, draftCount: 1 | 2 | 3): Record<TutorialEnvironmentStage, string> {
   return {
     staging: 'Stage bundled geometry',
     'creating-project': 'Create and process Geometry',
-    'creating-drafts': `Configure ${draftCount === 1 ? 'one' : 'two'} ${draftKind} Draft${draftCount === 1 ? '' : 's'}`,
+    'creating-drafts': `Configure ${countWord(draftCount)} ${draftKind} Draft${draftCount === 1 ? '' : 's'}`,
     ready: 'Ready for review',
   }
 }
@@ -61,8 +62,9 @@ export type TutorialEnvironmentBuilderProps = {
   draftKind?: string
   baselineValue?: string
   variantValue?: string
+  thirdValue?: string
   successDescription?: string
-  draftCount?: 1 | 2
+  draftCount?: 1 | 2 | 3
   createEnvironment?: EnvironmentCreator
 }
 
@@ -76,6 +78,7 @@ export default function TutorialEnvironmentBuilder({
   draftKind = 'Case',
   baselineValue = 'α = 0°',
   variantValue = 'α = 5°',
+  thirdValue = '',
   successDescription = 'The Geometry is processed and both Case Drafts have their parameters configured. No mesh or Case computation has been submitted.',
   draftCount = 2,
   createEnvironment = createT01Environment,
@@ -105,9 +108,7 @@ export default function TutorialEnvironmentBuilder({
   const currentStage = stage ? stageOrder.indexOf(stage) : -1
   const canCreate = Boolean(status?.available && folderId && projectName.trim() && confirmed && !busy && !result)
   const selectedFolder = useMemo(() => folders.find((folder) => folder.id === folderId), [folders, folderId])
-  const authorizationCopy = draftCount === 1
-    ? `I reviewed the destination and authorize creation of this remote Flow360 Project and one configured ${draftKind} Draft. Nothing is submitted until I review and run a Draft.`
-    : `I reviewed the destination and authorize creation of this remote Flow360 Project and two configured ${draftKind} Drafts. Nothing is submitted until I review and run a Draft.`
+  const authorizationCopy = `I reviewed the destination and authorize creation of this remote Flow360 Project and ${countWord(draftCount)} configured ${draftKind} Draft${draftCount === 1 ? '' : 's'}. Nothing is submitted until I review and run a Draft.`
 
   const create = async () => {
     if (!canCreate) return
@@ -129,9 +130,10 @@ export default function TutorialEnvironmentBuilder({
   if (result) {
     return <div className="tutorial-environment-success">
       <div className="environment-success-heading"><CheckCircle2 size={28}/><div><span>EXPERIMENT ENVIRONMENT READY</span><strong>{projectName}</strong><p>{successDescription}</p></div></div>
-      <div className="environment-plan-pair">
+      <div className={`environment-plan-pair ${draftCount === 3 ? 'three' : ''}`}>
         <article><span>BASELINE</span><strong>{baselineValue}</strong><small>Draft parameters synced</small></article>
-        {draftCount === 2 && <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>Draft parameters synced</small></article>}
+        {draftCount >= 2 && <article><span>CONTROLLED VARIANT</span><strong>{variantValue}</strong><small>Draft parameters synced</small></article>}
+        {draftCount === 3 && <article><span>METHOD ESCALATION</span><strong>{thirdValue}</strong><small>Draft parameters synced</small></article>}
       </div>
       <button className="lesson-workspace-button" onClick={() => navigate(tutorialEnvironmentPath(result, tutorialId))}>
         <span>Review configured Drafts</span><Rocket size={17}/>
