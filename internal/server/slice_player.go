@@ -163,16 +163,30 @@ func (s *Server) runSlicePlayerJob(jobID, caseID, resultPath, cacheKey string) {
 		return
 	}
 	lastProgress := -1
-	index, playback, err := sliceplayer.PrepareTarGz(archivePath, assetDirectory, slicePlayerMaxArchiveBytes(), sliceplayer.DefaultLimits, func(percent int, _ int64) bool {
+	partialPublished := false
+	index, playback, err := sliceplayer.PrepareTarGzProgressive(archivePath, assetDirectory, slicePlayerMaxArchiveBytes(), sliceplayer.DefaultLimits, func(percent int, _ int64) bool {
 		if s.slicePlayerJobs.IsCancelled(jobID) {
 			return false
 		}
 		if percent > lastProgress {
 			lastProgress = percent
-			_, _ = s.slicePlayerJobs.Update(jobID, 35+(percent*60/100), "preparing-frames")
+			stage := "preparing-frames"
+			if partialPublished {
+				stage = "preparing-remaining-frames"
+			}
+			_, _ = s.slicePlayerJobs.Update(jobID, 35+(percent*60/100), stage)
 		}
 		return true
-	}, func() bool { return s.slicePlayerJobs.IsCancelled(jobID) })
+	}, func() bool { return s.slicePlayerJobs.IsCancelled(jobID) }, func(partialIndex sliceplayer.Index, partialPlayback sliceplayer.Playback) error {
+		if s.slicePlayerJobs.IsCancelled(jobID) {
+			return sliceplayer.ErrCancelled
+		}
+		if _, publishErr := s.slicePlayerJobs.PublishPartial(jobID, partialIndex, partialPlayback); publishErr != nil {
+			return publishErr
+		}
+		partialPublished = true
+		return nil
+	})
 	if err != nil {
 		if s.slicePlayerJobs.IsCancelled(jobID) {
 			return
@@ -210,7 +224,8 @@ func (s *Server) resumeSlicePlayerJobs() {
 func (s *Server) slicePlayerAsset(c *gin.Context) {
 	caseID := c.Param("resource_id")
 	job, ok := s.slicePlayerJobs.Get(c.Param("job_id"))
-	if !ok || job.CaseID != caseID || job.Status != sliceplayer.JobCompleted {
+	partialReady := job.Report != nil && job.Report.PartialReady && job.Report.Playback != nil && job.Report.Playback.Ready
+	if !ok || job.CaseID != caseID || (job.Status != sliceplayer.JobCompleted && !partialReady) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Slice player asset was not found"})
 		return
 	}

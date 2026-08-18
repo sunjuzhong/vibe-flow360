@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import type { SlicePlayerJob } from '../api/client'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -17,6 +18,19 @@ describe('CaseSlicePlayerPanel', () => {
   it('uses archive-specific player titles', () => {
     expect(caseTimeSeriesPlayerTitle('slices')).toBe('Time-series Slice player')
     expect(caseTimeSeriesPlayerTitle('surfaces')).toBe('Time-series Surface player')
+  })
+
+  it('recognizes a progressive playback report before final indexing completes', () => {
+    const job = {
+      status: 'running',
+      report: {
+        partial_ready: true,
+        playback: { ready: true, frame_count: 1 },
+      },
+    } as SlicePlayerJob
+    expect(slicePlayerPartialPlaybackReady(job)).toBe(true)
+    expect(slicePlayerPartialPlaybackReady({ ...job, status: 'completed' })).toBe(false)
+    expect(stageLabel('preparing-remaining-frames')).toBe('First frames are ready while remaining frames continue preparing')
   })
 
   it('uses the same full-resolution asset during playback and pause', () => {

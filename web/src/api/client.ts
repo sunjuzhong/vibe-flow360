@@ -539,6 +539,7 @@ export type SlicePlayerJob = {
     slices: SlicePlayerSliceSummary[]
     formats: string[]
     index_ready: boolean
+    partial_ready?: boolean
     playback?: {
       ready: boolean
       frame_count: number

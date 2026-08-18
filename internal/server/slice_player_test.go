@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -61,5 +63,37 @@ func TestValidTimeSeriesArchivePath(t *testing.T) {
 		if validTimeSeriesArchivePath(candidate) {
 			t.Fatalf("unsafe or unrelated path %q was accepted", candidate)
 		}
+	}
+}
+
+func TestSlicePlayerServesAssetsFromPartialPlayback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store, err := sliceplayer.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := sliceplayer.CacheKey("case-1", "results/slices.tar.gz", 42)
+	job, err := store.Create("case-1", "results/slices.tar.gz", 42, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets, err := store.AssetDirectory(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assets, "frame.manifest.json"), []byte(`[]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	playback := sliceplayer.Playback{Ready: true, FrameCount: 1, Frames: []sliceplayer.PlaybackFrame{{ManifestPath: "frame.manifest.json"}}}
+	if _, err := store.PublishPartial(job.ID, sliceplayer.Index{Version: sliceplayer.IndexVersion}, playback); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{router: gin.New(), slicePlayerJobs: store}
+	app.router.GET("/api/flow360/resources/Case/:resource_id/slice-player/jobs/:job_id/assets/*asset_path", app.slicePlayerAsset)
+	request := httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-1/slice-player/jobs/"+job.ID+"/assets/frame.manifest.json", nil)
+	recorder := httptest.NewRecorder()
+	app.router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "[]" {
+		t.Fatalf("partial asset was not served: status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
 }

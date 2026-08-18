@@ -26,7 +26,7 @@ function indexedTitle(kind: CaseTimeSeriesArchiveKind) {
   return kind === 'surfaces' ? 'Surface archive indexed' : 'Slice archive indexed'
 }
 
-function stageLabel(stage: string) {
+export function stageLabel(stage: string) {
   switch (stage) {
     case 'queued': return 'Waiting for the preparation worker'
     case 'recovering': return 'Restoring an interrupted preparation'
@@ -34,6 +34,7 @@ function stageLabel(stage: string) {
     case 'scanning-archive': return 'Scanning frames without extracting the full archive'
     case 'converting-frames': return 'Converting VTU pieces into bounded playable frames'
     case 'preparing-frames': return 'Validating the archive and preparing playable frames in one pass'
+    case 'preparing-remaining-frames': return 'First frames are ready while remaining frames continue preparing'
     case 'persisting-frame-index': return 'Persisting the random-access frame index'
     case 'persisting-player-cache': return 'Persisting the playable frame cache'
     case 'restoring-player-cache': return 'Restoring the existing player cache'
@@ -41,6 +42,16 @@ function stageLabel(stage: string) {
     case 'cancelled': return 'Preparation was cancelled'
     default: return stage
   }
+}
+
+export function slicePlayerPartialPlaybackReady(job: SlicePlayerJob | null) {
+  return Boolean(
+    job
+    && job.status !== 'completed'
+    && job.report?.partial_ready
+    && job.report.playback?.ready
+    && job.report.playback.frame_count > 0,
+  )
 }
 
 export type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report']>['playback']>['frames'][number]
@@ -383,6 +394,7 @@ export default function CaseSlicePlayerPanel({
 
   const running = job?.status === 'queued' || job?.status === 'running'
   const completed = job?.status === 'completed' && job.report?.index_ready
+  const partialReady = slicePlayerPartialPlaybackReady(job)
   const playableSlices = job?.report?.slices.filter((slice) => slice.frame_count > 1) ?? []
 
   if (loading) {
@@ -416,6 +428,20 @@ export default function CaseSlicePlayerPanel({
       )}
 
       {(error || job?.error) && <div className="slice-player-error" role="alert"><AlertCircle size={15} />{error || job?.error}</div>}
+
+      {partialReady && job?.report?.playback && (
+        <>
+          <section className="slice-player-ready partial" role="status">
+            <Play size={18} />
+            <span>
+              <strong>{t('First playable frames are ready')}</strong>
+              <small>{t('{count} complete frames can be explored while the rest continue preparing.').replace('{count}', job.report.playback.frame_count.toLocaleString())}</small>
+            </span>
+          </section>
+          <SlicePlayback caseId={caseId} job={job} archiveKind={archiveKind} onFrameChange={onPlaybackFrameChange} />
+          <p className="slice-player-next">{t('Field ranges may expand until preparation is complete; completed frame assets remain immutable.')}</p>
+        </>
+      )}
 
       {completed && job?.report && (
         <>

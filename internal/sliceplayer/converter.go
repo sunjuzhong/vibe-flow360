@@ -70,13 +70,14 @@ type convertedPiece struct {
 }
 
 type frameBuild struct {
-	Key           string
-	AssetKey      string
-	Slice         string
-	Step          *int64
-	Pieces        []convertedPiece
-	PreviewPieces []convertedPiece
-	HasPreview    bool
+	Key            string
+	AssetKey       string
+	Slice          string
+	Step           *int64
+	ExpectedPieces int
+	Pieces         []convertedPiece
+	PreviewPieces  []convertedPiece
+	HasPreview     bool
 }
 
 type pvtuDocument struct {
@@ -91,22 +92,30 @@ type referencedFrame struct {
 	Step  *int64
 }
 
+type PartialPlaybackFunc func(index Index, playback Playback) error
+
 // ConvertTarGz converts VTU pieces sequentially and retains the compatibility
 // API used by focused converter callers.
 func ConvertTarGz(filename, outputDir string, maxOutputBytes int64, cancelled func() bool) (Playback, error) {
 	var index Index
-	return convertTarGz(filename, outputDir, maxOutputBytes, DefaultLimits, nil, cancelled, &index)
+	return convertTarGz(filename, outputDir, maxOutputBytes, DefaultLimits, nil, cancelled, &index, nil)
 }
 
 // PrepareTarGz validates and indexes the archive while converting its VTU
 // frames. The gzip stream is decompressed exactly once.
 func PrepareTarGz(filename, outputDir string, maxOutputBytes int64, limits Limits, progress ProgressFunc, cancelled func() bool) (Index, Playback, error) {
+	return PrepareTarGzProgressive(filename, outputDir, maxOutputBytes, limits, progress, cancelled, nil)
+}
+
+// PrepareTarGzProgressive publishes immutable, complete frame manifests while
+// the remaining archive entries continue converting in the same gzip pass.
+func PrepareTarGzProgressive(filename, outputDir string, maxOutputBytes int64, limits Limits, progress ProgressFunc, cancelled func() bool, publish PartialPlaybackFunc) (Index, Playback, error) {
 	var index Index
-	playback, err := convertTarGz(filename, outputDir, maxOutputBytes, limits, progress, cancelled, &index)
+	playback, err := convertTarGz(filename, outputDir, maxOutputBytes, limits, progress, cancelled, &index, publish)
 	return index, playback, err
 }
 
-func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limits, progress ProgressFunc, cancelled func() bool, index *Index) (Playback, error) {
+func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limits, progress ProgressFunc, cancelled func() bool, index *Index, publish PartialPlaybackFunc) (Playback, error) {
 	limits = normalizeLimits(limits)
 	file, err := os.Open(filename)
 	if err != nil {
@@ -130,10 +139,28 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 	frames := map[string]*frameBuild{}
 	assetKeys := map[string]string{}
 	pieceFrames := map[string]referencedFrame{}
+	expectedFramePieces := map[string]int{}
+	completedFrames := map[string]PlaybackFrame{}
 	var outputBytes int64
 	var playbackTopologyBytes int64
 	var playbackFieldBytes int64
 	topologies := map[string]int64{}
+	publishCompletedFrame := func(frame *frameBuild) error {
+		if publish == nil || frame.ExpectedPieces == 0 || len(frame.Pieces) != frame.ExpectedPieces {
+			return nil
+		}
+		if _, published := completedFrames[frame.Key]; published {
+			return nil
+		}
+		summary, manifestErr := writeFrameAssets(outputDir, frame)
+		if manifestErr != nil {
+			return manifestErr
+		}
+		completedFrames[frame.Key] = summary
+		partialIndex := snapshotIndex(*index)
+		partialPlayback := playbackFromFrameSummaries(completedFrames, frames, outputBytes, playbackTopologyBytes, playbackFieldBytes, len(topologies))
+		return publish(partialIndex, partialPlayback)
+	}
 	reader := tar.NewReader(gz)
 	for {
 		header, nextErr := reader.Next()
@@ -209,6 +236,7 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 				return Playback{}, fmt.Errorf("parse %s: %w", clean, err)
 			}
 			key, step := frameKey(clean)
+			manifestPieces := map[string]struct{}{}
 			for _, piece := range manifest.Pieces {
 				source := strings.ReplaceAll(strings.TrimSpace(piece.Source), "\\", "/")
 				sourceClean := path.Clean(source)
@@ -223,6 +251,20 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 					return Playback{}, fmt.Errorf("VTU piece %q is referenced by multiple PVTU frames", joined)
 				}
 				pieceFrames[joined] = referencedFrame{Key: key, Slice: sliceName, Step: step}
+				manifestPieces[joined] = struct{}{}
+			}
+			if existing, duplicate := expectedFramePieces[key]; duplicate && existing != len(manifestPieces) {
+				return Playback{}, fmt.Errorf("PVTU frame %q declares inconsistent piece counts", key)
+			}
+			expectedFramePieces[key] = len(manifestPieces)
+			if frame := frames[key]; frame != nil {
+				frame.ExpectedPieces = len(manifestPieces)
+				if len(frame.Pieces) > frame.ExpectedPieces {
+					return Playback{}, fmt.Errorf("PVTU frame %q contains more VTU pieces than declared", key)
+				}
+				if err := publishCompletedFrame(frame); err != nil {
+					return Playback{}, err
+				}
 			}
 			if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
 				return Playback{}, err
@@ -250,7 +292,7 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 				return Playback{}, fmt.Errorf("time-series frame names %q and %q map to the same safe asset name", existing, key)
 			}
 			assetKeys[assetKey] = key
-			frame = &frameBuild{Key: key, AssetKey: assetKey, Slice: sliceName, Step: step}
+			frame = &frameBuild{Key: key, AssetKey: assetKey, Slice: sliceName, Step: step, ExpectedPieces: expectedFramePieces[key]}
 			frames[key] = frame
 		}
 		frameDir := filepath.Join(outputDir, frame.AssetKey)
@@ -310,6 +352,12 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 			frame.HasPreview = true
 		}
 		frame.PreviewPieces = append(frame.PreviewPieces, preview)
+		if frame.ExpectedPieces > 0 && len(frame.Pieces) > frame.ExpectedPieces {
+			return Playback{}, fmt.Errorf("PVTU frame %q contains more VTU pieces than declared", key)
+		}
+		if err := publishCompletedFrame(frame); err != nil {
+			return Playback{}, err
+		}
 		if err := reportPreparationProgress(progress, counter.n, info.Size()); err != nil {
 			return Playback{}, err
 		}
@@ -321,8 +369,77 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 	if progress != nil && !progress(100, counter.n) {
 		return Playback{}, ErrCancelled
 	}
-	keys := make([]string, 0, len(frames))
-	for key := range frames {
+	for key, frame := range frames {
+		if frame.ExpectedPieces > 0 && len(frame.Pieces) != frame.ExpectedPieces {
+			return Playback{}, fmt.Errorf("PVTU frame %q is missing VTU pieces: converted %d of %d", key, len(frame.Pieces), frame.ExpectedPieces)
+		}
+		if _, alreadyWritten := completedFrames[key]; alreadyWritten {
+			continue
+		}
+		summary, manifestErr := writeFrameAssets(outputDir, frame)
+		if manifestErr != nil {
+			return Playback{}, manifestErr
+		}
+		completedFrames[key] = summary
+	}
+	playback := playbackFromFrameSummaries(completedFrames, frames, outputBytes, playbackTopologyBytes, playbackFieldBytes, len(topologies))
+	if !playback.Ready {
+		return Playback{}, errors.New("time-series archive contains no convertible VTU surface frames")
+	}
+	return playback, nil
+}
+
+func snapshotIndex(index Index) Index {
+	snapshot := index
+	snapshot.Entries = append([]Entry(nil), index.Entries...)
+	snapshot.Slices, snapshot.Formats = summarize(snapshot.Entries)
+	return snapshot
+}
+
+func writeFrameAssets(outputDir string, frame *frameBuild) (PlaybackFrame, error) {
+	manifest, summary, err := buildFrameManifest(frame)
+	if err != nil {
+		return PlaybackFrame{}, err
+	}
+	manifestName := frame.AssetKey + ".manifest.json"
+	encoded, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return PlaybackFrame{}, fmt.Errorf("encode frame manifest: %w", err)
+	}
+	if err := atomicWrite(filepath.Join(outputDir, manifestName), encoded); err != nil {
+		return PlaybackFrame{}, err
+	}
+	summary.ManifestPath = manifestName
+	if frame.HasPreview {
+		previewManifest, previewSummary, previewErr := buildFrameManifest(&frameBuild{
+			Key: frame.Key, AssetKey: frame.AssetKey, Slice: frame.Slice,
+			Step: frame.Step, Pieces: frame.PreviewPieces,
+		})
+		if previewErr != nil {
+			return PlaybackFrame{}, previewErr
+		}
+		previewName := frame.AssetKey + ".preview.manifest.json"
+		previewEncoded, encodeErr := json.MarshalIndent(previewManifest, "", "  ")
+		if encodeErr != nil {
+			return PlaybackFrame{}, encodeErr
+		}
+		if err := atomicWrite(filepath.Join(outputDir, previewName), previewEncoded); err != nil {
+			return PlaybackFrame{}, err
+		}
+		summary.PreviewManifestPath = previewName
+		summary.PreviewVertices = previewSummary.Vertices
+		summary.PreviewTriangles = previewSummary.Triangles
+	} else {
+		summary.PreviewManifestPath = summary.ManifestPath
+		summary.PreviewVertices = summary.Vertices
+		summary.PreviewTriangles = summary.Triangles
+	}
+	return summary, nil
+}
+
+func playbackFromFrameSummaries(summaries map[string]PlaybackFrame, frames map[string]*frameBuild, cacheBytes, topologyBytes, fieldBytes int64, topologyCount int) Playback {
+	keys := make([]string, 0, len(summaries))
+	for key := range summaries {
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool {
@@ -332,63 +449,31 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 		}
 		return keys[i] < keys[j]
 	})
-	playback := Playback{Fields: []string{}, FieldRanges: map[string][2]float64{}, CacheBytes: outputBytes, TopologyBytes: playbackTopologyBytes, FieldBytes: playbackFieldBytes, TopologyCount: len(topologies)}
+	playback := Playback{
+		Fields: []string{}, FieldRanges: map[string][2]float64{},
+		CacheBytes: cacheBytes, TopologyBytes: topologyBytes,
+		FieldBytes: fieldBytes, TopologyCount: topologyCount,
+	}
 	fieldSet := map[string]struct{}{}
 	for _, key := range keys {
-		frame := frames[key]
-		manifest, summary, manifestErr := buildFrameManifest(frame)
-		if manifestErr != nil {
-			return Playback{}, manifestErr
-		}
-		manifestName := frame.AssetKey + ".manifest.json"
-		encoded, marshalErr := json.MarshalIndent(manifest, "", "  ")
-		if marshalErr != nil {
-			return Playback{}, fmt.Errorf("encode frame manifest: %w", marshalErr)
-		}
-		if err := atomicWrite(filepath.Join(outputDir, manifestName), encoded); err != nil {
-			return Playback{}, err
-		}
-		summary.ManifestPath = manifestName
-		if frame.HasPreview {
-			previewManifest, previewSummary, previewErr := buildFrameManifest(&frameBuild{Key: frame.Key, AssetKey: frame.AssetKey, Slice: frame.Slice, Step: frame.Step, Pieces: frame.PreviewPieces})
-			if previewErr != nil {
-				return Playback{}, previewErr
-			}
-			previewName := frame.AssetKey + ".preview.manifest.json"
-			previewEncoded, encodeErr := json.MarshalIndent(previewManifest, "", "  ")
-			if encodeErr != nil {
-				return Playback{}, encodeErr
-			}
-			if err := atomicWrite(filepath.Join(outputDir, previewName), previewEncoded); err != nil {
-				return Playback{}, err
-			}
-			summary.PreviewManifestPath = previewName
-			summary.PreviewVertices = previewSummary.Vertices
-			summary.PreviewTriangles = previewSummary.Triangles
-		} else {
-			summary.PreviewManifestPath = summary.ManifestPath
-			summary.PreviewVertices = summary.Vertices
-			summary.PreviewTriangles = summary.Triangles
-		}
+		summary := summaries[key]
 		playback.Frames = append(playback.Frames, summary)
-		for _, piece := range frame.Pieces {
-			for name := range piece.Fields {
-				fieldSet[name] = struct{}{}
+		for _, name := range summary.Fields {
+			fieldSet[name] = struct{}{}
+		}
+		for name, bounds := range summary.FieldRanges {
+			previous, exists := playback.FieldRanges[name]
+			if !exists {
+				playback.FieldRanges[name] = bounds
+				continue
 			}
-			for name, bounds := range piece.Fields {
-				previous, ok := playback.FieldRanges[name]
-				if !ok {
-					playback.FieldRanges[name] = bounds
-				} else {
-					if bounds[0] < previous[0] {
-						previous[0] = bounds[0]
-					}
-					if bounds[1] > previous[1] {
-						previous[1] = bounds[1]
-					}
-					playback.FieldRanges[name] = previous
-				}
+			if bounds[0] < previous[0] {
+				previous[0] = bounds[0]
 			}
+			if bounds[1] > previous[1] {
+				previous[1] = bounds[1]
+			}
+			playback.FieldRanges[name] = previous
 		}
 		playback.Bounds = mergeBounds(playback.Bounds, summary.Bounds, playback.FrameCount > 0)
 		playback.FrameCount++
@@ -398,10 +483,7 @@ func convertTarGz(filename, outputDir string, maxOutputBytes int64, limits Limit
 	}
 	sort.Strings(playback.Fields)
 	playback.Ready = playback.FrameCount > 0
-	if !playback.Ready {
-		return Playback{}, errors.New("time-series archive contains no convertible VTU surface frames")
-	}
-	return playback, nil
+	return playback
 }
 
 func reportPreparationProgress(progress ProgressFunc, compressedBytes, totalBytes int64) error {

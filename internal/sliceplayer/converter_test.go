@@ -143,6 +143,90 @@ func TestPrepareTarGzBuildsIndexAndPlaybackInOnePass(t *testing.T) {
 	}
 }
 
+func TestPrepareTarGzProgressivelyPublishesOnlyCompleteFrames(t *testing.T) {
+	manifest := func(step string) string {
+		return `<?xml version="1.0"?><VTKFile><PUnstructuredGrid><PPointData><PDataArray Name="Mach"/></PPointData><Piece Source="slice_Wake_` + step + `_proc0.vtu"/></PUnstructuredGrid></VTKFile>`
+	}
+	archive := writeArchive(t, []archiveEntry{
+		{name: "slice_Wake_000100.pvtu", body: manifest("000100")},
+		{name: "slice_Wake_000100_proc0.vtu", body: testVTU()},
+		{name: "slice_Wake_000200.pvtu", body: manifest("000200")},
+		{name: "slice_Wake_000200_proc0.vtu", body: testVTU()},
+	})
+	output := t.TempDir()
+	var snapshots []Playback
+	index, final, err := PrepareTarGzProgressive(
+		archive, output, 2<<20, Limits{}, nil, nil,
+		func(partialIndex Index, partial Playback) error {
+			if !partial.Ready || partial.FrameCount == 0 {
+				t.Fatalf("published unusable playback: %#v", partial)
+			}
+			for _, frame := range partial.Frames {
+				if _, statErr := os.Stat(filepath.Join(output, frame.ManifestPath)); statErr != nil {
+					t.Fatalf("published frame manifest is unavailable: %v", statErr)
+				}
+			}
+			if partialIndex.EntryCount < partial.FrameCount*2 {
+				t.Fatalf("partial index trails published frames: %#v", partialIndex)
+			}
+			snapshots = append(snapshots, partial)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 2 || snapshots[0].FrameCount != 1 || snapshots[1].FrameCount != 2 {
+		t.Fatalf("unexpected progressive snapshots: %#v", snapshots)
+	}
+	if snapshots[0].Frames[0].Step == nil || *snapshots[0].Frames[0].Step != 100 {
+		t.Fatalf("first complete frame was not published first: %#v", snapshots[0].Frames)
+	}
+	if final.FrameCount != 2 || index.EntryCount != 4 {
+		t.Fatalf("unexpected final result: index=%#v playback=%#v", index, final)
+	}
+	if final.Frames[0].ManifestPath != snapshots[1].Frames[0].ManifestPath || final.Frames[1].ManifestPath != snapshots[1].Frames[1].ManifestPath {
+		t.Fatalf("progressive and final ordering diverged: partial=%#v final=%#v", snapshots[1].Frames, final.Frames)
+	}
+}
+
+func TestPrepareTarGzProgressivelyPublishesWhenPVTUFollowsPieces(t *testing.T) {
+	manifest := `<?xml version="1.0"?><VTKFile><PUnstructuredGrid><Piece Source="slice_Wake_000100_proc0.vtu"/></PUnstructuredGrid></VTKFile>`
+	archive := writeArchive(t, []archiveEntry{
+		{name: "slice_Wake_000100_proc0.vtu", body: testVTU()},
+		{name: "slice_Wake_000100.pvtu", body: manifest},
+	})
+	var snapshots []Playback
+	_, final, err := PrepareTarGzProgressive(
+		archive, t.TempDir(), 1<<20, Limits{}, nil, nil,
+		func(_ Index, partial Playback) error {
+			snapshots = append(snapshots, partial)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 1 || snapshots[0].FrameCount != 1 || final.FrameCount != 1 {
+		t.Fatalf("late PVTU did not publish its completed frame: partial=%#v final=%#v", snapshots, final)
+	}
+}
+
+func TestPrepareTarGzRejectsIncompleteDeclaredFrame(t *testing.T) {
+	manifest := `<?xml version="1.0"?><VTKFile><PUnstructuredGrid><Piece Source="piece-a.vtu"/><Piece Source="piece-b.vtu"/></PUnstructuredGrid></VTKFile>`
+	archive := writeArchive(t, []archiveEntry{
+		{name: "slice_Wake_000100.pvtu", body: manifest},
+		{name: "piece-a.vtu", body: testVTU()},
+	})
+	_, _, err := PrepareTarGzProgressive(archive, t.TempDir(), 1<<20, Limits{}, nil, nil, func(Index, Playback) error {
+		t.Fatal("an incomplete frame must not be published")
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing VTU pieces") {
+		t.Fatalf("unexpected incomplete-frame error: %v", err)
+	}
+}
+
 func TestConvertTarGzDeduplicatesStaticTopologyAcrossTimeSteps(t *testing.T) {
 	archive := writeArchive(t, []archiveEntry{
 		{name: "slice_Wake_000100_proc0.vtu", body: testVTU()},

@@ -33,6 +33,7 @@ type Report struct {
 	Slices            []SliceSummary `json:"slices"`
 	Formats           []string       `json:"formats"`
 	IndexReady        bool           `json:"index_ready"`
+	PartialReady      bool           `json:"partial_ready,omitempty"`
 	Playback          *Playback      `json:"playback,omitempty"`
 }
 
@@ -245,6 +246,7 @@ func (s *Store) Complete(id string, index Index, playback *Playback) (Job, error
 		if err := s.putPlayback(*playback, s.cacheKeyForJob(id)); err != nil {
 			return Job{}, err
 		}
+		_ = os.Remove(filepath.Join(s.cacheDirectory(s.cacheKeyForJob(id)), "playback.partial.json"))
 	}
 	report := Report{IndexVersion: index.Version, CompressedBytes: index.CompressedBytes, UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount, Slices: index.Slices, Formats: index.Formats, IndexReady: true, Playback: playback}
 	return s.change(id, func(job *Job) error {
@@ -258,6 +260,39 @@ func (s *Store) Complete(id string, index Index, playback *Playback) (Job, error
 		job.Report = &report
 		job.Error = ""
 		job.FinishedAt = &now
+		return nil
+	})
+}
+
+func (s *Store) PublishPartial(id string, index Index, playback Playback) (Job, error) {
+	if !playback.Ready || playback.FrameCount == 0 {
+		return Job{}, errors.New("partial playback must contain at least one complete frame")
+	}
+	job, ok := s.Get(id)
+	if !ok {
+		return Job{}, errors.New("time-series preparation job was not found")
+	}
+	if terminal(job.Status) {
+		return Job{}, errors.New("time-series preparation is already finished")
+	}
+	cacheKey := job.CacheKey
+	if err := s.putPartialPlayback(playback, cacheKey); err != nil {
+		return Job{}, err
+	}
+	report := Report{
+		IndexVersion: index.Version, CompressedBytes: index.CompressedBytes,
+		UncompressedBytes: index.UncompressedBytes, EntryCount: index.EntryCount,
+		Slices: index.Slices, Formats: index.Formats, IndexReady: false,
+		PartialReady: true, Playback: &playback,
+	}
+	return s.change(id, func(job *Job) error {
+		if terminal(job.Status) {
+			return errors.New("time-series preparation is already finished")
+		}
+		job.Status = JobRunning
+		job.Stage = "preparing-remaining-frames"
+		job.Report = &report
+		job.Error = ""
 		return nil
 	})
 }
@@ -386,6 +421,17 @@ func (s *Store) putPlayback(playback Playback, cacheKey string) error {
 		return err
 	}
 	return atomicWrite(filepath.Join(directory, "playback.json"), payload)
+}
+func (s *Store) putPartialPlayback(playback Playback, cacheKey string) error {
+	payload, err := json.MarshalIndent(playback, "", "  ")
+	if err != nil {
+		return err
+	}
+	directory := s.cacheDirectory(cacheKey)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	return atomicWrite(filepath.Join(directory, "playback.partial.json"), payload)
 }
 func (s *Store) cacheKeyForJob(id string) string {
 	job, ok := s.Get(id)

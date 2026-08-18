@@ -68,6 +68,51 @@ func TestLatestForResultPathKeepsArchiveJobsIndependent(t *testing.T) {
 	}
 }
 
+func TestStorePersistsPartialPlaybackWithoutPromotingFinalCache(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := CacheKey("case-1", "results/slices.tar.gz", 42)
+	job, err := store.Create("case-1", "results/slices.tar.gz", 42, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := int64(100)
+	index := Index{Version: IndexVersion, EntryCount: 2, Slices: []SliceSummary{{Name: "slice_wake", FrameCount: 1}}}
+	playback := Playback{Ready: true, FrameCount: 1, Frames: []PlaybackFrame{{Slice: "slice_wake", Step: &step, ManifestPath: "frame.manifest.json"}}}
+	partial, err := store.PublishPartial(job.ID, index, playback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partial.Status != JobRunning || partial.Stage != "preparing-remaining-frames" || partial.Report == nil || !partial.Report.PartialReady || partial.Report.IndexReady {
+		t.Fatalf("unexpected partial job: %#v", partial)
+	}
+	if _, ok := store.CachedPlayback(key); ok {
+		t.Fatal("partial playback was incorrectly promoted to the final cache")
+	}
+
+	restarted, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, ok := restarted.Get(job.ID)
+	if !ok || recovered.Status != JobQueued || recovered.Report == nil || !recovered.Report.PartialReady || recovered.Report.Playback.FrameCount != 1 {
+		t.Fatalf("partial playback did not survive restart: %#v", recovered)
+	}
+	if _, err := restarted.Complete(job.ID, index, &playback); err != nil {
+		t.Fatal(err)
+	}
+	completed, _ := restarted.Get(job.ID)
+	if completed.Report.PartialReady || !completed.Report.IndexReady {
+		t.Fatalf("final completion retained partial state: %#v", completed.Report)
+	}
+	if _, err := os.Stat(filepath.Join(restarted.cacheDirectory(key), "playback.partial.json")); !os.IsNotExist(err) {
+		t.Fatalf("partial playback file was not removed: %v", err)
+	}
+}
+
 func TestStoreRecoversInterruptedJobsAndUsesStableArchiveDirectory(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)
