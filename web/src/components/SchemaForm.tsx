@@ -542,6 +542,35 @@ function SchemaField({
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
+    const enumArray = enumArrayUnion(schema)
+    if (enumArray) {
+      const selected = normalizeEnumArrayUnionValue(draft.value, enumArray.options)
+      return <MultiSelectField
+        schema={{
+          ...schema,
+          type: 'multi_select',
+          options: enumArray.options,
+          value_key: 'items',
+          // Pydantic applies list `min_length` to the union wrapper in this
+          // schema shape, where the dynamic projection exposes it as minLength.
+          minItems: enumArray.schema.minItems ?? schema.minItems ?? schema.minLength,
+          maxItems: enumArray.schema.maxItems ?? schema.maxItems ?? schema.maxLength,
+        }}
+        value={{ items: selected }}
+        title={title}
+        fieldID={fieldID}
+        configured={configured}
+        showAll={showAll}
+        fieldIssues={fieldIssues}
+        onChange={(next) => {
+          const items = isRecord(next) && Array.isArray(next.items) ? next.items : []
+          const values = [...(draft.values ?? [])]
+          values[draft.variant] = draft.value
+          values[enumArray.variant] = items
+          onChange({ variant: enumArray.variant, value: items, values })
+        }}
+      />
+    }
     const negativeOneOrPositive = negativeOneOrPositiveIntegerUnion(schema)
     if (negativeOneOrPositive) {
       return <NegativeOneOrPositiveIntegerField
@@ -784,6 +813,7 @@ function MultiSelectField({
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = choices.filter((item) => item.toLowerCase().includes(normalizedQuery))
   const allSelected = options.length > 0 && options.every((option) => selected.includes(option))
+  const minimumSelections = schema.minItems ?? 0
   const update = (next: string[]) => onChange({ ...draft, [valueKey]: [...next, ...preserved] })
   return (
     <fieldset className={`schema-object schema-multi-select-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} id={fieldID}>
@@ -797,7 +827,7 @@ function MultiSelectField({
       <details className="schema-multi-select">
         <summary>
           <span className={selected.length ? 'schema-multi-select-values' : 'schema-multi-select-placeholder'}>
-            {selected.length ? selected.slice(0, 3).map((item) => <span key={item}>{item}</span>) : 'Select output fields'}
+            {selected.length ? selected.slice(0, 3).map((item) => <span key={item}>{item}</span>) : 'Select options'}
             {selected.length > 3 && <em>+{selected.length - 3}</em>}
           </span>
           <span className="schema-multi-select-count">{selected.length} selected</span>
@@ -807,17 +837,21 @@ function MultiSelectField({
           <div className="schema-multi-select-tools">
             <label>
               <Search size={14} aria-hidden="true" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search output fields" aria-label="Search output fields" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search options" aria-label="Search options" />
             </label>
-            <button type="button" onClick={() => update(allSelected ? selected.filter((item) => !options.includes(item)) : [...new Set([...selected, ...options])])}>{allSelected ? 'Clear predefined' : 'Select all'}</button>
+            {(!allSelected || minimumSelections === 0) && <button type="button" onClick={() => update(allSelected ? selected.filter((item) => !options.includes(item)) : [...new Set([...selected, ...options])])}>{allSelected ? 'Clear predefined' : 'Select all'}</button>}
           </div>
           <div className="schema-multi-select-options" role="group" aria-label={`${title} options`}>
-            {filtered.map((option) => <label key={option} className={selected.includes(option) ? 'selected' : ''}>
-              <input type="checkbox" checked={selected.includes(option)} onChange={(event) => update(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} />
-              <span>{option}</span>
-              {!options.includes(option) && <small>Custom</small>}
-            </label>)}
-            {filtered.length === 0 && <div className="schema-multi-select-empty">No matching output fields</div>}
+            {filtered.map((option) => {
+              const checked = selected.includes(option)
+              const disabled = checked && selected.length <= minimumSelections
+              return <label key={option} className={`${checked ? 'selected' : ''}${disabled ? ' disabled' : ''}`.trim()}>
+                <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => update(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} />
+                <span>{option}</span>
+                {!options.includes(option) && <small>Custom</small>}
+              </label>
+            })}
+            {filtered.length === 0 && <div className="schema-multi-select-empty">No matching options</div>}
           </div>
           {preserved.length > 0 && <small className="schema-multi-select-preserved">{preserved.length === 1 ? 'One custom variable is preserved' : 'Custom variables are preserved'}</small>}
         </div>
@@ -1444,6 +1478,28 @@ function negativeOneOrPositiveIntegerUnion(schema: DynamicFormSchema): { integer
     && variant.options?.length === 1
     && variant.options[0] === -1)
   return integerVariant >= 0 && sentinelVariant >= 0 ? { integerVariant, sentinelVariant } : null
+}
+
+function enumArrayUnion(schema: DynamicFormSchema): { variant: number; schema: DynamicFormSchema; options: string[] } | null {
+  if (schema.type !== 'union' || !schema.variants?.length) return null
+  const variant = schema.variants.findIndex((candidate) => candidate.type === 'array'
+    && candidate.items?.type === 'enum'
+    && candidate.items.options?.length
+    && candidate.items.options.every((option) => typeof option === 'string'))
+  if (variant < 0) return null
+  const arraySchema = schema.variants[variant]
+  const alternatives = schema.variants.filter((_, index) => index !== variant)
+  if (!alternatives.length || !alternatives.every((candidate) => candidate.type === 'enum'
+    && candidate.options?.every((option) => typeof option === 'string'))) return null
+  return { variant, schema: arraySchema, options: arraySchema.items?.options as string[] }
+}
+
+function normalizeEnumArrayUnionValue(value: unknown, options: string[]): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
+  if (typeof value !== 'string') return []
+  if (options.includes(value)) return [value]
+  if (value === 'both' && options.includes('paraview') && options.includes('tecplot')) return ['paraview', 'tecplot']
+  return []
 }
 
 function entityMatchesChoice(entity: Record<string, unknown>, choice: { value: string; payload?: Record<string, unknown> }) {

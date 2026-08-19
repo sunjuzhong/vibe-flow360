@@ -206,6 +206,46 @@ describe('schema-driven Flow360 form', () => {
     expect(serializeValue(schema, value, true)).toEqual(value)
   })
 
+  it('renders enum-array unions such as Output Format as one required multi-select', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      title: 'Output Format',
+      minLength: 1,
+      variants: [
+        { type: 'array', items: { type: 'enum', options: ['paraview', 'tecplot', 'vtkhdf', 'ensight'] } },
+        { type: 'enum', options: ['paraview', 'tecplot', 'both'] },
+      ],
+    }
+    const value = hydrateSchemaValue(schema, ['paraview'], true)
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value,
+      onChange: () => undefined,
+      sparse: true,
+      showAll: true,
+    }))
+
+    expect(markup).toContain('class="schema-multi-select"')
+    expect(markup).toContain('paraview')
+    expect(markup).toContain('tecplot')
+    expect(markup).toContain('vtkhdf')
+    expect(markup).toContain('ensight')
+    expect(markup).toContain('disabled=""')
+    expect(markup).not.toContain('Value type')
+    expect(markup).not.toContain('Add item')
+    expect(markup).not.toContain('Item 1')
+    expect(serializeValue(schema, value, true)).toEqual(['paraview'])
+
+    const legacyMarkup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: hydrateSchemaValue(schema, 'both', true),
+      onChange: () => undefined,
+      sparse: true,
+      showAll: true,
+    }))
+    expect(legacyMarkup).toContain('2 selected')
+  })
+
   it('renders Literal[-1] or PositiveInt as one constrained integer input', () => {
     const schema: DynamicFormSchema = {
       type: 'union',
