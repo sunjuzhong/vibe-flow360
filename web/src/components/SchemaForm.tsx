@@ -542,6 +542,23 @@ function SchemaField({
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
+    const negativeOneOrPositive = negativeOneOrPositiveIntegerUnion(schema)
+    if (negativeOneOrPositive) {
+      return <NegativeOneOrPositiveIntegerField
+        schema={schema}
+        draft={draft}
+        integerVariant={negativeOneOrPositive.integerVariant}
+        sentinelVariant={negativeOneOrPositive.sentinelVariant}
+        title={title}
+        path={path}
+        fieldID={fieldID}
+        configured={configured}
+        showAll={showAll}
+        descriptionTooltip={collapsibleObjects}
+        fieldIssues={fieldIssues}
+        onChange={onChange}
+      />
+    }
     const selected = schema.variants?.[draft.variant] ?? { type: 'json' as const }
     const variants = schema.variants ?? []
     const expressionVariant = variants.findIndex((variant) => variant.type === 'expression')
@@ -807,6 +824,64 @@ function MultiSelectField({
       </details>
       {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
     </fieldset>
+  )
+}
+
+function NegativeOneOrPositiveIntegerField({
+  schema,
+  draft,
+  integerVariant,
+  sentinelVariant,
+  title,
+  path,
+  fieldID,
+  configured,
+  showAll,
+  descriptionTooltip,
+  fieldIssues,
+  onChange,
+}: {
+  schema: DynamicFormSchema
+  draft: UnionDraft
+  integerVariant: number
+  sentinelVariant: number
+  title: string
+  path: string
+  fieldID: string
+  configured: boolean
+  showAll: boolean
+  descriptionTooltip: boolean
+  fieldIssues: Array<{ path?: string; message: string }>
+  onChange: (value: unknown) => void
+}) {
+  const raw = String(draft.value ?? '')
+  const numeric = raw.trim() === '' ? Number.NaN : Number(raw)
+  const valid = numeric === -1 || Number.isInteger(numeric) && numeric > 0
+  const update = (next: string) => {
+    const parsed = next.trim() === '' ? Number.NaN : Number(next)
+    const variant = parsed === -1 ? sentinelVariant : integerVariant
+    const values = [...(draft.values ?? [])]
+    values[draft.variant] = draft.value
+    onChange({ variant, value: next, values })
+  }
+  const errorID = `${fieldID}-constraint`
+  return (
+    <label className={`schema-field schema-sentinel-integer${!valid || fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
+      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={descriptionTooltip} />
+      <input
+        id={fieldID}
+        type="number"
+        step={1}
+        value={raw}
+        aria-invalid={!valid}
+        aria-describedby={errorID}
+        onChange={(event) => update(event.target.value)}
+      />
+      <small id={errorID} className={valid ? 'schema-field-hint' : 'schema-inline-error'} role={valid ? undefined : 'alert'}>
+        {valid ? 'Use -1 for the end of the simulation; otherwise enter a positive integer.' : <><AlertCircle size={12} />Enter -1 or a positive integer.</>}
+      </small>
+      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
+    </label>
   )
 }
 
@@ -1315,9 +1390,14 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       return null
     case 'number':
     case 'integer': {
+      if (typeof value === 'string' && value.trim() === '') throw new Error(`${schema.title || schema.path || 'Field'} requires a number.`)
       const numeric = Number(value)
       if (!Number.isFinite(numeric)) throw new Error(`${schema.title || schema.path || 'Field'} requires a number.`)
       if (schema.type === 'integer' && !Number.isInteger(numeric)) throw new Error(`${schema.title || schema.path || 'Field'} requires an integer.`)
+      if (schema.minimum !== undefined && numeric < schema.minimum) throw new Error(`${schema.title || schema.path || 'Field'} must be at least ${schema.minimum}.`)
+      if (schema.maximum !== undefined && numeric > schema.maximum) throw new Error(`${schema.title || schema.path || 'Field'} must be at most ${schema.maximum}.`)
+      if (schema.exclusiveMinimum !== undefined && numeric <= schema.exclusiveMinimum) throw new Error(`${schema.title || schema.path || 'Field'} must be greater than ${schema.exclusiveMinimum}.`)
+      if (schema.exclusiveMaximum !== undefined && numeric >= schema.exclusiveMaximum) throw new Error(`${schema.title || schema.path || 'Field'} must be less than ${schema.exclusiveMaximum}.`)
       return numeric
     }
     case 'union': {
@@ -1354,6 +1434,16 @@ function isConfiguredValue(value: unknown): boolean {
 
 function isUnionDraft(value: unknown): value is UnionDraft {
   return isRecord(value) && typeof value.variant === 'number' && 'value' in value
+}
+
+function negativeOneOrPositiveIntegerUnion(schema: DynamicFormSchema): { integerVariant: number; sentinelVariant: number } | null {
+  if (schema.type !== 'union' || schema.variants?.length !== 2) return null
+  const integerVariant = schema.variants.findIndex((variant) => variant.type === 'integer'
+    && (variant.exclusiveMinimum === 0 || variant.minimum === 1))
+  const sentinelVariant = schema.variants.findIndex((variant) => variant.type === 'enum'
+    && variant.options?.length === 1
+    && variant.options[0] === -1)
+  return integerVariant >= 0 && sentinelVariant >= 0 ? { integerVariant, sentinelVariant } : null
 }
 
 function entityMatchesChoice(entity: Record<string, unknown>, choice: { value: string; payload?: Record<string, unknown> }) {
@@ -1396,9 +1486,9 @@ function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean 
     case 'boolean':
       return typeof value === 'boolean'
     case 'number':
-      return typeof value === 'number'
+      return typeof value === 'number' && numericValueMatchesConstraints(schema, value)
     case 'integer':
-      return typeof value === 'number' && Number.isInteger(value)
+      return typeof value === 'number' && Number.isInteger(value) && numericValueMatchesConstraints(schema, value)
     case 'string':
       return typeof value === 'string'
     case 'enum':
@@ -1406,6 +1496,13 @@ function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean 
     default:
       return false
   }
+}
+
+function numericValueMatchesConstraints(schema: DynamicFormSchema, value: number) {
+  return (schema.minimum === undefined || value >= schema.minimum)
+    && (schema.maximum === undefined || value <= schema.maximum)
+    && (schema.exclusiveMinimum === undefined || value > schema.exclusiveMinimum)
+    && (schema.exclusiveMaximum === undefined || value < schema.exclusiveMaximum)
 }
 
 function humanize(value: string) {

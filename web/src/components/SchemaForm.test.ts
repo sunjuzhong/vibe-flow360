@@ -127,11 +127,11 @@ describe('schema-driven Flow360 form', () => {
       ],
     }
 
-    const unsteady = initialValue(schema.variants![1], true)
+    const unsteady = initialValue(schema.variants![1], true) as Record<string, unknown>
     expect(unsteady).toEqual({ type_name: 'Unsteady', steps: '' })
-    expect(serializeValue(schema, { variant: 1, value: unsteady }, true)).toEqual({
+    expect(serializeValue(schema, { variant: 1, value: { ...unsteady, steps: '1' } }, true)).toEqual({
       type_name: 'Unsteady',
-      steps: 0,
+      steps: 1,
     })
     const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
       schema,
@@ -204,6 +204,39 @@ describe('schema-driven Flow360 form', () => {
     expect(initialValue(schema, true)).toEqual({ items: [] })
     expect(hydrateSchemaValue(schema, value, true)).toEqual(value)
     expect(serializeValue(schema, value, true)).toEqual(value)
+  })
+
+  it('renders Literal[-1] or PositiveInt as one constrained integer input', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      title: 'Frequency',
+      variants: [
+        { type: 'integer', exclusiveMinimum: 0 },
+        { type: 'enum', options: [-1] },
+      ],
+    }
+    const endOfSimulation = hydrateSchemaValue(schema, -1, true)
+    const everyTenSteps = hydrateSchemaValue(schema, 10, true)
+    expect(endOfSimulation).toEqual({ variant: 1, value: -1 })
+    expect(everyTenSteps).toEqual({ variant: 0, value: 10 })
+
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: endOfSimulation,
+      onChange: () => undefined,
+      sparse: true,
+      showAll: true,
+    }))
+    expect(markup).toContain('schema-sentinel-integer')
+    expect(markup).toContain('Use -1 for the end of the simulation')
+    expect(markup).not.toContain('Value type')
+    expect(markup).not.toContain('<select')
+    expect(serializeValue(schema, endOfSimulation, true)).toBe(-1)
+    expect(serializeValue(schema, everyTenSteps, true)).toBe(10)
+    expect(() => serializeValue(schema, { variant: 0, value: '0' }, true)).toThrow('must be greater than 0')
+    expect(() => serializeValue(schema, { variant: 0, value: '-2' }, true)).toThrow('must be greater than 0')
+    expect(() => serializeValue(schema, { variant: 0, value: '1.5' }, true)).toThrow('requires an integer')
+    expect(() => serializeValue(schema, { variant: 0, value: '' }, true)).toThrow('requires a number')
   })
 
   it('labels optional field omission as reset or clear instead of destructive removal', () => {

@@ -4281,6 +4281,8 @@ button { color: inherit; }
 .schema-field-invalid input,.schema-field-invalid select,.schema-field-invalid textarea { background: #fff8f6; box-shadow: 0 0 0 2px rgba(200,93,73,.09); }
 .schema-inline-error { display: flex !important; align-items: flex-start; gap: 5px; margin-top: 6px !important; color: #a04435 !important; font-size: 10px !important; font-weight: 650; line-height: 1.4; }
 .schema-inline-error svg { flex: 0 0 auto; margin-top: 1px; }
+.schema-field-hint { display: block; margin-top: 6px; color: #7d8578; font-size: 9px; line-height: 1.4; }
+.schema-item-editor-body .schema-sentinel-integer .schema-field-hint { font-size: 10px; }
 .schema-field textarea { min-height: 110px; color: #d0e6b3; background: #252a21; font: 8px/1.55 'DM Mono'; }
 .schema-quantity { display: grid; grid-template-columns: minmax(0,1fr) 150px; gap: 8px; }
 .schema-value-or-expression { padding: 12px; border: 1px solid #d9ddd2; border-radius: 9px; background: #fbfcf8; }

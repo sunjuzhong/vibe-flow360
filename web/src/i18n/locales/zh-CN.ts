@@ -655,6 +655,8 @@ const messages: Record<string, string> = {
   'Search output fields': '搜索输出字段',
   'Clear predefined': '清除预定义字段',
   'No matching output fields': '没有匹配的输出字段',
+  'Use -1 for the end of the simulation; otherwise enter a positive integer.': '-1 表示在仿真结束时输出；否则请输入正整数。',
+  'Enter -1 or a positive integer.': '请输入 -1 或正整数。',
   'One custom variable is preserved': '已保留一个自定义变量',
   'Custom variables are preserved': '已保留自定义变量',
   Custom: '自定义',
