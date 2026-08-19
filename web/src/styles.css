@@ -5682,6 +5682,46 @@ button { color: inherit; }
   transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
 }
 
+.help-tooltip__content--portal {
+  position: fixed;
+  z-index: 1000;
+  right: auto;
+  bottom: auto;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  transform: none;
+}
+
+.help-tooltip__content--portal-wide {
+  width: min(390px, calc(100vw - 24px));
+  max-width: min(390px, calc(100vw - 24px));
+  padding: 12px;
+}
+
+.help-tooltip__content--portal-guide {
+  width: min(520px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 14px;
+  pointer-events: auto;
+}
+
+.help-tooltip__content--portal-draft {
+  width: max-content;
+  max-width: min(340px, calc(100vw - 48px));
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.help-tooltip__content--portal.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
 .help-tooltip--wide .help-tooltip__content {
   width: min(390px, calc(100vw - 24px));
   max-width: min(390px, calc(100vw - 24px));
