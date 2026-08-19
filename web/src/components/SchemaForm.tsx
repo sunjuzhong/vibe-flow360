@@ -1,5 +1,5 @@
 import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, RotateCcw, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, RotateCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 import HelpTooltip from './HelpTooltip'
@@ -464,6 +464,9 @@ function SchemaField({
       </label>
     )
   }
+  if (schema.type === 'multi_select') {
+    return <MultiSelectField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} configured={configured} showAll={showAll} fieldIssues={fieldIssues} />
+  }
   if (schema.type === 'array') {
     if (isComplexArrayItem(schema.items)) {
       return <ComplexArrayField schema={schema} value={value} onChange={onChange} path={path} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} />
@@ -732,6 +735,79 @@ function arrayItemSummary(schema: DynamicFormSchema, value: unknown, index: numb
   const type = selected?.title || String(object.output_type ?? `Item ${index + 1}`)
   const name = String(object.name ?? '').trim()
   return name && name !== type ? `${type} · ${name}` : type
+}
+
+function MultiSelectField({
+  schema,
+  value,
+  onChange,
+  title,
+  fieldID,
+  configured,
+  showAll,
+  fieldIssues,
+}: {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  title: string
+  fieldID: string
+  configured: boolean
+  showAll: boolean
+  fieldIssues: Array<{ path?: string; message: string }>
+}) {
+  const [query, setQuery] = useState('')
+  const draft = isRecord(value) ? value : {}
+  const valueKey = schema.value_key || 'items'
+  const stored = Array.isArray(draft[valueKey]) ? draft[valueKey] : []
+  const selected = stored.filter((item): item is string => typeof item === 'string')
+  const preserved = stored.filter((item) => typeof item !== 'string')
+  const options = (schema.options ?? []).filter((item): item is string => typeof item === 'string')
+  const choices = [...options, ...selected.filter((item) => !options.includes(item))]
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = choices.filter((item) => item.toLowerCase().includes(normalizedQuery))
+  const allSelected = options.length > 0 && options.every((option) => selected.includes(option))
+  const update = (next: string[]) => onChange({ ...draft, [valueKey]: [...next, ...preserved] })
+  return (
+    <fieldset className={`schema-object schema-multi-select-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} id={fieldID}>
+      <legend>
+        <span className="schema-legend-content">
+          {title}{schema.required === true ? ' *' : ''}
+          <SchemaDescriptionHelp description={schema.description} title={title} />
+          {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+        </span>
+      </legend>
+      <details className="schema-multi-select">
+        <summary>
+          <span className={selected.length ? 'schema-multi-select-values' : 'schema-multi-select-placeholder'}>
+            {selected.length ? selected.slice(0, 3).map((item) => <span key={item}>{item}</span>) : 'Select output fields'}
+            {selected.length > 3 && <em>+{selected.length - 3}</em>}
+          </span>
+          <span className="schema-multi-select-count">{selected.length} selected</span>
+          <ChevronDown size={15} aria-hidden="true" />
+        </summary>
+        <div className="schema-multi-select-popover">
+          <div className="schema-multi-select-tools">
+            <label>
+              <Search size={14} aria-hidden="true" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search output fields" aria-label="Search output fields" />
+            </label>
+            <button type="button" onClick={() => update(allSelected ? selected.filter((item) => !options.includes(item)) : [...new Set([...selected, ...options])])}>{allSelected ? 'Clear predefined' : 'Select all'}</button>
+          </div>
+          <div className="schema-multi-select-options" role="group" aria-label={`${title} options`}>
+            {filtered.map((option) => <label key={option} className={selected.includes(option) ? 'selected' : ''}>
+              <input type="checkbox" checked={selected.includes(option)} onChange={(event) => update(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} />
+              <span>{option}</span>
+              {!options.includes(option) && <small>Custom</small>}
+            </label>)}
+            {filtered.length === 0 && <div className="schema-multi-select-empty">No matching output fields</div>}
+          </div>
+          {preserved.length > 0 && <small className="schema-multi-select-preserved">{preserved.length === 1 ? 'One custom variable is preserved' : 'Custom variables are preserved'}</small>}
+        </div>
+      </details>
+      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
+    </fieldset>
+  )
 }
 
 function EntityListField({ schema, value, onChange, title, fieldID }: { schema: DynamicFormSchema; value: unknown; onChange: (value: unknown) => void; title: string; fieldID: string }) {
@@ -1106,6 +1182,8 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
       return false
     case 'enum':
       return schema.options?.[0]
+    case 'multi_select':
+      return { [schema.value_key || 'items']: [] }
     case 'union':
       return { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
     case 'json':
@@ -1187,6 +1265,11 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
     }
     case 'array':
       return (Array.isArray(value) ? value : []).map((item) => serializeValue(schema.items ?? { type: 'json' }, item, sparse))
+    case 'multi_select': {
+      const object = isRecord(value) ? value : {}
+      const valueKey = schema.value_key || 'items'
+      return { ...object, [valueKey]: Array.isArray(object[valueKey]) ? object[valueKey] : [] }
+    }
     case 'quantity': {
       const object = isRecord(value) ? value : {}
       const serializedValue = serializeValue(schema.value_schema ?? { type: 'number' }, object.value, sparse)
@@ -1306,6 +1389,7 @@ function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean 
     }
     case 'entity_assignment':
     case 'entity_list':
+    case 'multi_select':
       return isRecord(value)
     case 'array':
       return Array.isArray(value)

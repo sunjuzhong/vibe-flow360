@@ -2538,6 +2538,35 @@ button { color: inherit; }
 .schema-item-editor-body .schema-object .schema-object { margin-top: 10px; background: #fff; }
 .schema-item-editor-body .schema-edit-field-boolean > .schema-boolean { min-height: 40px; align-items: center; padding: 9px 11px; border: 1px solid #d7dcd0; border-radius: 8px; background: #fafbf8; }
 .schema-item-editor-body .schema-edit-field-boolean > .schema-boolean input { margin-top: 0; }
+.schema-item-editor-body .schema-multi-select-field { min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; }
+.schema-item-editor-body .schema-multi-select-field > legend { margin-bottom: 7px; padding: 0; }
+.schema-multi-select { position: relative; min-width: 0; }
+.schema-multi-select > summary { display: grid; grid-template-columns: minmax(0,1fr) auto auto; min-height: 42px; align-items: center; gap: 9px; padding: 7px 11px; border: 1px solid #d4d9ce; border-radius: 8px; color: #555f50; background: #fff; cursor: pointer; list-style: none; }
+.schema-multi-select > summary::-webkit-details-marker { display: none; }
+.schema-multi-select[open] > summary { border-color: #9eb54e; box-shadow: 0 0 0 2px rgba(158,181,78,.14); }
+.schema-multi-select > summary > svg { transition: transform .16s ease; }
+.schema-multi-select[open] > summary > svg { transform: rotate(180deg); }
+.schema-multi-select-values { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
+.schema-multi-select-values > span,
+.schema-multi-select-values > em { flex: 0 0 auto; max-width: 150px; overflow: hidden; padding: 3px 7px; border-radius: 5px; color: #4f5f32; background: #eef3e4; font: 500 10px 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.schema-multi-select-values > em { color: #71786c; background: #f2f3ef; font-style: normal; }
+.schema-multi-select-placeholder { color: #92988e; font-size: 11px; }
+.schema-multi-select-count { color: #747c70; font-size: 10px; white-space: nowrap; }
+.schema-multi-select-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; left: 0; padding: 9px; border: 1px solid #d3d8cc; border-radius: 9px; background: #fff; box-shadow: 0 14px 34px rgba(50,58,44,.16); }
+.schema-multi-select-tools { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.schema-multi-select-tools > label { position: relative; flex: 1; min-width: 0; }
+.schema-multi-select-tools > label > svg { position: absolute; top: 50%; left: 9px; color: #92998d; transform: translateY(-50%); pointer-events: none; }
+.schema-multi-select-tools input { width: 100%; min-height: 34px; padding: 0 9px 0 30px; border: 1px solid #d9ddd4; border-radius: 7px; font-size: 10px; }
+.schema-multi-select-tools button { min-height: 34px; padding: 0 10px; border: 1px solid #ced5c3; border-radius: 7px; color: #5e6d43; background: #f8faf4; font-size: 10px; white-space: nowrap; cursor: pointer; }
+.schema-multi-select-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; max-height: 260px; overflow-y: auto; padding-right: 2px; }
+.schema-multi-select-options > label { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; color: #5d6559; background: #fafbf8; cursor: pointer; }
+.schema-multi-select-options > label:hover { border-color: #dbe2cf; background: #f5f8ef; }
+.schema-multi-select-options > label.selected { color: #425124; background: #eef4e2; }
+.schema-multi-select-options input { flex: 0 0 auto; margin: 0; accent-color: #829d2d; }
+.schema-multi-select-options span { min-width: 0; overflow: hidden; font: 10px 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.schema-multi-select-options small { margin-left: auto; color: #8a9184; font-size: 8px; }
+.schema-multi-select-empty { grid-column: 1/-1; padding: 24px 10px; color: #8a9184; text-align: center; font-size: 10px; }
+.schema-multi-select-preserved { display: block; margin-top: 7px; color: #7d8578; font-size: 9px; }
 .schema-item-editor-body .schema-edit-field > .schema-field-clear {
   position: absolute;
   z-index: 2;
@@ -2599,6 +2628,8 @@ button { color: inherit; }
   .schema-item-editor-body > .schema-root-object-content { grid-template-columns: 1fr; }
   .schema-item-editor-body .schema-edit-field { grid-column: 1; }
   .schema-entity-list .schema-entity-grid { grid-template-columns: 1fr; }
+  .schema-multi-select-options { grid-template-columns: 1fr; }
+  .schema-multi-select-values > span:nth-child(n+3) { display: none; }
   .schema-item-editor-dialog > footer { padding: 12px 17px; }
 }
 .draft-parameter-form .help-tooltip__trigger { width: 22px; height: 22px; }

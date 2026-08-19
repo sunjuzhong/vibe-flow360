@@ -16,6 +16,8 @@ type formNode struct {
 	Items            *formNode           `json:"items,omitempty"`
 	Variants         []formNode          `json:"variants,omitempty"`
 	Options          []any               `json:"options,omitempty"`
+	ValueKey         string              `json:"value_key,omitempty"`
+	AllowCustom      bool                `json:"allow_custom,omitempty"`
 	UnitOptions      []string            `json:"unit_options,omitempty"`
 	UnitAliases      map[string]string   `json:"unit_aliases,omitempty"`
 	ValueSchema      *formNode           `json:"value_schema,omitempty"`
@@ -143,6 +145,12 @@ func sanitizeFormValue(schema formNode, value any, path string, depth int) (any,
 		return sanitizeFixedFormObject(value, path, map[string]bool{"model": true, "entities": true})
 	case "entity_list":
 		return sanitizeFixedFormObject(value, path, map[string]bool{"stored_entities": true, "selectors": true})
+	case "multi_select":
+		valueKey := schema.ValueKey
+		if valueKey == "" {
+			valueKey = "items"
+		}
+		return sanitizeFixedFormObject(value, path, map[string]bool{valueKey: true})
 	case "union":
 		var best any
 		var bestRemoved []string
@@ -348,6 +356,50 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 		if selectors, exists := object["selectors"]; exists {
 			if _, ok := selectors.([]any); !ok {
 				return fmt.Errorf("%s.selectors must be an array", label)
+			}
+		}
+	case "multi_select":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be a multi-select value", label)
+		}
+		valueKey := schema.ValueKey
+		if valueKey == "" {
+			valueKey = "items"
+		}
+		for key := range object {
+			if key != valueKey {
+				return fmt.Errorf("%s.%s is not supported", label, key)
+			}
+		}
+		items, ok := object[valueKey].([]any)
+		if !ok {
+			return fmt.Errorf("%s.%s must be an array", label, valueKey)
+		}
+		seen := map[string]bool{}
+		for _, item := range items {
+			encoded, _ := json.Marshal(item)
+			identity := string(encoded)
+			if seen[identity] {
+				return fmt.Errorf("%s.%s contains a duplicate value", label, valueKey)
+			}
+			seen[identity] = true
+			allowed := false
+			for _, option := range schema.Options {
+				if reflect.DeepEqual(option, item) {
+					allowed = true
+					break
+				}
+			}
+			customAllowed := false
+			if schema.AllowCustom {
+				switch item.(type) {
+				case string, map[string]any:
+					customAllowed = true
+				}
+			}
+			if !allowed && !customAllowed {
+				return fmt.Errorf("%s.%s contains a value not allowed by the active Flow360 schema", label, valueKey)
 			}
 		}
 	case "field_removal":

@@ -40,6 +40,28 @@ func TestValidateFormValuesSupportsSchemaDrivenTypes(t *testing.T) {
 	}
 }
 
+func TestValidateFormValuesSupportsUniqueItemMultiSelect(t *testing.T) {
+	schema := json.RawMessage(`{"type":"multi_select","options":["Cp","Mach","yPlus"],"value_key":"items","allow_custom":true}`)
+	for _, valid := range []json.RawMessage{
+		json.RawMessage(`{"items":["Cp","yPlus"]}`),
+		json.RawMessage(`{"items":["customPressure"]}`),
+		json.RawMessage(`{"items":[{"name":"customPressure","value":{"type_name":"expression","expression":"pressure"}}]}`),
+	} {
+		if err := ValidateFormValues(schema, valid); err != nil {
+			t.Fatalf("valid multi-select was rejected: %v (%s)", err, valid)
+		}
+	}
+	for _, invalid := range []json.RawMessage{
+		json.RawMessage(`{"items":["Cp","Cp"]}`),
+		json.RawMessage(`{"items":[false]}`),
+		json.RawMessage(`{"values":["Cp"]}`),
+	} {
+		if err := ValidateFormValues(schema, invalid); err == nil {
+			t.Fatalf("invalid multi-select was accepted: %s", invalid)
+		}
+	}
+}
+
 func TestSanitizeFormValuesRemovesCanonicalQuantityDiscriminator(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"reference_geometry":{"type":"object","properties":{"area":{"type":"union","variants":[{"type":"quantity","unit_options":["m**2"],"value_schema":{"type":"number"}},{"type":"string"}]}}}}}`)
 	values := json.RawMessage(`{"reference_geometry":{"area":{"type_name":"number","value":1,"units":"m**2"}}}`)

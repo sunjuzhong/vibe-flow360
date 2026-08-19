@@ -163,7 +163,7 @@ describe('schema-driven Flow360 form', () => {
       type: 'object',
       properties: {
         output_type: { type: 'enum', options: ['SurfaceOutput'], default: 'SurfaceOutput' },
-        output_fields: { type: 'array', items: { type: 'string' }, required: true },
+        output_fields: { type: 'multi_select', options: ['Cp', 'yPlus'], value_key: 'items', required: true },
         frequency: { type: 'integer', default: -1 },
         write_single_file: { type: 'boolean', default: false },
         optional_note: { type: 'string' },
@@ -172,10 +172,38 @@ describe('schema-driven Flow360 form', () => {
     }
     expect(initialValue(schema, true)).toEqual({
       output_type: 'SurfaceOutput',
-      output_fields: [],
+      output_fields: { items: [] },
       frequency: -1,
       write_single_file: false,
     })
+  })
+
+  it('renders predefined Output fields as one multi-select and preserves its wire shape', () => {
+    const schema: DynamicFormSchema = {
+      type: 'multi_select',
+      title: 'Output Fields',
+      options: ['Cp', 'Mach', 'yPlus'],
+      value_key: 'items',
+      required: true,
+    }
+    const value = { items: ['Cp', 'yPlus'] }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value,
+      onChange: () => undefined,
+      sparse: true,
+      showAll: true,
+    }))
+
+    expect(markup).toContain('class="schema-multi-select"')
+    expect(markup).toContain('Cp')
+    expect(markup).toContain('yPlus')
+    expect(markup).toContain('2 selected')
+    expect(markup).not.toContain('Add item')
+    expect(markup).not.toContain('Item 1')
+    expect(initialValue(schema, true)).toEqual({ items: [] })
+    expect(hydrateSchemaValue(schema, value, true)).toEqual(value)
+    expect(serializeValue(schema, value, true)).toEqual(value)
   })
 
   it('labels optional field omission as reset or clear instead of destructive removal', () => {

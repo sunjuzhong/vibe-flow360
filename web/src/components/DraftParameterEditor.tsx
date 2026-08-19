@@ -532,6 +532,7 @@ function schemaValueMatchesForValidation(schema: DynamicFormSchema, value: unkno
   if (schema.type === 'expression') return isRecord(value) && value.type_name === 'expression'
   if (schema.type === 'quantity') return isRecord(value) && 'value' in value && 'units' in value
   if (schema.type === 'object') return isRecord(value)
+  if (schema.type === 'multi_select') return isRecord(value)
   if (schema.type === 'array') return Array.isArray(value)
   if (schema.type === 'string') return typeof value === 'string'
   if (schema.type === 'boolean') return typeof value === 'boolean'

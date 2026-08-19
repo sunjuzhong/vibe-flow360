@@ -716,6 +716,41 @@ def entity_list_schema(node, base):
         "entity_choices": choices,
     }
 
+def unique_item_multiselect_schema(node, base):
+    title = str(node.get("title", ""))
+    if not title.startswith("UniqueItemList["):
+        return None
+    properties = node.get("properties", {})
+    items_property = dereference(properties.get("items", {}))
+    if items_property.get("type") != "array":
+        return None
+    item_schema = dereference(items_property.get("items", {}))
+    _, choices = alternatives(item_schema)
+    candidates = choices or [item_schema]
+    options = []
+    seen = set()
+    allow_custom = False
+    for candidate in candidates:
+        if candidate.get("type") == "string" and "enum" not in candidate:
+            allow_custom = True
+        if str(candidate.get("$ref", "")).endswith("/UserVariable"):
+            allow_custom = True
+        candidate = dereference(candidate)
+        for option in candidate.get("enum", []):
+            if not isinstance(option, str) or option in seen:
+                continue
+            seen.add(option)
+            options.append(option)
+    if not options:
+        return None
+    return {
+        **base,
+        "type": "multi_select",
+        "options": options,
+        "value_key": "items",
+        "allow_custom": allow_custom,
+    }
+
 def normalize(node, inherited_unit=None):
     if not isinstance(node, dict):
         return {"type": "json"}
@@ -772,6 +807,9 @@ def normalize(node, inherited_unit=None):
         entity_list = entity_list_schema(node, base)
         if entity_list is not None:
             return entity_list
+        unique_item_multiselect = unique_item_multiselect_schema(node, base)
+        if unique_item_multiselect is not None:
+            return unique_item_multiselect
         properties = node.get("properties", {})
         value_schema = properties.get("value")
         quantity_unit = value_schema.get("$units", unit) if isinstance(value_schema, dict) else unit

@@ -285,8 +285,57 @@ func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testin
 		t.Fatalf("SurfaceOutput did not project selectable canonical surfaces: %#v", entities)
 	}
 	outputFields, _ := properties["output_fields"].(map[string]any)
-	if outputFields["title"] != "Output Fields" {
+	outputFieldOptions, _ := outputFields["options"].([]any)
+	if outputFields["title"] != "Output Fields" || outputFields["type"] != "multi_select" || outputFields["value_key"] != "items" || len(outputFieldOptions) < 40 {
 		t.Fatalf("referenced schema implementation title leaked into Output fields: %#v", outputFields)
+	}
+	if !slices.Contains(outputFieldOptions, any("Cp")) || !slices.Contains(outputFieldOptions, any("yPlus")) {
+		t.Fatalf("SurfaceOutput did not expose its Python-defined field choices: %#v", outputFieldOptions)
+	}
+	outputFieldCases := []struct {
+		titles   []string
+		includes []string
+		excludes []string
+	}{
+		{[]string{"SurfaceOutput", "TimeAverageSurfaceOutput", "SurfaceProbeOutput", "TimeAverageSurfaceProbeOutput", "SurfaceSliceOutput"}, []string{"Cp", "yPlus"}, []string{"localCFL"}},
+		{[]string{"VolumeOutput", "TimeAverageVolumeOutput", "SliceOutput", "TimeAverageSliceOutput"}, []string{"Cp", "localCFL"}, []string{"yPlus"}},
+		{[]string{"IsosurfaceOutput", "TimeAverageIsosurfaceOutput"}, []string{"Cp", "pressure_pa"}, []string{"yPlus", "localCFL"}},
+		{[]string{"ProbeOutput", "TimeAverageProbeOutput"}, []string{"Cp", "betMetrics"}, []string{"yPlus", "localCFL"}},
+		{[]string{"ForceOutput"}, []string{"CL", "CMz", "CLSkinFriction", "CMzPressure"}, []string{"Cp", "yPlus"}},
+	}
+	for _, testCase := range outputFieldCases {
+		for _, title := range testCase.titles {
+			variant := findSchemaByTitle(caseSchema, title)
+			if variant == nil {
+				t.Fatalf("%s variant is missing from the Case editor schema", title)
+			}
+			variantProperties, _ := variant["properties"].(map[string]any)
+			fieldSchema, _ := variantProperties["output_fields"].(map[string]any)
+			options, _ := fieldSchema["options"].([]any)
+			if fieldSchema["type"] != "multi_select" || fieldSchema["value_key"] != "items" {
+				t.Fatalf("%s output_fields is not a projected UniqueItemList multi-select: %#v", title, fieldSchema)
+			}
+			for _, expected := range testCase.includes {
+				if !slices.Contains(options, any(expected)) {
+					t.Fatalf("%s is missing Python-defined output field %q", title, expected)
+				}
+			}
+			for _, excluded := range testCase.excludes {
+				if slices.Contains(options, any(excluded)) {
+					t.Fatalf("%s incorrectly exposes output field %q", title, excluded)
+				}
+			}
+		}
+	}
+	for _, title := range []string{"SurfaceIntegralOutput", "StreamlineOutput", "TimeAverageStreamlineOutput"} {
+		variant := findSchemaByTitle(caseSchema, title)
+		if variant == nil {
+			t.Fatalf("%s variant is missing from the Case editor schema", title)
+		}
+		variantProperties, _ := variant["properties"].(map[string]any)
+		if fieldSchema, _ := variantProperties["output_fields"].(map[string]any); fieldSchema["type"] == "multi_select" {
+			t.Fatalf("%s only accepts user variables and must not expose a predefined-field multi-select", title)
+		}
 	}
 	var surfaceChoice map[string]any
 	for _, raw := range choices {
