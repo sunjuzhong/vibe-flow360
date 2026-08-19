@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ViewerManifest, ViewerState } from '../components/viewer/LazyViewer3D'
 import { useI18n } from '../i18n'
 
-const previewCapacityMessage = 'This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support.'
+const previewCapacityMessage = 'The 3D visualization for this resource is too large to open in the browser. No fallback resource will be shown.'
+const previewUnavailableMessage = '3D visualization is not available for this resource. No fallback resource will be shown.'
 
 export function useResourcePreview(
   resourceType: string | null,
@@ -38,7 +39,9 @@ export function useResourcePreview(
         const body = await response.json().catch(() => ({}))
         throw new Error(body.code === 'visualization_too_large'
           ? t(previewCapacityMessage)
-          : body.error || t('Preview unavailable (HTTP {status})').replace('{status}', String(response.status)))
+          : body.code === 'visualization_unavailable'
+            ? t(previewUnavailableMessage)
+            : body.error || t('Preview unavailable (HTTP {status})').replace('{status}', String(response.status)))
       }
       return response.json() as Promise<ViewerManifest>
     }

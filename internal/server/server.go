@@ -87,8 +87,10 @@ type Server struct {
 }
 
 const (
-	browserVisualizationManifestLimit = 8 * 1024 * 1024
-	visualizationErrorCacheTTL        = 24 * time.Hour
+	browserVisualizationManifestLimit     = 8 * 1024 * 1024
+	browserCaseVisualizationManifestLimit = 64 * 1024 * 1024
+	visualizationErrorCacheTTL            = 24 * time.Hour
+	visualizationErrorCacheVersion        = "v2"
 )
 
 var allowedImportExtensions = map[string][]string{
@@ -2024,7 +2026,7 @@ func (s *Server) resourceResult(
 func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 	resourceType := c.Param("resource_type")
 	resourceID := c.Param("resource_id")
-	cacheKey := resourceType + "/" + resourceID
+	cacheKey := visualizationErrorCacheVersion + "/" + resourceType + "/" + resourceID
 	force := forceResourceFileSync(c)
 	var visualizationErr error
 
@@ -2044,10 +2046,10 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 			assetURL := visualizationManifestURL(resourceType, resourceID, manifest)
 			preview, previewErr := flow360.GeometryUVFPreview(resourceID, manifest, assetURL)
 			if previewErr == nil {
-				if visualizationManifestBrowserSafe(manifest) {
+				if visualizationManifestBrowserSafe(resourceType, manifest) {
 					cachedPreview = &preview
 				}
-				if !force && visualizationManifestBrowserSafe(manifest) {
+				if !force && visualizationManifestBrowserSafe(resourceType, manifest) {
 					// The manifest is sufficient to start the viewer. Missing referenced
 					// buffers are fetched individually by the visualization asset route,
 					// so do not redownload the entire immutable visualization here.
@@ -2060,7 +2062,7 @@ func (s *Server) flow360ResourceMeshPreview(c *gin.Context) {
 					visualizationErr = &flow360.VisualizationError{
 						Kind:         flow360.VisualizationTooLarge,
 						ResourceType: resourceType,
-						Err:          fmt.Errorf("normalized visualization manifest exceeds the %d MiB browser limit", browserVisualizationManifestLimit/(1024*1024)),
+						Err:          fmt.Errorf("normalized visualization manifest exceeds the %d MiB browser limit", visualizationManifestBrowserLimit(resourceType)/(1024*1024)),
 					}
 				}
 			}
@@ -2194,9 +2196,16 @@ func (s *Server) clearVisualizationError(key string) {
 	}
 }
 
-func visualizationManifestBrowserSafe(manifest json.RawMessage) bool {
+func visualizationManifestBrowserLimit(resourceType string) int {
+	if resourceType == "Case" {
+		return browserCaseVisualizationManifestLimit
+	}
+	return browserVisualizationManifestLimit
+}
+
+func visualizationManifestBrowserSafe(resourceType string, manifest json.RawMessage) bool {
 	var compact bytes.Buffer
-	return json.Compact(&compact, manifest) == nil && compact.Len() <= browserVisualizationManifestLimit
+	return json.Compact(&compact, manifest) == nil && compact.Len() <= visualizationManifestBrowserLimit(resourceType)
 }
 
 func visualizationManifestURL(resourceType, resourceID string, manifest json.RawMessage) string {

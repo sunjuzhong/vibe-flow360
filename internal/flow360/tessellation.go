@@ -20,11 +20,13 @@ const (
 	// Case manifests include result-field and boundary metadata and can exceed
 	// the original 2 MiB Geometry-oriented limit. Keep the cap bounded while
 	// matching the browser loader so large Cases remain renderable.
-	maxTessellationManifestSize = 8 * 1024 * 1024
-	maxTessellationEntries      = 100_000
-	maxTessellationFiles        = 64
-	maxSurfaceMeshFallbackSize  = 512 * 1024 * 1024
-	visualizationTimeout        = 30 * time.Minute
+	maxTessellationManifestSize      = 8 * 1024 * 1024
+	maxCaseVisualizationManifestSize = 64 * 1024 * 1024
+	maxDownloadedManifestSize        = 512 * 1024 * 1024
+	maxTessellationEntries           = 100_000
+	maxTessellationFiles             = 64
+	maxSurfaceMeshFallbackSize       = 512 * 1024 * 1024
+	visualizationTimeout             = 30 * time.Minute
 )
 
 type ResourceVisualization struct {
@@ -460,7 +462,11 @@ func (c *Client) ResourceVisualization(
 	}
 
 	manifestPath := filepath.Join(staging, "manifest.json")
-	manifest, err := readLimitedRegularFile(manifestPath, maxTessellationManifestSize)
+	manifestReadLimit := maxTessellationManifestSize
+	if resourceType == "Case" {
+		manifestReadLimit = maxDownloadedManifestSize
+	}
+	manifest, err := readLimitedRegularFile(manifestPath, manifestReadLimit)
 	if err != nil {
 		return ResourceVisualization{}, visualizationError(
 			visualizationFailureKind(err.Error(), VisualizationMalformed),
@@ -537,6 +543,10 @@ func visualizationFailureKind(message string, fallback VisualizationErrorKind) V
 // placeholders (and their directly attributed children) before the manifest
 // reaches the strict browser loader; unsafe or malformed paths still fail.
 func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, error) {
+	return normalizeVisualizationManifest(manifest, maxTessellationManifestSize)
+}
+
+func normalizeVisualizationManifest(manifest json.RawMessage, maxManifestSize int) (json.RawMessage, error) {
 	var entries []map[string]any
 	if !json.Valid(manifest) || json.Unmarshal(manifest, &entries) != nil {
 		return nil, errors.New("visualization manifest must be a JSON array")
@@ -601,14 +611,18 @@ func NormalizeVisualizationManifest(manifest json.RawMessage) (json.RawMessage, 
 	changed := buffersChanged || len(filtered) != len(entries)
 	filtered, referencesChanged := pruneVisualizationReferences(filtered)
 	if !changed && !referencesChanged {
+		var compact bytes.Buffer
+		if json.Compact(&compact, manifest) != nil || compact.Len() > maxManifestSize {
+			return nil, fmt.Errorf("normalized visualization manifest exceeds %d byte limit", maxManifestSize)
+		}
 		return manifest, nil
 	}
 	encoded, err := json.Marshal(filtered)
 	if err != nil {
 		return nil, fmt.Errorf("encode normalized visualization manifest: %w", err)
 	}
-	if len(encoded) > maxTessellationManifestSize {
-		return nil, fmt.Errorf("normalized visualization manifest exceeds %d byte limit", maxTessellationManifestSize)
+	if len(encoded) > maxManifestSize {
+		return nil, fmt.Errorf("normalized visualization manifest exceeds %d byte limit", maxManifestSize)
 	}
 	return encoded, nil
 }
@@ -619,7 +633,7 @@ const caseVisualizationNormalizationVersion = 2
 // asset. The stamp makes older cached manifests (which pruned animation
 // geometry) refresh once, while current manifests remain cacheable.
 func NormalizeCaseVisualizationManifest(manifest json.RawMessage) (json.RawMessage, error) {
-	normalized, err := NormalizeVisualizationManifest(manifest)
+	normalized, err := normalizeVisualizationManifest(manifest, maxCaseVisualizationManifestSize)
 	if err != nil {
 		return nil, err
 	}
@@ -643,6 +657,9 @@ func NormalizeCaseVisualizationManifest(manifest json.RawMessage) (json.RawMessa
 		encoded, encodeErr := json.Marshal(entries)
 		if encodeErr != nil {
 			return nil, fmt.Errorf("encode normalized Case visualization manifest: %w", encodeErr)
+		}
+		if len(encoded) > maxCaseVisualizationManifestSize {
+			return nil, fmt.Errorf("normalized Case visualization manifest exceeds %d byte limit", maxCaseVisualizationManifestSize)
 		}
 		return encoded, nil
 	}
@@ -1085,7 +1102,7 @@ if hasattr(transfer, "read_bytes"):
         remote_size = int(content_range.rsplit("/", 1)[1])
     except (IndexError, TypeError, ValueError):
         remote_size = None
-    remote_limit = 512 * 1024 * 1024 if resource_type == "Geometry" else 8 * 1024 * 1024
+    remote_limit = 512 * 1024 * 1024 if resource_type in ("Geometry", "Case") else 8 * 1024 * 1024
     if remote_size is not None and remote_size > remote_limit:
         raise ValueError(
             f"visualization manifest exceeds the {remote_limit // (1024 * 1024)} MiB remote limit"

@@ -685,8 +685,6 @@ export default function CaseWorkspace({
   const { manifest, state: viewerState, source: previewSource, primaryError } = useResourcePreview(
     detail ? 'Case' : null,
     resourceId ?? detail?.id ?? null,
-    detail && geometryResourceId ? 'Geometry' : null,
-    geometryResourceId ?? null,
   )
   const surfaceGroups = manifest?.groups ?? []
   const configuredVisualizationMembers = useMemo(

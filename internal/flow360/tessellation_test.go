@@ -179,6 +179,19 @@ func TestNormalizeCaseVisualizationManifestSelectsLatestAnimationFrame(t *testin
 	}
 }
 
+func TestNormalizeCaseVisualizationManifestAllowsMoreThanDefaultLimit(t *testing.T) {
+	manifest := json.RawMessage(`[
+		{"id":"root_group","type":"GeometryGroup","properties":{"description":"` + strings.Repeat("x", maxTessellationManifestSize) + `"},"attributions":{"members":["body"]}},
+		{"id":"body","type":"SolidGeometry","resources":{"buffers":{"type":"buffers","path":"body.bin","sections":[{"name":"position","length":36}]}}}
+	]`)
+	if _, err := NormalizeCaseVisualizationManifest(manifest); err != nil {
+		t.Fatalf("Case manifest above the default limit was rejected: %v", err)
+	}
+	if _, err := NormalizeVisualizationManifest(manifest); err == nil {
+		t.Fatal("non-Case manifest above the default limit was accepted")
+	}
+}
+
 func TestResourceVisualizationRejectsUnsupportedTypeWithTypedError(t *testing.T) {
 	client := &Client{}
 	_, err := client.ResourceVisualization(context.Background(), "Unknown", "asset-1")

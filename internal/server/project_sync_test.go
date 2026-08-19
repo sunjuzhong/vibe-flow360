@@ -555,15 +555,18 @@ func TestResourceMeshPreviewReturnsFriendlyCapacityError(t *testing.T) {
 }
 
 func TestVisualizationManifestBrowserSafe(t *testing.T) {
-	if !visualizationManifestBrowserSafe(json.RawMessage(strings.Repeat(" ", browserVisualizationManifestLimit) + `[]`)) {
+	if !visualizationManifestBrowserSafe("Geometry", json.RawMessage(strings.Repeat(" ", browserVisualizationManifestLimit)+`[]`)) {
 		t.Fatal("compact manifest with large formatting whitespace was rejected")
 	}
 	large, err := json.Marshal(strings.Repeat("x", browserVisualizationManifestLimit))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if visualizationManifestBrowserSafe(large) {
+	if visualizationManifestBrowserSafe("Geometry", large) {
 		t.Fatal("manifest over the browser limit was accepted")
+	}
+	if !visualizationManifestBrowserSafe("Case", large) {
+		t.Fatal("Case manifest within the relaxed browser limit was rejected")
 	}
 }
 
