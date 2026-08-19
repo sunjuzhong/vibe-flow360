@@ -82,6 +82,10 @@ export function slicePlaybackFrameKey(caseId: string, jobId: string, frames: Sli
   return frames.map((frame) => sliceFrameAssetURL(caseId, jobId, frame, preview)).join('|')
 }
 
+export function slicePlaybackReadyFrameKey(loadedAssetKey: string, expectedFrameKey: string) {
+  return loadedAssetKey === expectedFrameKey ? expectedFrameKey : ''
+}
+
 export function slicePlayerAssetURL(caseId: string, jobId: string, manifestPath: string) {
   const assetPath = manifestPath.split('/').map(encodeURIComponent).join('/')
   return `/api/flow360/resources/Case/${encodeURIComponent(caseId)}/slice-player/jobs/${encodeURIComponent(jobId)}/assets/${assetPath}`
@@ -311,9 +315,8 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   }, [selectedField, selectedFields])
 
   const handleAssetReady = useCallback((assetURL: string) => {
-    if (assetURL === currentFrameKeyRef.current.split('|')[0]) {
-      setReadyFrameKey(currentFrameKeyRef.current)
-    }
+    const readyKey = slicePlaybackReadyFrameKey(assetURL, currentFrameKeyRef.current)
+    if (readyKey) setReadyFrameKey(readyKey)
   }, [])
 
   if (!playback?.ready || !frame || !manifest) return null

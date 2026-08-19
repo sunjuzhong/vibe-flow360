@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import type { SlicePlayerJob } from '../api/client'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -106,12 +106,15 @@ describe('CaseSlicePlayerPanel', () => {
     })
     const first = frame('a', 'a-100.json')
     const second = frame('b', 'b-100.json')
-    expect(slicePlaybackFrameKey('case-1', 'job-1', [first, second])).toBe([
+    const combinedKey = slicePlaybackFrameKey('case-1', 'job-1', [first, second])
+    expect(combinedKey).toBe([
       '/api/flow360/resources/Case/case-1/slice-player/jobs/job-1/assets/a-100.json',
       '/api/flow360/resources/Case/case-1/slice-player/jobs/job-1/assets/b-100.json',
     ].join('|'))
-    expect(slicePlaybackFrameKey('case-1', 'job-1', [first, second]))
-      .not.toBe(slicePlaybackFrameKey('case-1', 'job-1', [first]))
+    const primaryOnly = slicePlaybackFrameKey('case-1', 'job-1', [first])
+    expect(combinedKey).not.toBe(primaryOnly)
+    expect(slicePlaybackReadyFrameKey(combinedKey, combinedKey)).toBe(combinedKey)
+    expect(slicePlaybackReadyFrameKey(primaryOnly, combinedKey)).toBe('')
   })
 
   it('groups named slices and synchronizes multiple selections by common steps', () => {
