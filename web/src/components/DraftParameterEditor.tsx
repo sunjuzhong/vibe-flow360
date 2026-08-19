@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, Code2, Eye, ListTree, Play, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APIError, api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
@@ -37,6 +37,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [failedSyncFingerprint, setFailedSyncFingerprint] = useState('')
   const [validation, setValidation] = useState<DraftParameterValidationResponse | null>(null)
   const [validating, setValidating] = useState(false)
+  const [validatedDraftId, setValidatedDraftId] = useState('')
   const [validatedFingerprint, setValidatedFingerprint] = useState('')
   const [aiPrompt, setAIPrompt] = useState('')
   const [aiLoading, setAILoading] = useState(false)
@@ -44,6 +45,9 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [aiMessages, setAIMessages] = useState<DraftAISessionMessage[]>([])
   const aiMessageIDRef = useRef(0)
   const latestFingerprintRef = useRef('')
+  const validationRequestRef = useRef(0)
+  const validationTimerRef = useRef<number | null>(null)
+  const immediateValidationFingerprintRef = useRef('')
   const currentDraftIdRef = useRef(draftId)
   const onSavedRef = useRef(onSaved)
 
@@ -113,30 +117,65 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   latestFingerprintRef.current = candidateResult.fingerprint
 
-  useEffect(() => {
-    if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint) return
-    let active = true
-    const timer = window.setTimeout(() => {
-      setValidating(true)
-      api.validateDraftParameters(draftId, candidateResult.value!)
-        .then((response) => {
-          if (!active) return
-          setValidation(response)
-          setValidatedFingerprint(candidateResult.fingerprint)
-        })
-        .catch((cause) => {
-          if (!active) return
-          setValidation(null)
-          setValidatedFingerprint('')
-          setError(draftParameterErrorMessage(cause, t))
-        })
-        .finally(() => active && setValidating(false))
-    }, dirty ? 500 : 0)
-    return () => {
-      active = false
-      window.clearTimeout(timer)
+  const validateCandidate = useCallback(async (candidate: Record<string, unknown>, fingerprint: string) => {
+    const requestDraftId = draftId
+    const requestID = ++validationRequestRef.current
+    setValidating(true)
+    setValidation(null)
+    setValidatedDraftId('')
+    setValidatedFingerprint('')
+    setError('')
+    try {
+      const response = await api.validateDraftParameters(draftId, candidate)
+      if (
+        currentDraftIdRef.current !== requestDraftId
+        || validationRequestRef.current !== requestID
+        || latestFingerprintRef.current !== fingerprint
+      ) return null
+      setValidation(response)
+      setValidatedDraftId(requestDraftId)
+      setValidatedFingerprint(fingerprint)
+      return response
+    } catch (cause) {
+      if (
+        currentDraftIdRef.current === requestDraftId
+        && validationRequestRef.current === requestID
+        && latestFingerprintRef.current === fingerprint
+      ) {
+        setValidation(null)
+        setValidatedDraftId('')
+        setValidatedFingerprint('')
+        setError(draftParameterErrorMessage(cause, t))
+      }
+      return null
+    } finally {
+      if (currentDraftIdRef.current === requestDraftId && validationRequestRef.current === requestID) {
+        setValidating(false)
+      }
     }
-  }, [candidateResult.fingerprint, draftId, dirty, loading, readOnly])
+  }, [draftId, t])
+
+  useEffect(() => {
+    validationRequestRef.current += 1
+    setValidation(null)
+    setValidatedDraftId('')
+    setValidatedFingerprint('')
+    setValidating(false)
+    if (validationTimerRef.current !== null) window.clearTimeout(validationTimerRef.current)
+    if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint) return
+    const validateImmediately = immediateValidationFingerprintRef.current === candidateResult.fingerprint
+    if (validateImmediately) immediateValidationFingerprintRef.current = ''
+    validationTimerRef.current = window.setTimeout(() => {
+      validationTimerRef.current = null
+      void validateCandidate(candidateResult.value!, candidateResult.fingerprint)
+    }, draftValidationDelay(dirty, validateImmediately))
+    return () => {
+      if (validationTimerRef.current !== null) {
+        window.clearTimeout(validationTimerRef.current)
+        validationTimerRef.current = null
+      }
+    }
+  }, [candidateResult.fingerprint, candidateResult.value, dirty, loading, readOnly, validateCandidate])
 
   const selectMode = (nextMode: EditorMode) => {
     if (nextMode === mode) return
@@ -176,6 +215,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   }, [draftId, formValue, schema])
 
   const applyCandidate = (next: Record<string, unknown>) => {
+    immediateValidationFingerprintRef.current = JSON.stringify(next)
     setJSONValue(JSON.stringify(next, null, 2))
     setPreviewValue(next)
     if (schema) setFormValue(hydrateSchemaValue(schema, next, true))
@@ -184,6 +224,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setSyncError('')
     setFailedSyncFingerprint('')
     setValidation(null)
+    setValidatedDraftId('')
     setValidatedFingerprint('')
   }
 
@@ -270,6 +311,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         setValidating(true)
         currentValidation = await api.validateDraftParameters(draftId, next)
         setValidation(currentValidation)
+        setValidatedDraftId(draftId)
         setValidatedFingerprint(candidateResult.fingerprint)
       } catch (cause) {
         setSyncError(draftParameterErrorMessage(cause, t))
@@ -281,6 +323,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     await persistCandidate(next, candidateResult.fingerprint)
   }
 
+  const validateNow = () => {
+    if (!candidateResult.value || !candidateResult.fingerprint || validating) return
+    if (validationTimerRef.current !== null) {
+      window.clearTimeout(validationTimerRef.current)
+      validationTimerRef.current = null
+    }
+    void validateCandidate(candidateResult.value, candidateResult.fingerprint)
+  }
+
   useEffect(() => {
     if (!draftAutoSyncReady({
       dirty,
@@ -288,6 +339,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       validating,
       candidate: candidateResult.value,
       fingerprint: candidateResult.fingerprint,
+      draftId,
+      validatedDraftId,
       validatedFingerprint,
       hasValidation: Boolean(validation),
       failedSyncFingerprint,
@@ -296,16 +349,25 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     const fingerprint = candidateResult.fingerprint
     const timer = window.setTimeout(() => void persistCandidate(next, fingerprint), 300)
     return () => window.clearTimeout(timer)
-  }, [candidateResult.fingerprint, candidateResult.value, dirty, failedSyncFingerprint, persistCandidate, saving, validatedFingerprint, validating, validation])
+  }, [candidateResult.fingerprint, candidateResult.value, dirty, draftId, failedSyncFingerprint, persistCandidate, saving, validatedDraftId, validatedFingerprint, validating, validation])
 
   const reviewRunReady = draftReviewRunReady({
     dirty,
     saving,
     syncError,
     validationValid: validation?.valid === true,
+    draftId,
+    validatedDraftId,
     fingerprint: candidateResult.fingerprint,
     validatedFingerprint,
   })
+  const validationIsCurrent = draftValidationIsCurrent(
+    draftId,
+    validatedDraftId,
+    candidateResult.fingerprint,
+    validatedFingerprint,
+    Boolean(validation),
+  )
   const firstValidationError = validation?.issues.find((issue) => issue.level === 'error')?.message
   const reviewRunStatus = syncError
     ? t('Retry Draft sync before Review & Run.')
@@ -397,16 +459,20 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         </div>
       )}
 
-      {(validating || (validation && !validation.valid)) && (
-        <section className={`draft-validation-summary ${validating ? 'checking' : 'error'}`} aria-live="polite">
-          {validating ? <RefreshCw size={15} className="spin" /> : <AlertCircle size={15} />}
+      {(validating || validationIsCurrent) && (
+        <section className={`draft-validation-summary ${validating ? 'checking' : validation?.valid ? 'ready' : 'error'}`} aria-live="polite">
+          {validating
+            ? <RefreshCw size={15} className="spin" />
+            : validation?.valid
+              ? <CheckCircle2 size={15} />
+              : <AlertCircle size={15} />}
           <span>
-            <strong>{validating ? t('Checking changes…') : t('Fix these before running')}</strong>
-            <small>{validating ? t('Flow360 is checking the latest Draft values.') : firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')}</small>
+            <strong>{validating ? t('Validating current parameters…') : validation?.valid ? t('Flow360 validation passed') : t('Flow360 validation needs attention')}</strong>
+            <small>{validating ? t('Flow360 is checking the latest Draft values.') : validation?.valid ? t('This candidate can be saved to the Draft.') : firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')}</small>
           </span>
         </section>
       )}
-      {validation && !validation.valid && (
+      {validationIsCurrent && validation && !validation.valid && (
         <div className="draft-validation-issues">
           {validation.issues.filter((issue) => issue.level === 'error').map((issue, index) => (
             <div key={`${issue.path}-${issue.code}-${index}`}><code>{issue.path || 'SimulationParams'}</code><span>{issue.message}</span></div>
@@ -424,6 +490,15 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
       <footer className="draft-config-actions">
         <span>{reviewRunStatus}</span>
+        <button
+          type="button"
+          className="draft-parameter-validate"
+          disabled={validating || aiLoading || !candidateResult.value || Boolean(candidateResult.error) || (mode === 'json' && Boolean(jsonSyntaxIssue(jsonValue)))}
+          onClick={validateNow}
+        >
+          {validating ? <RefreshCw size={13} className="spin" /> : <ShieldCheck size={13} />}
+          {validating ? t('Validating current parameters…') : validationIsCurrent ? t('Validate again') : t('Validate')}
+        </button>
         {syncError && <button
           type="button"
           className="draft-parameter-save"
@@ -456,6 +531,8 @@ export function draftAutoSyncReady({
   validating,
   candidate,
   fingerprint,
+  draftId,
+  validatedDraftId,
   validatedFingerprint,
   hasValidation,
   failedSyncFingerprint,
@@ -465,6 +542,8 @@ export function draftAutoSyncReady({
   validating: boolean
   candidate: Record<string, unknown> | null
   fingerprint: string
+  draftId: string
+  validatedDraftId: string
   validatedFingerprint: string
   hasValidation: boolean
   failedSyncFingerprint: string
@@ -473,10 +552,30 @@ export function draftAutoSyncReady({
     && !saving
     && !validating
     && Boolean(candidate)
+    && Boolean(draftId)
+    && validatedDraftId === draftId
     && Boolean(fingerprint)
     && hasValidation
     && validatedFingerprint === fingerprint
     && failedSyncFingerprint !== fingerprint
+}
+
+export function draftValidationDelay(dirty: boolean, immediate: boolean) {
+  return immediate ? 0 : dirty ? 500 : 0
+}
+
+export function draftValidationIsCurrent(
+  draftId: string,
+  validatedDraftId: string,
+  fingerprint: string,
+  validatedFingerprint: string,
+  hasValidation: boolean,
+) {
+  return hasValidation
+    && Boolean(draftId)
+    && validatedDraftId === draftId
+    && Boolean(fingerprint)
+    && validatedFingerprint === fingerprint
 }
 
 export function draftReviewRunReady({
@@ -484,6 +583,8 @@ export function draftReviewRunReady({
   saving,
   syncError,
   validationValid,
+  draftId,
+  validatedDraftId,
   fingerprint,
   validatedFingerprint,
 }: {
@@ -491,6 +592,8 @@ export function draftReviewRunReady({
   saving: boolean
   syncError: string
   validationValid: boolean
+  draftId: string
+  validatedDraftId: string
   fingerprint: string
   validatedFingerprint: string
 }) {
@@ -498,6 +601,8 @@ export function draftReviewRunReady({
     && !saving
     && !syncError
     && validationValid
+    && Boolean(draftId)
+    && validatedDraftId === draftId
     && Boolean(fingerprint)
     && validatedFingerprint === fingerprint
 }

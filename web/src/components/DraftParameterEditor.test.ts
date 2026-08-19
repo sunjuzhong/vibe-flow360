@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { APIError, type DynamicFormSchema } from '../api/client'
-import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, parseParameterJSON } from './DraftParameterEditor'
+import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, draftValidationDelay, draftValidationIsCurrent, parseParameterJSON } from './DraftParameterEditor'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -116,12 +116,15 @@ describe('Draft parameter editor', () => {
       validating: false,
       candidate: { version: '25.2' },
       fingerprint: '{"version":"25.2"}',
+      draftId: 'draft-2',
+      validatedDraftId: 'draft-2',
       validatedFingerprint: '{"version":"25.2"}',
       hasValidation: true,
       failedSyncFingerprint: '',
     }
     expect(draftAutoSyncReady(ready)).toBe(true)
     expect(draftAutoSyncReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
+    expect(draftAutoSyncReady({ ...ready, validatedDraftId: 'draft-1' })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, saving: true })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, failedSyncFingerprint: ready.fingerprint })).toBe(false)
   })
@@ -132,6 +135,8 @@ describe('Draft parameter editor', () => {
       saving: false,
       syncError: '',
       validationValid: true,
+      draftId: 'draft-2',
+      validatedDraftId: 'draft-2',
       fingerprint: 'latest',
       validatedFingerprint: 'latest',
     }
@@ -139,7 +144,17 @@ describe('Draft parameter editor', () => {
     expect(draftReviewRunReady({ ...ready, dirty: true })).toBe(false)
     expect(draftReviewRunReady({ ...ready, syncError: 'offline' })).toBe(false)
     expect(draftReviewRunReady({ ...ready, validationValid: false })).toBe(false)
+    expect(draftReviewRunReady({ ...ready, validatedDraftId: 'draft-1' })).toBe(false)
     expect(draftReviewRunReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
+  })
+
+  it('binds validation to the exact candidate and validates AI changes immediately', () => {
+    expect(draftValidationIsCurrent('draft-2', 'draft-2', 'candidate-v2', 'candidate-v2', true)).toBe(true)
+    expect(draftValidationIsCurrent('draft-2', 'draft-1', 'candidate-v2', 'candidate-v2', true)).toBe(false)
+    expect(draftValidationIsCurrent('draft-2', 'draft-2', 'candidate-v2', 'candidate-v1', true)).toBe(false)
+    expect(draftValidationIsCurrent('draft-2', 'draft-2', 'candidate-v2', 'candidate-v2', false)).toBe(false)
+    expect(draftValidationDelay(true, false)).toBe(500)
+    expect(draftValidationDelay(true, true)).toBe(0)
   })
 
   it('turns release policy API errors into an actionable localized message', () => {

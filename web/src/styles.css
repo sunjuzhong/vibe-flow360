@@ -2378,6 +2378,9 @@ button { color: inherit; }
 .draft-change-summary p { margin: 0; padding: 11px 12px; color: #81877c; font-size: 11px; }
 .draft-config-actions { position: sticky; bottom: -18px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid #dfe1d9; background: rgba(250,250,247,.96); backdrop-filter: blur(10px); }
 .draft-config-actions > span { min-width: 0; flex: 1; color: #7c8277; font-size: 11px; line-height: 1.4; }
+.draft-parameter-validate { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #b8c29f; border-radius: 8px; color: #5f702f; background: #f4f7eb; font-size: 12px; font-weight: 700; cursor: pointer; }
+.draft-parameter-validate:hover:not(:disabled) { border-color: #8fa35a; background: #edf3dc; }
+.draft-parameter-validate:disabled { cursor: not-allowed; opacity: .5; }
 .draft-review-run { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 14px; border: 1px solid #6e7e44; border-radius: 8px; color: #fff; background: #586a2e; font-size: 12px; font-weight: 700; cursor: pointer; }
 .draft-review-run:disabled { cursor: not-allowed; opacity: .45; }
 
