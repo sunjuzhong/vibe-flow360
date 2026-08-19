@@ -201,6 +201,17 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 
 	agentRepairAttempts := 0
 	for !preflight.Valid && agentRepairAttempts < maxPlanAssistRepairAttempts {
+		if inheritedPatch, applied, inheritanceErr := surfaceRefinementInheritancePatch(preflight.Issues, merged); inheritanceErr == nil && applied {
+			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, inheritedPatch)
+			if err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+					break
+				}
+			}
+		}
 		if recommendedPatch, applied, recommendationErr := recommendedPlanAssistPatch(preflight.FormSchema, merged); recommendationErr == nil && applied {
 			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch)
 			if err == nil {
@@ -292,6 +303,17 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	// field that contained a deterministic schema recommendation. Always give
 	// the latest Flow360 recovery schema one final authoritative pass before
 	// surfacing failure; this is independent of the bounded model-call budget.
+	if !preflight.Valid {
+		if inheritedPatch, applied, inheritanceErr := surfaceRefinementInheritancePatch(preflight.Issues, merged); inheritanceErr == nil && applied {
+			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, inheritedPatch); err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+				}
+			}
+		}
+	}
 	if !preflight.Valid {
 		if unsupportedPatch, applied, unsupportedErr := unsupportedPlanAssistPatch(preflight.Issues, merged); unsupportedErr == nil && applied {
 			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, unsupportedPatch); err == nil {
@@ -674,6 +696,65 @@ func recommendedPlanAssistPatch(schema, current json.RawMessage) (json.RawMessag
 		return nil, false, err
 	}
 	return expanded, true, nil
+}
+
+// surfaceRefinementInheritancePatch handles a Flow360 constraint that cannot
+// be expressed as a required field in JSON Schema: a SurfaceRefinement must
+// specify at least one local surface control. When the Draft already has an
+// authoritative global surface_max_edge_length, explicitly inherit that exact
+// quantity for only the refinements rejected by Flow360.
+func surfaceRefinementInheritancePatch(issues []flow360.PreflightIssue, current json.RawMessage) (json.RawMessage, bool, error) {
+	var currentValue map[string]any
+	if json.Unmarshal(current, &currentValue) != nil {
+		return nil, false, errors.New("Flow360 refinement inheritance values are invalid")
+	}
+	meshing, _ := currentValue["meshing"].(map[string]any)
+	defaults, _ := meshing["defaults"].(map[string]any)
+	globalMaxEdgeLength, exists := defaults["surface_max_edge_length"]
+	if !exists || globalMaxEdgeLength == nil {
+		return nil, false, nil
+	}
+	desired := clonePlanAssistValue(currentValue).(map[string]any)
+	desiredMeshing, _ := desired["meshing"].(map[string]any)
+	refinements, _ := desiredMeshing["refinements"].([]any)
+	applied := false
+	for _, issue := range issues {
+		if issue.Level != "error" || issue.Code != "value_error" ||
+			!strings.Contains(issue.Message, "SurfaceRefinement requires at least one of") {
+			continue
+		}
+		parts := strings.Split(issue.Path, ".")
+		if len(parts) < 3 || parts[0] != "meshing" || parts[1] != "refinements" {
+			continue
+		}
+		index, parseErr := strconv.Atoi(parts[2])
+		if parseErr != nil || index < 0 || index >= len(refinements) {
+			continue
+		}
+		refinement, _ := refinements[index].(map[string]any)
+		refinementType := refinement["refinement_type"]
+		if refinementType == nil {
+			refinementType = refinement["type"]
+		}
+		if refinementType != "SurfaceRefinement" || refinement["max_edge_length"] != nil {
+			continue
+		}
+		refinement["max_edge_length"] = clonePlanAssistValue(globalMaxEdgeLength)
+		applied = true
+	}
+	if !applied {
+		return nil, false, nil
+	}
+	difference, changed := planAssistMergePatchDifference(currentValue, desired)
+	if !changed {
+		return nil, false, nil
+	}
+	patch, ok := difference.(map[string]any)
+	if !ok {
+		return nil, false, errors.New("Flow360 refinement inheritance patch is invalid")
+	}
+	payload, err := json.Marshal(patch)
+	return payload, err == nil, err
 }
 
 func recommendedPlanAssistValues(node map[string]any) (map[string]any, bool) {

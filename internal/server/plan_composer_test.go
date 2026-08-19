@@ -597,6 +597,50 @@ func TestRecommendedPlanAssistPatchExpandsHighConfidenceBoundaryAssignment(t *te
 	}
 }
 
+func TestSurfaceRefinementInheritancePatchUsesGlobalFlow360Default(t *testing.T) {
+	current := json.RawMessage(`{
+		"meshing":{
+			"defaults":{"surface_max_edge_length":{"value":0.05,"units":"m"}},
+			"refinements":[
+				{"name":"Main element","refinement_type":"SurfaceRefinement","entities":{"stored_entities":[{"name":"wing"}]}},
+				{"name":"Slat and flap","refinement_type":"SurfaceRefinement","entities":{"stored_entities":[{"name":"slat"}]}},
+				{"name":"Keep symmetry spacing","refinement_type":"PassiveSpacing","type":"projected"}
+			]
+		}
+	}`)
+	patch, applied, err := surfaceRefinementInheritancePatch([]flow360.PreflightIssue{
+		{Level: "error", Code: "value_error", Path: "meshing.refinements.0", Message: "Value error, SurfaceRefinement requires at least one of 'max_edge_length', 'curvature_resolution_angle', or 'resolve_face_boundaries' to be specified."},
+		{Level: "error", Code: "value_error", Path: "meshing.refinements.1", Message: "Value error, SurfaceRefinement requires at least one of 'max_edge_length', 'curvature_resolution_angle', or 'resolve_face_boundaries' to be specified."},
+	}, current)
+	if err != nil || !applied {
+		t.Fatalf("global Flow360 surface size was not inherited: applied=%v err=%v", applied, err)
+	}
+	merged, err := plans.MergeSimulationParams(current, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`"name":"Main element"`, `"name":"Slat and flap"`,
+		`"max_edge_length":{"units":"m","value":0.05}`,
+		`"name":"Keep symmetry spacing"`, `"type":"projected"`,
+	} {
+		if !strings.Contains(string(merged), expected) {
+			t.Fatalf("inherited candidate lost %s: patch=%s merged=%s", expected, patch, merged)
+		}
+	}
+}
+
+func TestSurfaceRefinementInheritancePatchRequiresAuthoritativeGlobalDefault(t *testing.T) {
+	current := json.RawMessage(`{"meshing":{"refinements":[{"refinement_type":"SurfaceRefinement"}]}}`)
+	patch, applied, err := surfaceRefinementInheritancePatch([]flow360.PreflightIssue{{
+		Level: "error", Code: "value_error", Path: "meshing.refinements.0",
+		Message: "SurfaceRefinement requires at least one of 'max_edge_length', 'curvature_resolution_angle', or 'resolve_face_boundaries' to be specified.",
+	}}, current)
+	if err != nil || applied || patch != nil {
+		t.Fatalf("repair invented a surface size without a Flow360 global default: applied=%v patch=%s err=%v", applied, patch, err)
+	}
+}
+
 func TestAccumulatePlanAssistRepairPreservesEarlierBoundaryCorrection(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"models":{"type":"array"},"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"}}}}}`)
 	current := agent.Proposal{
