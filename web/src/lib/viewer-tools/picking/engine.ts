@@ -90,6 +90,7 @@ export function resolvePickCandidate(
       resourceRef: options.resourceRef,
     },
     entityId: metadata.entityId,
+    objectId: mesh.uuid,
     entityType: 'face',
     triangleIndex: candidate.faceIndex ?? undefined,
     normal: normal ? tuple(normal) : undefined,

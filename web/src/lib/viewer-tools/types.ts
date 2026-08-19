@@ -28,6 +28,8 @@ export interface PickResult {
   readonly resourceRef: ResourceRef
   readonly coordinateFrame: CoordinateFrame
   readonly entityId?: string
+  /** Runtime-only identity of the exact Three.js object hit by the raycaster. */
+  readonly objectId?: string
   readonly entityType?: PickEntityType
   readonly triangleIndex?: number
   readonly vertexIndex?: number

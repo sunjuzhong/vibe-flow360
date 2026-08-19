@@ -68,6 +68,13 @@ export type MeshGroupData = {
   path?: string[]
 }
 
+export function prefixedViewerEntityId(userData: Record<string, unknown>, prefix: string) {
+  const sourceId = String(userData.viewerSourceEntityId ?? userData.entityId ?? userData.groupId ?? '')
+  if (!sourceId) return ''
+  userData.viewerSourceEntityId = sourceId
+  return `${prefix}${sourceId}`
+}
+
 export type MeshEdgeData = {
   id: string
   name: string
@@ -930,17 +937,23 @@ export function Viewer3D({
         layerRoot.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return
           if (object instanceof THREE.BatchedMesh && Array.isArray(object.userData.uvfBatchEntityByInstance)) {
+            const sourceEntityIds = Array.isArray(object.userData.viewerSourceBatchEntityByInstance)
+              ? object.userData.viewerSourceBatchEntityByInstance as string[]
+              : [...object.userData.uvfBatchEntityByInstance as string[]]
+            object.userData.viewerSourceBatchEntityByInstance = sourceEntityIds
+            object.userData.uvfBatchEntityByInstance = sourceEntityIds.map(
+              (entityId) => `${layerManifest.entity_id_prefix ?? ''}${entityId}`,
+            )
             nextMeshes.set(`batch-${object.uuid}`, object)
-            for (const rawEntityId of object.userData.uvfBatchEntityByInstance as string[]) {
-              const entityId = `${layerManifest.entity_id_prefix ?? ''}${rawEntityId}`
+            for (const entityId of object.userData.uvfBatchEntityByInstance as string[]) {
               nextEntityMeshes.set(entityId, [object])
             }
             return
           }
-          const embeddedEntityID = String(object.userData.entityId ?? object.userData.groupId ?? '')
-          const embeddedGroupID = embeddedEntityID
-            ? `${layerManifest.entity_id_prefix ?? ''}${embeddedEntityID}`
-            : ''
+          const embeddedGroupID = prefixedViewerEntityId(
+            object.userData,
+            layerManifest.entity_id_prefix ?? '',
+          )
           const group = groupById.get(embeddedGroupID)
             ?? groupByName.get(object.name.toLowerCase())
             ?? fallbackGroup
@@ -1627,9 +1640,13 @@ export function Viewer3D({
     })
   }
 
-  const meshForEntity = (entityId: string | undefined) => {
-    if (!entityId) return undefined
-    return entityMeshesRef.current.get(entityId)?.[0]
+  const meshForPick = (pick: PickResult) => {
+    if (pick.objectId) {
+      const exactObject = assetRef.current?.getObjectByProperty('uuid', pick.objectId)
+      if (exactObject instanceof THREE.Mesh) return exactObject
+    }
+    if (!pick.entityId) return undefined
+    return entityMeshesRef.current.get(pick.entityId)?.[0]
   }
 
   const createInputController = () => {
@@ -1645,7 +1662,7 @@ export function Viewer3D({
             onFieldProbe?.(null)
             return false
           }
-          const mesh = meshForEntity(pick.entityId)
+          const mesh = meshForPick(pick)
           const asset = uvfAssetRef.current
           if (!selectedField || !asset || !mesh) return false
           const meshGroupId = String(mesh.userData.groupId ?? mesh.userData.entityId ?? '')

@@ -72,6 +72,7 @@ describe('picking engine', () => {
     })
 
     expect(result?.entityId).toBe(indexed ? 'indexed-face' : 'plain-face')
+    expect(result?.objectId).toBe(mesh.uuid)
     expect(result?.triangleIndex).toBe(0)
     expect(result?.worldPosition).toEqual([10, 2, 0])
     expect(result?.localPosition).toEqual([0, 0, 1])

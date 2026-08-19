@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
+import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, prefixedViewerEntityId, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -9,6 +9,14 @@ function renderViewer(viewer: React.ReactNode) {
 }
 
 describe('Viewer3D layout state', () => {
+  it('keeps cached asset entity prefixes idempotent across frame reuse', () => {
+    const userData: Record<string, unknown> = { entityId: 'face-0', groupId: 'face-0' }
+
+    expect(prefixedViewerEntityId(userData, 'playback:slice-a:')).toBe('playback:slice-a:face-0')
+    userData.entityId = 'playback:slice-a:face-0'
+    expect(prefixedViewerEntityId(userData, 'playback:slice-a:')).toBe('playback:slice-a:face-0')
+  })
+
   it('keeps single and multi-selection unchanged when empty viewer space is clicked', () => {
     const single = { groupId: 'wall', groupIds: ['wall'] }
     const multiple = { groupId: 'farfield', groupIds: ['wall', 'farfield'] }
