@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Database, LoaderCircle, Pause, Play, SkipBack, SkipForward, Square } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Database, LoaderCircle, Maximize2, Minimize2, Pause, Play, SkipBack, SkipForward, Square } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SlicePlayerJob } from '../api/client'
 import { useI18n } from '../i18n'
@@ -122,6 +122,10 @@ export function sliceFieldPanelVisible(playing: boolean) {
   return !playing
 }
 
+export function slicePlaybackFullscreenLabel(fullscreen: boolean) {
+  return fullscreen ? 'Exit full screen' : 'Enter full screen'
+}
+
 export type SlicePlaybackTimelineEntry = {
   step?: number
   frames: SlicePlaybackFrame[]
@@ -222,6 +226,8 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   const [frameIndex, setFrameIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [fps, setFps] = useState(2)
+  const [fullscreen, setFullscreen] = useState(false)
+  const stageRef = useRef<HTMLDivElement>(null)
   const [selectedField, setSelectedField] = useState<string | null>(playback?.fields[0] ?? null)
   const fallbackTrackName = archiveKind === 'surfaces' ? 'Surface' : 'Slice'
   const trackNames = useMemo(
@@ -250,6 +256,12 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   }, [frame, frames, job.id, onFrameChange, playing])
 
   useEffect(() => () => assetCache.dispose(), [assetCache])
+
+  useEffect(() => {
+    const syncFullscreenState = () => setFullscreen(document.fullscreenElement === stageRef.current)
+    document.addEventListener('fullscreenchange', syncFullscreenState)
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState)
+  }, [])
 
   const readyFrameKeyRef = useRef(readyFrameKey)
   readyFrameKeyRef.current = readyFrameKey
@@ -324,6 +336,12 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
     const target = Math.max(0, Math.min(timeline.length - 1, next))
     setFrameIndex(target)
   }
+  const toggleFullscreen = async () => {
+    const stage = stageRef.current
+    if (!stage) return
+    if (document.fullscreenElement === stage) await document.exitFullscreen()
+    else await stage.requestFullscreen()
+  }
   return (
     <section className="slice-playback">
       {trackNames.length > 1 && (
@@ -350,30 +368,35 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
           <small>{t('{count} sequences selected and synchronized by shared step').replace('{count}', String(selectedTracks.length))}</small>
         </fieldset>
       )}
-      <div className="slice-playback-viewer">
-        <LazyViewer3D manifest={manifest} additionalManifests={manifests.slice(1)} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
-          fieldNames={selectedFields} fieldRange={selectedFieldRange}
-          showFieldPanel={sliceFieldPanelVisible(playing)}
-          showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
-          deferPickingBVH={playing}
-          uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
-      </div>
-      <div className="slice-playback-controls">
-        <button aria-label={t('First frame')} onClick={() => { setPlaying(false); move(0) }}><SkipBack size={15} /></button>
-        <button className="slice-playback-primary" aria-label={playing ? t('Pause') : t('Play')} onClick={() => setPlaying((value) => !value)} disabled={timeline.length < 2}>
-          {playing ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-        <button aria-label={t('Next frame')} onClick={() => { setPlaying(false); move(frameIndex + 1) }}><SkipForward size={15} /></button>
-        <input aria-label={t('Frame')} type="range" min={0} max={Math.max(0, timeline.length - 1)} value={frameIndex}
-          onPointerDown={() => setPlaying(false)}
-          onChange={(event) => { setPlaying(false); move(Number(event.target.value)) }} />
-        <span>{frameIndex + 1} / {timeline.length}<small>{t('step')} {timelineFrame?.step ?? '—'}</small></span>
-        <small className={`slice-playback-quality ${playing ? 'preview' : 'full'}`}>
-          {t(playing ? 'Preview while playing' : 'Full resolution')}
-        </small>
-        <select aria-label={t('Playback speed')} value={fps} onChange={(event) => setFps(Number(event.target.value))}>
-          {SLICE_PLAYBACK_FPS_OPTIONS.map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
-        </select>
+      <div ref={stageRef} className="slice-playback-stage">
+        <div className="slice-playback-viewer">
+          <LazyViewer3D manifest={manifest} additionalManifests={manifests.slice(1)} state={{ status: 'ready' }} selectedField={selectedField} onSelectedFieldChange={setSelectedField}
+            fieldNames={selectedFields} fieldRange={selectedFieldRange}
+            showFieldPanel={sliceFieldPanelVisible(playing)}
+            showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
+            deferPickingBVH={playing}
+            uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
+        </div>
+        <div className="slice-playback-controls">
+          <button aria-label={t('First frame')} onClick={() => { setPlaying(false); move(0) }}><SkipBack size={15} /></button>
+          <button className="slice-playback-primary" aria-label={playing ? t('Pause') : t('Play')} onClick={() => setPlaying((value) => !value)} disabled={timeline.length < 2}>
+            {playing ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+          <button aria-label={t('Next frame')} onClick={() => { setPlaying(false); move(frameIndex + 1) }}><SkipForward size={15} /></button>
+          <input aria-label={t('Frame')} type="range" min={0} max={Math.max(0, timeline.length - 1)} value={frameIndex}
+            onPointerDown={() => setPlaying(false)}
+            onChange={(event) => { setPlaying(false); move(Number(event.target.value)) }} />
+          <span>{frameIndex + 1} / {timeline.length}<small>{t('step')} {timelineFrame?.step ?? '—'}</small></span>
+          <small className={`slice-playback-quality ${playing ? 'preview' : 'full'}`}>
+            {t(playing ? 'Preview while playing' : 'Full resolution')}
+          </small>
+          <select aria-label={t('Playback speed')} value={fps} onChange={(event) => setFps(Number(event.target.value))}>
+            {SLICE_PLAYBACK_FPS_OPTIONS.map((value) => <option key={value} value={value}>{value} {t('fps')}</option>)}
+          </select>
+          <button className="slice-playback-fullscreen" aria-label={t(slicePlaybackFullscreenLabel(fullscreen))} title={t(slicePlaybackFullscreenLabel(fullscreen))} onClick={() => void toggleFullscreen()}>
+            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+        </div>
       </div>
     </section>
   )

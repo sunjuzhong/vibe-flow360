@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import type { SlicePlayerJob } from '../api/client'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackFullscreenLabel, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -77,6 +77,11 @@ describe('CaseSlicePlayerPanel', () => {
   it('shows Field controls only while playback is paused', () => {
     expect(sliceFieldPanelVisible(false)).toBe(true)
     expect(sliceFieldPanelVisible(true)).toBe(false)
+  })
+
+  it('labels the fullscreen control from the browser fullscreen state', () => {
+    expect(slicePlaybackFullscreenLabel(false)).toBe('Enter full screen')
+    expect(slicePlaybackFullscreenLabel(true)).toBe('Exit full screen')
   })
 
   it('prefetches two frames ahead and keeps one frame behind with wraparound', () => {

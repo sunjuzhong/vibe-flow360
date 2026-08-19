@@ -132,6 +132,8 @@ const messages: Record<string, string> = {
   Preview: '预览',
   'Full resolution': '全分辨率',
   'Preview while playing': '播放时使用流畅预览',
+  'Enter full screen': '进入全屏',
+  'Exit full screen': '退出全屏',
   Open: '打开',
   Hide: '隐藏',
   Show: '显示',

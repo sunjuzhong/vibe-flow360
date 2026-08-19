@@ -1252,7 +1252,8 @@ export function Viewer3D({
     if (asset && camera && controls) {
       fitCameraToObject(camera, controls, asset)
     }
-  }, [fitCameraToObject])
+    invalidateViewer()
+  }, [fitCameraToObject, invalidateViewer])
 
   const applyCameraCommand = useCallback((type: ViewerCameraCommand['type']) => {
     if (assetState.status !== 'ready') return

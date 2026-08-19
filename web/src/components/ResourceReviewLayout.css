@@ -915,10 +915,11 @@
 .slice-playback-tracks input { margin: 0; accent-color: #789521; }
 .slice-playback-tracks label span { overflow: hidden; max-width: 190px; text-overflow: ellipsis; white-space: nowrap; }
 .slice-playback-tracks > small { display: block; margin-top: 6px; color: #8a9282; font-size: 8px; }
+.slice-playback-stage { overflow: hidden; background: #fff; }
 .slice-playback-viewer { height: clamp(320px, 54vh, 620px); background: #eef0e9; }
 .slice-playback-viewer .viewer-3d-container,
 .slice-playback-viewer .viewer-3d { height: 100%; min-height: 0; }
-.slice-playback-controls { display: grid; grid-template-columns: 34px 38px 34px minmax(100px, 1fr) auto auto auto; align-items: center; gap: 7px; padding: 9px; border-top: 1px solid #e0e3da; }
+.slice-playback-controls { display: grid; grid-template-columns: 34px 38px 34px minmax(100px, 1fr) auto auto auto 34px; align-items: center; gap: 7px; padding: 9px; border-top: 1px solid #e0e3da; background: #fff; }
 .slice-playback-controls button { display: grid; place-items: center; width: 34px; height: 32px; padding: 0; border: 1px solid #d8ddd0; border-radius: 7px; color: #5e6957; background: #fff; }
 .slice-playback-controls button:disabled { opacity: .4; }
 .slice-playback-controls .slice-playback-primary { width: 38px; color: #31420c; border-color: #acd139; background: #b9df48; }
@@ -928,6 +929,9 @@
 .slice-playback-controls .slice-playback-quality { padding: 4px 7px; border: 1px solid #d9ddd1; border-radius: 999px; color: #717a6d; background: #f5f6f2; font: 9px 'DM Mono'; white-space: nowrap; }
 .slice-playback-controls .slice-playback-quality.preview { color: #657a25; border-color: #cddba6; background: #f2f7e4; }
 .slice-playback-controls select { height: 32px; border: 1px solid #d8ddd0; border-radius: 7px; color: #586252; background: #fff; font: 10px 'DM Mono'; }
+.slice-playback-stage:fullscreen { display: flex; width: 100vw; height: 100vh; flex-direction: column; background: #eef0e9; }
+.slice-playback-stage:fullscreen .slice-playback-viewer { flex: 1; height: auto; min-height: 0; }
+.slice-playback-stage:fullscreen .slice-playback-controls { flex: 0 0 auto; padding: 11px 14px; }
 
 @media (max-width: 620px) {
   .slice-player-facts { grid-template-columns: 1fr 1fr; }
