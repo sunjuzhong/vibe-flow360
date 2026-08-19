@@ -213,7 +213,7 @@ function SchemaFormFieldsContent({
             rootTabContent
             onChange={(next) => onChange({ ...object, [key]: next })}
           />
-          {sparse && !required && present && (
+          {sparse && !required && present && (!Array.isArray(object[key]) || object[key].length > 1) && (
             <button
               type="button"
               className="schema-remove-change schema-root-remove"
@@ -223,7 +223,9 @@ function SchemaFormFieldsContent({
                 onChange(next)
               }}
             >
-              <Trash2 size={12} /> {removeLabel === 'Remove' ? `Remove ${child.title || humanize(key)} configuration` : removeLabel}
+              <Trash2 size={12} /> {Array.isArray(object[key])
+                ? `Remove all ${child.title || humanize(key)}`
+                : removeLabel === 'Remove' ? `Remove ${child.title || humanize(key)} configuration` : removeLabel}
             </button>
           )}
         </div>

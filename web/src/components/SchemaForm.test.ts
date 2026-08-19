@@ -621,6 +621,37 @@ describe('schema-driven Flow360 form', () => {
     expect(populatedMarkup).not.toContain('>0<')
   })
 
+  it('shows the root array clear action only for multiple items and labels it as remove all', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        models: {
+          type: 'array',
+          title: 'Models',
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string', title: 'Model name' } },
+          },
+        },
+      },
+    }
+    const render = (models: unknown[]) => renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { models },
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      removeLabel: 'Remove',
+      onChange: () => undefined,
+    }))
+
+    expect(render([{ name: 'Fluid' }])).not.toContain('schema-root-remove')
+    const multipleMarkup = render([{ name: 'Fluid' }, { name: 'Wall' }])
+    expect(multipleMarkup).toContain('schema-root-remove')
+    expect(multipleMarkup).toContain('Remove all Models')
+  })
+
   it('round-trips schema-provided Surface and Slice entity payloads without exposing wire metadata', () => {
     const surface = {
       name: 'wing',
