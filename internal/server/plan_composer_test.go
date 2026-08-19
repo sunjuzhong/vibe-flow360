@@ -393,6 +393,60 @@ printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"f
 	}
 }
 
+func TestGenerateSchemaNativePlanRemovesContextRejectedFieldBeforeAgentRepair(t *testing.T) {
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	preflightScript := `#!/bin/sh
+if grep -q '"resolve_face_boundaries":true' "$3"; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"value_error","path":"meshing.refinements.0.resolve_face_boundaries","message":"Value error, resolve_face_boundaries is only supported when geometry AI is used.","stages":["SurfaceMesh","VolumeMesh"]},{"level":"error","code":"value_error","path":"meshing.refinements.1.resolve_face_boundaries","message":"Value error, resolve_face_boundaries is only supported when geometry AI is used.","stages":["SurfaceMesh","VolumeMesh"]}],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"meshing":{"type":"object"}}}}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"meshing":{"type":"object"}}}}}'
+fi
+`
+	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+
+	modelCalls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		modelCalls++
+		content := `{"version":"v1","kind":"update-draft","message":"Completed the setup.","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Draft edit","intent":"complete it","patch":{"meshing":{"refinements":[{"name":"Main element","refinement_type":"SurfaceRefinement","max_edge_length":{"value":0.04,"units":"m"},"resolve_face_boundaries":true},{"name":"Slat and flap","refinement_type":"SurfaceRefinement","max_edge_length":{"value":0.025,"units":"m"},"resolve_face_boundaries":true}]}},"branch_preview":"edit","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		encoded, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer model.Close()
+
+	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"refinements":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"refinement_type":{"type":"string"},"max_edge_length":{"type":"json"},"resolve_face_boundaries":{"type":"boolean"}}}}}}}}`)
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360: &flow360.Client{Binary: "flow360"},
+	}
+	result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", DraftID: "draft-1", Target: "case",
+			Intent: "complete it", Prompt: "complete it", Autonomous: true,
+		},
+		Name: "Geometry", Baseline: json.RawMessage(`{}`),
+		Form: flow360.PlanFormSchema{Stages: []string{"SurfaceMesh"}, Schemas: map[string]json.RawMessage{"SurfaceMesh": schema}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls != 1 || result.RepairAttempts != 1 || !result.AutoRepaired || result.Preflight == nil || !result.Preflight.Valid {
+		t.Fatalf("contextual validator repair did not converge without another model call: calls=%d result=%#v", modelCalls, result)
+	}
+	if result.Proposal == nil || strings.Contains(string(result.Proposal.Patch), `"resolve_face_boundaries"`) {
+		t.Fatalf("context-rejected field survived in proposal: %#v", result.Proposal)
+	}
+	for _, preserved := range []string{`"name":"Main element"`, `"name":"Slat and flap"`, `"max_edge_length"`} {
+		if !strings.Contains(string(result.Proposal.Patch), preserved) {
+			t.Fatalf("valid refinement data was lost while removing contextual field %s: %s", preserved, result.Proposal.Patch)
+		}
+	}
+}
+
 func TestGenerateSchemaNativePlanReappliesFinalDeterministicBoundaryRepair(t *testing.T) {
 	temp := t.TempDir()
 	fakePython := filepath.Join(temp, "python")
@@ -558,6 +612,31 @@ func TestMissingPlanAssistBaselinePatchRestoresRequiredArrayMembersOnly(t *testi
 	}
 	if strings.Contains(string(merged), `"operating_condition"`) {
 		t.Fatalf("unrelated deletion was incorrectly restored: %s", merged)
+	}
+}
+
+func TestUnsupportedPlanAssistPatchRemovesContextRejectedArrayFields(t *testing.T) {
+	current := json.RawMessage(`{"meshing":{"refinements":[{"name":"Main element","refinement_type":"SurfaceRefinement","entities":{"stored_entities":[{"name":"wing"}]},"max_edge_length":{"value":0.04,"units":"m"},"resolve_face_boundaries":true},{"name":"Slat and flap","refinement_type":"SurfaceRefinement","entities":{"stored_entities":[{"name":"slat"}]},"max_edge_length":{"value":0.025,"units":"m"},"resolve_face_boundaries":true}]}}`)
+	patch, applied, err := unsupportedPlanAssistPatch([]flow360.PreflightIssue{
+		{Level: "error", Code: "value_error", Path: "meshing.refinements.0.resolve_face_boundaries", Message: "Value error, resolve_face_boundaries is only supported when geometry AI is used."},
+		{Level: "error", Code: "value_error", Path: "meshing.refinements.1.resolve_face_boundaries", Message: "Value error, resolve_face_boundaries is only supported when geometry AI is used."},
+	}, current)
+	if err != nil || !applied {
+		t.Fatalf("contextual Flow360 rejection was not converted to a removal patch: applied=%v err=%v", applied, err)
+	}
+	merged, err := plans.MergeSimulationParams(current, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"resolve_face_boundaries"`} {
+		if strings.Contains(string(merged), forbidden) {
+			t.Fatalf("unsupported field survived repair: %s", merged)
+		}
+	}
+	for _, preserved := range []string{`"name":"Main element"`, `"name":"Slat and flap"`, `"max_edge_length":{"units":"m","value":0.04}`, `"entities"`} {
+		if !strings.Contains(string(merged), preserved) {
+			t.Fatalf("valid refinement content was lost while repairing %s: %s", preserved, merged)
+		}
 	}
 }
 

@@ -185,6 +185,19 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			}
 		}
 	}
+	if !preflight.Valid {
+		unsupportedPatch, applied, unsupportedErr := unsupportedPlanAssistPatch(preflight.Issues, merged)
+		if unsupportedErr == nil && applied {
+			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, unsupportedPatch)
+			if err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+				}
+			}
+		}
+	}
 
 	agentRepairAttempts := 0
 	for !preflight.Valid && agentRepairAttempts < maxPlanAssistRepairAttempts {
@@ -277,6 +290,17 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	// field that contained a deterministic schema recommendation. Always give
 	// the latest Flow360 recovery schema one final authoritative pass before
 	// surfacing failure; this is independent of the bounded model-call budget.
+	if !preflight.Valid {
+		if unsupportedPatch, applied, unsupportedErr := unsupportedPlanAssistPatch(preflight.Issues, merged); unsupportedErr == nil && applied {
+			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, unsupportedPatch); err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+				}
+			}
+		}
+	}
 	if !preflight.Valid {
 		if recommendedPatch, applied, recommendationErr := recommendedPlanAssistPatch(preflight.FormSchema, merged); recommendationErr == nil && applied {
 			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch); err == nil {
@@ -705,6 +729,83 @@ func missingPlanAssistBaselinePatch(issues []flow360.PreflightIssue, baseline, c
 	}
 	payload, err := json.Marshal(patch)
 	return payload, err == nil, err
+}
+
+// unsupportedPlanAssistPatch removes exact field values that the installed
+// Flow360 contextual validators report as unavailable for the current asset or
+// mesher. The validator path is the authority: this does not maintain a second
+// list of Geometry AI, beta mesher, or source-type feature flags in Go.
+func unsupportedPlanAssistPatch(issues []flow360.PreflightIssue, current json.RawMessage) (json.RawMessage, bool, error) {
+	var currentValue any
+	if json.Unmarshal(current, &currentValue) != nil {
+		return nil, false, errors.New("Flow360 candidate parameters are invalid")
+	}
+	desired := clonePlanAssistValue(currentValue)
+	applied := false
+	for _, issue := range issues {
+		message := strings.ToLower(strings.TrimSpace(issue.Message))
+		if issue.Level != "error" || issue.Code != "value_error" ||
+			(!strings.Contains(message, "only supported when") &&
+				!strings.Contains(message, "only supported by") &&
+				!strings.Contains(message, "not currently supported with") &&
+				!strings.Contains(message, "is not supported when")) {
+			continue
+		}
+		path := strings.Trim(strings.TrimSpace(issue.Path), ".")
+		if path == "" {
+			continue
+		}
+		var removed bool
+		desired, removed = removePlanAssistField(desired, strings.Split(path, "."))
+		applied = applied || removed
+	}
+	if !applied {
+		return nil, false, nil
+	}
+	difference, changed := planAssistMergePatchDifference(currentValue, desired)
+	patch, ok := difference.(map[string]any)
+	if !changed || !ok {
+		return nil, false, nil
+	}
+	payload, err := json.Marshal(patch)
+	return payload, err == nil, err
+}
+
+func removePlanAssistField(current any, path []string) (any, bool) {
+	if len(path) == 0 {
+		return current, false
+	}
+	if index, err := strconv.Atoi(path[0]); err == nil {
+		currentArray, ok := current.([]any)
+		if !ok || index < 0 || index >= len(currentArray) || len(path) == 1 {
+			return current, false
+		}
+		updated, removed := removePlanAssistField(currentArray[index], path[1:])
+		if removed {
+			currentArray[index] = updated
+		}
+		return currentArray, removed
+	}
+	currentObject, ok := current.(map[string]any)
+	if !ok {
+		return current, false
+	}
+	if len(path) == 1 {
+		if _, exists := currentObject[path[0]]; !exists {
+			return current, false
+		}
+		delete(currentObject, path[0])
+		return currentObject, true
+	}
+	child, exists := currentObject[path[0]]
+	if !exists {
+		return current, false
+	}
+	updated, removed := removePlanAssistField(child, path[1:])
+	if removed {
+		currentObject[path[0]] = updated
+	}
+	return currentObject, removed
 }
 
 func restoreMissingPlanAssistPath(current, baseline any, path []string) (any, bool) {
