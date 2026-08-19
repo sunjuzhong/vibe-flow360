@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import type { SlicePlayerJob } from '../api/client'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackFullscreenLabel, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackStableBounds, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackAdvancing, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackFullscreenLabel, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackStableBounds, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -82,6 +82,13 @@ describe('CaseSlicePlayerPanel', () => {
   it('labels the fullscreen control from the browser fullscreen state', () => {
     expect(slicePlaybackFullscreenLabel(false)).toBe('Enter full screen')
     expect(slicePlaybackFullscreenLabel(true)).toBe('Exit full screen')
+  })
+
+  it('temporarily freezes playback only while camera navigation is active', () => {
+    expect(slicePlaybackAdvancing(true, false)).toBe(true)
+    expect(slicePlaybackAdvancing(true, true)).toBe(false)
+    expect(slicePlaybackAdvancing(false, true)).toBe(false)
+    expect(slicePlaybackAdvancing(false, false)).toBe(false)
   })
 
   it('prefetches two frames ahead and keeps one frame behind with wraparound', () => {

@@ -349,6 +349,7 @@ type Props = {
   cameraCommand?: ViewerCameraCommand | null
   cameraState?: ViewerCameraState | null
   onCameraStateChange?: (state: ViewerCameraState) => void
+  onCameraNavigationChange?: (active: boolean) => void
   showNormals?: boolean
   entityAppearances?: Record<string, ViewerEntityAppearance>
   preserveCameraOnAssetChange?: boolean
@@ -406,6 +407,7 @@ export function Viewer3D({
   cameraCommand,
   cameraState,
   onCameraStateChange,
+  onCameraNavigationChange,
   showNormals = false,
   entityAppearances = EMPTY_ENTITY_APPEARANCES,
   preserveCameraOnAssetChange = false,
@@ -493,6 +495,7 @@ export function Viewer3D({
   const cameraStateTimeoutRef = useRef<number | null>(null)
   const lastCameraStateEmissionRef = useRef(0)
   const onCameraStateChangeRef = useRef(onCameraStateChange)
+  const onCameraNavigationChangeRef = useRef(onCameraNavigationChange)
   const [pivotFeedback, setPivotFeedback] = useState<{ x: number; y: number; id: number } | null>(null)
   const [assetState, setAssetState] = useState<ViewerState>({ status: 'idle' })
   const [assetStats, setAssetStats] = useState<ViewerAssetStats | null>(null)
@@ -548,6 +551,10 @@ export function Viewer3D({
   }, [onCameraStateChange])
 
   useEffect(() => {
+    onCameraNavigationChangeRef.current = onCameraNavigationChange
+  }, [onCameraNavigationChange])
+
+  useEffect(() => {
     const bounds = viewerClipBounds(displayManifest?.bounding_box, 'x')
     setViewerClipEnabled(false)
     setViewerClipAxis('x')
@@ -576,6 +583,14 @@ export function Viewer3D({
     const elapsed = performance.now() - lastCameraStateEmissionRef.current
     cameraStateTimeoutRef.current = window.setTimeout(emitCameraState, Math.max(0, 33 - elapsed))
   }, [emitCameraState])
+
+  const setCameraNavigationActive = useCallback((active: boolean) => {
+    if (cameraNavigatingRef.current === active) return
+    cameraNavigatingRef.current = active
+    setCameraNavigating(active)
+    onCameraNavigationChangeRef.current?.(active)
+    if (!active) scheduleCameraState(true)
+  }, [scheduleCameraState])
   const fieldEntityScopeKey = fieldEntityIds?.join('\u0000') ?? ''
   const scopedFields = useMemo(() => {
     const asset = uvfAssetRef.current
@@ -739,6 +754,7 @@ export function Viewer3D({
     const startTarget = controls.target.clone()
     const startedAt = performance.now()
     const duration = 180
+    setCameraNavigationActive(true)
     const animateCamera = (now: number) => {
       const linear = Math.min(1, (now - startedAt) / duration)
       const progress = linear * linear * (3 - 2 * linear)
@@ -748,10 +764,13 @@ export function Viewer3D({
       camera.lookAt(frame.target)
       controls.update()
       if (linear < 1) navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
-      else navCubeAnimationRef.current = null
+      else {
+        navCubeAnimationRef.current = null
+        setCameraNavigationActive(false)
+      }
     }
     navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
-  }, [])
+  }, [setCameraNavigationActive])
 
   const recenterOnVisibleEntities = useCallback(() => {
     const bounds = visibleObjectBounds([assetRef.current, parameterEntityGroupRef.current])
@@ -777,6 +796,7 @@ export function Viewer3D({
     const rotation = new THREE.Quaternion().setFromUnitVectors(startDirection, direction.clone().normalize())
     const startedAt = performance.now()
     const duration = 260
+    setCameraNavigationActive(true)
     const animateCamera = (now: number) => {
       const linear = Math.min(1, (now - startedAt) / duration)
       const progress = linear * linear * (3 - 2 * linear)
@@ -792,10 +812,11 @@ export function Viewer3D({
         navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
       } else {
         navCubeAnimationRef.current = null
+        setCameraNavigationActive(false)
       }
     }
     navCubeAnimationRef.current = requestAnimationFrame(animateCamera)
-  }, [])
+  }, [setCameraNavigationActive])
 
   useEffect(() => {
     setGroupVisibilityState(Object.fromEntries(
@@ -831,13 +852,10 @@ export function Viewer3D({
       scheduleCameraState()
     })
     controls.addEventListener('start', () => {
-      cameraNavigatingRef.current = true
-      setCameraNavigating(true)
+      setCameraNavigationActive(true)
     })
     controls.addEventListener('end', () => {
-      cameraNavigatingRef.current = false
-      setCameraNavigating(false)
-      scheduleCameraState(true)
+      setCameraNavigationActive(false)
     })
 
     scene.add(createEngineeringLightRig())
@@ -848,7 +866,7 @@ export function Viewer3D({
     controlsRef.current = controls
 
     return { scene, camera, renderer }
-  }, [scheduleCameraState])
+  }, [scheduleCameraState, setCameraNavigationActive])
 
   const updateGeometry = useCallback(async (
     manifests: ViewerManifest[],
@@ -1215,6 +1233,10 @@ export function Viewer3D({
       wheelNavigationActiveRef.current = false
       wheelAnchorRef.current = null
       navigationDragRef.current = null
+      if (cameraNavigatingRef.current) {
+        cameraNavigatingRef.current = false
+        onCameraNavigationChangeRef.current?.(false)
+      }
       navCube.dispose()
       if (navCubeRef.current === navCube) navCubeRef.current = null
       annotationOverlay.dispose()
@@ -1731,12 +1753,6 @@ export function Viewer3D({
     altKey: event.altKey,
   })
 
-  const setNavigationActive = useCallback((active: boolean) => {
-    cameraNavigatingRef.current = active
-    setCameraNavigating(active)
-    if (!active) scheduleCameraState(true)
-  }, [scheduleCameraState])
-
   const cancelViewerInteraction = useCallback((pointerId?: number) => {
     const container = containerRef.current
     const navigationPointer = navigationDragRef.current?.pointerId
@@ -1760,8 +1776,8 @@ export function Viewer3D({
     if (controlPointFrameRef.current !== null) cancelAnimationFrame(controlPointFrameRef.current)
     controlPointFrameRef.current = null
     if (controlsRef.current) controlsRef.current.enabled = true
-    setNavigationActive(false)
-  }, [setNavigationActive])
+    setCameraNavigationActive(false)
+  }, [setCameraNavigationActive])
 
   const pointerNavigationAnchor = useCallback((
     clientX: number,
@@ -1948,7 +1964,7 @@ export function Viewer3D({
     const navigation = navigationDragRef.current
     if (navigation?.pointerId === event.pointerId) {
       navigationDragRef.current = null
-      if (navigation.moved) setNavigationActive(false)
+      if (navigation.moved) setCameraNavigationActive(false)
       inputControllerRef.current?.onPointerUp(pointerEvent(event))
       inputControllerRef.current = null
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -2004,7 +2020,7 @@ export function Viewer3D({
           event.clientY - navigation.startY,
         ) < 4) return
         navigation.moved = true
-        setNavigationActive(true)
+        setCameraNavigationActive(true)
         if (navigation.surface) showPivotFeedback(navigation.startX, navigation.startY)
       }
       navigation.lastX = event.clientX
@@ -2100,16 +2116,16 @@ export function Viewer3D({
     if (wheelFrameRef.current === null) wheelFrameRef.current = requestAnimationFrame(flushWheelZoom)
     if (!wheelNavigationActiveRef.current) {
       wheelNavigationActiveRef.current = true
-      setNavigationActive(true)
+      setCameraNavigationActive(true)
     }
     if (wheelNavigationTimeoutRef.current !== null) window.clearTimeout(wheelNavigationTimeoutRef.current)
     wheelNavigationTimeoutRef.current = window.setTimeout(() => {
       wheelNavigationTimeoutRef.current = null
       wheelAnchorRef.current = null
       wheelNavigationActiveRef.current = false
-      setNavigationActive(false)
+      setCameraNavigationActive(false)
     }, 220)
-  }, [flushWheelZoom, pointerNavigationAnchor, setNavigationActive])
+  }, [flushWheelZoom, pointerNavigationAnchor, setCameraNavigationActive])
 
   useEffect(() => {
     const container = containerRef.current

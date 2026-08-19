@@ -122,6 +122,10 @@ export function sliceFieldPanelVisible(playing: boolean) {
   return !playing
 }
 
+export function slicePlaybackAdvancing(playing: boolean, cameraNavigating: boolean) {
+  return playing && !cameraNavigating
+}
+
 export function slicePlaybackFullscreenLabel(fullscreen: boolean) {
   return fullscreen ? 'Exit full screen' : 'Enter full screen'
 }
@@ -243,6 +247,7 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   const playback = job.report?.playback
   const [frameIndex, setFrameIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [cameraNavigating, setCameraNavigating] = useState(false)
   const [fps, setFps] = useState(2)
   const [fullscreen, setFullscreen] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -286,8 +291,10 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   const frameAssetKeyRef = useRef(frameAssetKey)
   frameAssetKeyRef.current = frameAssetKey
 
+  const playbackAdvancing = slicePlaybackAdvancing(playing, cameraNavigating)
+
   useEffect(() => {
-    if (!playing || timeline.length < 2) return
+    if (!playbackAdvancing || timeline.length < 2) return
     const startedAt = performance.now()
     const startIndex = frameIndexRef.current
     let animationFrame = 0
@@ -304,7 +311,7 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
     }
     animationFrame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(animationFrame)
-  }, [fps, playing, timeline.length])
+  }, [fps, playbackAdvancing, timeline.length])
 
   useEffect(() => {
     setFrameIndex(0)
@@ -398,7 +405,8 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
             showFieldPanel={sliceFieldPanelVisible(playing)}
             showEntityLegend={false} showWarnings={false} preserveCameraOnAssetChange
             deferPickingBVH={playing}
-            uvfAssetCache={assetCache} onAssetReady={handleAssetReady} />
+            uvfAssetCache={assetCache} onAssetReady={handleAssetReady}
+            onCameraNavigationChange={setCameraNavigating} />
         </div>
         <div className="slice-playback-controls">
           <button aria-label={t('First frame')} onClick={() => { setPlaying(false); move(0) }}><SkipBack size={15} /></button>
