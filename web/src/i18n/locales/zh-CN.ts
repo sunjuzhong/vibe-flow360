@@ -5149,6 +5149,8 @@ const patterns: Array<[RegExp, (...groups: string[]) => string]> = [
   [/^(.+) distribution, (\d+) samples$/, (field, count) => `${field} 分布，${count} 个样本`],
   [/^(.+) unit$/, (name) => `${translateZhCN(name)}单位`],
   [/^Remove (.+) item (\d+)$/, (name, index) => `移除${translateZhCN(name)}第 ${index} 项`],
+  [/^Reset (.+) to default$/, (name) => `将${translateZhCN(name)}恢复为默认值`],
+  [/^Clear (.+) setting$/, (name) => `清除${translateZhCN(name)}设置`],
   [/^Remove (.+)$/, (name) => `移除${translateZhCN(name)}`],
   [/^(.+) value type$/, (name) => `${translateZhCN(name)}值类型`],
   [/^(.+) quality filter$/, (name) => `${translateZhCN(name)}质量筛选器`],
