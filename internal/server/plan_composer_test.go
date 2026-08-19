@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -340,12 +341,12 @@ func TestGenerateSchemaNativePlanRestoresMissingDraftArrayMembersBeforeAgentRepa
 	temp := t.TempDir()
 	fakePython := filepath.Join(temp, "python")
 	preflightScript := `#!/bin/sh
-if grep -q '"faces"' "$3"; then
+if grep -q '"entities"' "$3"; then
   valid=true
   issues='[]'
 else
   valid=false
-  issues='[{"level":"error","code":"missing","path":"meshing.refinements.0.faces","message":"Field required","stages":["SurfaceMesh","VolumeMesh"]}]'
+  issues='[{"level":"error","code":"missing","path":"meshing.refinements.0.entities","message":"Field required","stages":["SurfaceMesh","VolumeMesh"]}]'
 fi
 printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"form_schema":{"type":"object","properties":{}},"editor_schemas":{"SurfaceMesh":{"type":"object","properties":{"meshing":{"type":"object"}}}}}' "$valid" "$issues"
 `
@@ -364,7 +365,7 @@ printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"f
 	}))
 	defer model.Close()
 
-	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"refinements":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"type":{"type":"string"},"faces":{"type":"json"},"max_edge_length":{"type":"number"}}}}}}}}`)
+	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"refinements":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"type":{"type":"string"},"entities":{"type":"json"},"max_edge_length":{"type":"number"}}}}}}}}`)
 	app := &Server{
 		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
 		flow360: &flow360.Client{Binary: "flow360"},
@@ -385,7 +386,7 @@ printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"f
 	if modelCalls != 1 || result.RepairAttempts != 1 || !result.AutoRepaired || result.Preflight == nil || !result.Preflight.Valid {
 		t.Fatalf("persisted Draft recovery did not avoid model repair: calls=%d result=%#v", modelCalls, result)
 	}
-	for _, expected := range []string{`"faces":{"stored_entities":[{"name":"wall"}]}`, `"max_edge_length":0.1`} {
+	for _, expected := range []string{`"entities":{"stored_entities":[{"name":"wall"}]}`, `"max_edge_length":0.1`} {
 		if result.Proposal == nil || !strings.Contains(string(result.Proposal.Patch), expected) {
 			t.Fatalf("recovered Draft patch is missing %s: %#v", expected, result.Proposal)
 		}
@@ -515,7 +516,7 @@ func TestMissingPlanAssistBaselinePatchRestoresRequiredArrayMembersOnly(t *testi
 	baseline := json.RawMessage(`{
 		"meshing":{"refinements":[
 			{"name":"Main element","type":"SurfaceRefinement","entities":{"stored_entities":[{"name":"wall"}]},"max_edge_length":0.2},
-			{"name":"Wake","type":"SurfaceRefinement","faces":{"stored_entities":[{"name":"wake"}]},"max_edge_length":0.5}
+			{"name":"Wake","type":"SurfaceRefinement","entities":{"stored_entities":[{"name":"wake"}]},"max_edge_length":0.5}
 		]},
 		"outputs":[
 			{"name":"Surface output","entities":{"stored_entities":[{"name":"wall"}]}},
@@ -531,11 +532,11 @@ func TestMissingPlanAssistBaselinePatchRestoresRequiredArrayMembersOnly(t *testi
 		"outputs":[{"name":"Surface output"},{"name":"Slice output"}]
 	}`)
 	patch, applied, err := missingPlanAssistBaselinePatch([]flow360.PreflightIssue{
-		{Level: "error", Code: "missing", Path: "meshing.refinements.0.faces"},
+		{Level: "error", Code: "missing", Path: "meshing.refinements.0.entities"},
 		{Level: "error", Code: "missing", Path: "meshing.refinements.1.type"},
-		{Level: "error", Code: "missing", Path: "meshing.refinements.1.faces"},
-		{Level: "error", Code: "missing", Path: "outputs.0.surfaces"},
-		{Level: "error", Code: "missing", Path: "outputs.1.slices"},
+		{Level: "error", Code: "missing", Path: "meshing.refinements.1.entities"},
+		{Level: "error", Code: "missing", Path: "outputs.0.entities"},
+		{Level: "error", Code: "missing", Path: "outputs.1.entities"},
 		{Level: "error", Code: "value_error", Path: "operating_condition.alpha"},
 	}, baseline, current)
 	if err != nil || !applied {
@@ -546,10 +547,9 @@ func TestMissingPlanAssistBaselinePatchRestoresRequiredArrayMembersOnly(t *testi
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`"faces":{"stored_entities":[{"name":"wall"}]}`,
+		`"entities":{"stored_entities":[{"name":"wall"}]}`,
 		`"type":"SurfaceRefinement"`,
-		`"surfaces":{"stored_entities":[{"name":"wall"}]}`,
-		`"slices":{"stored_entities":[{"name":"center"}]}`,
+		`"name":"center"`,
 		`"max_edge_length":0.1`,
 	} {
 		if !strings.Contains(string(merged), expected) {
@@ -558,6 +558,27 @@ func TestMissingPlanAssistBaselinePatchRestoresRequiredArrayMembersOnly(t *testi
 	}
 	if strings.Contains(string(merged), `"operating_condition"`) {
 		t.Fatalf("unrelated deletion was incorrectly restored: %s", merged)
+	}
+}
+
+func TestPlanAssistCanonicalPatchUsesFlow360ModelDumpRepresentation(t *testing.T) {
+	baseline := json.RawMessage(`{"meshing":{"refinements":[{"name":"Main","faces":{"stored_entities":[{"name":"wing"}]},"max_edge_length":0.2}]},"run_control":{"max_steps":1000}}`)
+	canonical := json.RawMessage(`{"meshing":{"refinements":[{"name":"Main","entities":{"stored_entities":[{"name":"wing"}]},"max_edge_length":0.1}]},"run_control":{"max_steps":1000}}`)
+	patch, err := planAssistCanonicalPatch(baseline, canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := plans.MergeSimulationParams(baseline, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mergedValue any
+	var canonicalValue any
+	if json.Unmarshal(merged, &mergedValue) != nil || json.Unmarshal(canonical, &canonicalValue) != nil || !reflect.DeepEqual(mergedValue, canonicalValue) {
+		t.Fatalf("canonical Flow360 model dump was not reproduced: patch=%s merged=%s", patch, merged)
+	}
+	if strings.Contains(string(patch), `"run_control"`) {
+		t.Fatalf("unchanged canonical fields leaked into the sparse patch: %s", patch)
 	}
 }
 
@@ -733,8 +754,8 @@ func TestSchemaPromptCatalogExposesUnionWireVariants(t *testing.T) {
 
 func TestSchemaPromptCatalogPreservesArrayItemUnionContracts(t *testing.T) {
 	form := flow360.PlanFormSchema{Stages: []string{"SurfaceMesh", "Case"}, Schemas: map[string]json.RawMessage{
-		"SurfaceMesh": json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"refinements":{"type":"array","items":{"type":"union","variants":[{"type":"object","title":"Surface refinement","properties":{"type":{"type":"enum","options":["SurfaceRefinement"],"required":true},"faces":{"type":"entity_list","entity_choices":[{"value":"Surface:face-1","payload":{"name":"wing","private_attribute_id":"face-1"}}],"required":true},"max_edge_length":{"type":"quantity","unit":"m","required":true}}}]}}}}}}`),
-		"Case":        json.RawMessage(`{"type":"object","properties":{"outputs":{"type":"array","items":{"type":"union","variants":[{"type":"object","title":"Surface output","properties":{"surfaces":{"type":"entity_list","required":true},"output_fields":{"type":"array","items":{"type":"enum","options":["Cp"]},"required":true}}},{"type":"object","title":"Slice output","properties":{"slices":{"type":"entity_list","required":true}}}]}}}}`),
+		"SurfaceMesh": json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"refinements":{"type":"array","items":{"type":"union","variants":[{"type":"object","title":"Surface refinement","properties":{"type":{"type":"enum","options":["SurfaceRefinement"],"required":true},"entities":{"type":"entity_list","entity_choices":[{"value":"Surface:face-1","payload":{"name":"wing","private_attribute_id":"face-1"}}],"required":true},"max_edge_length":{"type":"quantity","unit":"m","required":true}}}]}}}}}}`),
+		"Case":        json.RawMessage(`{"type":"object","properties":{"outputs":{"type":"array","items":{"type":"union","variants":[{"type":"object","title":"Surface output","properties":{"entities":{"type":"entity_list","required":true},"output_fields":{"type":"array","items":{"type":"enum","options":["Cp"]},"required":true}}},{"type":"object","title":"Slice output","properties":{"entities":{"type":"entity_list","required":true}}}]}}}}`),
 	}}
 	catalog, err := schemaPromptCatalog(form)
 	if err != nil {
@@ -749,7 +770,7 @@ func TestSchemaPromptCatalogPreservesArrayItemUnionContracts(t *testing.T) {
 	if len(decoded.Fields) != 2 {
 		t.Fatalf("unexpected array catalog: %s", catalog)
 	}
-	for _, expected := range []string{`"items"`, `"variants"`, `"faces"`, `"type"`, `"surfaces"`, `"slices"`, `"entity_choices"`, `"private_attribute_id":"face-1"`, `"required":true`} {
+	for _, expected := range []string{`"items"`, `"variants"`, `"entities"`, `"type"`, `"entity_choices"`, `"private_attribute_id":"face-1"`, `"required":true`} {
 		if !strings.Contains(string(catalog), expected) {
 			t.Fatalf("array item contract omitted %s: %s", expected, catalog)
 		}

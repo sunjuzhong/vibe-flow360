@@ -46,7 +46,7 @@ func TestPreflightSimulationParamsUsesStructuredBridgeResult(t *testing.T) {
 	temp := t.TempDir()
 	fake := filepath.Join(temp, "python")
 	script := `#!/bin/sh
-printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"missing","path":"operating_condition.velocity_magnitude","message":"Field required","stages":["Case"]}],"form_schema":{"type":"object","properties":{"operating_condition":{"type":"object"}}}}'
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"missing","path":"operating_condition.velocity_magnitude","message":"Field required","stages":["Case"]}],"form_schema":{"type":"object","properties":{"operating_condition":{"type":"object"}}},"canonical_params":null}'
 `
 	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
@@ -67,6 +67,9 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issue
 	}
 	if result.Issues[0].Path != "operating_condition.velocity_magnitude" {
 		t.Fatalf("unexpected issue %#v", result.Issues[0])
+	}
+	if len(result.CanonicalParams) != 0 && string(result.CanonicalParams) != "null" {
+		t.Fatalf("invalid params unexpectedly received canonical output: %s", result.CanonicalParams)
 	}
 }
 
@@ -245,6 +248,9 @@ func TestInstalledSchemaRestoresOmittedAutomatedFarfieldMethod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if result.Valid && (len(result.CanonicalParams) == 0 || !json.Valid(result.CanonicalParams)) {
+		t.Fatalf("valid Flow360 params did not return canonical model_dump JSON: %s", result.CanonicalParams)
+	}
 	for _, issue := range result.Issues {
 		if issue.Code == "key_error" && issue.Message == "'method'" {
 			t.Fatalf("omitted schema default escaped as raw method KeyError: %#v", issue)
@@ -273,12 +279,9 @@ func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testin
 		t.Fatal("SurfaceOutput variant is missing from the Case editor schema")
 	}
 	properties, _ := surfaceOutput["properties"].(map[string]any)
-	entities, _ := properties["surfaces"].(map[string]any)
-	if entities == nil {
-		entities, _ = properties["entities"].(map[string]any)
-	}
+	entities, _ := properties["entities"].(map[string]any)
 	choices, _ := entities["entity_choices"].([]any)
-	if entities["type"] != "entity_list" || entities["title"] != "Surfaces" || len(choices) < 1 {
+	if entities["type"] != "entity_list" || entities["title"] != "Entities" || len(choices) < 1 {
 		t.Fatalf("SurfaceOutput did not project selectable canonical surfaces: %#v", entities)
 	}
 	outputFields, _ := properties["output_fields"].(map[string]any)
@@ -302,12 +305,9 @@ func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testin
 		t.Fatal("SliceOutput variant is missing from the Case editor schema")
 	}
 	sliceProperties, _ := sliceOutput["properties"].(map[string]any)
-	slices, _ := sliceProperties["slices"].(map[string]any)
-	if slices == nil {
-		slices, _ = sliceProperties["entities"].(map[string]any)
-	}
+	slices, _ := sliceProperties["entities"].(map[string]any)
 	sliceChoices, _ := slices["entity_choices"].([]any)
-	if slices["type"] != "entity_list" || slices["title"] != "Slices" || len(sliceChoices) != 1 {
+	if slices["type"] != "entity_list" || slices["title"] != "Entities" || len(sliceChoices) != 1 {
 		t.Fatalf("SliceOutput did not restrict selection to registered Slice entities: %#v", slices)
 	}
 	slicePayload := sliceChoices[0].(map[string]any)["payload"].(map[string]any)

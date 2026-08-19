@@ -33,6 +33,7 @@ type PreflightResult struct {
 	Issues           []PreflightIssue           `json:"issues"`
 	FormSchema       json.RawMessage            `json:"form_schema"`
 	EditorSchemas    map[string]json.RawMessage `json:"editor_schemas,omitempty"`
+	CanonicalParams  json.RawMessage            `json:"canonical_params,omitempty"`
 }
 
 type PlanFormSchema struct {
@@ -345,7 +346,12 @@ except Exception as error:
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
-    full_schema = SimulationParams.model_json_schema()
+    # Draft.update_simulation_params() persists model_dump(mode="json") with
+    # field names, not validation aliases. Keep those canonical field names,
+    # while using the validation schema so the editor exposes every accepted
+    # input shape (including expressions). A valid result is canonicalized
+    # separately below through the model instance's JSON dump.
+    full_schema = SimulationParams.model_json_schema(by_alias=False, mode="validation")
 
 # The Flow360 25.10 wire schema intentionally represents every physical
 # quantity as {value, units}, but the generated JSON schema does not repeat the
@@ -366,6 +372,29 @@ def model_subclasses(root):
             result.append(child)
             pending.append(child)
     return result
+
+# Pydantic reports missing input fields with validation aliases by default.
+# Derive the inverse mapping from the installed model metadata rather than
+# maintaining a second alias table in Go or in this bridge.
+validation_alias_to_fields = {}
+for model in [BaseModel, *model_subclasses(BaseModel)]:
+    for field_name, field in getattr(model, "model_fields", {}).items():
+        aliases = []
+        validation_alias = getattr(field, "validation_alias", None)
+        if isinstance(validation_alias, str):
+            aliases.append(validation_alias)
+        else:
+            aliases.extend(
+                choice for choice in getattr(validation_alias, "choices", ())
+                if isinstance(choice, str)
+            )
+        for alias in aliases:
+            validation_alias_to_fields.setdefault(alias, set()).add(field_name)
+canonical_validation_aliases = {
+    alias: next(iter(field_names))
+    for alias, field_names in validation_alias_to_fields.items()
+    if len(field_names) == 1
+}
 
 def annotation_unit(annotation):
     for item in getattr(annotation, "__metadata__", ()):
@@ -1018,7 +1047,10 @@ def entity_assignment_schema(issue):
     }
 
 def issue_payload(raw, level):
-    location = inferred_location(raw)
+    location = [
+        canonical_validation_aliases.get(part, part) if isinstance(part, str) else part
+        for part in inferred_location(raw)
+    ]
     stages = raw.get("ctx", {}).get("relevant_for", [])
     if isinstance(stages, str):
         stages = [stages]
@@ -1121,5 +1153,10 @@ print(json.dumps({
     "issues": issues,
     "form_schema": form_schema,
     "editor_schemas": editor_schemas,
+    "canonical_params": (
+        validated.model_dump(mode="json", exclude_none=True)
+        if validated is not None and (errors is None or len(errors) == 0)
+        else None
+    ),
 }, ensure_ascii=False, separators=(",", ":")))
 `

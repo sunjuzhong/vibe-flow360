@@ -292,8 +292,16 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		issues, _ := json.Marshal(preflight.Issues)
 		return planAssistResponse{}, fmt.Errorf("the parameter Agent could not produce a schema-valid Flow360 setup after %d autonomous repairs; remaining preflight issues: %s", maxPlanAssistRepairAttempts, issues)
 	}
+	if preflight.Valid && len(preflight.CanonicalParams) > 0 && string(preflight.CanonicalParams) != "null" {
+		canonicalPatch, canonicalErr := planAssistCanonicalPatch(composer.Baseline, preflight.CanonicalParams)
+		if canonicalErr != nil {
+			return planAssistResponse{}, errors.New("Flow360 returned invalid canonical SimulationParams: " + canonicalErr.Error())
+		}
+		proposal.Patch = canonicalPatch
+	}
 
 	preflight.EditorSchemas = nil
+	preflight.CanonicalParams = nil
 	if len(action.Proposals) == 1 {
 		if action.Kind == agent.ActionUpdateDraft {
 			draftProposal := proposal
@@ -721,9 +729,6 @@ func restoreMissingPlanAssistPath(current, baseline any, path []string) (any, bo
 		return current, false
 	}
 	baselineChild, exists := baselineObject[path[0]]
-	if !exists && planAssistEntityAlias(path[0]) {
-		baselineChild, exists = baselineObject["entities"]
-	}
 	if !exists {
 		return current, false
 	}
@@ -737,15 +742,6 @@ func restoreMissingPlanAssistPath(current, baseline any, path []string) (any, bo
 		currentObject[path[0]] = restored
 	}
 	return currentObject, changed
-}
-
-func planAssistEntityAlias(key string) bool {
-	switch key {
-	case "edges", "faces", "surfaces", "slices", "volumes", "cylinders":
-		return true
-	default:
-		return false
-	}
 }
 
 func clonePlanAssistValue(value any) any {
@@ -765,6 +761,23 @@ func clonePlanAssistValue(value any) any {
 	default:
 		return value
 	}
+}
+
+func planAssistCanonicalPatch(baseline, canonical json.RawMessage) (json.RawMessage, error) {
+	var baselineValue any
+	var canonicalValue any
+	if json.Unmarshal(baseline, &baselineValue) != nil || json.Unmarshal(canonical, &canonicalValue) != nil {
+		return nil, errors.New("canonical parameter documents must be valid JSON")
+	}
+	difference, changed := planAssistMergePatchDifference(baselineValue, canonicalValue)
+	if !changed {
+		return json.RawMessage(`{}`), nil
+	}
+	patch, ok := difference.(map[string]any)
+	if !ok {
+		return nil, errors.New("canonical SimulationParams must be an object")
+	}
+	return json.Marshal(patch)
 }
 
 func planAssistMergePatchDifference(baseline, desired any) (any, bool) {
