@@ -194,12 +194,30 @@ export function selectedSliceFieldRange(
   return range
 }
 
+export function slicePlaybackStableBounds(
+  frames: SlicePlaybackFrame[],
+  selectedTracks: string[],
+  fallbackName = 'Slice',
+): [[number, number, number], [number, number, number]] | null {
+  const selected = new Set(selectedTracks)
+  const candidates = frames.filter((frame) => selected.has(frame.slice || fallbackName))
+  if (!candidates.length) return null
+  return candidates.slice(1).reduce((bounds, frame) => [
+    bounds[0].map((value, axis) => Math.min(value, frame.bounds[0][axis])) as [number, number, number],
+    bounds[1].map((value, axis) => Math.max(value, frame.bounds[1][axis])) as [number, number, number],
+  ], [
+    [...candidates[0].bounds[0]],
+    [...candidates[0].bounds[1]],
+  ] as [[number, number, number], [number, number, number]])
+}
+
 function playbackFrameManifest(
   caseId: string,
   jobId: string,
   frame: SlicePlaybackFrame,
   archiveKind: CaseTimeSeriesArchiveKind,
   preview: boolean,
+  stableBounds?: [[number, number, number], [number, number, number]] | null,
 ): ViewerManifest {
   const { manifestPath, vertices, triangles } = selectPlaybackAsset(frame, preview)
   const name = frame.slice || (archiveKind === 'surfaces' ? 'Surface' : 'Slice')
@@ -208,7 +226,7 @@ function playbackFrameManifest(
     asset_url: slicePlayerAssetURL(caseId, jobId, manifestPath),
     format: 'flow360-uvf',
     entity_id_prefix: prefix,
-    bounding_box: { min: frame.bounds[0], max: frame.bounds[1] },
+    bounding_box: { min: stableBounds?.[0] ?? frame.bounds[0], max: stableBounds?.[1] ?? frame.bounds[1] },
     groups: [{ id: `${prefix}face-0`, name, color: '#789521', visible: true, triangles, vertices }],
     vertices,
     elements: triangles,
@@ -303,9 +321,14 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
     assetCache.prefetch(targets)
   }, [assetCache, frameIndex, timelineAssetURLs])
 
+  const stableBounds = useMemo(
+    () => slicePlaybackStableBounds(playback?.frames ?? [], selectedTracks, fallbackTrackName),
+    [fallbackTrackName, playback?.frames, selectedTracks],
+  )
+
   const manifests = useMemo(() => frames.map((item) => (
-    playbackFrameManifest(caseId, job.id, item, archiveKind, playing)
-  )), [archiveKind, caseId, frames, job.id, playing])
+    playbackFrameManifest(caseId, job.id, item, archiveKind, playing, stableBounds)
+  )), [archiveKind, caseId, frames, job.id, playing, stableBounds])
   const manifest = manifests[0] ?? null
   const currentFrameKeyRef = useRef(frameAssetKey)
   currentFrameKeyRef.current = frameAssetKey
@@ -427,7 +450,7 @@ export default function CaseSlicePlayerPanel({
       .then((latest) => {
         const sameSource = latest.result_path === resultPath
           && (!sizeBytes || !latest.source_size || latest.source_size === sizeBytes)
-        const currentPlayer = !latest.report || latest.report.index_version >= 6
+        const currentPlayer = !latest.report || latest.report.index_version >= 7
         if (active && sameSource && currentPlayer) setJob(latest)
       })
       .catch(() => undefined)

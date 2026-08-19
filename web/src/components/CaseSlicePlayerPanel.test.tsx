@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '../i18n'
 import type { SlicePlayerJob } from '../api/client'
-import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackFullscreenLabel, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
+import CaseSlicePlayerPanel, { caseTimeSeriesPlayerTitle, formatSlicePlayerDuration, selectPlaybackAsset, selectedSliceFieldRange, sliceFieldPanelVisible, sliceFrameAssetURL, slicePlaybackFrameAtTime, slicePlaybackFrameKey, slicePlaybackFullscreenLabel, slicePlaybackPrefetchIndices, slicePlaybackReadyFrameKey, slicePlaybackStableBounds, slicePlaybackTimeline, slicePlaybackTrackNames, slicePlayerAssetURL, slicePlayerPartialPlaybackReady, stageLabel, SLICE_PLAYBACK_FPS_OPTIONS } from './CaseSlicePlayerPanel'
 
 describe('CaseSlicePlayerPanel', () => {
   it('starts with a bounded large-file preparation state', () => {
@@ -135,6 +135,11 @@ describe('CaseSlicePlayerPanel', () => {
       step: 100,
       frames: [frames[0], frames[1]],
     }])
+    expect(slicePlaybackStableBounds([
+      { ...frames[0], bounds: [[-1, 0, 0], [1, 2, 0]] },
+      { ...frames[2], bounds: [[0, -2, 0], [3, 1, 0]] },
+      frames[1],
+    ], ['wake-y'])).toEqual([[-1, -2, 0], [3, 2, 0]])
   })
 
   it('excludes single-frame static snapshots from playback tracks', () => {

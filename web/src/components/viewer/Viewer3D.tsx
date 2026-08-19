@@ -127,6 +127,18 @@ export function mergeViewerManifestMetadata(manifests: readonly ViewerManifest[]
   }
 }
 
+export function viewerManifestBounds(manifests: readonly ViewerManifest[]): THREE.Box3 | null {
+  const merged = mergeViewerManifestMetadata(manifests)?.bounding_box
+  if (!merged) return null
+  const values = [...merged.min, ...merged.max]
+  if (!values.every(Number.isFinite)) return null
+  const bounds = new THREE.Box3(
+    new THREE.Vector3(...merged.min),
+    new THREE.Vector3(...merged.max),
+  )
+  return bounds.isEmpty() ? null : bounds
+}
+
 export type ViewerSelection = {
   groupId: string | null
   groupIds?: string[]
@@ -1046,7 +1058,11 @@ export function Viewer3D({
       }
     }
     if (root.userData.viewerNormalized !== true) {
-      const bounds = new THREE.Box3().setFromObject(root)
+      // Playback previews are simplified independently per frame. Their actual
+      // vertex extrema can differ slightly, while the manifest bounds describe
+      // the stable source slice. Normalizing from the manifest keeps the model
+      // transform fixed while the user zooms, pans, or rotates during playback.
+      const bounds = viewerManifestBounds(loadableManifests) ?? new THREE.Box3().setFromObject(root)
       const size = bounds.getSize(new THREE.Vector3())
       const center = bounds.getCenter(new THREE.Vector3())
       const maxDim = Math.max(size.x, size.y, size.z, 0.001)

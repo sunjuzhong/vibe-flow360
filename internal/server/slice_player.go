@@ -80,6 +80,10 @@ func (s *Server) latestSlicePlayerJob(c *gin.Context) {
 		return
 	}
 	job, ok := s.slicePlayerJobs.LatestForResultPath(caseID, resultPath)
+	if ok {
+		expectedCacheKey := sliceplayer.CacheKey(job.CaseID, job.ResultPath, job.SourceSize)
+		ok = strings.HasPrefix(job.CacheKey, expectedCacheKey)
+	}
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "No time-series preparation exists for this Case archive"})
 		return

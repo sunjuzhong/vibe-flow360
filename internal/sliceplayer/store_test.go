@@ -386,7 +386,7 @@ func TestNewStoreUpgradesLegacyPlaybackRangesFromLocalManifests(t *testing.T) {
 		t.Fatal(err)
 	}
 	upgraded, ok := restarted.Get(job.ID)
-	if !ok || upgraded.Report.IndexVersion != IndexVersion {
+	if !ok || upgraded.Report.IndexVersion != 6 {
 		t.Fatalf("legacy report was not upgraded: %#v", upgraded.Report)
 	}
 	if bounds := upgraded.Report.Playback.Frames[0].FieldRanges["Mach"]; bounds != [2]float64{-2, 3} {

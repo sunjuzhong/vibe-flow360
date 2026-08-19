@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, prefixedViewerEntityId, shouldKeepPreviousAssetVisible, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
+import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, prefixedViewerEntityId, shouldKeepPreviousAssetVisible, viewerManifestBounds, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -67,6 +67,9 @@ describe('Viewer3D layout state', () => {
       elements: 12,
       groups: [{ id: 'wall' }, { id: 'cylinder' }],
     })
+    const stableBounds = viewerManifestBounds([base, overlay])
+    expect(stableBounds?.min.toArray()).toEqual([-1, 0, 0])
+    expect(stableBounds?.max.toArray()).toEqual([2, 3, 1])
   })
 
   it('keeps the previous frame visible during a seamless asset transition', () => {

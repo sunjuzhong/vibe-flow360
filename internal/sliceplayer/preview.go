@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 )
@@ -27,47 +28,41 @@ func buildPreviewPiece(outputDir, frameDir, assetKey string, pieceIndex int, ful
 	if positionPath == "" {
 		positionPath = full.Buffer
 	}
-	stride := (full.Triangles + maxPreviewTriangles - 1) / maxPreviewTriangles
-	oldToNew := make(map[uint32]uint32, maxPreviewTriangles*2)
-	oldIDs := make([]uint32, 0, maxPreviewTriangles*2)
-	previewIndices := make([]uint32, 0, maxPreviewTriangles*3)
-	triangleIndex := 0
+	indices := make([]uint32, 0, full.Triangles*3)
 	err := scanFixedSection(filepath.Join(outputDir, filepath.FromSlash(indexPath)), indexSection.Offset, indexSection.Length, 12, cancelled, func(group []byte) error {
-		if triangleIndex%stride == 0 {
-			for offset := 0; offset < 12; offset += 4 {
-				oldID := binary.LittleEndian.Uint32(group[offset:])
-				if uint64(oldID) >= uint64(full.Vertices) {
-					return errors.New("preview topology references a missing vertex")
-				}
-				newID, exists := oldToNew[oldID]
-				if !exists {
-					newID = uint32(len(oldIDs))
-					oldToNew[oldID] = newID
-					oldIDs = append(oldIDs, oldID)
-				}
-				previewIndices = append(previewIndices, newID)
+		for offset := 0; offset < 12; offset += 4 {
+			oldID := binary.LittleEndian.Uint32(group[offset:])
+			if uint64(oldID) >= uint64(full.Vertices) {
+				return errors.New("preview topology references a missing vertex")
 			}
+			indices = append(indices, oldID)
 		}
-		triangleIndex++
 		return nil
 	})
 	if err != nil {
 		return convertedPiece{}, false, "", 0, 0, err
 	}
-	if len(previewIndices) == 0 || len(oldIDs) == 0 {
-		return convertedPiece{}, false, "", 0, 0, errors.New("preview sampling produced no geometry")
-	}
-	positions := make([]byte, len(oldIDs)*12)
-	pointIndex := uint32(0)
+	fullPositions := make([]float32, 0, full.Vertices*3)
 	err = scanFixedSection(filepath.Join(outputDir, filepath.FromSlash(positionPath)), positionSection.Offset, positionSection.Length, 12, cancelled, func(group []byte) error {
-		if newID, wanted := oldToNew[pointIndex]; wanted {
-			copy(positions[int(newID)*12:], group)
+		for offset := 0; offset < 12; offset += 4 {
+			fullPositions = append(fullPositions, math.Float32frombits(binary.LittleEndian.Uint32(group[offset:])))
 		}
-		pointIndex++
 		return nil
 	})
 	if err != nil {
 		return convertedPiece{}, false, "", 0, 0, err
+	}
+	oldIDs, previewIndices, err := clusterPreviewTopology(indices, fullPositions, full.Bounds, maxPreviewTriangles, cancelled)
+	if err != nil {
+		return convertedPiece{}, false, "", 0, 0, err
+	}
+	oldToNew := make(map[uint32]uint32, len(oldIDs))
+	positions := make([]byte, len(oldIDs)*12)
+	for newID, oldID := range oldIDs {
+		oldToNew[oldID] = uint32(newID)
+		for component := 0; component < 3; component++ {
+			binary.LittleEndian.PutUint32(positions[newID*12+component*4:], math.Float32bits(fullPositions[int(oldID)*3+component]))
+		}
 	}
 	combinedPath := filepath.Join(frameDir, fmt.Sprintf("preview-piece-%04d.bin", pieceIndex))
 	output, err := os.OpenFile(combinedPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
@@ -126,6 +121,120 @@ func buildPreviewPiece(outputDir, frameDir, assetKey string, pieceIndex int, ful
 		return convertedPiece{}, false, "", 0, 0, err
 	}
 	return preview, true, topologyName, topologyBytes, fieldBytes, nil
+}
+
+type previewCell struct {
+	x int64
+	y int64
+	z int64
+}
+
+type previewTriangle struct {
+	a uint32
+	b uint32
+	c uint32
+}
+
+// clusterPreviewTopology collapses nearby vertices and remaps every source
+// triangle. Unlike triangle-stride sampling, this keeps neighboring triangles
+// connected and therefore does not punch checkerboard holes into slice planes.
+func clusterPreviewTopology(indices []uint32, positions []float32, bounds [2][3]float64, targetTriangles int, cancelled func() bool) ([]uint32, []uint32, error) {
+	if len(indices)%3 != 0 || len(positions)%3 != 0 || targetTriangles < 1 {
+		return nil, nil, errors.New("invalid preview topology")
+	}
+	extents := [3]float64{}
+	maxExtent := 0.0
+	for axis := 0; axis < 3; axis++ {
+		extents[axis] = math.Max(0, bounds[1][axis]-bounds[0][axis])
+		maxExtent = math.Max(maxExtent, extents[axis])
+	}
+	if maxExtent <= 0 {
+		return nil, nil, errors.New("preview geometry has empty bounds")
+	}
+	dimensions := 0
+	extentProduct := 1.0
+	for _, extent := range extents {
+		if extent > maxExtent*1e-9 {
+			dimensions++
+			extentProduct *= extent
+		}
+	}
+	if dimensions == 0 {
+		dimensions = 1
+		extentProduct = maxExtent
+	}
+	targetVertices := math.Max(4, float64(targetTriangles)/2)
+	cellSize := math.Pow(extentProduct/targetVertices, 1/float64(dimensions))
+	if !isFinitePositive(cellSize) {
+		cellSize = maxExtent / math.Pow(targetVertices, 1/float64(dimensions))
+	}
+	for attempt := 0; attempt < 12; attempt++ {
+		if cancelled != nil && cancelled() {
+			return nil, nil, ErrCancelled
+		}
+		cellToID := make(map[previewCell]uint32, int(targetVertices))
+		oldToNew := make([]uint32, len(positions)/3)
+		representatives := make([]uint32, 0, int(targetVertices))
+		for vertex := range oldToNew {
+			if vertex%16_384 == 0 && cancelled != nil && cancelled() {
+				return nil, nil, ErrCancelled
+			}
+			coordinate := func(axis int) int64 {
+				if extents[axis] <= maxExtent*1e-9 {
+					return 0
+				}
+				return int64(math.Floor((float64(positions[vertex*3+axis]) - bounds[0][axis]) / cellSize))
+			}
+			cell := previewCell{x: coordinate(0), y: coordinate(1), z: coordinate(2)}
+			newID, exists := cellToID[cell]
+			if !exists {
+				newID = uint32(len(representatives))
+				cellToID[cell] = newID
+				representatives = append(representatives, uint32(vertex))
+			}
+			oldToNew[vertex] = newID
+		}
+		previewIndices := make([]uint32, 0, min(len(indices), targetTriangles*3))
+		seenTriangles := make(map[previewTriangle]struct{}, min(len(indices)/3, targetTriangles))
+		for offset := 0; offset < len(indices); offset += 3 {
+			a := oldToNew[indices[offset]]
+			b := oldToNew[indices[offset+1]]
+			c := oldToNew[indices[offset+2]]
+			if a == b || b == c || a == c {
+				continue
+			}
+			keyA, keyB, keyC := a, b, c
+			if keyA > keyB {
+				keyA, keyB = keyB, keyA
+			}
+			if keyB > keyC {
+				keyB, keyC = keyC, keyB
+			}
+			if keyA > keyB {
+				keyA, keyB = keyB, keyA
+			}
+			key := previewTriangle{a: keyA, b: keyB, c: keyC}
+			if _, exists := seenTriangles[key]; exists {
+				continue
+			}
+			seenTriangles[key] = struct{}{}
+			previewIndices = append(previewIndices, a, b, c)
+		}
+		triangles := len(previewIndices) / 3
+		if triangles > 0 && triangles <= targetTriangles {
+			return representatives, previewIndices, nil
+		}
+		if triangles == 0 {
+			return nil, nil, errors.New("preview clustering produced no geometry")
+		}
+		ratio := math.Pow(float64(triangles)/float64(targetTriangles), 1/float64(dimensions))
+		cellSize *= math.Max(1.15, ratio*1.05)
+	}
+	return nil, nil, errors.New("preview clustering could not reach triangle budget")
+}
+
+func isFinitePositive(value float64) bool {
+	return value > 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
 }
 
 func scanFixedSection(path string, offset, length int64, groupBytes int, cancelled func() bool, visit func([]byte) error) error {

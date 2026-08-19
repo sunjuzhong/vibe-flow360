@@ -121,7 +121,8 @@ func NewStore(root string) (*Store, error) {
 }
 
 func (s *Store) upgradePlaybackFrameRanges(job *Job) bool {
-	if job.Report == nil || job.Report.IndexVersion >= IndexVersion || job.Report.Playback == nil || !job.Report.Playback.Ready {
+	const frameRangesIndexVersion = 6
+	if job.Report == nil || job.Report.IndexVersion >= frameRangesIndexVersion || job.Report.Playback == nil || !job.Report.Playback.Ready {
 		return false
 	}
 	playback := job.Report.Playback
@@ -167,7 +168,7 @@ func (s *Store) upgradePlaybackFrameRanges(job *Job) bool {
 	for frameIndex := range playback.Frames {
 		playback.Frames[frameIndex].FieldRanges = ranges[frameIndex]
 	}
-	job.Report.IndexVersion = IndexVersion
+	job.Report.IndexVersion = frameRangesIndexVersion
 	return true
 }
 

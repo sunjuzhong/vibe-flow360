@@ -17,7 +17,9 @@ import (
 	"time"
 )
 
-const IndexVersion = 6
+// Version 7 invalidates previews built with triangle-stride sampling, which
+// could leave visible holes and frame-dependent geometry bounds.
+const IndexVersion = 7
 
 type Limits struct {
 	MaxEntries           int

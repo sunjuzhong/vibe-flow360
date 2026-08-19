@@ -69,6 +69,25 @@ func TestValidTimeSeriesArchivePath(t *testing.T) {
 	}
 }
 
+func TestLatestSlicePlayerJobIgnoresStalePreviewCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store, err := sliceplayer.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("case-1", "results/slices.tar.gz", 42, "v6:case-1:results/slices.tar.gz:42"); err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{router: gin.New(), slicePlayerJobs: store}
+	app.router.GET("/api/flow360/resources/Case/:resource_id/slice-player/jobs/latest", app.latestSlicePlayerJob)
+	request := httptest.NewRequest(http.MethodGet, "/api/flow360/resources/Case/case-1/slice-player/jobs/latest?result_path=results%2Fslices.tar.gz", nil)
+	recorder := httptest.NewRecorder()
+	app.router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("stale preview cache was returned: status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestSlicePlayerServesAssetsFromPartialPlayback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store, err := sliceplayer.NewStore(t.TempDir())
