@@ -615,14 +615,24 @@ function SchemaField({
             <button type="button" className={draft.variant === expressionVariant ? 'active' : ''} aria-pressed={draft.variant === expressionVariant} onClick={() => selectVariant(expressionVariant)}><Code2 size={13} /> Expression</button>
           </div>
         ) : (
-          <label className="schema-field">
+          <div className="schema-union-picker" role="radiogroup" aria-label={`${title} value type`}>
             <span>Value type</span>
-            <select value={draft.variant} onChange={(event) => selectVariant(Number(event.target.value))}>
+            <div>
               {variants.map((variant, index) => (
-                <option value={index} key={index}>{variant.title || humanize(variant.type)}</option>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.variant === index}
+                  className={draft.variant === index ? 'active' : ''}
+                  key={index}
+                  onClick={() => selectVariant(index)}
+                >
+                  <strong>{variantLabel(variant, index)}</strong>
+                  {variant.description && <small>{cleanSchemaDescription(variant.description)}</small>}
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
         )}
         <div className={valueOrExpression ? 'schema-value-or-expression-editor' : ''}>{selectedEditor}</div>
       </>
@@ -922,15 +932,31 @@ function NegativeOneOrPositiveIntegerField({
 }
 
 function EntityListField({ schema, value, onChange, title, fieldID }: { schema: DynamicFormSchema; value: unknown; onChange: (value: unknown) => void; title: string; fieldID: string }) {
+  const [query, setQuery] = useState('')
   const draft = isRecord(value) ? value : {}
   const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
   const choices = schema.entity_choices ?? []
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = normalizedQuery
+    ? choices.filter((choice) => `${choice.label} ${choice.model_type ?? ''}`.toLowerCase().includes(normalizedQuery))
+    : choices
   const allSelected = choices.length > 0 && choices.every((choice) => selected.includes(choice.value))
+  const visibleSelected = filtered.filter((choice) => selected.includes(choice.value)).length
   return <fieldset className="schema-object schema-entity-list" id={fieldID}>
-    <legend>{title}{schema.required === true ? ' *' : ''}</legend>
-    <div className="schema-entity-header"><span>{selected.length} selected</span><button type="button" onClick={() => onChange({ ...draft, entities: allSelected ? [] : choices.map((choice) => choice.value) })}>{allSelected ? 'Clear all' : 'Select all'}</button></div>
-    {choices.length ? <div className="schema-entity-grid">{choices.map((choice) => <label key={choice.value}><input type="checkbox" checked={selected.includes(choice.value)} onChange={(event) => onChange({ ...draft, entities: event.target.checked ? [...selected, choice.value] : selected.filter((item) => item !== choice.value) })} /><span><code>{choice.label}</code>{choice.model_type && <small>{choice.model_type}</small>}</span></label>)}</div> : <div className="schema-array-empty"><strong>No compatible entities</strong><span>Create a compatible entity before configuring this output.</span></div>}
+    <legend><span className="schema-legend-content">{title}{schema.required === true ? ' *' : ''}<SchemaDescriptionHelp description={schema.description} title={title} /></span></legend>
+    <div className="schema-entity-header">
+      <span>{selected.length} selected{query && ` · ${visibleSelected} shown`}</span>
+      <label><Search size={13} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search entities" aria-label={`Search ${title}`} /></label>
+      <button type="button" onClick={() => onChange({ ...draft, entities: allSelected ? [] : choices.map((choice) => choice.value) })}>{allSelected ? 'Clear all' : 'Select all'}</button>
+    </div>
+    {choices.length ? <div className="schema-entity-grid">{filtered.map((choice) => <label key={choice.value} className={selected.includes(choice.value) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(choice.value)} onChange={(event) => onChange({ ...draft, entities: event.target.checked ? [...selected, choice.value] : selected.filter((item) => item !== choice.value) })} /><span><code>{choice.label}</code>{choice.model_type && <small>{choice.model_type}</small>}</span></label>)}{filtered.length === 0 && <div className="schema-multi-select-empty">No matching entities</div>}</div> : <div className="schema-array-empty"><strong>No compatible entities</strong><span>Create a compatible entity before configuring this output.</span></div>}
   </fieldset>
+}
+
+function variantLabel(schema: DynamicFormSchema, index: number): string {
+  if (schema.title) return schema.title
+  if (schema.wire_discriminator?.value) return String(schema.wire_discriminator.value)
+  return humanize(schema.type || `Type ${index + 1}`)
 }
 
 function RootFieldSection({
