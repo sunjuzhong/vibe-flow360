@@ -67,11 +67,9 @@ export type SlicePlaybackFrame = NonNullable<NonNullable<SlicePlayerJob['report'
 
 export const SLICE_PLAYBACK_FPS_OPTIONS = [1, 2, 5, 10, 15, 20, 24, 30] as const
 
-export function slicePlaybackPrefetchIndices(current: number, frameCount: number) {
-  if (frameCount < 2) return []
-  return [...new Set([1, 2, -1]
-    .map((offset) => (current + offset + frameCount) % frameCount)
-    .filter((index) => index !== current))]
+export function slicePlaybackPrefetchIndices(current: number, frameCount: number, cameraNavigating = false) {
+  if (cameraNavigating || frameCount < 2) return []
+  return [(current + 1) % frameCount]
 }
 
 export function sliceFrameAssetURL(caseId: string, jobId: string, frame: SlicePlaybackFrame, preview = false) {
@@ -323,10 +321,10 @@ function SlicePlayback({ caseId, job, archiveKind, onFrameChange }: {
   ))), [caseId, job.id, playing, timeline])
 
   useEffect(() => {
-    const targets = slicePlaybackPrefetchIndices(frameIndex, timelineAssetURLs.length)
+    const targets = slicePlaybackPrefetchIndices(frameIndex, timelineAssetURLs.length, cameraNavigating)
       .flatMap((index) => timelineAssetURLs[index])
     assetCache.prefetch(targets)
-  }, [assetCache, frameIndex, timelineAssetURLs])
+  }, [assetCache, cameraNavigating, frameIndex, timelineAssetURLs])
 
   const stableBounds = useMemo(
     () => slicePlaybackStableBounds(playback?.frames ?? [], selectedTracks, fallbackTrackName),

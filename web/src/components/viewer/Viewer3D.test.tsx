@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, prefixedViewerEntityId, shouldKeepPreviousAssetVisible, viewerManifestBounds, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
+import { applyViewerCameraState, captureViewerCameraState, createEngineeringLightRig, mergeViewerManifestMetadata, nextViewerSelection, precisionFallbackNotice, prefixedViewerEntityId, shouldKeepPreviousAssetVisible, shouldPickNavigationSurface, viewerManifestBounds, viewerNavigationPixelRatio, Viewer3D, ViewerNavCube, ViewerToolbar } from './Viewer3D'
 import { I18nProvider } from '../../i18n'
 
 function renderViewer(viewer: React.ReactNode) {
@@ -77,6 +77,18 @@ describe('Viewer3D layout state', () => {
     expect(shouldKeepPreviousAssetVisible(false, true, 'loading')).toBe(false)
     expect(shouldKeepPreviousAssetVisible(true, false, 'loading')).toBe(false)
     expect(shouldKeepPreviousAssetVisible(true, true, 'ready')).toBe(false)
+  })
+
+  it('does not synchronously scan playback geometry before its picking BVH exists', () => {
+    expect(shouldPickNavigationSurface(true, false)).toBe(false)
+    expect(shouldPickNavigationSurface(true, true)).toBe(true)
+    expect(shouldPickNavigationSurface(false, false)).toBe(true)
+  })
+
+  it('temporarily lowers render resolution while navigating and restores it afterward', () => {
+    expect(viewerNavigationPixelRatio(2, true)).toBe(1)
+    expect(viewerNavigationPixelRatio(1, true)).toBe(1)
+    expect(viewerNavigationPixelRatio(2, false)).toBe(2)
   })
 
   it('marks the container as loading without rendering the controls gutter content', () => {

@@ -139,6 +139,14 @@ export function viewerManifestBounds(manifests: readonly ViewerManifest[]): THRE
   return bounds.isEmpty() ? null : bounds
 }
 
+export function shouldPickNavigationSurface(deferPickingBVH: boolean, pickingBVHReady: boolean) {
+  return !deferPickingBVH || pickingBVHReady
+}
+
+export function viewerNavigationPixelRatio(restingPixelRatio: number, active: boolean) {
+  return active ? Math.min(restingPixelRatio, 1) : restingPixelRatio
+}
+
 export type ViewerSelection = {
   groupId: string | null
   groupIds?: string[]
@@ -429,6 +437,7 @@ export function Viewer3D({
   )
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const restingPixelRatioRef = useRef(1)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const renderSchedulerRef = useRef<ViewerRenderScheduler | null>(null)
@@ -464,6 +473,7 @@ export function Viewer3D({
   const pivotFeedbackTimeoutRef = useRef<number | null>(null)
   const wheelNavigationTimeoutRef = useRef<number | null>(null)
   const wheelFrameRef = useRef<number | null>(null)
+  const navigationFrameRef = useRef<number | null>(null)
   const wheelDeltaRef = useRef(0)
   const wheelNavigationActiveRef = useRef(false)
   const wheelAnchorRef = useRef<THREE.Vector3 | null>(null)
@@ -476,6 +486,8 @@ export function Viewer3D({
     startY: number
     lastX: number
     lastY: number
+    pendingX: number
+    pendingY: number
     pivot: THREE.Vector3
     surface: boolean
     moved: boolean
@@ -589,6 +601,16 @@ export function Viewer3D({
     cameraNavigatingRef.current = active
     setCameraNavigating(active)
     onCameraNavigationChangeRef.current?.(active)
+    const renderer = rendererRef.current
+    const container = containerRef.current
+    if (renderer && container) {
+      const pixelRatio = viewerNavigationPixelRatio(restingPixelRatioRef.current, active)
+      if (renderer.getPixelRatio() !== pixelRatio) {
+        renderer.setPixelRatio(pixelRatio)
+        renderer.setSize(container.clientWidth || 400, container.clientHeight || 300, false)
+      }
+      renderSchedulerRef.current?.invalidate()
+    }
     if (!active) scheduleCameraState(true)
   }, [scheduleCameraState])
   const fieldEntityScopeKey = fieldEntityIds?.join('\u0000') ?? ''
@@ -839,11 +861,13 @@ export function Viewer3D({
     renderer.localClippingEnabled = true
     renderer.setSize(width, height, false)
     const navigatorWithMemory = navigator as Navigator & { deviceMemory?: number }
-    renderer.setPixelRatio(adaptiveViewerPixelRatio(
+    const restingPixelRatio = adaptiveViewerPixelRatio(
       window.devicePixelRatio,
       navigator.hardwareConcurrency,
       navigatorWithMemory.deviceMemory,
-    ))
+    )
+    restingPixelRatioRef.current = restingPixelRatio
+    renderer.setPixelRatio(restingPixelRatio)
     container.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
     configureCFDNavigationControls(controls)
@@ -1128,13 +1152,16 @@ export function Viewer3D({
     const ensurePickingBVH = () => {
       if (pickingBVHDispose) return
       pickingBVHDispose = preparePickingBVH(root).dispose
+      root.userData.viewerPickingBVHReady = true
     }
+    root.userData.viewerPickingBVHReady = false
     if (!deferPickingBVHRef.current) ensurePickingBVH()
     root.userData.ensureViewerPickingBVH = ensurePickingBVH
     disposers.push(() => {
       pickingBVHDispose?.()
       pickingBVHDispose = null
       delete root.userData.ensureViewerPickingBVH
+      delete root.userData.viewerPickingBVHReady
     })
     scene.add(root)
     if (nextParameterGroup) scene.add(nextParameterGroup)
@@ -1229,6 +1256,8 @@ export function Viewer3D({
       wheelNavigationTimeoutRef.current = null
       if (wheelFrameRef.current !== null) cancelAnimationFrame(wheelFrameRef.current)
       wheelFrameRef.current = null
+      if (navigationFrameRef.current !== null) cancelAnimationFrame(navigationFrameRef.current)
+      navigationFrameRef.current = null
       wheelDeltaRef.current = 0
       wheelNavigationActiveRef.current = false
       wheelAnchorRef.current = null
@@ -1753,6 +1782,29 @@ export function Viewer3D({
     altKey: event.altKey,
   })
 
+  const flushNavigationMove = useCallback(() => {
+    navigationFrameRef.current = null
+    const navigation = navigationDragRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    const container = containerRef.current
+    if (!navigation || !camera || !controls || !container) return
+    const dx = navigation.pendingX - navigation.lastX
+    const dy = navigation.pendingY - navigation.lastY
+    navigation.lastX = navigation.pendingX
+    navigation.lastY = navigation.pendingY
+    if (dx === 0 && dy === 0) return
+    const radiansPerPixel = (Math.PI * 2 / Math.max(container.clientHeight, 1)) * controls.rotateSpeed
+    rotateCameraRigAroundPivot(
+      camera,
+      controls.target,
+      navigation.pivot,
+      -dx * radiansPerPixel,
+      -dy * radiansPerPixel,
+    )
+    controls.update()
+  }, [])
+
   const cancelViewerInteraction = useCallback((pointerId?: number) => {
     const container = containerRef.current
     const navigationPointer = navigationDragRef.current?.pointerId
@@ -1775,6 +1827,8 @@ export function Viewer3D({
     pendingControlPointEventRef.current = null
     if (controlPointFrameRef.current !== null) cancelAnimationFrame(controlPointFrameRef.current)
     controlPointFrameRef.current = null
+    if (navigationFrameRef.current !== null) cancelAnimationFrame(navigationFrameRef.current)
+    navigationFrameRef.current = null
     if (controlsRef.current) controlsRef.current.enabled = true
     setCameraNavigationActive(false)
   }, [setCameraNavigationActive])
@@ -1789,8 +1843,12 @@ export function Viewer3D({
     const controls = controlsRef.current
     const asset = assetRef.current
     if (!container || !camera || !controls || !asset) return null
+    const canPickSurface = shouldPickNavigationSurface(
+      deferPickingBVHRef.current,
+      asset.userData.viewerPickingBVHReady === true,
+    )
     const raycaster = buildPointerRay({ clientX, clientY }, camera, container.getBoundingClientRect())
-    const intersection = pickScene(raycaster, [asset])
+    const intersection = canPickSurface ? pickScene(raycaster, [asset]) : null
     if (intersection) {
       lastSurfacePivotRef.current = intersection.point.clone()
       return { point: intersection.point.clone(), surface: true }
@@ -1831,7 +1889,10 @@ export function Viewer3D({
       clientX: event.clientX,
       clientY: event.clientY,
     }, camera, container.getBoundingClientRect())
-    const intersection = pickScene(raycaster, [asset])
+    const intersection = shouldPickNavigationSurface(
+      deferPickingBVHRef.current,
+      asset.userData.viewerPickingBVHReady === true,
+    ) ? pickScene(raycaster, [asset]) : null
     if (intersection) lastSurfacePivotRef.current = intersection.point.clone()
     const nextTarget = intersection?.point.clone()
       ?? lastSurfacePivotRef.current?.clone()
@@ -1927,6 +1988,8 @@ export function Viewer3D({
           startY: event.clientY,
           lastX: event.clientX,
           lastY: event.clientY,
+          pendingX: event.clientX,
+          pendingY: event.clientY,
           pivot: anchor.point,
           surface: anchor.surface,
           moved: false,
@@ -1963,6 +2026,8 @@ export function Viewer3D({
     }
     const navigation = navigationDragRef.current
     if (navigation?.pointerId === event.pointerId) {
+      if (navigationFrameRef.current !== null) cancelAnimationFrame(navigationFrameRef.current)
+      flushNavigationMove()
       navigationDragRef.current = null
       if (navigation.moved) setCameraNavigationActive(false)
       inputControllerRef.current?.onPointerUp(pointerEvent(event))
@@ -2008,12 +2073,6 @@ export function Viewer3D({
         cancelViewerInteraction(event.pointerId)
         return
       }
-      const camera = cameraRef.current
-      const controls = controlsRef.current
-      const container = containerRef.current
-      if (!camera || !controls || !container) return
-      const dx = event.clientX - navigation.lastX
-      const dy = event.clientY - navigation.lastY
       if (!navigation.moved) {
         if (Math.hypot(
           event.clientX - navigation.startX,
@@ -2023,18 +2082,11 @@ export function Viewer3D({
         setCameraNavigationActive(true)
         if (navigation.surface) showPivotFeedback(navigation.startX, navigation.startY)
       }
-      navigation.lastX = event.clientX
-      navigation.lastY = event.clientY
-      if (dx === 0 && dy === 0) return
-      const radiansPerPixel = (Math.PI * 2 / Math.max(container.clientHeight, 1)) * controls.rotateSpeed
-      rotateCameraRigAroundPivot(
-        camera,
-        controls.target,
-        navigation.pivot,
-        -dx * radiansPerPixel,
-        -dy * radiansPerPixel,
-      )
-      controls.update()
+      navigation.pendingX = event.clientX
+      navigation.pendingY = event.clientY
+      if (navigationFrameRef.current === null) {
+        navigationFrameRef.current = requestAnimationFrame(flushNavigationMove)
+      }
       event.preventDefault()
       event.stopPropagation()
       return

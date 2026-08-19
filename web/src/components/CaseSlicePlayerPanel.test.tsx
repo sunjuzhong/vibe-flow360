@@ -91,10 +91,11 @@ describe('CaseSlicePlayerPanel', () => {
     expect(slicePlaybackAdvancing(false, false)).toBe(false)
   })
 
-  it('prefetches two frames ahead and keeps one frame behind with wraparound', () => {
-    expect(slicePlaybackPrefetchIndices(0, 10)).toEqual([1, 2, 9])
-    expect(slicePlaybackPrefetchIndices(9, 10)).toEqual([0, 1, 8])
+  it('prefetches only the next frame to avoid concurrent main-thread decoding', () => {
+    expect(slicePlaybackPrefetchIndices(0, 10)).toEqual([1])
+    expect(slicePlaybackPrefetchIndices(9, 10)).toEqual([0])
     expect(slicePlaybackPrefetchIndices(0, 2)).toEqual([1])
+    expect(slicePlaybackPrefetchIndices(0, 10, true)).toEqual([])
   })
 
   it('builds an encoded immutable frame asset URL', () => {
