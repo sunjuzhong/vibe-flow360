@@ -1233,10 +1233,14 @@ export const api = {
     ),
   projectSyncStatus: (projectId: string) =>
     json<ProjectSyncManifest>(`/api/flow360/projects/${encodeURIComponent(projectId)}/sync`),
-  resourceDetail: (resourceType: string, resourceId: string, cacheOnly = false) =>
-    flow360JSON<ResourceDetail>(
-      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${cacheOnly ? '?cache=only' : ''}`,
-    ),
+  resourceDetail: (resourceType: string, resourceId: string, cacheOnly = false, projectId = '') => {
+    const params = new URLSearchParams()
+    if (cacheOnly) params.set('cache', 'only')
+    if (projectId) params.set('project_id', projectId)
+    return flow360JSON<ResourceDetail>(
+      `/api/flow360/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${params.size ? `?${params}` : ''}`,
+    )
+  },
   geometryDiagnostics: (resourceId: string, smallSurfaceRatio = 0.1, curvatureAngleDeg = 30) =>
     json<GeometryDiagnosticReport>(
       `/api/flow360/resources/Geometry/${encodeURIComponent(resourceId)}/diagnostics?small_surface_ratio=${encodeURIComponent(smallSurfaceRatio)}&curvature_angle_deg=${encodeURIComponent(curvatureAngleDeg)}`,

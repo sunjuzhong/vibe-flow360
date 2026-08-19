@@ -629,7 +629,7 @@ export default function ProjectPage() {
     setDraftDetailError('')
     setDraftDetail(null)
     try {
-      const response = await api.resourceDetail('Draft', activeDraftId)
+      const response = await api.resourceDetail('Draft', activeDraftId, false, projectId)
       if (requestId !== draftDetailRequestRef.current) return
       if (!isDraftDetailFor(activeDraftId, response.data)) throw new Error('Flow360 returned a different Draft than the one requested.')
       setDraftDetail(response.data)
@@ -640,7 +640,7 @@ export default function ProjectPage() {
     } finally {
       if (requestId === draftDetailRequestRef.current) setDraftDetailLoading(false)
     }
-  }, [activeDraftId])
+  }, [activeDraftId, projectId])
 
   useEffect(() => {
     void loadDraftDetail()
@@ -716,7 +716,7 @@ export default function ProjectPage() {
     if (!selected || !selectedItem || !root) throw new Error('A source Resource is required to create a Draft.')
     const selectedDetail = detail?.id === selected.id
       ? detail
-      : (await api.resourceDetail(selected.type, selected.id)).data
+      : (await api.resourceDetail(selected.type, selected.id, false, projectId)).data
     const creation = draftCreationBase(items, selectedItem, selectedDetail)
     const created = await api.createConfiguredDraft(projectId, {
       source_id: creation.source.id,
@@ -735,7 +735,7 @@ export default function ProjectPage() {
     if (!root) throw new Error('The source Resource for this Draft is unavailable.')
     const sourceDetail = draft.id === draftDetail?.id
       ? draftDetail
-      : (await api.resourceDetail('Draft', draft.id)).data
+      : (await api.resourceDetail('Draft', draft.id, false, projectId)).data
     const source = draftSourceResource(items, draft, sourceDetail)
     if (!source) throw new Error('The source Resource for this Draft is unavailable.')
     if (!sourceDetail?.simulation_params) throw new Error('The Draft SimulationParams are unavailable.')
@@ -782,7 +782,7 @@ export default function ProjectPage() {
     setDetailError('')
     setDetail(null)
     const result = await hydrateResourceDetail(
-      (cacheOnly) => api.resourceDetail(selected.type, selected.id, cacheOnly),
+      (cacheOnly) => api.resourceDetail(selected.type, selected.id, cacheOnly, projectId),
       cacheFirst,
       (response) => {
         if (requestId !== detailRequestRef.current) return

@@ -105,6 +105,38 @@ func (s *Server) projectSyncStatus(c *gin.Context) {
 	s.writeProjectSyncManifest(c, http.StatusOK, projectID)
 }
 
+func (s *Server) kickProjectSync(projectID string) bool {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" || s.mirror == nil || s.projectSyncClient == nil {
+		return false
+	}
+	if existing, err := s.mirror.GetManifest(projectID); err == nil && projectSyncManifestFresh(existing, time.Now()) {
+		return false
+	}
+	s.projectSyncMu.Lock()
+	if s.projectSyncJobs == nil {
+		s.projectSyncJobs = map[string]struct{}{}
+	}
+	if _, running := s.projectSyncJobs[projectID]; running {
+		s.projectSyncMu.Unlock()
+		return false
+	}
+	manifest := projectmirror.NewManifest(projectID, s.mirror.Namespace())
+	if err := s.mirror.PutManifest(manifest); err != nil {
+		s.projectSyncMu.Unlock()
+		return false
+	}
+	s.projectSyncJobs[projectID] = struct{}{}
+	s.projectSyncMu.Unlock()
+	go func() {
+		s.syncProject(context.Background(), projectID, s.projectSyncClient)
+		s.projectSyncMu.Lock()
+		delete(s.projectSyncJobs, projectID)
+		s.projectSyncMu.Unlock()
+	}()
+	return true
+}
+
 func (s *Server) writeProjectSyncManifest(c *gin.Context, status int, projectID string) {
 	if s.mirror == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "project synchronization is unavailable"})

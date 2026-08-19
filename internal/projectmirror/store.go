@@ -86,6 +86,15 @@ type Store struct {
 	namespace string
 }
 
+type CleanupResult struct {
+	Root           string `json:"root"`
+	Cutoff         string `json:"cutoff"`
+	RemovedFiles   int    `json:"removed_files"`
+	RemovedBytes   int64  `json:"removed_bytes"`
+	RemovedDirs    int    `json:"removed_dirs"`
+	FailedRemovals int    `json:"failed_removals"`
+}
+
 func New(root, namespace string) (*Store, error) {
 	namespace = strings.TrimSpace(namespace)
 	if err := validateID(namespace); err != nil {
@@ -96,6 +105,58 @@ func New(root, namespace string) (*Store, error) {
 		return nil, fmt.Errorf("create project mirror root: %w", err)
 	}
 	return &Store{root: root, namespace: namespace}, nil
+}
+
+func CleanupRootOlderThan(root string, cutoff time.Time) (CleanupResult, error) {
+	root = filepath.Clean(strings.TrimSpace(root))
+	if root == "." || root == string(filepath.Separator) || root == "" {
+		return CleanupResult{}, errors.New("refusing to clean an unsafe project mirror root")
+	}
+	result := CleanupResult{Root: root, Cutoff: cutoff.UTC().Format(time.RFC3339)}
+	if _, err := os.Stat(root); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return result, nil
+		}
+		return result, err
+	}
+	var dirs []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			result.FailedRemovals++
+			return nil
+		}
+		if path == root {
+			return nil
+		}
+		if entry.IsDir() {
+			dirs = append(dirs, path)
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			result.FailedRemovals++
+			return nil
+		}
+		if info.Mode().IsRegular() && info.ModTime().Before(cutoff) {
+			size := info.Size()
+			if err := os.Remove(path); err != nil {
+				result.FailedRemovals++
+				return nil
+			}
+			result.RemovedFiles++
+			result.RemovedBytes += size
+		}
+		return nil
+	})
+	if err != nil {
+		return result, err
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if err := os.Remove(dirs[i]); err == nil {
+			result.RemovedDirs++
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) Namespace() string {
@@ -758,7 +819,7 @@ func validateID(value string) error {
 
 func validResourceType(value string) bool {
 	switch value {
-	case "Geometry", "SurfaceMesh", "VolumeMesh", "Case":
+	case "Geometry", "SurfaceMesh", "VolumeMesh", "Case", "Draft":
 		return true
 	default:
 		return false

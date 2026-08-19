@@ -14,6 +14,7 @@ import (
 
 	"github.com/sunjuzhong/vibe-flow360/internal/bootstrap"
 	"github.com/sunjuzhong/vibe-flow360/internal/config"
+	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
 	"github.com/sunjuzhong/vibe-flow360/internal/server"
 )
 
@@ -34,6 +35,8 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return nil
 	case "serve":
 		return runServe(args[1:], stdout, stderr)
+	case "clean-mirror":
+		return runCleanMirror(args[1:], stdout, stderr)
 	case "init":
 		return runInit(args[1:], stdin, stdout, stderr)
 	case "version":
@@ -53,10 +56,45 @@ func writeRootUsage(output io.Writer) {
 Usage:
   %s init [options]   Install and verify all runtime dependencies
   %s serve [options]  Start the Vibe Flow360 server
+  %s clean-mirror     Remove mirrored Project files older than one week
   %s version          Print the build/Flow360 version
 
 Run "%s <command> --help" for command options.
-`, commandName, commandName, commandName, commandName)
+`, commandName, commandName, commandName, commandName, commandName)
+}
+
+func runCleanMirror(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("clean-mirror", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	dataDir := flags.String("data-dir", firstValue(os.Getenv("VIBESIM_DATA_DIR"), ".vibesim"), "VibeSim data directory")
+	olderThan := flags.Duration("older-than", 7*24*time.Hour, "minimum file age to remove")
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "Usage: %s clean-mirror [--data-dir .vibesim] [--older-than 168h]\n", commandName)
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("clean-mirror does not accept positional arguments")
+	}
+	if *olderThan <= 0 {
+		return errors.New("--older-than must be positive")
+	}
+	root := filepath.Join(*dataDir, "projects")
+	result, err := projectmirror.CleanupRootOlderThan(root, time.Now().Add(-*olderThan))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Cleaned %s: removed %d files, %d bytes, %d empty directories", result.Root, result.RemovedFiles, result.RemovedBytes, result.RemovedDirs)
+	if result.FailedRemovals > 0 {
+		fmt.Fprintf(stdout, ", %d failures", result.FailedRemovals)
+	}
+	fmt.Fprintln(stdout)
+	return nil
 }
 
 func runServe(args []string, stdout, stderr io.Writer) error {

@@ -1741,15 +1741,18 @@ func isFailureState(state string) bool {
 func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	resourceID := c.Param("resource_id")
 	resourceType := resourceTypeForDetail(c.Param("resource_type"), resourceID)
+	projectID := strings.TrimSpace(c.Query("project_id"))
 	cacheKey := resourceType + "/" + resourceID
 	if strings.EqualFold(c.Query("cache"), "only") {
 		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
+			s.kickProjectSync(projectID)
 			return
 		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "local resource snapshot is unavailable"})
 		return
 	}
 	if !forceResourceFileSync(c) && s.servePartialResourceDetailSnapshot(c, cacheKey) {
+		s.kickProjectSync(projectID)
 		return
 	}
 	detail, err := s.flow360.ResourceDetail(
@@ -1759,6 +1762,7 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 	)
 	if err != nil {
 		if s.serveResourceDetailSnapshot(c, resourceType, resourceID, cacheKey) {
+			s.kickProjectSync(projectID)
 			return
 		}
 		c.JSON(http.StatusBadRequest, flow360ErrorResponse(err))
@@ -1803,6 +1807,11 @@ func (s *Server) flow360ResourceDetail(c *gin.Context) {
 		return
 	}
 	s.cacheLiveJSON("resource-detail", cacheKey, raw)
+	if projectID != "" && s.mirror != nil {
+		if err := s.mirror.PutResource(projectID, resourceType, resourceID, raw); err == nil {
+			s.kickProjectSync(projectID)
+		}
+	}
 	if s.cache != nil {
 		_ = s.cache.Delete("resource-detail-partial", cacheKey)
 	}
