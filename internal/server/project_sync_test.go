@@ -554,6 +554,27 @@ func TestResourceMeshPreviewReturnsFriendlyCapacityError(t *testing.T) {
 	}
 }
 
+func TestResourceVisualizationErrorResponseSeparatesIncompleteAssets(t *testing.T) {
+	technical := &flow360.VisualizationError{
+		Kind:         flow360.VisualizationMissingAssets,
+		ResourceType: "Case",
+		Err:          errors.New("visualization buffer is missing: Boundaries_Auto_lod0.bin"),
+	}
+	response, cacheable := resourceVisualizationErrorResponse("Case", technical)
+	if cacheable {
+		t.Fatal("incomplete assets response must remain retryable")
+	}
+	if response["code"] != "visualization_assets_incomplete" {
+		t.Fatalf("unexpected response code: %#v", response)
+	}
+	if strings.Contains(response["error"].(string), "Boundaries_Auto_lod0.bin") {
+		t.Fatalf("technical asset name leaked into user error: %#v", response)
+	}
+	if !strings.Contains(response["technical_error"].(string), "Boundaries_Auto_lod0.bin") {
+		t.Fatalf("technical detail was not preserved: %#v", response)
+	}
+}
+
 func TestVisualizationManifestBrowserSafe(t *testing.T) {
 	if !visualizationManifestBrowserSafe("Geometry", json.RawMessage(strings.Repeat(" ", browserVisualizationManifestLimit)+`[]`)) {
 		t.Fatal("compact manifest with large formatting whitespace was rejected")

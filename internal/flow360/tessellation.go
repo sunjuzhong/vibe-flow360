@@ -82,12 +82,13 @@ type GeometryVisualization = ResourceVisualization
 type VisualizationErrorKind string
 
 const (
-	VisualizationInvalid     VisualizationErrorKind = "invalid"
-	VisualizationUnavailable VisualizationErrorKind = "unavailable"
-	VisualizationTimeout     VisualizationErrorKind = "timeout"
-	VisualizationDownload    VisualizationErrorKind = "download"
-	VisualizationMalformed   VisualizationErrorKind = "malformed"
-	VisualizationTooLarge    VisualizationErrorKind = "too_large"
+	VisualizationInvalid       VisualizationErrorKind = "invalid"
+	VisualizationUnavailable   VisualizationErrorKind = "unavailable"
+	VisualizationTimeout       VisualizationErrorKind = "timeout"
+	VisualizationDownload      VisualizationErrorKind = "download"
+	VisualizationMalformed     VisualizationErrorKind = "malformed"
+	VisualizationTooLarge      VisualizationErrorKind = "too_large"
+	VisualizationMissingAssets VisualizationErrorKind = "missing_assets"
 )
 
 type VisualizationError struct {
@@ -523,6 +524,16 @@ func (c *Client) ResourceVisualization(
 
 func visualizationFailureKind(message string, fallback VisualizationErrorKind) VisualizationErrorKind {
 	normalized := strings.ToLower(message)
+	for _, marker := range []string{
+		"visualization buffer is missing",
+		"nosuchkey",
+		"specified key does not exist",
+		"when calling the headobject operation: not found",
+	} {
+		if strings.Contains(normalized, marker) {
+			return VisualizationMissingAssets
+		}
+	}
 	for _, marker := range []string{
 		"visualization manifest exceeds the",
 		"exceeds the 512 mib remote limit",
@@ -1177,11 +1188,19 @@ for value in sorted(paths):
         raise ValueError("unsafe visualization buffer path")
     target = root.joinpath(*pure.parts)
     target.parent.mkdir(parents=True, exist_ok=True)
-    api.download_file(
-        "visualize/manifest/" + pure.as_posix(),
-        to_file=str(target),
-        overwrite=True,
-    )
+    try:
+        api.download_file(
+            "visualize/manifest/" + pure.as_posix(),
+            to_file=str(target),
+            overwrite=True,
+        )
+    except Exception as exc:
+        message = str(exc).lower()
+        if "404" in message or "not found" in message or "nosuchkey" in message:
+            raise FileNotFoundError(
+                f"visualization buffer is missing: {pure.as_posix()}"
+            ) from exc
+        raise
 
 print(json.dumps({"manifest": manifest_remote, "buffers": sorted(paths)}))
 `

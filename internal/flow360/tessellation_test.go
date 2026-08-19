@@ -224,6 +224,18 @@ func TestVisualizationFailureKindClassifiesCapacityErrors(t *testing.T) {
 	}
 }
 
+func TestVisualizationFailureKindClassifiesMissingAssets(t *testing.T) {
+	for _, message := range []string{
+		"visualization buffer is missing: Boundaries_Auto_lod0.bin",
+		"NoSuchKey: The specified key does not exist",
+		"An error occurred (404) when calling the HeadObject operation: Not Found",
+	} {
+		if got := visualizationFailureKind(message, VisualizationDownload); got != VisualizationMissingAssets {
+			t.Fatalf("message %q classified as %q", message, got)
+		}
+	}
+}
+
 func TestResourceVisualizationAssetRejectsUnsafePathBeforeDownload(t *testing.T) {
 	client := &Client{}
 	for _, path := range []string{"../secret.bin", "/tmp/body.bin", "body.json", `nested\body.bin`} {

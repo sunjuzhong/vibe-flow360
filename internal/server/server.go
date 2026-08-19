@@ -2153,6 +2153,12 @@ func resourceVisualizationErrorResponse(resourceType string, err error) (gin.H, 
 		"warnings": []string{resourceType + " visualization could not be prepared"},
 	}
 	var typedErr *flow360.VisualizationError
+	if errors.As(err, &typedErr) && typedErr.Kind == flow360.VisualizationMissingAssets {
+		response["code"] = "visualization_assets_incomplete"
+		response["error"] = "The visualization files for this resource are incomplete."
+		response["technical_error"] = err.Error()
+		return response, false
+	}
 	if errors.As(err, &typedErr) && typedErr.Kind == flow360.VisualizationTooLarge {
 		response["code"] = "visualization_too_large"
 		response["error"] = "This model exceeds the current browser preview capacity. Please contact the software development team to adjust large-model visualization support."
