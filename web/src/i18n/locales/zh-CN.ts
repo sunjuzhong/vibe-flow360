@@ -657,7 +657,6 @@ const messages: Record<string, string> = {
   'Select options': '选择选项',
   'Search options': '搜索选项',
   'No matching options': '没有匹配的选项',
-  'No matching entities': '没有匹配的实体',
   'Search output fields': '搜索输出字段',
   'Clear predefined': '清除预定义字段',
   'No matching output fields': '没有匹配的输出字段',
