@@ -141,6 +141,8 @@ func sanitizeFormValue(schema formNode, value any, path string, depth int) (any,
 		})
 	case "entity_assignment":
 		return sanitizeFixedFormObject(value, path, map[string]bool{"model": true, "entities": true})
+	case "entity_list":
+		return sanitizeFixedFormObject(value, path, map[string]bool{"stored_entities": true, "selectors": true})
 	case "union":
 		var best any
 		var bestRemoved []string
@@ -316,6 +318,37 @@ func validateFormValue(schema formNode, value any, path string, depth int) error
 				return fmt.Errorf("%s.entities contains a duplicate Geometry surface", label)
 			}
 			seen[entity] = true
+		}
+	case "entity_list":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be an entity list", label)
+		}
+		for key := range object {
+			if key != "stored_entities" && key != "selectors" {
+				return fmt.Errorf("%s.%s is not supported", label, key)
+			}
+		}
+		entities, ok := object["stored_entities"].([]any)
+		if !ok || len(entities) == 0 {
+			return fmt.Errorf("%s.stored_entities must contain at least one entity", label)
+		}
+		seen := map[string]bool{}
+		for _, raw := range entities {
+			entity, ok := raw.(map[string]any)
+			choice := findEntityFormChoice(schema.EntityChoices, entity)
+			if !ok || choice == nil {
+				return fmt.Errorf("%s.stored_entities contains an unknown entity", label)
+			}
+			if seen[choice.Value] {
+				return fmt.Errorf("%s.stored_entities contains a duplicate entity", label)
+			}
+			seen[choice.Value] = true
+		}
+		if selectors, exists := object["selectors"]; exists {
+			if _, ok := selectors.([]any); !ok {
+				return fmt.Errorf("%s.selectors must be an array", label)
+			}
 		}
 	case "field_removal":
 		if value != nil {
@@ -495,6 +528,18 @@ func canonicalFormUnit(schema formNode, unit string) string {
 func findFormChoice(choices []formChoice, value string) *formChoice {
 	for index := range choices {
 		if choices[index].Value == value {
+			return &choices[index]
+		}
+	}
+	return nil
+}
+
+func findEntityFormChoice(choices []formChoice, entity map[string]any) *formChoice {
+	if entity == nil {
+		return nil
+	}
+	for index := range choices {
+		if reflect.DeepEqual(choices[index].Payload, entity) {
 			return &choices[index]
 		}
 	}

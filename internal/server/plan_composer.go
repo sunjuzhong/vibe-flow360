@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -49,10 +51,11 @@ type planAssistResponse struct {
 }
 
 type planComposerContext struct {
-	Request  planComposerRequest
-	Name     string
-	Baseline json.RawMessage
-	Form     flow360.PlanFormSchema
+	Request          planComposerRequest
+	Name             string
+	Baseline         json.RawMessage
+	RecoveryBaseline json.RawMessage
+	Form             flow360.PlanFormSchema
 }
 
 func (s *Server) planFormSchema(c *gin.Context) {
@@ -168,8 +171,22 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		return planAssistResponse{}, errors.New("AI form values could not be checked with Flow360: " + err.Error())
 	}
 
-	agentRepairAttempts := 0
 	autoRepaired := false
+	if !preflight.Valid && len(composer.RecoveryBaseline) > 0 {
+		recoveryPatch, applied, recoveryErr := missingPlanAssistBaselinePatch(preflight.Issues, composer.RecoveryBaseline, merged)
+		if recoveryErr == nil && applied {
+			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recoveryPatch)
+			if err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+				}
+			}
+		}
+	}
+
+	agentRepairAttempts := 0
 	for !preflight.Valid && agentRepairAttempts < maxPlanAssistRepairAttempts {
 		if recommendedPatch, applied, recommendationErr := recommendedPlanAssistPatch(preflight.FormSchema, merged); recommendationErr == nil && applied {
 			proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch)
@@ -644,6 +661,140 @@ func mergePlanAssistObjects(base, addition map[string]any) map[string]any {
 	return result
 }
 
+// missingPlanAssistBaselinePatch recovers only values that Flow360 explicitly
+// reports as missing and that are still available in the persisted resource or
+// Draft. Array-valued form fields use RFC 7396 replacement semantics, so the
+// desired value starts from the current candidate and fills individual missing
+// members before the sparse patch is calculated. This preserves deliberate
+// edits made beside the recovered fields.
+func missingPlanAssistBaselinePatch(issues []flow360.PreflightIssue, baseline, current json.RawMessage) (json.RawMessage, bool, error) {
+	var baselineValue any
+	var currentValue any
+	if json.Unmarshal(baseline, &baselineValue) != nil || json.Unmarshal(current, &currentValue) != nil {
+		return nil, false, errors.New("Flow360 baseline recovery values are invalid")
+	}
+	desired := clonePlanAssistValue(currentValue)
+	applied := false
+	for _, issue := range issues {
+		if issue.Level != "error" || issue.Code != "missing" {
+			continue
+		}
+		path := strings.Trim(strings.TrimSpace(issue.Path), ".")
+		if path == "" {
+			continue
+		}
+		var restored bool
+		desired, restored = restoreMissingPlanAssistPath(desired, baselineValue, strings.Split(path, "."))
+		applied = applied || restored
+	}
+	if !applied {
+		return nil, false, nil
+	}
+	difference, changed := planAssistMergePatchDifference(currentValue, desired)
+	patch, ok := difference.(map[string]any)
+	if !changed || !ok {
+		return nil, false, nil
+	}
+	payload, err := json.Marshal(patch)
+	return payload, err == nil, err
+}
+
+func restoreMissingPlanAssistPath(current, baseline any, path []string) (any, bool) {
+	if len(path) == 0 {
+		return clonePlanAssistValue(baseline), true
+	}
+	if index, err := strconv.Atoi(path[0]); err == nil {
+		currentArray, currentOK := current.([]any)
+		baselineArray, baselineOK := baseline.([]any)
+		if !currentOK || !baselineOK || index < 0 || index >= len(currentArray) || index >= len(baselineArray) {
+			return current, false
+		}
+		restored, changed := restoreMissingPlanAssistPath(currentArray[index], baselineArray[index], path[1:])
+		if changed {
+			currentArray[index] = restored
+		}
+		return currentArray, changed
+	}
+	currentObject, currentOK := current.(map[string]any)
+	baselineObject, baselineOK := baseline.(map[string]any)
+	if !currentOK || !baselineOK {
+		return current, false
+	}
+	baselineChild, exists := baselineObject[path[0]]
+	if !exists && planAssistEntityAlias(path[0]) {
+		baselineChild, exists = baselineObject["entities"]
+	}
+	if !exists {
+		return current, false
+	}
+	currentChild, exists := currentObject[path[0]]
+	if !exists {
+		currentObject[path[0]] = clonePlanAssistValue(baselineChild)
+		return currentObject, true
+	}
+	restored, changed := restoreMissingPlanAssistPath(currentChild, baselineChild, path[1:])
+	if changed {
+		currentObject[path[0]] = restored
+	}
+	return currentObject, changed
+}
+
+func planAssistEntityAlias(key string) bool {
+	switch key {
+	case "edges", "faces", "surfaces", "slices", "volumes", "cylinders":
+		return true
+	default:
+		return false
+	}
+}
+
+func clonePlanAssistValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		copy := make(map[string]any, len(typed))
+		for key, child := range typed {
+			copy[key] = clonePlanAssistValue(child)
+		}
+		return copy
+	case []any:
+		copy := make([]any, len(typed))
+		for index, child := range typed {
+			copy[index] = clonePlanAssistValue(child)
+		}
+		return copy
+	default:
+		return value
+	}
+}
+
+func planAssistMergePatchDifference(baseline, desired any) (any, bool) {
+	if reflect.DeepEqual(baseline, desired) {
+		return nil, false
+	}
+	baselineObject, baselineIsObject := baseline.(map[string]any)
+	desiredObject, desiredIsObject := desired.(map[string]any)
+	if !baselineIsObject || !desiredIsObject {
+		return desired, true
+	}
+	result := map[string]any{}
+	for key := range baselineObject {
+		if _, exists := desiredObject[key]; !exists {
+			result[key] = nil
+		}
+	}
+	for key, desiredValue := range desiredObject {
+		baselineValue, exists := baselineObject[key]
+		if !exists {
+			result[key] = desiredValue
+			continue
+		}
+		if difference, changed := planAssistMergePatchDifference(baselineValue, desiredValue); changed {
+			result[key] = difference
+		}
+	}
+	return result, len(result) > 0
+}
+
 func planAssistPrompt(request planComposerRequest) string {
 	base := fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
 This is parameter assistance, not geometry generation. Never claim CAD dimensions, format, topology, or provenance unless they are explicitly present in the supplied context. Refer to it as the existing %s resource when evidence is absent.
@@ -775,6 +926,7 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	if err != nil {
 		return planComposerContext{}, err
 	}
+	recoveryBaseline := append(json.RawMessage(nil), detail.SimulationParams...)
 	baseline, err := plans.MergedSimulationParams(plans.Plan{Baseline: detail.SimulationParams, Patch: request.Patch})
 	if err != nil {
 		return planComposerContext{}, err
@@ -784,7 +936,7 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 		return planComposerContext{}, err
 	}
 	request.SourceType = detail.Type
-	return planComposerContext{Request: request, Name: name, Baseline: baseline, Form: form}, nil
+	return planComposerContext{Request: request, Name: name, Baseline: baseline, RecoveryBaseline: recoveryBaseline, Form: form}, nil
 }
 
 func planComposerSourceName(request planComposerRequest, rawInfo json.RawMessage, draftIdentityVerified bool) (string, error) {
@@ -857,6 +1009,7 @@ type promptSchemaField struct {
 	Minimum         any    `json:"minimum,omitempty"`
 	Maximum         any    `json:"maximum,omitempty"`
 	ModelChoices    []any  `json:"model_choices,omitempty"`
+	EntityChoices   []any  `json:"entity_choices,omitempty"`
 	DefaultModel    string `json:"default_model,omitempty"`
 	DefaultEntities []any  `json:"default_entities,omitempty"`
 	Recommendation  any    `json:"recommendation,omitempty"`
@@ -982,6 +1135,9 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 	if choices, ok := node["model_choices"].([]any); ok && len(choices) <= 16 {
 		field.ModelChoices = choices
 	}
+	if choices, ok := node["entity_choices"].([]any); ok && len(choices) <= 24 {
+		field.EntityChoices = choices
+	}
 	field.DefaultModel, _ = node["default_model"].(string)
 	if entities, ok := node["default_entities"].([]any); ok && len(entities) <= 40 {
 		field.DefaultEntities = entities
@@ -1002,7 +1158,7 @@ func compactPromptSchemaContract(node map[string]any, depth int) map[string]any 
 	result := make(map[string]any)
 	for _, key := range []string{
 		"type", "title", "description", "required", "unit", "unit_options", "options",
-		"default", "minimum", "maximum", "model_choices", "default_model",
+		"default", "minimum", "maximum", "model_choices", "entity_choices", "default_model",
 		"default_entities", "recommendation",
 	} {
 		if value, exists := node[key]; exists && value != nil {

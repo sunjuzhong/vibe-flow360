@@ -142,6 +142,23 @@ func TestFieldRemovalFormProducesMergePatchDeletion(t *testing.T) {
 	}
 }
 
+func TestEntityListFormAcceptsOnlySchemaEntities(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"faces":{"type":"entity_list","entity_choices":[{"value":"Surface:face-1","payload":{"name":"wing","private_attribute_id":"face-1"}}]}}}`)
+	valid := json.RawMessage(`{"faces":{"stored_entities":[{"name":"wing","private_attribute_id":"face-1"}]}}`)
+	if err := ValidateFormValues(schema, valid); err != nil {
+		t.Fatalf("schema entity payload was rejected: %v", err)
+	}
+	for _, invalid := range []json.RawMessage{
+		json.RawMessage(`{"faces":{"stored_entities":[]}}`),
+		json.RawMessage(`{"faces":{"stored_entities":[{"name":"invented","private_attribute_id":"face-2"}]}}`),
+		json.RawMessage(`{"faces":{"stored_entities":[{"name":"wing","private_attribute_id":"face-1"}],"unexpected":true}}`),
+	} {
+		if err := ValidateFormValues(schema, invalid); err == nil {
+			t.Fatalf("invalid entity list was accepted: %s", invalid)
+		}
+	}
+}
+
 func TestExpandFormValuesUpdatesExistingBoundaryModelFromServerChoices(t *testing.T) {
 	schema := json.RawMessage(`{
 		"type":"object","required":["models"],"properties":{"models":{
