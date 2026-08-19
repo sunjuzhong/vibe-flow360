@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -55,6 +56,134 @@ func ValidateFormValues(schema, values json.RawMessage) error {
 		return errors.New("dynamic form values must be valid JSON")
 	}
 	return validateFormValue(root, value, "", 0)
+}
+
+// ValidateFormPointerValue validates one operation value against the active
+// form node addressed by an RFC 6901 JSON Pointer. Union paths are accepted
+// when at least one active variant supports the path and value.
+func ValidateFormPointerValue(schema json.RawMessage, pointer string, value any) error {
+	root, segments, err := formPointerContext(schema, pointer)
+	if err != nil {
+		return err
+	}
+	candidates := formNodesAtPath(root, segments, 0)
+	if len(candidates) == 0 {
+		return fmt.Errorf("%s is not editable in the active Flow360 schema", pointer)
+	}
+	var validationErr error
+	for _, candidate := range candidates {
+		if err := validateFormValue(candidate, value, pointer, 0); err == nil {
+			return nil
+		} else {
+			validationErr = err
+		}
+	}
+	return validationErr
+}
+
+// ValidateFormPointer reports whether a removal target exists in at least one
+// active schema variant.
+func ValidateFormPointer(schema json.RawMessage, pointer string) error {
+	root, segments, err := formPointerContext(schema, pointer)
+	if err != nil {
+		return err
+	}
+	if len(formNodesAtPath(root, segments, 0)) == 0 {
+		return fmt.Errorf("%s is not editable in the active Flow360 schema", pointer)
+	}
+	return nil
+}
+
+// ValidateFormPointerAppend validates a new value against the item contract of
+// the array addressed by pointer.
+func ValidateFormPointerAppend(schema json.RawMessage, pointer string, value any) error {
+	root, segments, err := formPointerContext(schema, pointer)
+	if err != nil {
+		return err
+	}
+	var validationErr error
+	for _, candidate := range formNodesAtPath(root, segments, 0) {
+		if candidate.Type != "array" || candidate.Items == nil {
+			continue
+		}
+		if err := validateFormValue(*candidate.Items, value, pointer+"/-", 0); err == nil {
+			return nil
+		} else {
+			validationErr = err
+		}
+	}
+	if validationErr != nil {
+		return validationErr
+	}
+	return fmt.Errorf("%s is not an appendable array in the active Flow360 schema", pointer)
+}
+
+func formPointerContext(schema json.RawMessage, pointer string) (formNode, []string, error) {
+	if !json.Valid(schema) {
+		return formNode{}, nil, errors.New("dynamic form schema is invalid")
+	}
+	var root formNode
+	if err := json.Unmarshal(schema, &root); err != nil {
+		return formNode{}, nil, errors.New("dynamic form schema is unsupported")
+	}
+	segments, err := parseFormJSONPointer(pointer)
+	if err != nil {
+		return formNode{}, nil, err
+	}
+	return root, segments, nil
+}
+
+func parseFormJSONPointer(pointer string) ([]string, error) {
+	if pointer == "" || pointer == "/" || !strings.HasPrefix(pointer, "/") {
+		return nil, errors.New("parameter operation path must be a non-root JSON Pointer")
+	}
+	raw := strings.Split(strings.TrimPrefix(pointer, "/"), "/")
+	if len(raw) > 32 {
+		return nil, errors.New("parameter operation path exceeds the nesting limit")
+	}
+	segments := make([]string, len(raw))
+	for index, segment := range raw {
+		segment = strings.ReplaceAll(segment, "~1", "/")
+		segment = strings.ReplaceAll(segment, "~0", "~")
+		if segment == "" {
+			return nil, errors.New("parameter operation path contains an empty segment")
+		}
+		segments[index] = segment
+	}
+	return segments, nil
+}
+
+func formNodesAtPath(schema formNode, segments []string, depth int) []formNode {
+	if depth > 32 {
+		return nil
+	}
+	if len(segments) == 0 {
+		return []formNode{schema}
+	}
+	switch schema.Type {
+	case "object":
+		child, exists := schema.Properties[segments[0]]
+		if !exists {
+			return nil
+		}
+		return formNodesAtPath(child, segments[1:], depth+1)
+	case "array":
+		if schema.Items == nil {
+			return nil
+		}
+		if _, err := strconv.Atoi(segments[0]); err != nil {
+			return nil
+		}
+		return formNodesAtPath(*schema.Items, segments[1:], depth+1)
+	case "union":
+		result := make([]formNode, 0, len(schema.Variants))
+		for _, variant := range schema.Variants {
+			result = append(result, formNodesAtPath(variant, segments, depth+1)...)
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 // SanitizeFormValues projects Agent-produced values onto the active Flow360

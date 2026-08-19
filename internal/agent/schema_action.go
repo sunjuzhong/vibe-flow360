@@ -40,20 +40,30 @@ type Action struct {
 }
 
 type Proposal struct {
-	ID              string          `json:"id"`
-	DraftID         string          `json:"draft_id,omitempty"`
-	ProjectID       string          `json:"project_id,omitempty"`
-	ProjectName     string          `json:"project_name,omitempty"`
-	SourceID        string          `json:"source_id,omitempty"`
-	SourceType      string          `json:"action"`
-	SourceName      string          `json:"source_name,omitempty"`
-	Target          string          `json:"target"`
-	Name            string          `json:"name"`
-	Intent          string          `json:"intent"`
-	Patch           json.RawMessage `json:"patch"`
-	BranchPreview   string          `json:"branch_preview"`
-	Fields          []Field         `json:"fields"`
-	ValidationHints []string        `json:"validation_hints,omitempty"`
+	ID              string               `json:"id"`
+	DraftID         string               `json:"draft_id,omitempty"`
+	ProjectID       string               `json:"project_id,omitempty"`
+	ProjectName     string               `json:"project_name,omitempty"`
+	SourceID        string               `json:"source_id,omitempty"`
+	SourceType      string               `json:"action"`
+	SourceName      string               `json:"source_name,omitempty"`
+	Target          string               `json:"target"`
+	Name            string               `json:"name"`
+	Intent          string               `json:"intent"`
+	Patch           json.RawMessage      `json:"patch,omitempty"`
+	Operations      []ParameterOperation `json:"operations,omitempty"`
+	BranchPreview   string               `json:"branch_preview"`
+	Fields          []Field              `json:"fields"`
+	ValidationHints []string             `json:"validation_hints,omitempty"`
+}
+
+// ParameterOperation describes one bounded edit to canonical SimulationParams.
+// Paths use RFC 6901 JSON Pointer syntax. Existing objects are updated without
+// replacing unspecified children; array growth is explicit through append.
+type ParameterOperation struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value,omitempty"`
 }
 
 // UnmarshalJSON keeps the wire contract canonical (fields is an array), while
@@ -152,6 +162,7 @@ var (
 	ErrInvalidQuestion    = errors.New("schema: question missing required fields")
 	ErrInvalidUrgency     = errors.New("schema: invalid question urgency")
 	ErrDangerousPatch     = errors.New("schema: patch contains potentially dangerous operations")
+	ErrInvalidOperation   = errors.New("schema: invalid parameter operation")
 )
 
 var validKinds = map[ActionKind]struct{}{
@@ -329,14 +340,7 @@ func validateDraftUpdate(p Proposal) error {
 			return ErrMissingFields
 		}
 	}
-	if len(p.Patch) == 0 || !json.Valid(p.Patch) {
-		return ErrInvalidPatch
-	}
-	var patchObject map[string]json.RawMessage
-	if err := json.Unmarshal(p.Patch, &patchObject); err != nil || patchObject == nil {
-		return fmt.Errorf("%w: Draft update must be a JSON object", ErrInvalidPatch)
-	}
-	return nil
+	return validateProposalChanges(p)
 }
 
 func validateProposal(p Proposal) error {
@@ -356,12 +360,55 @@ func validateProposal(p Proposal) error {
 			return fmt.Errorf("%w: %q", ErrInvalidProvenance, field.Provenance)
 		}
 	}
-	if len(p.Patch) == 0 || !json.Valid(p.Patch) {
-		return fmt.Errorf("%w: proposal %s", ErrInvalidPatch, p.ID)
+	if err := validateProposalChanges(p); err != nil {
+		return fmt.Errorf("proposal %s: %w", p.ID, err)
+	}
+	return nil
+}
+
+func validateProposalChanges(p Proposal) error {
+	hasPatch := len(p.Patch) > 0
+	hasOperations := len(p.Operations) > 0
+	if hasPatch == hasOperations {
+		return fmt.Errorf("%w: provide exactly one of patch or operations", ErrInvalidOperation)
+	}
+	if hasOperations {
+		if len(p.Operations) > 64 {
+			return fmt.Errorf("%w: at most 64 operations are allowed", ErrInvalidOperation)
+		}
+		for index, operation := range p.Operations {
+			if err := validateParameterOperation(operation); err != nil {
+				return fmt.Errorf("%w at index %d: %v", ErrInvalidOperation, index, err)
+			}
+		}
+		return nil
+	}
+	if !json.Valid(p.Patch) {
+		return ErrInvalidPatch
 	}
 	var patchObject map[string]json.RawMessage
 	if err := json.Unmarshal(p.Patch, &patchObject); err != nil || patchObject == nil {
-		return fmt.Errorf("%w: proposal %s must be a JSON object", ErrInvalidPatch, p.ID)
+		return fmt.Errorf("%w: patch must be a JSON object", ErrInvalidPatch)
+	}
+	return nil
+}
+
+func validateParameterOperation(operation ParameterOperation) error {
+	path := strings.TrimSpace(operation.Path)
+	if path == "" || path == "/" || !strings.HasPrefix(path, "/") {
+		return errors.New("path must be a non-root JSON Pointer")
+	}
+	switch operation.Op {
+	case "set", "append":
+		if operation.Value == nil {
+			return errors.New("set and append require a non-null value; use unset to remove a value")
+		}
+	case "unset":
+		if operation.Value != nil {
+			return errors.New("unset must not include value")
+		}
+	default:
+		return fmt.Errorf("unsupported op %q", operation.Op)
 	}
 	return nil
 }

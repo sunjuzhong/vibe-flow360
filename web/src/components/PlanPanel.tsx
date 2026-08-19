@@ -433,7 +433,7 @@ export default function PlanPanel({
       .join('\n')
     void fillWithAI([
       intent,
-      'Repair the current candidate autonomously. Return a concrete schema-valid patch; do not ask me to reconfirm values already supplied.',
+      'Repair the current candidate autonomously with path-level operations. Do not replace complex arrays or ask me to reconfirm values already supplied.',
       issues ? `Current Flow360 validation errors:\n${issues}` : '',
     ].filter(Boolean).join('\n\n'))
   }
@@ -485,7 +485,7 @@ export default function PlanPanel({
         target: selected.target,
         intent: selected.intent,
         prompt: [
-          'Repair every current Flow360 preflight error autonomously. Preserve valid engineering values and return only the smallest schema-safe SimulationParams patch.',
+          'Repair every current Flow360 preflight error autonomously. Preserve valid engineering values and return only the smallest schema-safe path-level operations.',
           issueText ? `Current validation errors:\n${issueText}` : '',
         ].filter(Boolean).join('\n\n'),
         patch: selected.patch,

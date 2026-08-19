@@ -49,8 +49,8 @@ func TestPlanAssistRepairPromptIncludesExactIssuesAndRemovalSemantics(t *testing
 		1,
 	)
 	for _, expected := range []string{
-		"time_stepping.steps", "time_stepping.max_steps", "set an obsolete inherited field to null",
-		"Resolve every listed issue", "COMPLETE corrected patch",
+		"time_stepping.steps", "time_stepping.max_steps", "Use unset to remove an obsolete field",
+		"Resolve every listed issue", "corrective path-level operations",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("repair prompt is missing %q: %s", expected, prompt)
@@ -358,7 +358,7 @@ printf '{"schema_version":1,"validator_version":"test","valid":%s,"issues":%s,"f
 	modelCalls := 0
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		modelCalls++
-		content := `{"version":"v1","kind":"update-draft","message":"Updated the mesh size.","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Draft edit","intent":"complete it","patch":{"meshing":{"refinements":[{"name":"Main element","type":"SurfaceRefinement","max_edge_length":0.1}]}},"branch_preview":"edit","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		content := `{"version":"v1","kind":"update-draft","message":"Updated the mesh size.","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Draft edit","intent":"complete it","operations":[{"op":"set","path":"/meshing/refinements/0/max_edge_length","value":0.1}],"branch_preview":"edit","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
 		encoded, _ := json.Marshal(content)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
@@ -411,7 +411,7 @@ fi
 	modelCalls := 0
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		modelCalls++
-		content := `{"version":"v1","kind":"update-draft","message":"Completed the setup.","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Draft edit","intent":"complete it","patch":{"meshing":{"refinements":[{"name":"Main element","refinement_type":"SurfaceRefinement","max_edge_length":{"value":0.04,"units":"m"},"resolve_face_boundaries":true},{"name":"Slat and flap","refinement_type":"SurfaceRefinement","max_edge_length":{"value":0.025,"units":"m"},"resolve_face_boundaries":true}]}},"branch_preview":"edit","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		content := `{"version":"v1","kind":"update-draft","message":"Completed the setup.","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Draft edit","intent":"complete it","operations":[{"op":"set","path":"/meshing/refinements/0/resolve_face_boundaries","value":true},{"op":"set","path":"/meshing/refinements/1/resolve_face_boundaries","value":true}],"branch_preview":"edit","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
 		encoded, _ := json.Marshal(content)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
@@ -428,7 +428,7 @@ fi
 			ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", DraftID: "draft-1", Target: "case",
 			Intent: "complete it", Prompt: "complete it", Autonomous: true,
 		},
-		Name: "Geometry", Baseline: json.RawMessage(`{}`),
+		Name: "Geometry", Baseline: json.RawMessage(`{"meshing":{"refinements":[{"name":"Main element","refinement_type":"SurfaceRefinement","max_edge_length":{"value":0.04,"units":"m"}},{"name":"Slat and flap","refinement_type":"SurfaceRefinement","max_edge_length":{"value":0.025,"units":"m"}}]}}`),
 		Form: flow360.PlanFormSchema{Stages: []string{"SurfaceMesh"}, Schemas: map[string]json.RawMessage{"SurfaceMesh": schema}},
 	})
 	if err != nil {
@@ -443,6 +443,58 @@ fi
 	for _, preserved := range []string{`"name":"Main element"`, `"name":"Slat and flap"`, `"max_edge_length"`} {
 		if !strings.Contains(string(result.Proposal.Patch), preserved) {
 			t.Fatalf("valid refinement data was lost while removing contextual field %s: %s", preserved, result.Proposal.Patch)
+		}
+	}
+}
+
+func TestGenerateSchemaNativePlanAppliesOperationsWithoutLosingUnionTags(t *testing.T) {
+	temp := t.TempDir()
+	fakePython := filepath.Join(temp, "python")
+	preflightScript := `#!/bin/sh
+if grep -q '"type_name":"NavierStokesInitialCondition"' "$3" && grep -q '"type_name":"SpalartAllmaras"' "$3" && grep -q '"absolute_tolerance":1e-8' "$3"; then
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"Case":{"type":"object","properties":{"models":{"type":"array"}}}}}'
+else
+  printf '%s' '{"schema_version":1,"validator_version":"test","valid":false,"issues":[{"level":"error","code":"union_tag_not_found","path":"models.0.turbulence_model_solver","message":"Unable to extract tag using discriminator type_name","stages":["Case"]}],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"Case":{"type":"object","properties":{"models":{"type":"array"}}}}}'
+fi
+`
+	if err := os.WriteFile(fakePython, []byte(preflightScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", fakePython)
+
+	modelCalls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		modelCalls++
+		content := `{"version":"v1","kind":"update-draft","message":"Updated one solver value.","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Solver edit","intent":"tighten tolerance","operations":[{"op":"set","path":"/models/0/turbulence_model_solver/absolute_tolerance","value":1e-8}],"branch_preview":"edit","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		encoded, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer model.Close()
+
+	schema := json.RawMessage(`{"type":"object","properties":{"models":{"type":"array","items":{"type":"object","properties":{"turbulence_model_solver":{"type":"object","properties":{"absolute_tolerance":{"type":"number"}}}}}}}}`)
+	baseline := json.RawMessage(`{"models":[{"type":"Fluid","initial_condition":{"type_name":"NavierStokesInitialCondition","rho":1.0},"turbulence_model_solver":{"type_name":"SpalartAllmaras","absolute_tolerance":1e-7}}]}`)
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360: &flow360.Client{Binary: "flow360"},
+	}
+	result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", DraftID: "draft-1", Target: "case",
+			Intent: "tighten tolerance", Prompt: "tighten tolerance", Autonomous: true,
+		},
+		Name: "Geometry", Baseline: baseline,
+		Form: flow360.PlanFormSchema{Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{"Case": schema}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls != 1 || result.Preflight == nil || !result.Preflight.Valid || result.Proposal == nil {
+		t.Fatalf("operation-based Draft update did not validate directly: calls=%d result=%#v", modelCalls, result)
+	}
+	for _, expected := range []string{`"type_name":"NavierStokesInitialCondition"`, `"type_name":"SpalartAllmaras"`, `"absolute_tolerance":1e-8`} {
+		if !strings.Contains(string(result.Proposal.Patch), expected) {
+			t.Fatalf("compiled review patch lost canonical union content %s: %s", expected, result.Proposal.Patch)
 		}
 	}
 }
@@ -475,7 +527,7 @@ fi
 		if modelCalls == 4 {
 			required = "true"
 		}
-		content := `{"version":"v1","kind":"create-plan","message":"Repair candidate.","proposals":[{"id":"generic","action":"Geometry","target":"case","name":"Generic","intent":"ready","patch":{"required_value":` + required + `,"models":[{"type":"Wall"}]},"branch_preview":"generic","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
+		content := `{"version":"v1","kind":"create-plan","message":"Repair candidate.","proposals":[{"id":"generic","action":"Geometry","target":"case","name":"Generic","intent":"ready","operations":[{"op":"set","path":"/required_value","value":` + required + `}],"branch_preview":"generic","fields":[]}],"questions":[],"warnings":[],"assumptions":[]}`
 		encoded, _ := json.Marshal(content)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
@@ -489,7 +541,7 @@ fi
 	}
 	result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
 		Request: planComposerRequest{ProjectID: "prj", SourceID: "geo", SourceType: "Geometry", Target: "case", Intent: "Build a ready setup.", Autonomous: true},
-		Name:    "Geometry", Baseline: json.RawMessage(`{}`),
+		Name:    "Geometry", Baseline: json.RawMessage(`{"models":[{"type":"Wall"}]}`),
 		Form: flow360.PlanFormSchema{Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{"Case": schema}},
 	})
 	if err != nil {

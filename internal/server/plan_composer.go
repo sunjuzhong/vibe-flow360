@@ -265,7 +265,9 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not combine the candidate schemas.")
 			break
 		}
-		repairedProposal, proposalErr := preparePlanAssistProposal(*repairedAction, composer, repairSchema)
+		repairComposer := composer
+		repairComposer.Baseline = merged
+		repairedProposal, proposalErr := preparePlanAssistProposal(*repairedAction, repairComposer, repairSchema)
 		if proposalErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair returned values outside the active Flow360 schema.")
 			break
@@ -326,6 +328,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 
 	preflight.EditorSchemas = nil
 	preflight.CanonicalParams = nil
+	// Operations are an Agent input contract. The reviewed and persisted output
+	// remains the compiled canonical merge patch used by the existing Plan/Draft
+	// approval pipeline.
+	proposal.Operations = nil
 	if len(action.Proposals) == 1 {
 		if action.Kind == agent.ActionUpdateDraft {
 			draftProposal := proposal
@@ -348,8 +354,10 @@ func accumulatePlanAssistRepair(current, repaired agent.Proposal, schema json.Ra
 	if err != nil {
 		return agent.Proposal{}, err
 	}
-	if err := plans.ValidateFormValues(schema, patch); err != nil {
-		return agent.Proposal{}, err
+	if len(repaired.Operations) == 0 {
+		if err := plans.ValidateFormValues(schema, patch); err != nil {
+			return agent.Proposal{}, err
+		}
 	}
 	repaired.Patch = patch
 	repaired.ValidationHints = append(append([]string(nil), current.ValidationHints...), repaired.ValidationHints...)
@@ -543,19 +551,60 @@ func preparePlanAssistProposal(action agent.Action, composer planComposerContext
 	if strings.TrimSpace(proposal.Name) == "" {
 		proposal.Name = composer.Name + " · " + composer.Request.Target
 	}
-	sanitized, removed, err := plans.SanitizeFormValues(schema, proposal.Patch)
-	if err != nil {
-		return agent.Proposal{}, errors.New("AI form values could not be projected onto the active Flow360 schema: " + err.Error())
-	}
-	proposal.Patch = sanitized
-	if len(removed) > 0 {
-		sort.Strings(removed)
-		proposal.ValidationHints = append(proposal.ValidationHints, "Removed non-editable canonical Flow360 fields echoed by the Agent: "+strings.Join(removed, ", "))
-	}
-	if err := plans.ValidateFormValues(schema, proposal.Patch); err != nil {
-		return agent.Proposal{}, errors.New("AI form values do not match the active Flow360 schema: " + err.Error())
+	if len(proposal.Operations) > 0 {
+		compiled, compileErr := compilePlanAssistOperations(schema, composer.Baseline, proposal.Operations)
+		if compileErr != nil {
+			return agent.Proposal{}, errors.New("AI parameter operations could not be applied safely: " + compileErr.Error())
+		}
+		proposal.Patch = compiled
+		proposal.ValidationHints = append(proposal.ValidationHints, fmt.Sprintf("Compiled %d path-level parameter operations against the canonical Flow360 baseline.", len(proposal.Operations)))
+	} else {
+		if planAssistPatchContainsObjectArray(proposal.Patch) {
+			return agent.Proposal{}, errors.New("AI form values contain a complex object array replacement; use path-level operations to update existing items or append one new item")
+		}
+		sanitized, removed, sanitizeErr := plans.SanitizeFormValues(schema, proposal.Patch)
+		if sanitizeErr != nil {
+			return agent.Proposal{}, errors.New("AI form values could not be projected onto the active Flow360 schema: " + sanitizeErr.Error())
+		}
+		proposal.Patch = sanitized
+		if len(removed) > 0 {
+			sort.Strings(removed)
+			proposal.ValidationHints = append(proposal.ValidationHints, "Removed non-editable canonical Flow360 fields echoed by the Agent: "+strings.Join(removed, ", "))
+		}
+		if err := plans.ValidateFormValues(schema, proposal.Patch); err != nil {
+			return agent.Proposal{}, errors.New("AI form values do not match the active Flow360 schema: " + err.Error())
+		}
 	}
 	return proposal, nil
+}
+
+func planAssistPatchContainsObjectArray(raw json.RawMessage) bool {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	var contains func(any) bool
+	contains = func(current any) bool {
+		switch typed := current.(type) {
+		case map[string]any:
+			for _, child := range typed {
+				if contains(child) {
+					return true
+				}
+			}
+		case []any:
+			if planAssistArrayContainsObject(typed) {
+				return true
+			}
+			for _, child := range typed {
+				if contains(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return contains(value)
 }
 
 func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action, validationErr error, attempt int) string {
@@ -563,7 +612,7 @@ func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action
 	return fmt.Sprintf(`The previous Flow360 form proposal was rejected before preflight because its values do not match the active stage schema.
 This is a schema-mechanical problem. Repair it autonomously; do not ask the user to choose a field name, discriminator, unit wire shape, or model wiring.
 
-%s Its patch must use only paths present in the supplied schema catalog. Do not copy internal fields from canonical SimulationParams into an editable patch. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
+%s Its operations must use only paths present in the supplied schema catalog. Do not copy internal fields from canonical SimulationParams into operation values. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
 
 Original intent: %s
 Repair attempt: %d of %d
@@ -592,14 +641,14 @@ func (s *Server) preflightPlanAssistProposal(ctx context.Context, composer planC
 func planAssistRepairPrompt(request planComposerRequest, proposal agent.Proposal, preflight flow360.PreflightResult, attempt int) string {
 	patch, _ := json.Marshal(proposal.Patch)
 	issues, _ := json.Marshal(preflight.Issues)
-	base := fmt.Sprintf(`Your candidate Flow360 parameter patch did not pass schema preflight. Repair it now.
-%s containing the COMPLETE corrected patch. Use the newly supplied stage schema, which reflects the candidate model variants. Resolve every listed issue rather than merely describing it. Preserve valid candidate values. JSON merge-patch semantics apply: set an obsolete inherited field to null when Flow360 reports it as extra or forbidden. Do not request user input for a schema-mechanical correction such as a missing required field, renamed field, discriminator-dependent field, or removal of a field from the previous model variant.
+	base := fmt.Sprintf(`Your candidate Flow360 parameter update did not pass schema preflight. Repair it now.
+%s containing only the corrective path-level operations. Use the newly supplied stage schema, which reflects the candidate model variants. Resolve every listed issue rather than merely describing it. Preserve valid candidate values by addressing only the rejected paths. Use unset to remove an obsolete field. Do not request user input for a schema-mechanical correction such as a missing required field, renamed field, discriminator-dependent field, or removal of a field from the previous model variant.
 
 Use the language of the Original intent for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
 
 Original intent: %s
 Repair attempt: %d
-Candidate patch: %s
+Candidate compiled patch: %s
 Flow360 preflight issues: %s`, planAssistActionContract(request, "Return exactly one"), request.Intent, attempt, patch, issues)
 	return base
 }
@@ -913,13 +962,13 @@ func planAssistPrompt(request planComposerRequest) string {
 	base := fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
 This is parameter assistance, not geometry generation. Never claim CAD dimensions, format, topology, or provenance unless they are explicitly present in the supplied context. Refer to it as the existing %s resource when evidence is absent.
 
-%s when the requested values can be supported. Its patch may only contain fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
+%s when the requested values can be supported. Its operations may only address fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
-Read the schema catalog field-by-field before composing the patch. Each catalog entry supplies its owning stage, exact dot path, wire type, constraints, units/options, union variants, and sometimes an evidence-backed recommendation. Convert dot paths into nested JSON objects exactly; quantities use {"value":...,"units":"..."}; enum and boundary model values must exactly match the catalog. For a union, choose one supplied variant and emit only the child keys that variant declares. Never invent a nearby field name from memory. If the intent mentions a parameter absent from the active catalog, preserve the baseline and explain or request input instead of fabricating a key.
+Read the schema catalog field-by-field before composing operations. Convert catalog dot paths to RFC 6901 JSON Pointers. Use set for a scalar, quantity, entity-list, or existing object child; set on an existing object preserves unspecified canonical children. Use append only to add one complete new array item. Use unset to remove one field or array item. Never set an entire existing object array such as models, meshing.refinements, meshing.volume_zones, or outputs, and never replace an existing object array item; address the item's child path instead. Quantities use {"value":...,"units":"..."}; enum and model values must exactly match the catalog. Never invent a nearby field name and never emit patch together with operations.
 
-Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact. Use sparse merge-patch semantics and include only deliberate changes.
+Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact and include only deliberate path-level operations.
 
-When the User form instruction includes Flow360 validation errors or remote logs, diagnose them and return a concrete corrective patch. Prefer the safest reversible schema-valid correction supported by the supplied evidence. Do not ask the user to choose a schema mechanism or repeatedly confirm the same boundary/model decision; reserve a question for genuinely missing physical intent with no defensible repair.
+When the User form instruction includes Flow360 validation errors or remote logs, diagnose them and return concrete corrective operations. Prefer the safest reversible schema-valid correction supported by the supplied evidence. Do not ask the user to choose a schema mechanism or repeatedly confirm the same boundary/model decision; reserve a question for genuinely missing physical intent with no defensible repair.
 
 For a Geometry-to-Case route, never introduce a Periodic boundary model unless the supplied source evidence explicitly proves that the paired surfaces come from an already reviewed conformal VolumeMesh with identical node counts. Geometry CAD pairing alone is not that evidence. Preserve or choose schema-supported symmetry boundaries for a safe baseline; a Periodic study must begin from a compatible reviewed VolumeMesh.
 
@@ -941,9 +990,9 @@ func planAssistScopeType(request planComposerRequest) string {
 
 func planAssistActionContract(request planComposerRequest, prefix string) string {
 	if request.DraftID != "" {
-		return fmt.Sprintf(`%s update-draft proposal with draft_id %q and target "draft". This is an editable change to the current Draft and does not run it.`, prefix, request.DraftID)
+		return fmt.Sprintf(`%s update-draft proposal with draft_id %q, target "draft", an operations array, and no patch. This is an editable change to the current Draft and does not run it.`, prefix, request.DraftID)
 	}
-	return fmt.Sprintf("%s create-plan proposal for the same %s-to-%s route.", prefix, request.SourceType, request.Target)
+	return fmt.Sprintf("%s create-plan proposal with an operations array and no patch for the same %s-to-%s route.", prefix, request.SourceType, request.Target)
 }
 
 func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {

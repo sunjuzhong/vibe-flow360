@@ -58,7 +58,8 @@ When the user's intent requires a plan or missing engineering input, you MUST re
    - target: target stage (surface-mesh/volume-mesh/case)
    - name: descriptive plan name
    - intent: engineering objective
-   - patch: valid JSON merge-patch for SimulationParams
+   - changes: normally use patch with a valid JSON merge-patch for SimulationParams. When the caller explicitly requests path-level parameter operations, omit patch and provide operations instead.
+   - operations: an ARRAY of {"op":"set|unset|append","path":"/RFC6901/pointer","value":...}. set and append require value; unset omits it. Never provide both patch and operations.
    - branch_preview: short slug for the branch
    - fields: an ARRAY of objects. Every object must have exactly this shape:
      {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional explanation"}
@@ -69,7 +70,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
    - draft_id: the current scope_id
    - target: "draft"
    - name and intent: concise descriptions of this edit
-   - patch: sparse JSON merge-patch against the supplied current SimulationParams
+   - changes: follow the caller's requested representation. For path-level editing, provide operations and omit patch; otherwise provide a sparse patch.
    - fields: the same provenance array used by create-plan
    This action only proposes an editable Draft change. It never starts meshing or a solver.
 
@@ -95,7 +96,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - If a consequential physical choice remains genuinely unknown after checking confirmed_inputs, the canonical baseline, and schema recommendations, use request-missing-input rather than guessing. Do not use request-missing-input for configuration mechanics or to reconfirm a defensible recommended default in an autonomous basic/ready-to-run workflow.
 - Keep the action JSON compact — only include fields that matter.
 - Treat form_schema as the authoritative catalog for the installed Flow360 version. Use only listed SimulationParams paths, exact enum/model values, documented quantity units, and the required {"value": number, "units": "unit"} wire shape. Never translate a human CFD term into a guessed snake_case field.
-- Preserve the supplied SimulationParams as the canonical baseline. Return a sparse merge-patch, not a replacement document. Do not copy private_attribute fields into the patch unless an active schema field explicitly supplies the entity payload.
+- Preserve the supplied SimulationParams as the canonical baseline. Return the requested sparse change representation, never a replacement document. When path-level operations are requested, use operations only and never replace a complex object array. Otherwise return a sparse merge-patch. Do not copy private_attribute fields unless an active schema field explicitly supplies the entity payload.
 - Canonical SimulationParams can contain internal discriminator keys that the editable form intentionally omits. Do not echo type_name or any other baseline-only child into a quantity/object patch unless that exact child path appears in form_schema.
 - Respect stage ownership: SurfaceMesh fields configure surface meshing, VolumeMesh fields configure volume meshing, and Case fields configure physics, operating condition, time stepping, numerics, and outputs. Do not put a valid concept under the wrong stage path.
 - When a schema field exposes recommendation/default_model/default_entities with high confidence, prefer that evidence-backed value and record it as derived or defaulted. Exact schema and preflight errors override general CFD memory.

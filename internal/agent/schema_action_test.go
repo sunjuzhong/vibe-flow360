@@ -80,6 +80,49 @@ func TestParseAcceptsDraftUpdateAction(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsPathLevelDraftOperations(t *testing.T) {
+	raw := `{
+  "version":"v1",
+  "kind":"update-draft",
+  "message":"Review the requested Draft edit.",
+  "proposals":[{
+    "id":"update-solver",
+    "draft_id":"draft-1",
+    "target":"draft",
+    "name":"Tune solver",
+    "intent":"Change one solver value without replacing models.",
+    "operations":[
+      {"op":"set","path":"/models/0/turbulence_model_solver/absolute_tolerance","value":1e-8},
+      {"op":"unset","path":"/meshing/refinements/0/resolve_face_boundaries"}
+    ],
+    "fields":[]
+  }]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal := action.Proposals[0]
+	if len(proposal.Operations) != 2 || len(proposal.Patch) != 0 {
+		t.Fatalf("unexpected operations proposal: %#v", proposal)
+	}
+	if proposal.Operations[0].Path != "/models/0/turbulence_model_solver/absolute_tolerance" {
+		t.Fatalf("operation path was not preserved: %#v", proposal.Operations[0])
+	}
+}
+
+func TestParseRejectsAmbiguousOrMalformedParameterOperations(t *testing.T) {
+	for _, raw := range []string{
+		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","patch":{},"operations":[{"op":"set","path":"/a","value":1}],"fields":[]}]}`,
+		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[{"op":"set","path":"models/0","value":1}],"fields":[]}]}`,
+		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[{"op":"unset","path":"/models","value":true}],"fields":[]}]}`,
+	} {
+		if _, err := Parse(raw); !errors.Is(err, ErrInvalidOperation) {
+			t.Fatalf("expected invalid operation error for %s, got %v", raw, err)
+		}
+	}
+}
+
 func TestParseNormalizesSingletonObjectField(t *testing.T) {
 	raw := `{
   "version":"v1","kind":"create-plan","message":"Plan",
