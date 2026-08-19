@@ -29,6 +29,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [formValue, setFormValue] = useState<unknown>(initialBaseline)
   const [jsonValue, setJSONValue] = useState(() => JSON.stringify(initialBaseline, null, 2))
   const [previewValue, setPreviewValue] = useState<unknown>(initialBaseline)
+  const [canonicalCandidate, setCanonicalCandidate] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -62,6 +63,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setAIOpen(false)
     setAIPrompt('')
     setAIMessages([])
+    setCanonicalCandidate(null)
     aiMessageIDRef.current = 0
   }, [draftId])
 
@@ -85,6 +87,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         setFormValue(hydrateSchemaValue(response.schema, canonical, true))
         setJSONValue(JSON.stringify(canonical, null, 2))
         setPreviewValue(canonical)
+        setCanonicalCandidate(null)
         setMode('form')
       })
       .catch((cause) => {
@@ -99,16 +102,16 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   const candidateResult = useMemo(() => {
     try {
-      const value = mode === 'json'
+      const value = canonicalCandidate ?? (mode === 'json'
         ? parseParameterJSON(jsonValue)
         : mode === 'preview'
           ? isRecord(previewValue) ? previewValue : baseline
-          : schema ? buildDraftParameters(schema, formValue) : baseline
+          : schema ? buildDraftParameters(schema, formValue) : baseline)
       return { value, fingerprint: JSON.stringify(value), error: '' }
     } catch (cause) {
       return { value: null, fingerprint: '', error: draftParameterErrorMessage(cause, t) }
     }
-  }, [baseline, formValue, jsonValue, mode, previewValue, schema])
+  }, [baseline, canonicalCandidate, formValue, jsonValue, mode, previewValue, schema])
 
   const changes = useMemo(
     () => candidateResult.value ? diffParameterValues(baseline, candidateResult.value) : [],
@@ -181,7 +184,9 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     if (nextMode === mode) return
     try {
       if (nextMode === 'json') {
-        if (mode === 'form') {
+        if (canonicalCandidate) {
+          setJSONValue(JSON.stringify(canonicalCandidate, null, 2))
+        } else if (mode === 'form') {
           if (!schema) return
           const next = buildDraftParameters(schema, formValue)
           setJSONValue(JSON.stringify(next, null, 2))
@@ -191,9 +196,9 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         const next = parseParameterJSON(jsonValue)
         setFormValue(hydrateSchemaValue(schema, next, true))
       } else {
-        const next = mode === 'form'
+        const next = canonicalCandidate ?? (mode === 'form'
           ? schema ? buildDraftParameters(schema, formValue) : baseline
-          : parseParameterJSON(jsonValue)
+          : parseParameterJSON(jsonValue))
         setPreviewValue(next)
         setJSONValue(JSON.stringify(next, null, 2))
       }
@@ -216,6 +221,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   const applyCandidate = (next: Record<string, unknown>) => {
     immediateValidationFingerprintRef.current = JSON.stringify(next)
+    setCanonicalCandidate(next)
     setJSONValue(JSON.stringify(next, null, 2))
     setPreviewValue(next)
     if (schema) setFormValue(hydrateSchemaValue(schema, next, true))
@@ -284,6 +290,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       const canonical = response.simulation_params
       setBaseline(canonical)
       if (latestFingerprintRef.current === fingerprint) {
+        setCanonicalCandidate(null)
         setJSONValue(JSON.stringify(canonical, null, 2))
         setPreviewValue(canonical)
         if (schema) setFormValue(hydrateSchemaValue(schema, canonical, true))
@@ -343,6 +350,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       validatedDraftId,
       validatedFingerprint,
       hasValidation: Boolean(validation),
+      validationValid: validation?.valid === true,
       failedSyncFingerprint,
     })) return
     const next = candidateResult.value!
@@ -430,6 +438,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             collapsibleObjects
             expressionValidator={validateExpression}
             onChange={(next) => {
+              setCanonicalCandidate(null)
               setFormValue(next)
               setDirty(true)
               setSyncError('')
@@ -445,6 +454,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             ariaLabel={`Draft ${draftId} SimulationParams JSON`}
             value={jsonValue}
             onChange={(next) => {
+              setCanonicalCandidate(null)
               setJSONValue(next)
               setDirty(true)
               setSyncError('')
@@ -535,6 +545,7 @@ export function draftAutoSyncReady({
   validatedDraftId,
   validatedFingerprint,
   hasValidation,
+  validationValid,
   failedSyncFingerprint,
 }: {
   dirty: boolean
@@ -546,6 +557,7 @@ export function draftAutoSyncReady({
   validatedDraftId: string
   validatedFingerprint: string
   hasValidation: boolean
+  validationValid: boolean
   failedSyncFingerprint: string
 }) {
   return dirty
@@ -556,6 +568,7 @@ export function draftAutoSyncReady({
     && validatedDraftId === draftId
     && Boolean(fingerprint)
     && hasValidation
+    && validationValid
     && validatedFingerprint === fingerprint
     && failedSyncFingerprint !== fingerprint
 }

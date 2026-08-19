@@ -676,6 +676,30 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).not.toContain('private_attribute')
   })
 
+  it('preserves canonical entity payloads that are not present in the current form choices', () => {
+    const unmatched = {
+      name: 'AI selected face',
+      private_attribute_id: 'surface-from-canonical-preflight',
+      private_attribute_entity_type_name: 'Surface',
+    }
+    const schema: DynamicFormSchema = {
+      type: 'entity_list',
+      title: 'Surfaces',
+      entity_kind: 'Surface',
+      entity_choices: [],
+    }
+    const canonical = { stored_entities: [unmatched] }
+
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+
+    expect(hydrated).toEqual({
+      entities: [],
+      selectors: [],
+      unmatched_stored_entities: [unmatched],
+    })
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
+  })
+
   it('does not repeat a root union title below its tab', () => {
     const schema: DynamicFormSchema = {
       type: 'object',

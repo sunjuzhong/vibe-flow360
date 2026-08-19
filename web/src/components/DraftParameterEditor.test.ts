@@ -120,12 +120,14 @@ describe('Draft parameter editor', () => {
       validatedDraftId: 'draft-2',
       validatedFingerprint: '{"version":"25.2"}',
       hasValidation: true,
+      validationValid: true,
       failedSyncFingerprint: '',
     }
     expect(draftAutoSyncReady(ready)).toBe(true)
     expect(draftAutoSyncReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, validatedDraftId: 'draft-1' })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, saving: true })).toBe(false)
+    expect(draftAutoSyncReady({ ...ready, validationValid: false })).toBe(false)
     expect(draftAutoSyncReady({ ...ready, failedSyncFingerprint: ready.fingerprint })).toBe(false)
   })
 

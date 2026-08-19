@@ -1351,12 +1351,19 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
     case 'entity_list': {
       if (!isRecord(value)) return initialValue(schema, sparse)
       const stored = Array.isArray(value.stored_entities) ? value.stored_entities : []
+      const unmatchedStoredEntities: Record<string, unknown>[] = []
       const entities = stored.flatMap((entity) => {
         if (!isRecord(entity)) return []
         const choice = (schema.entity_choices ?? []).find((candidate) => entityMatchesChoice(entity, candidate))
-        return choice ? [choice.value] : []
+        if (choice) return [choice.value]
+        unmatchedStoredEntities.push(entity)
+        return []
       })
-      return { entities, selectors: Array.isArray(value.selectors) ? value.selectors : [] }
+      return {
+        entities,
+        selectors: Array.isArray(value.selectors) ? value.selectors : [],
+        ...(unmatchedStoredEntities.length ? { unmatched_stored_entities: unmatchedStoredEntities } : {}),
+      }
     }
     case 'expression': {
       const object = isRecord(value) ? value : {}
@@ -1435,8 +1442,14 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
     case 'entity_list': {
       const object = isRecord(value) ? value : {}
       const selected = new Set(Array.isArray(object.entities) ? object.entities.filter((item): item is string => typeof item === 'string') : [])
+      const unmatchedStoredEntities = Array.isArray(object.unmatched_stored_entities)
+        ? object.unmatched_stored_entities.filter(isRecord)
+        : []
       const result: Record<string, unknown> = {
-        stored_entities: (schema.entity_choices ?? []).filter((choice) => selected.has(choice.value) && choice.payload).map((choice) => choice.payload),
+        stored_entities: [
+          ...(schema.entity_choices ?? []).filter((choice) => selected.has(choice.value) && choice.payload).map((choice) => choice.payload),
+          ...unmatchedStoredEntities,
+        ],
       }
       if (Array.isArray(object.selectors) && object.selectors.length) result.selectors = object.selectors
       return result
