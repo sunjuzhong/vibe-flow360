@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResourceDetail } from '../api/client'
-import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, caseVisualizationSelectionKey, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, TIME_SERIES_PLAYER_CLOSE_ON_BACKDROP_CLICK, visibleCaseSurfaceCount } from './CaseWorkspace'
+import { caseArchiveLayerFromEntries, caseCommonFieldNames, caseConfiguredVisualizationMembers, caseFieldForSelection, caseObjectFieldNames, caseReadinessMessage, caseRecoverableReadErrors, caseResourceIdentity, caseSurfaceVisibilityMap, caseVisualizationGroupCounts, caseVisualizationMemberTree, caseVisualizationSections, caseVisualizationSelectionKey, convergenceTrendLabel, findSliceArchive, findTimeSeriesArchives, groupCaseVisualizationMembers, isSliceArchiveResult, isVolumeSnapshotArchive, isolateCaseVisualizationMap, localizeConvergenceReason, mapCaseStatus, nextCaseVisualizationSelection, normalizeCase, isTerminal, reconcileCaseVisualizationSelection, timeSeriesArchiveKind, TIME_SERIES_PLAYER_CLOSE_ON_BACKDROP_CLICK, visibleCaseSurfaceCount } from './CaseWorkspace'
 import { translate } from '../i18n/translations'
 
 function detail(state: Record<string, unknown>, info?: Record<string, unknown>, summary?: Record<string, unknown>): ResourceDetail {
@@ -78,6 +78,23 @@ describe('normalizeCase', () => {
     )
     const vm = normalizeCase(d)
     expect(vm.turbulenceModel).toBe('k-epsilon')
+  })
+})
+
+describe('unfinished Case UX', () => {
+  it('treats missing pending-case SimulationParams as a readiness state instead of a blocking read error', () => {
+    const d = detail({ status: 'pending' })
+    d.errors = { simulation_params: 'Flow360 SimulationParams fetch returned invalid JSON' }
+
+    expect(caseRecoverableReadErrors(d)).toEqual({})
+    expect(caseReadinessMessage(mapCaseStatus(d), 0)).toContain('queued')
+  })
+
+  it('keeps real running-case read failures visible', () => {
+    const d = detail({ status: 'running' })
+    d.errors = { logs: 'unavailable', simulation_params: 'not ready' }
+
+    expect(caseRecoverableReadErrors(d)).toEqual({ logs: 'unavailable' })
   })
 })
 

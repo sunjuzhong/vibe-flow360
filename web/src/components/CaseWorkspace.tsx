@@ -603,6 +603,23 @@ export function normalizeCase(detail: ResourceDetail | null): NormalizedCase {
   }
 }
 
+export function caseRecoverableReadErrors(detail: ResourceDetail | null): Record<string, string> {
+  const errors = detail?.errors ?? {}
+  const status = mapCaseStatus(detail)
+  if (isTerminal(status)) return errors
+  return Object.fromEntries(Object.entries(errors).filter(([key]) => (
+    key !== 'simulation_params' && key !== 'results' && key !== 'convergence'
+  )))
+}
+
+export function caseReadinessMessage(status: CaseStatusView, resultCount: number): string {
+  if (status === 'queued') return 'This Case is queued in Flow360. Vibe Flow360 will show results as soon as remote execution starts producing data.'
+  if (status === 'preprocessing') return 'Flow360 is preparing this Case. Geometry context stays available while solver inputs and result files are not ready yet.'
+  if (status === 'running' && resultCount === 0) return 'The solver is running, but no browser-readable result files are available yet. Keep this page open or refresh later.'
+  if (status === 'running') return 'The solver is running. Results shown here are partial and will update as Flow360 writes more files.'
+  return ''
+}
+
 function StatusBadge({ status }: { status: CaseStatusView }) {
   const map: Record<CaseStatusView, { icon: React.ComponentType<{ size?: number }>; className: string }> = {
     queued: { icon: Pause, className: 'status-queued' },
@@ -675,7 +692,8 @@ export default function CaseWorkspace({
   const sliceArchive = findSliceArchive(resultRecords)
   const timeSeriesArchives = findTimeSeriesArchives(resultRecords)
   const hasSurfaceArchive = timeSeriesArchives.some(({ kind }) => kind === 'surfaces')
-  const hasErrors = Boolean(detail?.errors && Object.keys(detail.errors).length)
+  const recoverableErrors = caseRecoverableReadErrors(detail)
+  const hasErrors = Object.keys(recoverableErrors).length > 0
   const resourceIdentity = caseResourceIdentity(resourceId, detail?.id)
 
   const { result: convergence, loading: convergenceLoading, refetch: refetchConvergence } =
@@ -942,6 +960,7 @@ export default function CaseWorkspace({
   const reviewDetail = terminal
     ? 'Judge convergence and physical outputs before using this Case or creating a variation.'
     : 'Monitor residuals, forces, CFL, and solution bounds while the solver advances.'
+  const readinessMessage = caseReadinessMessage(viewModel.status, viewModel.resultCount)
 
   return (
     <ResourceReviewLayout
@@ -1233,6 +1252,13 @@ export default function CaseWorkspace({
             <div className="case-warning-banner">
               <AlertCircle size={14} />
               <span>Some Flow360 reads are incomplete; this review may be partial.</span>
+            </div>
+          )}
+
+          {!hasErrors && readinessMessage && (
+            <div className="case-warning-banner" role="status">
+              <Clock size={14} />
+              <span>{t(readinessMessage)}</span>
             </div>
           )}
 
