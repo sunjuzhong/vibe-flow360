@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunCLIWithoutCommandShowsNewCommands(t *testing.T) {
@@ -11,10 +14,56 @@ func TestRunCLIWithoutCommandShowsNewCommands(t *testing.T) {
 	if err := runCLI(nil, strings.NewReader(""), &output, &output); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"vibe-flow360 init", "vibe-flow360 serve"} {
+	for _, expected := range []string{"vibe-flow360 init", "vibe-flow360 serve", "vibe-flow360 clean"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("usage is missing %q:\n%s", expected, output.String())
 		}
+	}
+}
+
+func TestCleanCacheRemovesOnlyRegenerableTarget(t *testing.T) {
+	dataDir := t.TempDir()
+	oldCache := filepath.Join(dataDir, "cache", "flow360", "entry.json")
+	oldPlan := filepath.Join(dataDir, "plans", "plan.json")
+	if err := os.MkdirAll(filepath.Dir(oldCache), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(oldPlan), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldCache, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldPlan, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(oldCache, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(oldPlan, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := runCLI([]string{"clean", "cache", "--data-dir", dataDir, "--older-than", "1h"}, strings.NewReader(""), &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(oldCache); !os.IsNotExist(err) {
+		t.Fatalf("expected cache file to be removed, stat error = %v", err)
+	}
+	if _, err := os.Stat(oldPlan); err != nil {
+		t.Fatalf("expected plan file to be preserved: %v", err)
+	}
+	if !strings.Contains(output.String(), "Total: removed 1 files") {
+		t.Fatalf("clean output missing total:\n%s", output.String())
+	}
+}
+
+func TestCleanRejectsUnknownTarget(t *testing.T) {
+	err := runCLI([]string{"clean", "plans"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "unknown clean target") {
+		t.Fatalf("clean unknown target error = %v", err)
 	}
 }
 

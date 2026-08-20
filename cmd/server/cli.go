@@ -35,6 +35,8 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return nil
 	case "serve":
 		return runServe(args[1:], stdout, stderr)
+	case "clean":
+		return runClean(args[1:], stdout, stderr)
 	case "clean-mirror":
 		return runCleanMirror(args[1:], stdout, stderr)
 	case "init":
@@ -56,11 +58,98 @@ func writeRootUsage(output io.Writer) {
 Usage:
   %s init [options]   Install and verify all runtime dependencies
   %s serve [options]  Start the Vibe Flow360 server
+  %s clean <target>   Remove regenerable local cache data
   %s clean-mirror     Remove mirrored Project files older than one week
   %s version          Print the build/Flow360 version
 
 Run "%s <command> --help" for command options.
-`, commandName, commandName, commandName, commandName, commandName)
+`, commandName, commandName, commandName, commandName, commandName, commandName)
+}
+
+var cleanTargets = map[string][]string{
+	"cache":           {"cache"},
+	"mirror":          {"projects"},
+	"projects":        {"projects"},
+	"slice-player":    {"slice-player"},
+	"previews":        {"step-previews", "step-thumbnails"},
+	"diagnostics":     {"geometry-diagnostics"},
+	"interpretations": {"result-interpretations"},
+	"cases":           {"cases"},
+	"all-cache":       {"cache", "projects", "slice-player", "step-previews", "step-thumbnails", "geometry-diagnostics", "result-interpretations", "cases"},
+}
+
+func runClean(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("clean", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	dataDir := flags.String("data-dir", firstValue(os.Getenv("VIBESIM_DATA_DIR"), ".vibesim"), "VibeSim data directory")
+	olderThan := flags.Duration("older-than", 7*24*time.Hour, "minimum file age to remove")
+	target := ""
+	parseArgs := args
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		target = strings.TrimSpace(args[0])
+		parseArgs = args[1:]
+	}
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), `Usage: %s clean <target> [--data-dir .vibesim] [--older-than 168h]
+
+Targets:
+  cache            Flow360 API response cache
+  mirror           Project mirror synchronized from Flow360
+  slice-player     Regenerable Case slice-player assets
+  previews         STEP previews and thumbnails
+  diagnostics      Geometry diagnostics cache
+  interpretations  AI result interpretation cache
+  cases            Local Case result cache
+  all-cache        All of the above regenerable data
+
+Preserved by design: plans, interventions, chat-sessions, annotations, imports,
+ai-create state/sessions, step-library, and compare-workspaces.
+`, commandName)
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(parseArgs); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if target == "" && flags.NArg() == 1 {
+		target = strings.TrimSpace(flags.Arg(0))
+	}
+	if target == "" || flags.NArg() > 1 {
+		return errors.New("clean requires exactly one target; run vibe-flow360 clean --help")
+	}
+	if *olderThan <= 0 {
+		return errors.New("--older-than must be positive")
+	}
+	dirs, ok := cleanTargets[target]
+	if !ok {
+		return fmt.Errorf("unknown clean target %q; run vibe-flow360 clean --help", target)
+	}
+	cutoff := time.Now().Add(-*olderThan)
+	var totalFiles, totalDirs, totalFailures int
+	var totalBytes int64
+	for _, dir := range dirs {
+		result, err := projectmirror.CleanupRootOlderThan(filepath.Join(*dataDir, dir), cutoff)
+		if err != nil {
+			return err
+		}
+		totalFiles += result.RemovedFiles
+		totalDirs += result.RemovedDirs
+		totalBytes += result.RemovedBytes
+		totalFailures += result.FailedRemovals
+		fmt.Fprintf(stdout, "Cleaned %s: removed %d files, %d bytes, %d empty directories", result.Root, result.RemovedFiles, result.RemovedBytes, result.RemovedDirs)
+		if result.FailedRemovals > 0 {
+			fmt.Fprintf(stdout, ", %d failures", result.FailedRemovals)
+		}
+		fmt.Fprintln(stdout)
+	}
+	fmt.Fprintf(stdout, "Total: removed %d files, %d bytes, %d empty directories", totalFiles, totalBytes, totalDirs)
+	if totalFailures > 0 {
+		fmt.Fprintf(stdout, ", %d failures", totalFailures)
+	}
+	fmt.Fprintln(stdout)
+	return nil
 }
 
 func runCleanMirror(args []string, stdout, stderr io.Writer) error {
