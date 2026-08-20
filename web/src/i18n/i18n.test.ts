@@ -54,6 +54,25 @@ describe('language settings', () => {
     expect(translate('Settings', 'en')).toBe('Settings')
   })
 
+  it('covers SimulationParams field labels and tooltip copy in Chinese', () => {
+    const messages = [
+      'About {title}',
+      'Simulation parameters',
+      'Models',
+      'Operating condition',
+      'Time stepping',
+      'Boundary conditions',
+      'Freestream velocity',
+      'Reference geometry',
+      'Surface output',
+      'Slice output',
+      'Solver settings and numerical models.',
+    ]
+
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+    expect(translate('About {title}', 'zh-CN').replace('{title}', translate('Models', 'zh-CN'))).toBe('关于 模型')
+  })
+
   it('covers the new Project source selector in Chinese', () => {
     const messages = [
       'Project source method',

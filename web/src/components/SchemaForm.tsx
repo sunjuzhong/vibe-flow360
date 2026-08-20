@@ -1,6 +1,8 @@
 import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, RotateCcw, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
+import { currentLanguage } from '../i18n'
+import { translate } from '../i18n/translations'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 import HelpTooltip from './HelpTooltip'
 import EntityListField from './schema-fields/EntityListField'
@@ -197,7 +199,7 @@ function SchemaFormFieldsContent({
                 onClick={() => setActiveTab(tabKey)}
                 onKeyDown={(event) => selectAdjacentTab(event, index)}
               >
-                <span>{tabSchema?.title || humanize(tabKey)}</span>
+                <span>{localizeSchemaText(tabSchema?.title || humanize(tabKey))}</span>
                 <small className={invalid ? 'invalid' : configured ? 'configured' : ''}>{invalid ? 'Error' : configured ? 'Set' : 'Empty'}</small>
               </button>
             )
@@ -272,6 +274,7 @@ function SchemaField({
 }) {
   const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
+  const displayTitle = localizeSchemaText(title)
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
   const fieldIssues = issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path, true)) ?? []
   const branchInvalid = Boolean(path) && issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path))
@@ -282,7 +285,7 @@ function SchemaField({
     const requiredKeys = Array.isArray(schema.required) ? schema.required : []
     const fields = (
       <>
-        {schema.description && path && !collapsibleObjects && !embeddedObjectContent && <p>{cleanSchemaDescription(schema.description)}</p>}
+        {schema.description && path && !collapsibleObjects && !embeddedObjectContent && <p>{localizedSchemaDescription(schema.description)}</p>}
         {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
@@ -295,11 +298,11 @@ function SchemaField({
               <div className="schema-add-field" key={key}>
                 <span>
                   <strong className="schema-title-with-help">
-                    {child.title || humanize(key)}
+                    {localizeSchemaText(child.title || humanize(key))}
                     {collapsibleObjects && <SchemaDescriptionHelp description={child.description} title={child.title || humanize(key)} />}
                   </strong>
                   {baselineObject[key] !== undefined && <small>Inherited: {compactValue(baselineObject[key])}</small>}
-                  {child.description && !collapsibleObjects && <small>{child.description}</small>}
+                  {child.description && !collapsibleObjects && <small>{localizedSchemaDescription(child.description)}</small>}
                 </span>
                 <button type="button" onClick={() => onChange({ ...object, [key]: initialValue(child, true) })}>
                   <Plus size={13} /> {addLabel}
@@ -370,10 +373,10 @@ function SchemaField({
         <details className={`schema-section${branchInvalid ? ' schema-invalid' : ''}`} open={sectionOpen || branchInvalid} onToggle={(event) => setSectionOpen(event.currentTarget.open)}>
           <summary>
             <span className="schema-section-title">
-              <span>{title}</span>
+              <span>{displayTitle}</span>
               <SchemaDescriptionHelp description={schema.description} title={title} />
             </span>
-            {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+            {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
             <ChevronDown size={16} />
           </summary>
           <div className="schema-section-body">{fields}</div>
@@ -382,7 +385,7 @@ function SchemaField({
     }
     return (
       <fieldset className={`schema-object${branchInvalid ? ' schema-invalid' : ''}`}>
-        {path && <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>}
+        {path && <legend>{displayTitle}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>}
         {fields}
       </fieldset>
     )
@@ -393,7 +396,7 @@ function SchemaField({
         schema={schema}
         value={value}
         onChange={onChange}
-        title={title}
+        title={displayTitle}
         fieldID={fieldID}
         label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />}
         fieldIssues={fieldIssues}
@@ -412,14 +415,14 @@ function SchemaField({
     const recommendation = schema.recommendation
     return (
       <fieldset className="schema-object schema-entity-assignment">
-        <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>
+        <legend>{displayTitle}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>
         <div className="schema-ai-recommendation">
           <div className="schema-ai-heading">
             <span><Sparkles size={15} /><strong>Schema-safe repair</strong></span>
             <em className={`confidence-${recommendation?.confidence ?? 'high'}`}>{recommendation?.confidence ?? 'high'} confidence</em>
           </div>
           <h3>{recommendation?.title ?? 'Remove this incompatible setting'}</h3>
-          <p>{recommendation?.reason ?? schema.description}</p>
+          <p>{localizeSchemaText(recommendation?.reason ?? schema.description ?? '')}</p>
           {recommendation?.evidence?.length ? (
             <details>
               <summary>Flow360 validation evidence</summary>
@@ -515,12 +518,12 @@ function SchemaField({
       <fieldset className="schema-object schema-array schema-array-editor">
         <legend>
           <span className="schema-legend-content">
-            {title}
+            {displayTitle}
             {collapsibleObjects && <SchemaDescriptionHelp description={schema.description} title={title} />}
-            {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+            {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
           </span>
         </legend>
-        {schema.description && !collapsibleObjects && <p>{schema.description}</p>}
+        {schema.description && !collapsibleObjects && <p>{localizedSchemaDescription(schema.description)}</p>}
         {arrayEditor}
       </fieldset>
     )
@@ -606,7 +609,7 @@ function SchemaField({
     }
     return (
       <fieldset className={`schema-object ${valueOrExpression ? 'schema-value-or-expression' : ''}`}>
-        <legend>{title}</legend>
+        <legend>{localizeSchemaText(title)}</legend>
         {unionEditor}
       </fieldset>
     )
@@ -694,10 +697,11 @@ function ComplexArrayField({
   }
 
   const title = schema.title || humanize(path.split('.').pop() || 'Items')
+  const displayTitle = localizeSchemaText(title)
   const editorContent = (
     <>
       <div className="schema-array-toolbar">
-        <span><strong>{array.length ? `${array.length} item${array.length === 1 ? '' : 's'}` : 'No items yet'}</strong>{rootTabContent && <SchemaDescriptionHelp description={schema.description} title={title} />}</span>
+        <span><strong>{array.length ? localizeSchemaText('{count} items').replace('{count}', String(array.length)) : localizeSchemaText('No items yet')}</strong>{rootTabContent && <SchemaDescriptionHelp description={schema.description} title={title} />}</span>
         <div className="schema-array-add-wrap">
           <button type="button" className="schema-array-add" aria-haspopup={variants.length ? 'menu' : undefined} aria-expanded={variants.length ? menuOpen : undefined} onClick={() => variants.length ? setMenuOpen((current) => !current) : openNew()}>
             <Plus size={14} /> Add item {variants.length ? <ChevronDown size={13} /> : null}
@@ -746,7 +750,7 @@ function ComplexArrayField({
   </div>
 
   if (rootTabContent) return <div className="schema-array-editor schema-root-array">{editorContent}{dialog}</div>
-  return <fieldset className="schema-object schema-array schema-array-editor"><legend><span className="schema-legend-content">{title}</span></legend>{schema.description && !collapsibleObjects && <p>{schema.description}</p>}{editorContent}{dialog}</fieldset>
+  return <fieldset className="schema-object schema-array schema-array-editor"><legend><span className="schema-legend-content">{displayTitle}</span></legend>{schema.description && !collapsibleObjects && <p>{localizedSchemaDescription(schema.description)}</p>}{editorContent}{dialog}</fieldset>
 }
 
 function arrayItemSummary(schema: DynamicFormSchema, value: unknown, index: number) {
@@ -783,10 +787,10 @@ function RootFieldSection({
     >
       <summary>
         <span className="schema-section-title">
-          <span>{title}</span>
+          <span>{localizeSchemaText(title)}</span>
           <SchemaDescriptionHelp description={description} title={title} />
         </span>
-        {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+        {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
         <ChevronDown size={16} />
       </summary>
       <div className="schema-section-body">{children}</div>
@@ -954,7 +958,7 @@ function EntityAssignmentField({
   const recommendation = schema.recommendation
   return (
     <fieldset className="schema-object schema-entity-assignment">
-      <legend>{title}{showAll && !configured && <small className="schema-field-state">Not configured</small>}</legend>
+      <legend>{localizeSchemaText(title)}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>
       {recommendation ? (
         <div className="schema-ai-recommendation">
           <div className="schema-ai-heading">
@@ -978,7 +982,7 @@ function EntityAssignmentField({
             {editing ? 'Hide choices' : 'Change recommendation'}
           </button>
         </div>
-      ) : schema.description ? <p>{schema.description}</p> : null}
+      ) : schema.description ? <p>{localizedSchemaDescription(schema.description)}</p> : null}
       {(!recommendation || editing) && (
         <div className="schema-assignment-editor">
           <label className="schema-field" htmlFor={`${fieldID}-model`}>
@@ -1049,29 +1053,39 @@ function FieldLabel({
   descriptionTooltip?: boolean
   hideTitle?: boolean
 }) {
+  const displayTitle = localizeSchemaText(title)
   return (
     <span className="schema-field-label">
       {!hideTitle && (
         <strong>
-          {title}{schema.required === true ? ' *' : ''}
+          {displayTitle}{schema.required === true ? ' *' : ''}
           {descriptionTooltip && <SchemaDescriptionHelp description={schema.description} title={title} />}
-          {showAll && !configured && <small className="schema-field-state">Not configured</small>}
+          {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
         </strong>
       )}
       <code>{path}</code>
-      {schema.description && !descriptionTooltip && <small>{schema.description}</small>}
+      {schema.description && !descriptionTooltip && <small>{localizedSchemaDescription(schema.description)}</small>}
     </span>
   )
 }
 
 function SchemaDescriptionHelp({ description, title }: { description?: string; title: string }) {
-  const help = cleanSchemaDescription(description)
+  const help = localizedSchemaDescription(description)
   if (!help) return null
   return (
-    <HelpTooltip label={`About ${title}`} placement="bottom" align="start">
+    <HelpTooltip label={localizeSchemaText('About {title}').replace('{title}', localizeSchemaText(title))} placement="bottom" align="start">
       {help}
     </HelpTooltip>
   )
+}
+
+function localizeSchemaText(value: string): string {
+  return translate(value, currentLanguage())
+}
+
+function localizedSchemaDescription(description?: string): string {
+  const cleaned = cleanSchemaDescription(description)
+  return cleaned ? localizeSchemaText(cleaned) : ''
 }
 
 export function cleanSchemaDescription(description?: string): string {
