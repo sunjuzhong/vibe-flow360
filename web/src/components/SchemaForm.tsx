@@ -1,4 +1,5 @@
 import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, RotateCcw, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { currentLanguage } from '../i18n'
@@ -748,9 +749,10 @@ function ComplexArrayField({
       <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button type="button" className="primary" onClick={saveEditor}>Save item</button></footer>
     </section>
   </div>
+  const renderedDialog = dialog && typeof document !== 'undefined' ? createPortal(dialog, document.body) : dialog
 
-  if (rootTabContent) return <div className="schema-array-editor schema-root-array">{editorContent}{dialog}</div>
-  return <fieldset className="schema-object schema-array schema-array-editor"><legend><span className="schema-legend-content">{displayTitle}</span></legend>{schema.description && !collapsibleObjects && <p>{localizedSchemaDescription(schema.description)}</p>}{editorContent}{dialog}</fieldset>
+  if (rootTabContent) return <div className="schema-array-editor schema-root-array">{editorContent}{renderedDialog}</div>
+  return <fieldset className="schema-object schema-array schema-array-editor"><legend><span className="schema-legend-content">{displayTitle}</span></legend>{schema.description && !collapsibleObjects && <p>{localizedSchemaDescription(schema.description)}</p>}{editorContent}{renderedDialog}</fieldset>
 }
 
 function arrayItemSummary(schema: DynamicFormSchema, value: unknown, index: number) {
