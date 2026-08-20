@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { planEntryPresentation, reviewMatchesDraft, shouldLoadExistingReview } from './PlanPanel'
+import { planEntryPresentation, reviewMatchesDraft, shouldLoadExistingReview, shouldStartDraftRunConfiguration } from './PlanPanel'
 
 describe('PlanPanel entry experience', () => {
-  it('uses a stable loading state when opening an existing Draft review', () => {
-    expect(shouldLoadExistingReview('draft-1', undefined)).toBe(true)
+  it('opens current Draft runs at target selection instead of auto-submitting a Case review', () => {
+    expect(shouldLoadExistingReview('draft-1', undefined)).toBe(false)
+    expect(shouldStartDraftRunConfiguration('draft-1', undefined)).toBe(true)
     expect(shouldLoadExistingReview(undefined, 'plan-1')).toBe(true)
+    expect(shouldStartDraftRunConfiguration('draft-1', 'plan-1')).toBe(false)
     expect(shouldLoadExistingReview(undefined, undefined)).toBe(false)
   })
 

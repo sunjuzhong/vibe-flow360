@@ -109,7 +109,11 @@ export function planEntryPresentation(mode: PlanEntryMode) {
 }
 
 export function shouldLoadExistingReview(draftId?: string, initialPlanId?: string) {
-  return Boolean(draftId || initialPlanId)
+  return Boolean(initialPlanId)
+}
+
+export function shouldStartDraftRunConfiguration(draftId?: string, initialPlanId?: string) {
+  return Boolean(draftId && !initialPlanId)
 }
 
 export function reviewMatchesDraft(currentDraftId?: string, reviewDraftId?: string) {
@@ -195,8 +199,9 @@ export default function PlanPanel({
   useEffect(() => {
     if (!open) return
     const openingExistingReview = shouldLoadExistingReview(draftId, initialPlanId)
+    const openingDraftRunConfiguration = shouldStartDraftRunConfiguration(draftId, initialPlanId)
     setSelected(null)
-    setShowForm(!openingExistingReview)
+    setShowForm(openingDraftRunConfiguration || !openingExistingReview)
     setReviewLoading(openingExistingReview)
     setName(`${resource.name} · ${options[0]?.label ?? 'Case'}`)
     setIntent('')
@@ -220,30 +225,7 @@ export default function PlanPanel({
     void (async () => {
       try {
         const loaded = await loadPlans()
-        if (!initialPlanId) {
-          if (draftId) {
-            try {
-              const reviewPlan = await api.createPlan({
-                project_id: project.id,
-                project_name: project.name,
-                source_id: resource.id,
-                source_type: resource.type,
-                source_name: resource.name,
-                target: 'case',
-                name: `${resource.name} · Case`,
-                intent: 'Validate and review the current Draft parameters.',
-                patch: {},
-                draft_id: draftId,
-              })
-              setSelected(reviewPlan)
-              setPlans([reviewPlan, ...loaded.filter((plan) => plan.id !== reviewPlan.id)])
-              setShowForm(false)
-            } catch (cause) {
-              setError(errorMessage(cause))
-            }
-          }
-          return
-        }
+        if (!initialPlanId) return
         try {
           const initial = loaded.find((plan) => plan.id === initialPlanId)
             ?? await api.plan(initialPlanId)
