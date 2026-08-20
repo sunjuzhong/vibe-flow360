@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APIError, api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
@@ -112,11 +112,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       return { value: null, fingerprint: '', error: draftParameterErrorMessage(cause, t) }
     }
   }, [baseline, canonicalCandidate, formValue, jsonValue, mode, previewValue, schema])
-
-  const changes = useMemo(
-    () => candidateResult.value ? diffParameterValues(baseline, candidateResult.value) : [],
-    [baseline, candidateResult.value],
-  )
 
   latestFingerprintRef.current = candidateResult.fingerprint
 
@@ -387,6 +382,33 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           ? firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')
           : t('Latest Draft parameters are synced and ready for review.')
 
+  const validationStatusClass = validating ? 'checking' : validationIsCurrent && validation?.valid ? 'ready' : validationIsCurrent && validation ? 'error' : 'idle'
+  const validationStatusIcon = validating
+    ? <RefreshCw size={14} className="spin" />
+    : validationIsCurrent && validation?.valid
+      ? <CheckCircle2 size={14} />
+      : validationIsCurrent && validation
+        ? <AlertCircle size={14} />
+        : <ShieldCheck size={14} />
+  const validationStatusTitle = validating
+    ? t('Validating current parameters…')
+    : validationIsCurrent && validation?.valid
+      ? t('Flow360 validation passed')
+      : validationIsCurrent && validation
+        ? t('Flow360 validation needs attention')
+        : t('Waiting for Flow360 validation')
+  const validationStatusDetail = syncError
+    ? syncError
+    : saving
+      ? t('Validation passed. Syncing these parameters to the Draft…')
+      : dirty
+        ? t('After validation passes, changes sync automatically to the Draft.')
+        : validationIsCurrent && validation?.valid
+          ? t('Latest Draft parameters are synced and ready for review.')
+          : validationIsCurrent && validation && firstValidationError
+            ? firstValidationError
+            : t('Flow360 checks the current candidate before it is saved to the Draft.')
+
   if (readOnly) {
     return <JsonPreview value={previewValue} empty={t('Flow360 did not return simulation parameters.')} className="draft-json-preview" />
   }
@@ -411,9 +433,23 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           </button>
         </div>
         <div className="draft-parameter-toolbar-actions">
-          <span className={`draft-unsaved-state ${syncError ? 'error' : saving ? 'syncing' : dirty ? 'dirty' : 'saved'}`}>
-            {syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}
-          </span>
+          <details className={`draft-validation-popover ${validationStatusClass}`}>
+            <summary aria-label={validationStatusTitle} title={validationStatusTitle}>
+              {validationStatusIcon}
+              <span>{validationStatusTitle}</span>
+            </summary>
+            <div>
+              <strong>{syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}</strong>
+              <p>{validationStatusDetail}</p>
+              {validationIsCurrent && validation && !validation.valid && (
+                <div className="draft-validation-popover-issues">
+                  {validation.issues.filter((issue) => issue.level === 'error').slice(0, 6).map((issue, index) => (
+                    <div key={`${issue.path}-${issue.code}-${index}`}><code>{issue.path || 'SimulationParams'}</code><span>{issue.message}</span></div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
           {project && resource && <label className={`draft-ai-toggle${aiOpen ? ' active' : ''}`}>
             <input type="checkbox" checked={aiOpen} onChange={(event) => setAIOpen(event.target.checked)} aria-label={t(aiOpen ? 'Close AI Draft session' : 'Open AI Draft session')} />
             <span aria-hidden="true"><i /></span>
@@ -468,35 +504,6 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           <JsonPreview value={previewValue} empty={t('No Draft parameters to preview.')} className="draft-json-preview" />
         </div>
       )}
-
-      {(validating || validationIsCurrent) && (
-        <section className={`draft-validation-summary ${validating ? 'checking' : validation?.valid ? 'ready' : 'error'}`} aria-live="polite">
-          {validating
-            ? <RefreshCw size={15} className="spin" />
-            : validation?.valid
-              ? <CheckCircle2 size={15} />
-              : <AlertCircle size={15} />}
-          <span>
-            <strong>{validating ? t('Validating current parameters…') : validation?.valid ? t('Flow360 validation passed') : t('Flow360 validation needs attention')}</strong>
-            <small>{validating ? t('Flow360 is checking the latest Draft values.') : validation?.valid ? t('This candidate can be saved to the Draft.') : firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')}</small>
-          </span>
-        </section>
-      )}
-      {validationIsCurrent && validation && !validation.valid && (
-        <div className="draft-validation-issues">
-          {validation.issues.filter((issue) => issue.level === 'error').map((issue, index) => (
-            <div key={`${issue.path}-${issue.code}-${index}`}><code>{issue.path || 'SimulationParams'}</code><span>{issue.message}</span></div>
-          ))}
-        </div>
-      )}
-
-      {changes.length > 0 && <section className="draft-change-summary">
-        <header><strong>{t('Unsaved parameter changes')}</strong><span>{changes.length}</span></header>
-        {changes.slice(0, 20).map((change) => (
-          <div key={change.path}><code>{change.path}</code><small>{compactValue(change.before)}</small><ArrowRight size={11} /><small>{compactValue(change.after)}</small></div>
-        ))}
-        {changes.length > 20 && <p>{t('{count} additional changes').replace('{count}', String(changes.length - 20))}</p>}
-      </section>}
 
       <footer className="draft-config-actions">
         <span>{reviewRunStatus}</span>
@@ -750,10 +757,4 @@ export function applyDraftAIProposal(
   proposalPatch: Record<string, unknown>,
 ) {
   return applyJSONMergePatch(candidate ?? baseline, proposalPatch)
-}
-
-function compactValue(value: unknown) {
-  if (value === undefined) return '—'
-  const text = typeof value === 'string' ? value : JSON.stringify(value)
-  return text.length > 100 ? `${text.slice(0, 100)}…` : text
 }
