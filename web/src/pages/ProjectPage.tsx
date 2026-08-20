@@ -344,6 +344,10 @@ export function projectDraftRootPath(projectId: string, root: Pick<ResourceNode,
   return projectDraftResourcePath(projectId, root.id, draftId)
 }
 
+export function projectResourceSelectionPath(projectId: string, resourceId: string, draftId = ''): string {
+  return projectDraftResourcePath(projectId, resourceId, draftId)
+}
+
 export function resolveActiveDraftId(
   drafts: DraftRecord[],
   currentDraftId: string,
@@ -692,7 +696,7 @@ export default function ProjectPage() {
   )
 
   const selectResource = (resource: ResourceNode | ProjectItem) => {
-    navigate(`/projects/${projectId}/resources/${resource.id}`)
+    navigate(projectResourceSelectionPath(projectId, resource.id, draftMode ? activeDraft?.id ?? '' : ''))
     setActivePanel(null)
   }
 

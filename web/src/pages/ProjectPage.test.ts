@@ -12,6 +12,7 @@ import {
   panelDismissesFromAmbientInteraction,
   projectDraftResourcePath,
   projectDraftRootPath,
+  projectResourceSelectionPath,
   projectSyncProgress,
   resolveActiveDraftId,
   resourceContextLabel,
@@ -273,6 +274,11 @@ describe('Draft source resource context', () => {
   it('keeps every Draft context on the Project tree root', () => {
     expect(projectDraftRootPath('prj-1', { id: 'geo-root' }, 'draft-1'))
       .toBe('/projects/prj-1/resources/geo-root?draft=draft-1')
+  })
+
+  it('keeps the active Draft query when selecting its source resource from the header or tree', () => {
+    expect(projectResourceSelectionPath('prj-1', 'geo-1', 'draft-1'))
+      .toBe('/projects/prj-1/resources/geo-1?draft=draft-1')
   })
 
   it('uses the Draft requested by the URL instead of retaining another active Draft', () => {
