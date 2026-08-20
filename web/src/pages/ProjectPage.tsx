@@ -74,6 +74,8 @@ import {
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 
+export type ResourceStageLink = { stage: string; resource?: ProjectItem | ResourceNode }
+
 const assetTopologyKeys = [
   'bodies_face_edge_ids',
   'body_attribute_names',
@@ -161,6 +163,43 @@ function findNode(node: ResourceNode, id: string): ResourceNode | null {
     if (found) return found
   }
   return null
+}
+
+function firstDescendantOfType(node: ResourceNode, type: string): ResourceNode | null {
+  for (const child of node.children) {
+    if (child.type === type) return child
+    const found = firstDescendantOfType(child, type)
+    if (found) return found
+  }
+  return null
+}
+
+export function resourceStageLinks(
+  stages: string[],
+  root: ResourceNode | null,
+  items: ProjectItem[],
+  selectedId: string,
+): ResourceStageLink[] {
+  const selectedNode = root ? findNode(root, selectedId) : null
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const byStage = new Map<string, ProjectItem | ResourceNode>()
+  let current = byId.get(selectedId) ?? selectedNode ?? null
+  const seen = new Set<string>()
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id)
+    if (stages.includes(current.type)) byStage.set(current.type, current)
+    const parentId = 'parent_id' in current ? current.parent_id : byId.get(current.id)?.parent_id
+    current = parentId ? byId.get(parentId) ?? (root ? findNode(root, parentId) : null) : null
+  }
+  if (selectedNode) {
+    for (const stage of stages) {
+      if (!byStage.has(stage)) {
+        const descendant = firstDescendantOfType(selectedNode, stage)
+        if (descendant) byStage.set(stage, byId.get(descendant.id) ?? descendant)
+      }
+    }
+  }
+  return stages.map((stage) => ({ stage, resource: byStage.get(stage) }))
 }
 
 export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
@@ -773,6 +812,10 @@ export default function ProjectPage() {
   }, [root])
 
   const selectedStage = Math.max(0, stages.indexOf(selected?.type ?? ''))
+  const stageLinks = useMemo(
+    () => selected ? resourceStageLinks(stages, root, items, selected.id) : [],
+    [items, root, selected, stages],
+  )
 
   const handleViewerLoadStateChange = useCallback((state: ViewerState) => {
     if (!selected) return
@@ -1024,6 +1067,8 @@ export default function ProjectPage() {
               status={resourceStatus(detail)}
               stages={stages}
               selectedStage={selectedStage}
+              stageLinks={stageLinks}
+              onStageSelect={selectResource}
               resourceIcon={<ResourceIcon type={selected.type} size={17} />}
               draftControls={(
                 <ProjectDraftBar

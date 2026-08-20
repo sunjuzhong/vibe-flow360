@@ -2187,12 +2187,15 @@ button { color: inherit; }
 
 .resource-workspace { min-width: 0; padding: 22px clamp(18px, 3vw, 40px) 45px; overflow-y: auto; background: #f6f6f1; }
 .resource-stage-strip { display: grid; grid-template-columns: repeat(4, 1fr); max-width: 620px; margin: 0 auto 24px; }
-.resource-stage-strip > div { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #a0a49b; }
-.resource-stage-strip > div:not(:last-child)::after { content: ''; position: absolute; top: 11px; left: calc(50% + 15px); right: calc(-50% + 15px); border-top: 1px solid #d1d3ca; }
-.resource-stage-strip > div.before:not(:last-child)::after { border-color: #a8bd6b; }
-.resource-stage-strip > div > span { z-index: 2; display: grid; width: 23px; height: 23px; place-items: center; border: 1px solid #d1d3ca; border-radius: 50%; background: #f6f6f1; font-family: 'DM Mono'; font-size: 7px; }
-.resource-stage-strip > div.before > span { color: #617d14; border-color: #a8bd6b; background: #eef4dc; }
-.resource-stage-strip > div.current > span { color: #152006; border-color: #8fae36; background: var(--green); box-shadow: 0 0 0 4px rgba(170,208,61,.14); }
+.resource-stage-strip > div,.resource-stage-strip > button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; border: 0; color: #a0a49b; background: transparent; font: inherit; }
+.resource-stage-strip > button.clickable { cursor: pointer; }
+.resource-stage-strip > button.clickable:hover small { color: #4d6410; }
+.resource-stage-strip > .disabled { cursor: not-allowed; opacity: .58; }
+.resource-stage-strip > div:not(:last-child)::after,.resource-stage-strip > button:not(:last-child)::after { content: ''; position: absolute; top: 11px; left: calc(50% + 15px); right: calc(-50% + 15px); border-top: 1px solid #d1d3ca; }
+.resource-stage-strip > .before:not(:last-child)::after { border-color: #a8bd6b; }
+.resource-stage-strip > div > span,.resource-stage-strip > button > span { z-index: 2; display: grid; width: 23px; height: 23px; place-items: center; border: 1px solid #d1d3ca; border-radius: 50%; background: #f6f6f1; font-family: 'DM Mono'; font-size: 7px; }
+.resource-stage-strip > .before > span { color: #617d14; border-color: #a8bd6b; background: #eef4dc; }
+.resource-stage-strip > .current > span { color: #152006; border-color: #8fae36; background: var(--green); box-shadow: 0 0 0 4px rgba(170,208,61,.14); }
 .resource-stage-strip small { font-size: 7px; }
 .resource-stage-strip .current small { color: #4d6410; font-weight: 700; }
 

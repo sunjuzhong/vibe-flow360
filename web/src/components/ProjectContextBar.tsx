@@ -1,6 +1,9 @@
 import { CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import type { ProjectItem, ResourceNode } from '../api/client'
 import Flow360IdLink from './Flow360IdLink'
+
+type StageLink = { stage: string; resource?: ProjectItem | ResourceNode }
 
 type Props = {
   resourceName: string
@@ -11,6 +14,8 @@ type Props = {
   status: string
   stages: string[]
   selectedStage: number
+  stageLinks?: StageLink[]
+  onStageSelect?: (resource: ProjectItem | ResourceNode) => void
   resourceIcon: ReactNode
   draftControls: ReactNode
 }
@@ -24,6 +29,8 @@ export default function ProjectContextBar({
   status,
   stages,
   selectedStage,
+  stageLinks,
+  onStageSelect,
   resourceIcon,
   draftControls,
 }: Props) {
@@ -44,12 +51,20 @@ export default function ProjectContextBar({
       </div>
 
       <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages">
-        {stages.map((stage, index) => (
-          <div className={`${index === selectedStage ? 'current' : ''} ${index < selectedStage ? 'before' : ''}`} key={stage}>
-            <span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span>
-            <small>{stage.replace('Mesh', ' Mesh')}</small>
-          </div>
-        ))}
+        {stages.map((stage, index) => {
+          const linked = stageLinks?.find((item) => item.stage === stage)?.resource
+          const className = [index === selectedStage ? 'current' : '', index < selectedStage ? 'before' : '', linked ? 'clickable' : 'disabled'].filter(Boolean).join(' ')
+          const content = <><span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span><small>{stage.replace('Mesh', ' Mesh')}</small></>
+          return linked && onStageSelect ? (
+            <button type="button" className={className} key={stage} onClick={() => onStageSelect(linked)} aria-current={index === selectedStage ? 'step' : undefined}>
+              {content}
+            </button>
+          ) : (
+            <div className={className} key={stage} aria-disabled="true">
+              {content}
+            </div>
+          )
+        })}
       </div>
 
       <div className="project-context-draft">{draftControls}</div>

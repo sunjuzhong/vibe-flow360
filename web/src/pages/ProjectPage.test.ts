@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ProjectItem, ProjectSyncManifest } from '../api/client'
+import type { ProjectItem, ProjectSyncManifest, ResourceNode } from '../api/client'
 import {
   draftCreationBase,
   draftSourceNode,
@@ -17,6 +17,7 @@ import {
   resolveActiveDraftId,
   resourceContextLabel,
   resourceEstimatedSizeBytes,
+  resourceStageLinks,
   resourceTransitionProgress,
   estimatedResourceLoadDurationMs,
 } from './ProjectPage'
@@ -31,6 +32,43 @@ describe('Project panel defaults', () => {
     expect(panelDismissesFromAmbientInteraction('resources')).toBe(true)
     expect(panelDismissesFromAmbientInteraction('details')).toBe(true)
     expect(panelDismissesFromAmbientInteraction(null)).toBe(true)
+  })
+})
+
+describe('resourceStageLinks', () => {
+  const root: ResourceNode = {
+    id: 'geo-1',
+    name: 'Geometry',
+    type: 'Geometry',
+    children: [{
+      id: 'sm-1',
+      name: 'Surface',
+      type: 'SurfaceMesh',
+      children: [{
+        id: 'vm-1',
+        name: 'Volume',
+        type: 'VolumeMesh',
+        children: [{ id: 'case-1', name: 'Case', type: 'Case', children: [] }],
+      }],
+    }],
+  }
+  const items: ProjectItem[] = [
+    { id: 'geo-1', name: 'Geometry', type: 'Geometry', parent_id: null },
+    { id: 'sm-1', name: 'Surface', type: 'SurfaceMesh', parent_id: 'geo-1' },
+    { id: 'vm-1', name: 'Volume', type: 'VolumeMesh', parent_id: 'sm-1' },
+    { id: 'case-1', name: 'Case', type: 'Case', parent_id: 'vm-1' },
+  ]
+
+  it('resolves the full upstream chain for a selected Case', () => {
+    expect(resourceStageLinks(['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case'], root, items, 'case-1').map((link) => link.resource?.id)).toEqual([
+      'geo-1', 'sm-1', 'vm-1', 'case-1',
+    ])
+  })
+
+  it('resolves downstream resources from the selected branch when they exist', () => {
+    expect(resourceStageLinks(['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case'], root, items, 'sm-1').map((link) => link.resource?.id)).toEqual([
+      'geo-1', 'sm-1', 'vm-1', 'case-1',
+    ])
   })
 })
 
