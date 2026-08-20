@@ -5,6 +5,7 @@ import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/pl
 import HelpTooltip from './HelpTooltip'
 import EntityListField from './schema-fields/EntityListField'
 import MultiSelectField from './schema-fields/MultiSelectField'
+import NegativeOneOrPositiveIntegerField from './schema-fields/NegativeOneOrPositiveIntegerField'
 import QuantityField from './schema-fields/QuantityField'
 import UnionVariantPicker from './schema-fields/UnionVariantPicker'
 
@@ -561,16 +562,11 @@ function SchemaField({
     const negativeOneOrPositive = negativeOneOrPositiveIntegerUnion(schema)
     if (negativeOneOrPositive) {
       return <NegativeOneOrPositiveIntegerField
-        schema={schema}
         draft={draft}
         integerVariant={negativeOneOrPositive.integerVariant}
         sentinelVariant={negativeOneOrPositive.sentinelVariant}
-        title={title}
-        path={path}
         fieldID={fieldID}
-        configured={configured}
-        showAll={showAll}
-        descriptionTooltip={collapsibleObjects}
+        label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />}
         fieldIssues={fieldIssues}
         onChange={onChange}
       />
@@ -761,64 +757,6 @@ function arrayItemSummary(schema: DynamicFormSchema, value: unknown, index: numb
   const type = selected?.title || String(object.output_type ?? `Item ${index + 1}`)
   const name = String(object.name ?? '').trim()
   return name && name !== type ? `${type} · ${name}` : type
-}
-
-function NegativeOneOrPositiveIntegerField({
-  schema,
-  draft,
-  integerVariant,
-  sentinelVariant,
-  title,
-  path,
-  fieldID,
-  configured,
-  showAll,
-  descriptionTooltip,
-  fieldIssues,
-  onChange,
-}: {
-  schema: DynamicFormSchema
-  draft: UnionDraft
-  integerVariant: number
-  sentinelVariant: number
-  title: string
-  path: string
-  fieldID: string
-  configured: boolean
-  showAll: boolean
-  descriptionTooltip: boolean
-  fieldIssues: Array<{ path?: string; message: string }>
-  onChange: (value: unknown) => void
-}) {
-  const raw = String(draft.value ?? '')
-  const numeric = raw.trim() === '' ? Number.NaN : Number(raw)
-  const valid = numeric === -1 || Number.isInteger(numeric) && numeric > 0
-  const update = (next: string) => {
-    const parsed = next.trim() === '' ? Number.NaN : Number(next)
-    const variant = parsed === -1 ? sentinelVariant : integerVariant
-    const values = [...(draft.values ?? [])]
-    values[draft.variant] = draft.value
-    onChange({ variant, value: next, values })
-  }
-  const errorID = `${fieldID}-constraint`
-  return (
-    <label className={`schema-field schema-sentinel-integer${!valid || fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={descriptionTooltip} />
-      <input
-        id={fieldID}
-        type="number"
-        step={1}
-        value={raw}
-        aria-invalid={!valid}
-        aria-describedby={errorID}
-        onChange={(event) => update(event.target.value)}
-      />
-      <small id={errorID} className={valid ? 'schema-field-hint' : 'schema-inline-error'} role={valid ? undefined : 'alert'}>
-        {valid ? 'Use -1 for the end of the simulation; otherwise enter a positive integer.' : <><AlertCircle size={12} />Enter -1 or a positive integer.</>}
-      </small>
-      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-    </label>
-  )
 }
 
 function RootFieldSection({
