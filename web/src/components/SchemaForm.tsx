@@ -1,6 +1,6 @@
 import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, RotateCcw, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { currentLanguage } from '../i18n'
 import { translate } from '../i18n/translations'
@@ -291,9 +291,6 @@ function SchemaField({
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
           const required = child.required === true || requiredKeys.includes(key)
-          const clearLabel = schemaHasExplicitDefault(child)
-            ? `Reset ${child.title || humanize(key)} to default`
-            : `Clear ${child.title || humanize(key)} setting`
           if (sparse && !showAll && !present && !required) {
             return (
               <div className="schema-add-field" key={key}>
@@ -328,22 +325,6 @@ function SchemaField({
                 embeddedObjectContent={rootTabContent && child.type === 'object'}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
-              {sparse && !required && present && (
-                <button
-                  type="button"
-                  className="schema-remove-change schema-field-clear"
-                  aria-label={clearLabel}
-                  title={clearLabel}
-                  onClick={() => {
-                    const next = { ...object }
-                    delete next[key]
-                    onChange(next)
-                  }}
-                >
-                  {schemaHasExplicitDefault(child) ? <RotateCcw size={13} /> : <X size={13} />}
-                  <span>{clearLabel}</span>
-                </button>
-              )}
             </div>
           )
           if (rootTabContent && collapsibleObjects) {
@@ -1144,11 +1125,6 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
     default:
       return ''
   }
-}
-
-function schemaHasExplicitDefault(schema: DynamicFormSchema): boolean {
-  return schema.default !== undefined && schema.default !== null
-    || schema.type === 'union' && Boolean(schema.variants?.[0] && schemaHasExplicitDefault(schema.variants[0]))
 }
 
 // Convert canonical Flow360 JSON into the UI draft shape used by SchemaField.

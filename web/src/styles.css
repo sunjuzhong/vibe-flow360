@@ -2611,26 +2611,6 @@ button { color: inherit; }
 .schema-multi-select-options small { margin-left: auto; color: #8a9184; font-size: 8px; }
 .schema-multi-select-empty { grid-column: 1/-1; padding: 24px 10px; color: #8a9184; text-align: center; font-size: 10px; }
 .schema-multi-select-preserved { display: block; margin-top: 7px; color: #7d8578; font-size: 9px; }
-.schema-item-editor-body .schema-edit-field > .schema-field-clear {
-  position: absolute;
-  z-index: 2;
-  top: -4px;
-  right: 0;
-  display: inline-grid;
-  width: 26px;
-  min-height: 26px;
-  place-items: center;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: #92998d;
-  background: transparent;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-2px);
-  transition: opacity .14s ease, color .14s ease, background .14s ease, transform .14s ease;
-}
 .schema-item-editor-dialog > footer { position: sticky; bottom: 0; z-index: 3; display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid #e2e5dd; background: rgba(250,251,247,.96); box-shadow: 0 -8px 22px rgba(35,42,28,.08); backdrop-filter: blur(8px); }
 
 @media (max-width: 760px) {
@@ -2640,30 +2620,6 @@ button { color: inherit; }
   .schema-item-editor-body .schema-field-key-gravity > .schema-section > .schema-section-body > .schema-edit-field-object > .schema-object > .schema-root-object-content,
   .schema-item-editor-body .schema-field-key-initial_condition > .schema-section > .schema-section-body > .schema-edit-field-object > .schema-object > .schema-root-object-content { grid-template-columns: 1fr; }
 }
-.schema-item-editor-body .schema-edit-field-object > .schema-field-clear { top: 8px; right: 34px; }
-.schema-item-editor-body .schema-field-clear > span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.schema-item-editor-body .schema-edit-field:hover > .schema-field-clear,
-.schema-item-editor-body .schema-edit-field:focus-within > .schema-field-clear,
-.schema-item-editor-body .schema-field-clear:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-.schema-item-editor-body .schema-field-clear:hover,
-.schema-item-editor-body .schema-field-clear:focus-visible {
-  color: #5f6e42;
-  background: #eef2e6;
-  outline: none;
-}
-.schema-item-editor-body .schema-field-clear:focus-visible { box-shadow: 0 0 0 2px rgba(143,165,68,.24); }
 .schema-item-editor-dialog > footer { position: sticky; bottom: 0; z-index: 3; display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 9px; min-height: 66px; padding: 13px 22px calc(13px + env(safe-area-inset-bottom)); border-top: 1px solid #e1e5dc; background: rgba(247,248,244,.96); box-shadow: 0 -8px 22px rgba(35,42,28,.08); backdrop-filter: blur(8px); }
 .schema-item-editor-dialog > footer button { min-height: 38px; padding: 0 15px; border: 1px solid #cbd1c3; border-radius: 8px; color: #596154; background: #fff; font-size: 12px; cursor: pointer; }
 .schema-item-editor-dialog > footer button.primary { border-color: #8fa544; color: #27310f; background: #b8d951; font-weight: 700; }

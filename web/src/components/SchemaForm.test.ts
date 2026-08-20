@@ -279,28 +279,6 @@ describe('schema-driven Flow360 form', () => {
     expect(() => serializeValue(schema, { variant: 0, value: '' }, true)).toThrow('requires a number')
   })
 
-  it('labels optional field omission as reset or clear instead of destructive removal', () => {
-    const schema: DynamicFormSchema = {
-      type: 'object',
-      properties: {
-        frequency: { type: 'integer', title: 'Frequency', default: -1 },
-        name: { type: 'string', title: 'Name' },
-      },
-    }
-    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
-      schema,
-      value: { frequency: -1, name: 'Surface output' },
-      sparse: true,
-      showAll: true,
-      onChange: () => undefined,
-    }))
-
-    expect(markup).toContain('class="schema-remove-change schema-field-clear"')
-    expect(markup).toContain('aria-label="Reset Frequency to default"')
-    expect(markup).toContain('aria-label="Clear Name setting"')
-    expect(markup).not.toContain('>Remove<')
-  })
-
   it('normalizes declared legacy unit names to Flow360 wire tokens', () => {
     const schema: DynamicFormSchema = {
       type: 'quantity',
