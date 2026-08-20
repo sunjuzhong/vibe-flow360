@@ -3,6 +3,8 @@ import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, 
 import type { DynamicFormSchema } from '../api/client'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
 import HelpTooltip from './HelpTooltip'
+import EntityListField from './schema-fields/EntityListField'
+import QuantityField from './schema-fields/QuantityField'
 
 type SchemaFormDialogProps = {
   schema: DynamicFormSchema
@@ -383,37 +385,18 @@ function SchemaField({
     )
   }
   if (schema.type === 'quantity') {
-    const object = isRecord(value) ? value : {}
-    const unitOptions = schema.unit_options?.length ? schema.unit_options : [schema.unit ?? '']
-    const storedUnit = String(object.units ?? schema.unit ?? '')
-    const selectedUnit = canonicalQuantityUnit(schema, storedUnit)
-    const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
     return (
-      <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
-        <span className="schema-quantity">
-          <input
-            id={fieldID}
-            type="number"
-            required
-            step="any"
-            min={numberConstraint(schema.value_schema, 'minimum')}
-            max={numberConstraint(schema.value_schema, 'maximum')}
-            value={String(object.value ?? '')}
-            onChange={(event) => onChange({ ...object, value: event.target.value })}
-          />
-          <select
-            aria-label={`${title} unit`}
-            value={selectedUnit}
-            onChange={(event) => onChange({ ...object, units: event.target.value })}
-            required
-          >
-            {unsupportedUnit && <option value={selectedUnit} disabled>Unsupported: {selectedUnit}</option>}
-            {unitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-          </select>
-        </span>
-        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-      </label>
+      <QuantityField
+        schema={schema}
+        value={value}
+        onChange={onChange}
+        title={title}
+        fieldID={fieldID}
+        label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />}
+        fieldIssues={fieldIssues}
+        canonicalUnit={canonicalQuantityUnit}
+        numberConstraint={numberConstraint}
+      />
     )
   }
   if (schema.type === 'expression') {
@@ -540,7 +523,7 @@ function SchemaField({
     )
   }
   if (schema.type === 'entity_list') {
-    return <EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} />
+    return <EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} />
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
@@ -929,21 +912,6 @@ function NegativeOneOrPositiveIntegerField({
       {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
     </label>
   )
-}
-
-function EntityListField({ schema, value, onChange, title, fieldID }: { schema: DynamicFormSchema; value: unknown; onChange: (value: unknown) => void; title: string; fieldID: string }) {
-  const draft = isRecord(value) ? value : {}
-  const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
-  const choices = schema.entity_choices ?? []
-  const allSelected = choices.length > 0 && choices.every((choice) => selected.includes(choice.value))
-  return <fieldset className="schema-object schema-entity-list" id={fieldID}>
-    <legend><span className="schema-legend-content">{title}{schema.required === true ? ' *' : ''}<SchemaDescriptionHelp description={schema.description} title={title} /></span></legend>
-    <div className="schema-entity-header">
-      <span>{selected.length} selected</span>
-      <button type="button" onClick={() => onChange({ ...draft, entities: allSelected ? [] : choices.map((choice) => choice.value) })}>{allSelected ? 'Clear all' : 'Select all'}</button>
-    </div>
-    {choices.length ? <div className="schema-entity-grid">{choices.map((choice) => <label key={choice.value} className={selected.includes(choice.value) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(choice.value)} onChange={(event) => onChange({ ...draft, entities: event.target.checked ? [...selected, choice.value] : selected.filter((item) => item !== choice.value) })} /><span><code>{choice.label}</code>{choice.model_type && <small>{choice.model_type}</small>}</span></label>)}</div> : <div className="schema-array-empty"><strong>No compatible entities</strong><span>Create a compatible entity before configuring this output.</span></div>}
-  </fieldset>
 }
 
 function variantLabel(schema: DynamicFormSchema, index: number): string {
