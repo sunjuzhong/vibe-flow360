@@ -2091,7 +2091,10 @@ button { color: inherit; }
 .resource-tree-line { display: flex; align-items: stretch; min-height: 38px; border-radius: 6px; }
 .resource-tree-line:hover { background: rgba(255,255,255,.56); }
 .resource-tree-line.selected { background: #e3ebca; }
+.resource-tree-line.resource-not-ready { opacity: .58; }
+.resource-tree-line.resource-not-ready:hover { background: transparent; }
 .resource-select { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; padding: 3px 7px 3px 1px; border: 0; color: #51564d; background: transparent; text-align: left; cursor: pointer; }
+.resource-select:disabled,.resource-search-select:disabled { cursor: not-allowed; }
 .resource-type-icon { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 6px; color: #657c1e; background: #e8efd3; }
 .resource-type-icon.type-surfacemesh { color: #347080; background: #dcebed; }
 .resource-type-icon.type-volumemesh { color: #785a1d; background: #f0e5cf; }
@@ -2104,11 +2107,15 @@ button { color: inherit; }
 
 .resource-search-result { display: flex; width: 100%; min-width: 0; align-items: center; gap: 5px; padding: 0; border: 0; border-radius: 7px; color: #51564d; background: transparent; text-align: left; }
 .resource-search-result:hover,.resource-search-result.selected { background: #e3ebca; }
+.resource-search-result.resource-not-ready { opacity: .58; }
+.resource-search-result.resource-not-ready:hover { background: transparent; }
 .resource-search-select { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; padding: 6px 0 6px 7px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .resource-search-select > span:last-child { min-width: 0; }
 .resource-search-result strong,.resource-search-result small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-search-result strong { font-size: 8px; }.resource-search-result small { margin-top: 2px; color: #92968d; font-family: 'DM Mono'; font-size: 6px; }
 .resource-search-id { max-width: 46%; margin-right: 7px; overflow: hidden; color: #92968d; font: 6px 'DM Mono'; text-overflow: ellipsis; white-space: nowrap; }
+.resource-readiness { display: inline-block; padding: 1px 4px; border: 1px solid #d8d9d1; border-radius: 999px; color: #767b71; background: #f6f6f1; font-family: 'DM Mono', monospace; font-size: 6px; line-height: 1.2; vertical-align: middle; }
+.resource-not-ready .resource-readiness { border-color: #c7cbd6; color: #526287; background: #edf1fb; }
 .resource-tree-empty { padding: 20px 10px; color: #94988f; font-size: 9px; text-align: center; }
 
 /* lf5.10: resource tree toolbar for type filters and view modes */

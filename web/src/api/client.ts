@@ -426,6 +426,8 @@ export type ProjectItem = {
   name: string
   type: string
   parent_id: string | null
+  status?: string
+  state?: string
   size_bytes?: number
   file_size?: number
   storage_size_bytes?: number

@@ -1,6 +1,7 @@
 import { Activity, Box, Boxes, ChevronDown, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectItem, ResourceNode } from '../api/client'
+import { useI18n } from '../i18n'
 import Flow360IdLink from './Flow360IdLink'
 import {
   RESOURCE_TYPES,
@@ -20,6 +21,38 @@ export function ResourceIcon({ type, size = 15 }: { type: string; size?: number 
 
 type ViewMode = 'tree' | 'flat' | 'grouped'
 
+const NOT_READY_STATUSES = new Set([
+  'pending',
+  'queued',
+  'waiting',
+  'submitted',
+  'preprocessing',
+  'processing',
+  'running',
+  'in_progress',
+  'uploading',
+  'meshing',
+])
+
+export function normalizeResourceStatus(status?: string | null) {
+  return String(status ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+export function projectItemStatus(item?: Pick<ProjectItem, 'status' | 'state'> | null) {
+  return normalizeResourceStatus(item?.status ?? item?.state)
+}
+
+export function isProjectResourceReady(item?: Pick<ProjectItem, 'status' | 'state'> | null) {
+  const status = projectItemStatus(item)
+  return !status || !NOT_READY_STATUSES.has(status)
+}
+
+export function resourceStatusLabel(status: string) {
+  const normalized = normalizeResourceStatus(status)
+  if (!normalized) return ''
+  return normalized.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+
 export default function ResourceTree({
   root,
   items,
@@ -35,6 +68,7 @@ export default function ResourceTree({
   projectId: string
   onSelect: (node: ResourceNode | ProjectItem) => void
 }) {
+  const { t } = useI18n()
   // Start collapsed except for the root — expanding everything by default
   // made 100+ Case projects unusable (AC-1). Selected node ancestors are
   // auto-expanded via the effect below to preserve deep-link correctness.
@@ -48,7 +82,13 @@ export default function ResourceTree({
   const activeRowIdRef = useRef<string | null>(null)
 
   const nodeIndex = useMemo(() => buildNodeIndex(root), [root])
+  const itemIndex = useMemo(() => new Map(items.map((item) => [item.id, item])), [items])
   const descendantCounts = useMemo(() => buildDescendantCount(root), [root])
+
+  const selectIfReady = useCallback((resource: ResourceNode | ProjectItem) => {
+    if (!isProjectResourceReady(itemIndex.get(resource.id))) return
+    onSelect(resource)
+  }, [itemIndex, onSelect])
 
   const setLineRef = useCallback((id: string, el: HTMLElement | null) => {
     if (el) lineRefs.current.set(id, el)
@@ -172,9 +212,9 @@ export default function ResourceTree({
       focusRow(visible[visible.length - 1])
     } else if (event.key === 'a' || event.key === 'A') {
       event.preventDefault()
-      onSelect(nodeIndex.get(current) ?? root)
+      selectIfReady(nodeIndex.get(current) ?? root)
     }
-  }, [viewMode, visibleRowIds, selected, nodeIndex, expanded, toggle, onSelect, root, focusRow])
+  }, [viewMode, visibleRowIds, selected, nodeIndex, expanded, toggle, selectIfReady, root, focusRow])
 
   const toggleTypeFilter = (type: string) => {
     setTypesFilter((prev) => {
@@ -191,29 +231,48 @@ export default function ResourceTree({
 
   const grouped = useMemo(() => groupByType(items), [items])
 
-  const renderSearchResult = (item: ProjectItem, showType = true) => (
-    <div
-      key={item.id}
-      ref={(el) => setLineRef(item.id, el)}
-      className={`resource-search-result ${selected === item.id ? 'selected' : ''}`}
-      onFocus={() => (activeRowIdRef.current = item.id)}
-      role="treeitem"
-      aria-selected={selected === item.id}
-      tabIndex={selected === item.id ? 0 : -1}
-    >
-      <button type="button" className="resource-search-select" onClick={() => onSelect(item)} tabIndex={-1}>
-        {showType && <span className={`resource-type-icon type-${item.type.toLowerCase()}`}><ResourceIcon type={item.type} /></span>}
-        <span><strong>{item.name}</strong><small>{showType ? `${item.type} · ` : ''}</small></span>
-      </button>
-      <Flow360IdLink
-        className="resource-search-id"
-        environment={environment}
-        projectId={projectId}
-        resourceId={item.id}
-        resourceType={item.type}
-      />
-    </div>
-  )
+  const renderStatus = (status: string) => {
+    if (!status) return null
+    return <span className={`resource-readiness status-${status}`}>{t(resourceStatusLabel(status))}</span>
+  }
+
+  const notReadyTitle = t('This resource is not ready in Flow360 yet.')
+
+  const renderSearchResult = (item: ProjectItem, showType = true) => {
+    const status = projectItemStatus(item)
+    const ready = isProjectResourceReady(item)
+    return (
+      <div
+        key={item.id}
+        ref={(el) => setLineRef(item.id, el)}
+        className={`resource-search-result ${selected === item.id ? 'selected' : ''} ${ready ? '' : 'resource-not-ready'}`}
+        onFocus={() => (activeRowIdRef.current = item.id)}
+        role="treeitem"
+        aria-selected={selected === item.id}
+        aria-disabled={!ready || undefined}
+        tabIndex={selected === item.id ? 0 : -1}
+      >
+        <button
+          type="button"
+          className="resource-search-select"
+          onClick={() => selectIfReady(item)}
+          disabled={!ready}
+          title={ready ? item.name : notReadyTitle}
+          tabIndex={-1}
+        >
+          {showType && <span className={`resource-type-icon type-${item.type.toLowerCase()}`}><ResourceIcon type={item.type} /></span>}
+          <span><strong>{item.name}</strong><small>{showType ? `${item.type} · ` : ''}{renderStatus(status)}</small></span>
+        </button>
+        <Flow360IdLink
+          className="resource-search-id"
+          environment={environment}
+          projectId={projectId}
+          resourceId={item.id}
+          resourceType={item.type}
+        />
+      </div>
+    )
+  }
 
   const renderFlatList = () => {
     const filtered = items.filter((it) =>
@@ -260,15 +319,19 @@ export default function ResourceTree({
       const isOpen = expanded.has(node.id)
       const isSelected = selected === node.id
       const count = descendantCounts.get(node.id) ?? 0
+      const item = itemIndex.get(node.id)
+      const status = projectItemStatus(item)
+      const ready = isProjectResourceReady(item)
       return (
         <div
           key={node.id}
           ref={(el) => setLineRef(node.id, el)}
-          className={`resource-tree-line ${isSelected ? 'selected' : ''}`}
+          className={`resource-tree-line ${isSelected ? 'selected' : ''} ${ready ? '' : 'resource-not-ready'}`}
           style={{ paddingLeft: 8 + depth * 14 }}
           role="treeitem"
           aria-expanded={hasChildren ? isOpen : undefined}
           aria-selected={isSelected}
+          aria-disabled={!ready || undefined}
           aria-level={depth + 1}
           onFocus={() => (activeRowIdRef.current = node.id)}
           tabIndex={isSelected ? 0 : -1}
@@ -285,14 +348,15 @@ export default function ResourceTree({
           ) : <span className="resource-expand-spacer" />}
           <button
             className="resource-select"
-            onClick={() => onSelect(node)}
-            title={node.name}
+            onClick={() => selectIfReady(node)}
+            disabled={!ready}
+            title={ready ? node.name : notReadyTitle}
             tabIndex={-1}
           >
             <span className={`resource-type-icon type-${node.type.toLowerCase()}`}><ResourceIcon type={node.type} /></span>
             <span className="resource-name">
               <strong>{node.name}</strong>
-              <small>{node.type}{count > 0 ? ` · ${count} descendants` : ''}</small>
+              <small>{node.type}{count > 0 ? ` · ${count} descendants` : ''}{status ? ' · ' : ''}{renderStatus(status)}</small>
             </span>
             {hasChildren && !isOpen && <span className="resource-child-count">{node.children.length}</span>}
           </button>
