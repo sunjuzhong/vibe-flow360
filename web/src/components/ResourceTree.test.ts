@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ProjectItem, ResourceNode } from '../api/client'
 import { I18nProvider } from '../i18n'
-import ResourceTree, { isProjectResourceReady, normalizeResourceStatus, projectItemStatus, resourceStatusLabel } from './ResourceTree'
+import ResourceTree, { isProjectResourceReady, normalizeResourceStatus, projectItemStatus, resourceStatusCategory, resourceStatusLabel } from './ResourceTree'
 
 describe('ResourceTree resource readiness', () => {
   it('normalizes remote statuses for display and matching', () => {
@@ -13,6 +13,13 @@ describe('ResourceTree resource readiness', () => {
 
   it('uses status before state', () => {
     expect(projectItemStatus({ status: 'running', state: 'completed' })).toBe('running')
+  })
+
+  it('classifies resource statuses for visual treatment', () => {
+    expect(resourceStatusCategory('processing')).toBe('running')
+    expect(resourceStatusCategory('completed')).toBe('success')
+    expect(resourceStatusCategory('failed')).toBe('failed')
+    expect(resourceStatusCategory('mystery')).toBe('unknown')
   })
 
   it('disables resources that are still being produced by Flow360', () => {
@@ -34,11 +41,15 @@ describe('ResourceTree resource readiness', () => {
       id: 'geo-1',
       name: 'Tutorial T04 geometry',
       type: 'Geometry',
-      children: [{ id: 'case-1', name: 'T04 baseline edge controls', type: 'Case', children: [] }],
+      children: [
+        { id: 'case-1', name: 'T04 baseline edge controls', type: 'Case', children: [] },
+        { id: 'mesh-1', name: 'Failed mesh', type: 'SurfaceMesh', children: [] },
+      ],
     }
     const items: ProjectItem[] = [
       { id: 'geo-1', name: 'Tutorial T04 geometry', type: 'Geometry', parent_id: null, status: 'completed' },
       { id: 'case-1', name: 'T04 baseline edge controls', type: 'Case', parent_id: 'geo-1', status: 'pending' },
+      { id: 'mesh-1', name: 'Failed mesh', type: 'SurfaceMesh', parent_id: 'geo-1', status: 'failed' },
     ]
 
     const markup = renderToStaticMarkup(createElement(
@@ -54,9 +65,15 @@ describe('ResourceTree resource readiness', () => {
     ))
 
     expect(markup).toContain('resource-not-ready')
+    expect(markup).toContain('resource-status-row-success')
+    expect(markup).toContain('resource-status-row-running')
+    expect(markup).toContain('resource-status-row-failed')
+    expect(markup).toContain('resource-status-badge resource-status-running')
+    expect(markup).toContain('resource-status-badge resource-status-failed')
     expect(markup).toContain('aria-disabled="true"')
     expect(markup).toContain('disabled=""')
     expect(markup).toContain('Pending')
+    expect(markup).toContain('Failed')
     expect(markup).toContain('This resource is not ready in Flow360 yet.')
   })
 })

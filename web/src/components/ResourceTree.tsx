@@ -21,7 +21,7 @@ export function ResourceIcon({ type, size = 15 }: { type: string; size?: number 
 
 type ViewMode = 'tree' | 'flat' | 'grouped'
 
-const NOT_READY_STATUSES = new Set([
+const RUNNING_STATUSES = new Set([
   'pending',
   'queued',
   'waiting',
@@ -34,6 +34,13 @@ const NOT_READY_STATUSES = new Set([
   'meshing',
 ])
 
+const SUCCESS_STATUSES = new Set(['completed', 'processed', 'success', 'uploaded'])
+const FAILED_STATUSES = new Set(['failed', 'error', 'diverged', 'cancelled', 'canceled'])
+
+type ResourceStatusCategory = 'unknown' | 'running' | 'success' | 'failed'
+
+const NOT_READY_STATUSES = RUNNING_STATUSES
+
 export function normalizeResourceStatus(status?: string | null) {
   return String(status ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
@@ -45,6 +52,14 @@ export function projectItemStatus(item?: Pick<ProjectItem, 'status' | 'state'> |
 export function isProjectResourceReady(item?: Pick<ProjectItem, 'status' | 'state'> | null) {
   const status = projectItemStatus(item)
   return !status || !NOT_READY_STATUSES.has(status)
+}
+
+export function resourceStatusCategory(status?: string | null): ResourceStatusCategory {
+  const normalized = normalizeResourceStatus(status)
+  if (RUNNING_STATUSES.has(normalized)) return 'running'
+  if (SUCCESS_STATUSES.has(normalized)) return 'success'
+  if (FAILED_STATUSES.has(normalized)) return 'failed'
+  return 'unknown'
 }
 
 export function resourceStatusLabel(status: string) {
@@ -233,7 +248,14 @@ export default function ResourceTree({
 
   const renderStatus = (status: string) => {
     if (!status) return null
-    return <span className={`resource-readiness status-${status}`}>{t(resourceStatusLabel(status))}</span>
+    const category = resourceStatusCategory(status)
+    const label = t(resourceStatusLabel(status))
+    return (
+      <span className={`resource-status-badge resource-status-${category} status-${status}`} title={label}>
+        <span aria-hidden="true" />
+        {label}
+      </span>
+    )
   }
 
   const notReadyTitle = t('This resource is not ready in Flow360 yet.')
@@ -241,11 +263,12 @@ export default function ResourceTree({
   const renderSearchResult = (item: ProjectItem, showType = true) => {
     const status = projectItemStatus(item)
     const ready = isProjectResourceReady(item)
+    const category = resourceStatusCategory(status)
     return (
       <div
         key={item.id}
         ref={(el) => setLineRef(item.id, el)}
-        className={`resource-search-result ${selected === item.id ? 'selected' : ''} ${ready ? '' : 'resource-not-ready'}`}
+        className={`resource-search-result ${selected === item.id ? 'selected' : ''} ${ready ? '' : 'resource-not-ready'} resource-status-row-${category}`}
         onFocus={() => (activeRowIdRef.current = item.id)}
         role="treeitem"
         aria-selected={selected === item.id}
@@ -261,7 +284,8 @@ export default function ResourceTree({
           tabIndex={-1}
         >
           {showType && <span className={`resource-type-icon type-${item.type.toLowerCase()}`}><ResourceIcon type={item.type} /></span>}
-          <span><strong>{item.name}</strong><small>{showType ? `${item.type} · ` : ''}{renderStatus(status)}</small></span>
+          <span><strong>{item.name}</strong><small>{showType ? `${item.type}` : ''}</small></span>
+          {renderStatus(status)}
         </button>
         <Flow360IdLink
           className="resource-search-id"
@@ -322,11 +346,12 @@ export default function ResourceTree({
       const item = itemIndex.get(node.id)
       const status = projectItemStatus(item)
       const ready = isProjectResourceReady(item)
+      const category = resourceStatusCategory(status)
       return (
         <div
           key={node.id}
           ref={(el) => setLineRef(node.id, el)}
-          className={`resource-tree-line ${isSelected ? 'selected' : ''} ${ready ? '' : 'resource-not-ready'}`}
+          className={`resource-tree-line ${isSelected ? 'selected' : ''} ${ready ? '' : 'resource-not-ready'} resource-status-row-${category}`}
           style={{ paddingLeft: 8 + depth * 14 }}
           role="treeitem"
           aria-expanded={hasChildren ? isOpen : undefined}
@@ -356,8 +381,9 @@ export default function ResourceTree({
             <span className={`resource-type-icon type-${node.type.toLowerCase()}`}><ResourceIcon type={node.type} /></span>
             <span className="resource-name">
               <strong>{node.name}</strong>
-              <small>{node.type}{count > 0 ? ` · ${count} descendants` : ''}{status ? ' · ' : ''}{renderStatus(status)}</small>
+              <small>{node.type}{count > 0 ? ` · ${count} descendants` : ''}</small>
             </span>
+            {renderStatus(status)}
             {hasChildren && !isOpen && <span className="resource-child-count">{node.children.length}</span>}
           </button>
         </div>
