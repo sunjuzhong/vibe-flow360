@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -171,35 +172,16 @@ func (s *Service) chatWithCodexStream(
 	runCtx, cancel := context.WithTimeout(ctx, s.CodexTimeout)
 	defer cancel()
 
-	outputDir, err := os.MkdirTemp("", "vibesim-codex-app-server-*")
-	if err != nil {
-		return "", fmt.Errorf("create Codex output directory: %w", err)
-	}
-	defer os.RemoveAll(outputDir)
-	outputPath := filepath.Join(outputDir, "last-message.txt")
-
-	args := []string{
-		"exec",
-		"--ephemeral",
-		"--sandbox", "read-only",
-		"--color", "never",
-		"--skip-git-repo-check",
-		"--output-last-message", outputPath,
-	}
-	if model := firstNonEmpty(requestedModel, s.CodexModel); model != "" {
-		args = append(args, "--model", model)
-	}
+	args := []string{"app-server", "--stdio"}
 	if s.CodexProfile != "" {
-		args = append(args, "--profile", s.CodexProfile)
+		args = []string{"--profile", s.CodexProfile, "app-server", "--stdio"}
 	}
-	if s.WorkDir != "" {
-		args = append(args, "--cd", s.WorkDir)
-	}
-	args = append(args, "-")
-
 	command := exec.CommandContext(runCtx, binary, args...)
 	command.Env = environment
-	command.Stdin = strings.NewReader(codexPrompt(systemPrompt, userPrompt))
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		return "", err
+	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -211,83 +193,184 @@ func (s *Service) chatWithCodexStream(
 
 	var diagnostics limitedBuffer
 	var streamed strings.Builder
-	var streamErr error
-	var mu sync.Mutex
-	if err := command.Start(); err != nil {
-		return "", fmt.Errorf("start external Codex: %w", err)
-	}
-
 	var wg sync.WaitGroup
-	wg.Add(2)
+	if err := command.Start(); err != nil {
+		return "", fmt.Errorf("start external Codex app-server: %w", err)
+	}
+	defer func() {
+		_ = stdin.Close()
+		if command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		_ = command.Wait()
+		wg.Wait()
+	}()
+
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(&diagnostics, stderr)
 	}()
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 0, 64*1024), maxCodexOutput)
-		capturing := false
-		for scanner.Scan() {
-			line := scanner.Text()
-			_, _ = diagnostics.Write([]byte(line + "\n"))
-			switch strings.TrimSpace(line) {
-			case "codex":
-				capturing = true
-				continue
-			case "tokens used":
-				capturing = false
-				continue
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxCodexOutput)
+	send := func(message map[string]any) error {
+		data, err := json.Marshal(message)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdin, "%s\n", data)
+		return err
+	}
+	read := func() (map[string]any, error) {
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return nil, err
 			}
-			if !capturing || strings.TrimSpace(line) == "" {
-				continue
+			return nil, io.ErrUnexpectedEOF
+		}
+		var message map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
+			return nil, fmt.Errorf("decode Codex app-server message: %w", err)
+		}
+		return message, nil
+	}
+	waitForID := func(id int) (map[string]any, error) {
+		for {
+			message, err := read()
+			if err != nil {
+				return nil, err
 			}
-			delta := line + "\n"
-			mu.Lock()
-			if streamErr == nil {
-				streamErr = emit(delta)
-				if streamErr == nil {
-					streamed.WriteString(delta)
+			if messageID, ok := message["id"].(float64); ok && int(messageID) == id {
+				if failure, ok := message["error"]; ok {
+					return nil, fmt.Errorf("Codex app-server request %d failed: %v", id, failure)
 				}
+				return message, nil
 			}
-			mu.Unlock()
 		}
-		if err := scanner.Err(); err != nil {
-			mu.Lock()
-			if streamErr == nil {
-				streamErr = err
-			}
-			mu.Unlock()
-		}
-	}()
-
-	waitErr := command.Wait()
-	wg.Wait()
-	if waitErr != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", ctxErr
-		}
-		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return "", &GenerationTimeoutError{Provider: "external Codex app-server", After: s.CodexTimeout}
-		}
-		return "", fmt.Errorf("external Codex app-server failed: %w: %s", waitErr, diagnostics.String())
-	}
-	if streamErr != nil {
-		return "", streamErr
 	}
 
-	data, err := os.ReadFile(outputPath)
-	if err == nil && len(data) <= maxCodexOutput {
-		response := strings.TrimSpace(string(data))
-		if response != "" {
+	if err := send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]any{"name": "vibe-flow360", "version": "0"}, "capabilities": map[string]any{"experimentalApi": true}}}); err != nil {
+		return "", err
+	}
+	if _, err := waitForID(1); err != nil {
+		return "", fmt.Errorf("initialize Codex app-server: %w: %s", err, diagnostics.String())
+	}
+	if err := send(map[string]any{"jsonrpc": "2.0", "method": "initialized"}); err != nil {
+		return "", err
+	}
+
+	cwd := firstNonEmpty(s.WorkDir, ".")
+	threadParams := map[string]any{
+		"cwd":                   cwd,
+		"ephemeral":             true,
+		"sandbox":               "read-only",
+		"approvalPolicy":        "never",
+		"approvalsReviewer":     "user",
+		"baseInstructions":      systemPrompt,
+		"developerInstructions": "Work only from the supplied Vibe Flow360 context. Do not edit files or execute Flow360, cloud, billing, approval, or submission actions.",
+	}
+	if model := firstNonEmpty(requestedModel, s.CodexModel); model != "" {
+		threadParams["model"] = model
+	}
+	if err := send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "thread/start", "params": threadParams}); err != nil {
+		return "", err
+	}
+	threadStart, err := waitForID(2)
+	if err != nil {
+		return "", fmt.Errorf("start Codex app-server thread: %w: %s", err, diagnostics.String())
+	}
+	threadID := codexThreadID(threadStart)
+	if threadID == "" {
+		return "", errors.New("Codex app-server did not return a thread id")
+	}
+
+	turnParams := map[string]any{
+		"threadId": threadID,
+		"cwd":      cwd,
+		"input": []map[string]any{{
+			"type": "text",
+			"text": userPrompt,
+		}},
+	}
+	if model := firstNonEmpty(requestedModel, s.CodexModel); model != "" {
+		turnParams["model"] = model
+	}
+	if err := send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "turn/start", "params": turnParams}); err != nil {
+		return "", err
+	}
+	for {
+		message, err := read()
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				return "", &GenerationTimeoutError{Provider: "external Codex app-server", After: s.CodexTimeout}
+			}
+			return "", fmt.Errorf("read Codex app-server stream: %w: %s", err, diagnostics.String())
+		}
+		if messageID, ok := message["id"].(float64); ok && int(messageID) == 3 {
+			if failure, ok := message["error"]; ok {
+				return "", fmt.Errorf("Codex app-server turn failed: %v", failure)
+			}
+			continue
+		}
+		method, _ := message["method"].(string)
+		switch method {
+		case "item/agentMessage/delta":
+			delta := codexStringParam(message, "delta")
+			if delta == "" {
+				continue
+			}
+			if err := emit(delta); err != nil {
+				return "", err
+			}
+			streamed.WriteString(delta)
+		case "turn/completed":
+			response := strings.TrimSpace(codexCompletedText(message))
+			if response != "" {
+				return response, nil
+			}
+			response = strings.TrimSpace(streamed.String())
+			if response == "" {
+				return "", errors.New("external Codex app-server returned an empty response")
+			}
 			return response, nil
+		case "error":
+			return "", fmt.Errorf("Codex app-server error: %v", message["params"])
 		}
 	}
-	response := strings.TrimSpace(streamed.String())
-	if response == "" {
-		return "", errors.New("external Codex app-server returned an empty response")
+}
+
+func codexThreadID(message map[string]any) string {
+	result, _ := message["result"].(map[string]any)
+	thread, _ := result["thread"].(map[string]any)
+	id, _ := thread["id"].(string)
+	return id
+}
+
+func codexStringParam(message map[string]any, key string) string {
+	params, _ := message["params"].(map[string]any)
+	value, _ := params[key].(string)
+	return value
+}
+
+func codexCompletedText(message map[string]any) string {
+	params, _ := message["params"].(map[string]any)
+	turn, _ := params["turn"].(map[string]any)
+	items, _ := turn["items"].([]any)
+	for _, raw := range items {
+		item, _ := raw.(map[string]any)
+		if item["type"] != "agentMessage" {
+			continue
+		}
+		text, _ := item["text"].(string)
+		if strings.TrimSpace(text) != "" {
+			return text
+		}
 	}
-	return response, nil
+	return ""
 }
 
 func codexPrompt(systemPrompt, userPrompt string) string {

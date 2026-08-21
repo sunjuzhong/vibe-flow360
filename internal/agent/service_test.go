@@ -187,18 +187,20 @@ func TestCodexProviderRunsEphemeralReadOnlyAndValidatesAction(t *testing.T) {
 func TestCodexAppServerProviderStreamsCodexOutput(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "codex")
 	script := `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output-last-message" ]; then output="$2"; shift 2; else shift; fi
+if [ "$1" != "app-server" ]; then exit 2; fi
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1'*) printf '%s\n' '{"id":1,"result":{"userAgent":"fake","codexHome":"/tmp","platformFamily":"unix","platformOs":"test"}}' ;;
+    *'"id":2'*) printf '%s\n' '{"id":2,"result":{"thread":{"id":"thread-1"}}}' ;;
+    *'"id":3'*)
+      printf '%s\n' '{"id":3,"result":{"turn":{"id":"turn-1","status":"inProgress"}}}'
+      printf '%s\n' '{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"msg-1","delta":"first "}}'
+      printf '%s\n' '{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"msg-1","delta":"chunk"}}'
+      printf '%s\n' '{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[{"type":"agentMessage","id":"msg-1","text":"first chunk"}],"status":"completed"}}}'
+      exit 0
+      ;;
+  esac
 done
-cat >/dev/null
-printf 'OpenAI Codex v0.test\n'
-printf 'codex\n'
-printf 'first chunk\n'
-printf 'second chunk\n'
-printf 'tokens used\n'
-printf '1\n'
-printf 'first chunk\nsecond chunk\n' > "$output"
 `
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
@@ -212,10 +214,10 @@ printf 'first chunk\nsecond chunk\n' > "$output"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reply != "first chunk\nsecond chunk" {
+	if reply != "first chunk" {
 		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if strings.Join(deltas, "") != "first chunk\nsecond chunk\n" {
+	if strings.Join(deltas, "") != "first chunk" {
 		t.Fatalf("unexpected deltas: %#v", deltas)
 	}
 }

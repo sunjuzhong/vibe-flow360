@@ -256,7 +256,9 @@ export default function CopilotPanel({
         <div>
           <strong>Simulation Copilot</strong>
           <span>
-            {agent?.mode === 'codex'
+            {agent?.mode === 'codex-app-server'
+              ? `External Codex streaming · ${agent.model}`
+              : agent?.mode === 'codex'
               ? `External Codex · ${agent.model}`
               : agent?.mode === 'ai'
                 ? `Built-in · ${agent.model}`

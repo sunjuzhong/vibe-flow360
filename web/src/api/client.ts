@@ -30,8 +30,8 @@ export class APIError extends Error {
 }
 
 export type AgentState = {
-  mode: 'ai' | 'codex' | 'local-planner' | 'configuration-error'
-  provider: 'builtin' | 'codex' | string
+  mode: 'ai' | 'codex' | 'codex-app-server' | 'local-planner' | 'configuration-error'
+  provider: 'builtin' | 'codex' | 'codex-app-server' | string
   model: string
   ready: boolean
   execution: boolean
