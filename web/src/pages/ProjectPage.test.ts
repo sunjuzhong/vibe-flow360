@@ -65,9 +65,9 @@ describe('resourceStageLinks', () => {
     ])
   })
 
-  it('resolves downstream resources from the selected branch when they exist', () => {
+  it('does not expose downstream resources as capabilities of an upstream resource', () => {
     expect(resourceStageLinks(['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case'], root, items, 'sm-1').map((link) => link.resource?.id)).toEqual([
-      'geo-1', 'sm-1', 'vm-1', 'case-1',
+      'geo-1', 'sm-1', undefined, undefined,
     ])
   })
 })
@@ -305,8 +305,8 @@ describe('Draft source resource context', () => {
     })?.id).toBe('geo-1')
   })
 
-  it('keeps the Draft query while the initial Project route resolves its resource', () => {
-    expect(projectDraftResourcePath('prj-1', 'geo-1', 'draft/1')).toBe('/projects/prj-1/resources/geo-1?draft=draft%2F1')
+  it('adds the capability type query after the Draft query', () => {
+    expect(projectDraftResourcePath('prj-1', 'case-1', 'draft/1', 'SurfaceMesh')).toBe('/projects/prj-1/resources/case-1?draft=draft%2F1&type=surface-mesh')
   })
 
   it('keeps every Draft context on the Project tree root', () => {
@@ -314,9 +314,13 @@ describe('Draft source resource context', () => {
       .toBe('/projects/prj-1/resources/geo-root?draft=draft-1')
   })
 
-  it('keeps the active Draft query when selecting its source resource from the header or tree', () => {
-    expect(projectResourceSelectionPath('prj-1', 'geo-1', 'draft-1'))
-      .toBe('/projects/prj-1/resources/geo-1?draft=draft-1')
+  it('keeps the Draft query while the initial Project route resolves its resource', () => {
+    expect(projectDraftResourcePath('prj-1', 'geo-1', 'draft/1')).toBe('/projects/prj-1/resources/geo-1?draft=draft%2F1')
+  })
+
+  it('keeps the active Draft and capability type when selecting a resource view', () => {
+    expect(projectResourceSelectionPath('prj-1', 'case-1', 'draft-1', 'VolumeMesh'))
+      .toBe('/projects/prj-1/resources/case-1?draft=draft-1&type=volume-mesh')
   })
 
   it('uses the Draft requested by the URL instead of retaining another active Draft', () => {

@@ -73,6 +73,13 @@ import {
 } from '../lib/draftEntities'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
+const stageTypeSlugs: Record<string, string> = {
+  Geometry: 'geometry',
+  SurfaceMesh: 'surface-mesh',
+  VolumeMesh: 'volume-mesh',
+  Case: 'case',
+}
+const stageTypeBySlug = Object.fromEntries(Object.entries(stageTypeSlugs).map(([stage, slug]) => [slug, stage]))
 
 export type ResourceStageLink = { stage: string; resource?: ProjectItem | ResourceNode }
 
@@ -165,15 +172,6 @@ function findNode(node: ResourceNode, id: string): ResourceNode | null {
   return null
 }
 
-function firstDescendantOfType(node: ResourceNode, type: string): ResourceNode | null {
-  for (const child of node.children) {
-    if (child.type === type) return child
-    const found = firstDescendantOfType(child, type)
-    if (found) return found
-  }
-  return null
-}
-
 export function resourceStageLinks(
   stages: string[],
   root: ResourceNode | null,
@@ -191,15 +189,15 @@ export function resourceStageLinks(
     const parentId = 'parent_id' in current ? current.parent_id : byId.get(current.id)?.parent_id
     current = parentId ? byId.get(parentId) ?? (root ? findNode(root, parentId) : null) : null
   }
-  if (selectedNode) {
-    for (const stage of stages) {
-      if (!byStage.has(stage)) {
-        const descendant = firstDescendantOfType(selectedNode, stage)
-        if (descendant) byStage.set(stage, byId.get(descendant.id) ?? descendant)
-      }
-    }
-  }
   return stages.map((stage) => ({ stage, resource: byStage.get(stage) }))
+}
+
+function stageTypeFromQuery(value: string): string {
+  return stageTypeBySlug[value.trim().toLowerCase()] ?? ''
+}
+
+function stageTypeSlug(stage: string): string {
+  return stageTypeSlugs[stage] ?? stage.toLowerCase()
 }
 
 export function projectSyncProgress(manifest: ProjectSyncManifest | null) {
@@ -374,17 +372,21 @@ export function draftCreationBase(
   return { source: resource }
 }
 
-export function projectDraftResourcePath(projectId: string, resourceId: string, draftId = ''): string {
+export function projectDraftResourcePath(projectId: string, resourceId: string, draftId = '', viewType = ''): string {
   const path = `/projects/${projectId}/resources/${resourceId}`
-  return draftId ? `${path}?draft=${encodeURIComponent(draftId)}` : path
+  const params = new URLSearchParams()
+  if (draftId) params.set('draft', draftId)
+  if (viewType) params.set('type', stageTypeSlug(viewType))
+  const query = params.toString()
+  return query ? `${path}?${query}` : path
 }
 
 export function projectDraftRootPath(projectId: string, root: Pick<ResourceNode, 'id'>, draftId: string): string {
   return projectDraftResourcePath(projectId, root.id, draftId)
 }
 
-export function projectResourceSelectionPath(projectId: string, resourceId: string, draftId = ''): string {
-  return projectDraftResourcePath(projectId, resourceId, draftId)
+export function projectResourceSelectionPath(projectId: string, resourceId: string, draftId = '', viewType = ''): string {
+  return projectDraftResourcePath(projectId, resourceId, draftId, viewType)
 }
 
 export function resolveActiveDraftId(
@@ -402,6 +404,7 @@ export default function ProjectPage() {
   const { projectId = '', '*': projectPath = '' } = useParams()
   const [searchParams] = useSearchParams()
   const requestedDraftId = searchParams.get('draft')?.trim() ?? ''
+  const requestedViewType = stageTypeFromQuery(searchParams.get('type') ?? '')
   const requestedPlanId = searchParams.get('plan')?.trim() ?? ''
   const requestedPlanMode = searchParams.get('planMode') === 'review' ? 'review' : 'run'
   const resourceId = projectPath.startsWith('resources/') ? projectPath.slice('resources/'.length) : ''
@@ -648,10 +651,10 @@ export default function ProjectPage() {
     () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
     [activeDraftId, drafts],
   )
-	const activeDraftSource = useMemo(
-	  () => draftSourceNode(root, items, activeDraft, draftDetail),
-	  [activeDraft, draftDetail, items, root],
-	)
+  const activeDraftSource = useMemo(
+    () => draftSourceNode(root, items, activeDraft, draftDetail),
+    [activeDraft, draftDetail, items, root],
+  )
   const draftMode = Boolean(requestedDraftId && activeDraft)
   const copilotScopeType = draftMode ? 'draft' : selected ? 'resource' : 'project'
   const copilotScopeId = draftMode ? activeDraft?.id : selected?.id
@@ -689,9 +692,37 @@ export default function ProjectPage() {
     void loadDraftDetail()
   }, [loadDraftDetail])
 
+  const stages = useMemo(() => (
+    draftMode && activeDraftSource ? [activeDraftSource.type] : allStages
+  ), [activeDraftSource, draftMode])
+
+  const stageLinks = useMemo(
+    () => {
+      if (!selected) return []
+      if (draftMode && activeDraftSource) return [{ stage: activeDraftSource.type, resource: activeDraftSource }]
+      return resourceStageLinks(stages, root, items, selected.id)
+    },
+    [activeDraftSource, draftMode, items, root, selected, stages],
+  )
+  const defaultViewType = draftMode && activeDraftSource ? activeDraftSource.type : selected?.type ?? ''
+  const requestedStageLink = stageLinks.find((link) => link.stage === requestedViewType && link.resource)
+  const activeStageType = requestedStageLink?.stage ?? defaultViewType
+  const activeStageLink = stageLinks.find((link) => link.stage === activeStageType && link.resource)
+  const activeResource = (activeStageLink?.resource ?? (draftMode ? activeDraftSource : selected)) ?? null
+  const activeResourceNode = root && activeResource ? findNode(root, activeResource.id) : null
+  const selectedStage = Math.max(0, stages.indexOf(activeStageType))
+
+  const selectCapability = (link: ResourceStageLink) => {
+    if (!selected || !link.resource) return
+    navigate(projectResourceSelectionPath(projectId, selected.id, draftMode ? activeDraft?.id ?? '' : '', link.stage))
+  }
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selected?.id) ?? null,
     [items, selected],
+  )
+  const activeItem = useMemo(
+    () => items.find((item) => item.id === activeResource?.id) ?? null,
+    [activeResource, items],
   )
 
   const parentItem = useMemo(
@@ -702,6 +733,10 @@ export default function ProjectPage() {
   const contextGeometryId = useMemo(
     () => geometryContextId(items, selectedItem?.id),
     [items, selectedItem],
+  )
+  const activeContextGeometryId = useMemo(
+    () => geometryContextId(items, activeItem?.id),
+    [activeItem, items],
   )
   const workspaceDetail = useMemo(() => (
     detail && draftMode && draftDetail?.simulation_params
@@ -729,9 +764,9 @@ export default function ProjectPage() {
   const surfaceMeshVersions = useMemo(
     () => items.filter((item) => (
       item.type === 'SurfaceMesh'
-      && (!contextGeometryId || item.parent_id === contextGeometryId)
+      && (!activeContextGeometryId || item.parent_id === activeContextGeometryId)
     )),
-    [contextGeometryId, items],
+    [activeContextGeometryId, items],
   )
 
   const selectResource = (resource: ResourceNode | ProjectItem) => {
@@ -756,11 +791,11 @@ export default function ProjectPage() {
   }
 
   const createDraftFromResource = async (name: string) => {
-    if (!selected || !selectedItem || !root) throw new Error('A source Resource is required to create a Draft.')
-    const selectedDetail = detail?.id === selected.id
+    if (!activeResource || !activeItem || !root) throw new Error('A source Resource is required to create a Draft.')
+    const selectedDetail = detail?.id === activeResource.id
       ? detail
-      : (await api.resourceDetail(selected.type, selected.id, false, projectId)).data
-    const creation = draftCreationBase(items, selectedItem, selectedDetail)
+      : (await api.resourceDetail(activeResource.type, activeResource.id, false, projectId)).data
+    const creation = draftCreationBase(items, activeItem, selectedDetail)
     const created = await api.createConfiguredDraft(projectId, {
       source_id: creation.source.id,
       name,
@@ -802,34 +837,19 @@ export default function ProjectPage() {
     }
   }
 
-  const stages = useMemo(() => {
-    if (!root) return allStages
-    const rootType = root.type
-    if (rootType === 'Geometry') return allStages
-    if (rootType === 'SurfaceMesh') return ['SurfaceMesh', 'VolumeMesh', 'Case']
-    if (rootType === 'VolumeMesh') return ['VolumeMesh', 'Case']
-    return allStages
-  }, [root])
-
-  const selectedStage = Math.max(0, stages.indexOf(selected?.type ?? ''))
-  const stageLinks = useMemo(
-    () => selected ? resourceStageLinks(stages, root, items, selected.id) : [],
-    [items, root, selected, stages],
-  )
-
   const handleViewerLoadStateChange = useCallback((state: ViewerState) => {
-    if (!selected) return
-    setViewerLoad({ resourceId: selected.id, state })
-  }, [selected])
+    if (!activeResource) return
+    setViewerLoad({ resourceId: activeResource.id, state })
+  }, [activeResource])
 
   const loadDetail = useCallback(async (cacheFirst = true) => {
-    if (!selected) return
+    if (!activeResource) return
     const requestId = ++detailRequestRef.current
     setDetailLoading(true)
     setDetailError('')
     setDetail(null)
     const result = await hydrateResourceDetail(
-      (cacheOnly) => api.resourceDetail(selected.type, selected.id, cacheOnly, projectId),
+      (cacheOnly) => api.resourceDetail(activeResource.type, activeResource.id, cacheOnly, projectId),
       cacheFirst,
       (response) => {
         if (requestId !== detailRequestRef.current) return
@@ -843,25 +863,25 @@ export default function ProjectPage() {
       setDetailError(String(result.error).replace('Error: ', ''))
     }
     setDetailLoading(false)
-  }, [projectId, selected])
+  }, [activeResource, projectId])
 
   useEffect(() => {
     void loadDetail()
   }, [loadDetail])
 
-  const currentViewerState = viewerLoad && viewerLoad.resourceId === selected?.id ? viewerLoad.state : undefined
+  const currentViewerState = viewerLoad && viewerLoad.resourceId === activeResource?.id ? viewerLoad.state : undefined
   const resourceTransition = resourceTransitionProgress(
-    Boolean(selected && detail?.id === selected.id && !detailLoading),
+    Boolean(activeResource && detail?.id === activeResource.id && !detailLoading),
     Boolean(detailError),
     currentViewerState,
   )
   const projectTransitionActive = !project && (loading || syncing)
-  const transitionActive = projectTransitionActive || Boolean(selected && resourceTransition.active)
+  const transitionActive = projectTransitionActive || Boolean(activeResource && resourceTransition.active)
   const transitionProgress = projectTransitionActive
     ? 6 + projectSyncProgress(syncManifest) * 0.26
     : resourceTransition.progress
   const estimatedLoadDurationMs = estimatedResourceLoadDurationMs(
-    resourceEstimatedSizeBytes(selectedItem, detail, syncManifest),
+    resourceEstimatedSizeBytes(activeItem, detail, syncManifest),
   )
   const transitionTitle = projectTransitionActive
     ? t('Opening Project')
@@ -875,7 +895,7 @@ export default function ProjectPage() {
         ? t('Synchronizing {resource}').replace('{resource}', syncManifest.current_resource)
         : t('Reading Project metadata and resource inventory…'))
     : resourceTransition.phase === 'detail'
-      ? t('Reading {type} metadata and parameters…').replace('{type}', selected?.type ?? t('resource'))
+      ? t('Reading {type} metadata and parameters…').replace('{type}', activeResource?.type ?? t('resource'))
       : resourceTransition.phase === 'asset'
         ? t('Downloading and decoding the geometry buffers…')
         : t('Preparing the visualization manifest…')
@@ -1068,7 +1088,7 @@ export default function ProjectPage() {
               stages={stages}
               selectedStage={selectedStage}
               stageLinks={stageLinks}
-              onStageSelect={selectResource}
+              onStageSelect={selectCapability}
               resourceIcon={<ResourceIcon type={selected.type} size={17} />}
               draftControls={(
                 <ProjectDraftBar
@@ -1099,13 +1119,13 @@ export default function ProjectPage() {
               )}
             />
 
-            {selected.type === 'Geometry' && (
+            {activeResource?.type === 'Geometry' && (
               <GeometryWorkspace
-                key={selected.id}
+                key={activeResource.id}
                 detail={workspaceDetail}
-                resourceId={selected.id}
+                resourceId={activeResource.id}
                 projectId={projectId}
-                resourceRef={{ id: selected.id, type: selected.type }}
+                resourceRef={{ id: activeResource.id, type: activeResource.type }}
                 annotationsModel={annotations}
                 geometryVersions={items
                   .filter((item) => item.type === 'Geometry')
@@ -1114,8 +1134,8 @@ export default function ProjectPage() {
                   if (!project) throw new Error('Project context is required to create a Geometry Draft review.')
                   const result = await api.planFromAction(geometrySemanticAgentAction({
                     project,
-                    geometryId: selected.id,
-                    geometryName: selected.name,
+                    geometryId: activeResource.id,
+                    geometryName: activeResource.name,
                     draft,
                   }))
                   const plan = result.results.find((item) => item.plan)?.plan
@@ -1132,8 +1152,8 @@ export default function ProjectPage() {
                   if (!project) throw new Error('Project context is required to create an advanced Geometry Draft review.')
                   const result = await api.planFromAction(geometryDiagnosticAgentAction({
                     project,
-                    geometryId: selected.id,
-                    geometryName: selected.name,
+                    geometryId: activeResource.id,
+                    geometryName: activeResource.name,
                     report,
                     comparison,
                     templateId,
@@ -1144,30 +1164,30 @@ export default function ProjectPage() {
                   setChatOpen(false)
                   setPlanOpen(true)
                 }}
-                onPlanSurfaceMesh={() => createDraftFromResource(`${selected.name} Draft`)}
+                onPlanSurfaceMesh={() => createDraftFromResource(`${activeResource.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
                 onViewerLoadStateChange={handleViewerLoadStateChange}
               />
             )}
-            {selected.type === 'SurfaceMesh' && (
+            {activeResource?.type === 'SurfaceMesh' && (
               <SurfaceMeshWorkspace
-                key={selected.id}
+                key={activeResource.id}
                 detail={workspaceDetail}
-                resourceId={selected.id}
+                resourceId={activeResource.id}
                 projectId={projectId}
-                resourceRef={{ id: selected.id, type: selected.type }}
+                resourceRef={{ id: activeResource.id, type: activeResource.type }}
                 annotationsModel={annotations}
-                geometryResourceId={contextGeometryId}
+                geometryResourceId={activeContextGeometryId}
                 versions={surfaceMeshVersions}
                 onCreateRemediationPlan={async (recommendation: SurfaceRemediationRecommendation) => {
-                  if (!project || !contextGeometryId) {
+                  if (!project || !activeContextGeometryId) {
                     throw new Error('The parent Geometry is required to create a SurfaceMesh Draft repair.')
                   }
-                  const geometry = items.find((item) => item.id === contextGeometryId)
+                  const geometry = items.find((item) => item.id === activeContextGeometryId)
                   const result = await api.planFromAction(remediationAgentAction({
                     recommendation,
                     project,
-                    geometryId: contextGeometryId,
+                    geometryId: activeContextGeometryId,
                     geometryName: geometry?.name ?? 'Geometry',
                   }))
                   const plan = result.results.find((item) => item.plan)?.plan
@@ -1176,21 +1196,21 @@ export default function ProjectPage() {
                   setChatOpen(false)
                   setPlanOpen(true)
                 }}
-                onPlanVolumeMesh={() => createDraftFromResource(`${selected.name} Draft`)}
+                onPlanVolumeMesh={() => createDraftFromResource(`${activeResource.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
                 onViewerLoadStateChange={handleViewerLoadStateChange}
               />
             )}
-            {selected.type === 'VolumeMesh' && (
+            {activeResource?.type === 'VolumeMesh' && (
               <VolumeMeshWorkspace
-                key={selected.id}
+                key={activeResource.id}
                 detail={workspaceDetail}
-                resourceId={selected.id}
+                resourceId={activeResource.id}
                 projectId={projectId}
-                resourceRef={{ id: selected.id, type: selected.type }}
+                resourceRef={{ id: activeResource.id, type: activeResource.type }}
                 annotationsModel={annotations}
-                geometryResourceId={contextGeometryId}
-                onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
+                geometryResourceId={activeContextGeometryId}
+                onPlanCase={() => createDraftFromResource(`${activeResource.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
                 onViewerLoadStateChange={handleViewerLoadStateChange}
                 onShowLogs={() => {
@@ -1199,16 +1219,16 @@ export default function ProjectPage() {
                 }}
               />
             )}
-            {selected.type === 'Case' && (
+            {activeResource?.type === 'Case' && (
               <CaseWorkspace
-                key={selected.id}
+                key={activeResource.id}
                 detail={workspaceDetail}
-                resourceId={selected.id}
+                resourceId={activeResource.id}
                 projectId={projectId}
-                resourceRef={{ id: selected.id, type: selected.type }}
+                resourceRef={{ id: activeResource.id, type: activeResource.type }}
                 annotationsModel={annotations}
-                geometryResourceId={contextGeometryId}
-                onPlanCase={() => createDraftFromResource(`${selected.name} Draft`)}
+                geometryResourceId={activeContextGeometryId}
+                onPlanCase={() => createDraftFromResource(`${activeResource.name} Draft`)}
                 onMutateDraftEntity={draftMode ? mutateDraftEntity : undefined}
                 onViewerLoadStateChange={handleViewerLoadStateChange}
               />
@@ -1261,8 +1281,8 @@ export default function ProjectPage() {
               detail={detail}
               loading={detailLoading}
               error={detailError}
-              resourceType={selected.type}
-              resourceId={selected.id}
+              resourceType={activeResource?.type ?? selected.type}
+              resourceId={activeResource?.id ?? selected.id}
               environment={flowStatus?.environment}
               projectId={projectId}
               resourceItems={items}
@@ -1350,9 +1370,9 @@ export default function ProjectPage() {
         projectName={project?.name}
         scopeType={copilotScopeType}
         scopeId={copilotScopeId}
-        resourceId={selected?.id}
-        resourceType={selected?.type}
-        resourceName={selected?.name}
+        resourceId={activeResource?.id}
+        resourceType={activeResource?.type}
+        resourceName={activeResource?.name}
         onOpenPlan={(plan) => {
           setChatOpen(false)
           if (selected?.id === plan.source_id) {
@@ -1371,7 +1391,7 @@ export default function ProjectPage() {
         contextLabel={draftMode && activeDraft
           ? `${activeDraft.name} · based on ${selected?.name || activeDraft.source_type || 'Resource'}`
           : selected
-            ? `${selected.type} · ${selected.name}`
+            ? `${activeResource?.type ?? selected.type} · ${activeResource?.name ?? selected.name}`
             : `Project · ${project?.name || projectId}`}
         context={JSON.stringify({
           project_id: project?.id ?? projectId,
@@ -1379,9 +1399,9 @@ export default function ProjectPage() {
           solver_version: project?.solver_version,
           scope_type: copilotScopeType,
           scope_id: copilotScopeId,
-          source_id: selected?.id,
-          source_type: selected?.type,
-          source_name: selected?.name,
+          source_id: activeResource?.id,
+          source_type: activeResource?.type,
+          source_name: activeResource?.name,
           source_status: resourceStatus(detail),
           simulation_params: draftMode ? draftDetail?.simulation_params : detail?.simulation_params,
           resource_info: detail?.info,
@@ -1404,11 +1424,14 @@ export default function ProjectPage() {
           project_resource_count: items.length,
           project_draft_count: drafts.length,
           branch_resource_count: selected ? descendants(selected) + 1 : undefined,
+          active_capability_type: activeStageType,
+          context_resource_id: selected?.id,
+          context_resource_type: selected?.type,
           execution_boundary: 'Read-only workbench. Propose Draft changes and validation, but do not claim execution.',
         })}
-        suggestions={selected ? resourceSuggestions[selected.type] ?? [] : []}
+        suggestions={activeResource ? resourceSuggestions[activeResource.type] ?? [] : []}
       />
-      {project && (draftMode ? activeDraftSource : selected) && (
+      {project && (draftMode ? activeDraftSource : activeResourceNode) && (
         <PlanPanel
           open={planOpen}
           onClose={() => {
@@ -1417,7 +1440,7 @@ export default function ProjectPage() {
             setPlanEntryMode('run')
           }}
           project={project}
-          resource={(draftMode ? activeDraftSource : selected)!}
+          resource={(draftMode ? activeDraftSource : activeResourceNode)!}
           detail={draftMode ? draftDetail : detail}
           draftId={draftMode ? activeDraft?.id : undefined}
           draftName={draftMode ? activeDraft?.name : undefined}

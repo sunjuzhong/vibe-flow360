@@ -15,7 +15,7 @@ type Props = {
   stages: string[]
   selectedStage: number
   stageLinks?: StageLink[]
-  onStageSelect?: (resource: ProjectItem | ResourceNode) => void
+  onStageSelect?: (link: StageLink) => void
   resourceIcon: ReactNode
   draftControls: ReactNode
 }
@@ -56,7 +56,7 @@ export default function ProjectContextBar({
           const className = [index === selectedStage ? 'current' : '', index < selectedStage ? 'before' : '', linked ? 'clickable' : 'disabled'].filter(Boolean).join(' ')
           const content = <><span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span><small>{stage.replace('Mesh', ' Mesh')}</small></>
           return linked && onStageSelect ? (
-            <button type="button" className={className} key={stage} onClick={() => onStageSelect(linked)} aria-current={index === selectedStage ? 'step' : undefined}>
+            <button type="button" className={className} key={stage} onClick={() => onStageSelect({ stage, resource: linked })} aria-current={index === selectedStage ? 'step' : undefined}>
               {content}
             </button>
           ) : (
