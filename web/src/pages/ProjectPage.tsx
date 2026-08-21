@@ -199,7 +199,9 @@ export function resourceCapabilityAvailable(resource: ProjectItem | ResourceNode
     : 'state' in resource && typeof resource.state === 'string'
       ? resource.state.trim().toLowerCase()
       : ''
-  return status === '' || ['completed', 'processed', 'success', 'uploaded'].includes(status)
+  return status === ''
+    ? resource.type === 'Geometry'
+    : ['completed', 'processed', 'success', 'uploaded'].includes(status)
 }
 
 function stageTypeFromQuery(value: string): string {

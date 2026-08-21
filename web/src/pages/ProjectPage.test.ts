@@ -76,7 +76,8 @@ describe('resourceStageLinks', () => {
     expect(resourceCapabilityAvailable({ id: 'geo', name: 'Geometry', type: 'Geometry', parent_id: null, status: 'completed' })).toBe(true)
     expect(resourceCapabilityAvailable({ id: 'sm', name: 'Surface', type: 'SurfaceMesh', parent_id: 'geo', status: 'failed' })).toBe(false)
     expect(resourceCapabilityAvailable({ id: 'vm', name: 'Volume', type: 'VolumeMesh', parent_id: 'sm', status: 'processing' })).toBe(false)
-    expect(resourceCapabilityAvailable({ id: 'case', name: 'Case', type: 'Case', parent_id: 'vm' })).toBe(true)
+    expect(resourceCapabilityAvailable({ id: 'geo', name: 'Geometry', type: 'Geometry', parent_id: null })).toBe(true)
+    expect(resourceCapabilityAvailable({ id: 'case', name: 'Case', type: 'Case', parent_id: 'vm' })).toBe(false)
   })
 })
 
