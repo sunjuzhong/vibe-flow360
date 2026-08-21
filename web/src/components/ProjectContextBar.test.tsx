@@ -52,4 +52,30 @@ describe('ProjectContextBar', () => {
     expect(markup).toContain('aria-disabled="true"')
     expect(markup).toContain('Surface Mesh')
   })
+
+  it('renders existing but unavailable stages as disabled instead of clickable buttons', () => {
+    const markup = renderToStaticMarkup(
+      <ProjectContextBar
+        resourceName="Case"
+        resourceType="Case"
+        resourceId="case-1"
+        projectId="project-1"
+        status="Draft"
+        stages={['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']}
+        selectedStage={0}
+        stageLinks={[
+          { stage: 'Geometry', resource: { id: 'geo-1', name: 'Geometry', type: 'Geometry', parent_id: null }, available: true },
+          { stage: 'SurfaceMesh', resource: { id: 'sm-1', name: 'Surface', type: 'SurfaceMesh', parent_id: 'geo-1' }, available: false },
+          { stage: 'VolumeMesh', resource: { id: 'vm-1', name: 'Volume', type: 'VolumeMesh', parent_id: 'sm-1' }, available: false },
+          { stage: 'Case', resource: { id: 'case-1', name: 'Case', type: 'Case', parent_id: 'vm-1' }, available: false },
+        ]}
+        onStageSelect={() => undefined}
+        resourceIcon={<svg aria-hidden="true" />}
+        draftControls={<span />}
+      />,
+    )
+
+    expect(markup).toContain('<button type="button" class="current clickable"')
+    expect(markup.match(/aria-disabled="true"/g)).toHaveLength(3)
+  })
 })

@@ -81,7 +81,7 @@ const stageTypeSlugs: Record<string, string> = {
 }
 const stageTypeBySlug = Object.fromEntries(Object.entries(stageTypeSlugs).map(([stage, slug]) => [slug, stage]))
 
-export type ResourceStageLink = { stage: string; resource?: ProjectItem | ResourceNode }
+export type ResourceStageLink = { stage: string; resource?: ProjectItem | ResourceNode; available?: boolean }
 
 const assetTopologyKeys = [
   'bodies_face_edge_ids',
@@ -707,23 +707,25 @@ export default function ProjectPage() {
   const stageLinks = useMemo<ResourceStageLink[]>(
     () => {
       if (!selected) return []
-      if (draftMode && activeDraftSource) return [{ stage: activeDraftSource.type, resource: activeDraftSource }]
+      if (draftMode && activeDraftSource) return [{ stage: activeDraftSource.type, resource: activeDraftSource, available: resourceCapabilityAvailable(activeDraftSource) }]
       return resourceStageLinks(allStages, root, items, selected.id)
-        .filter((link) => resourceCapabilityAvailable(link.resource))
+        .filter((link) => Boolean(link.resource))
+        .map((link) => ({ ...link, available: resourceCapabilityAvailable(link.resource) }))
     },
     [activeDraftSource, draftMode, items, root, selected],
   )
   const stages = useMemo(() => stageLinks.map((link) => link.stage), [stageLinks])
-  const defaultViewType = stageLinks.some((link) => link.stage === selected?.type) ? selected?.type ?? '' : stageLinks.at(-1)?.stage ?? ''
-  const requestedStageLink = stageLinks.find((link) => link.stage === requestedViewType && link.resource)
+  const availableStageLinks = useMemo(() => stageLinks.filter((link) => link.resource && link.available !== false), [stageLinks])
+  const defaultViewType = availableStageLinks.some((link) => link.stage === selected?.type) ? selected?.type ?? '' : availableStageLinks.at(-1)?.stage ?? ''
+  const requestedStageLink = availableStageLinks.find((link) => link.stage === requestedViewType)
   const activeStageType = requestedStageLink?.stage ?? defaultViewType
-  const activeStageLink = stageLinks.find((link) => link.stage === activeStageType && link.resource)
+  const activeStageLink = availableStageLinks.find((link) => link.stage === activeStageType)
   const activeResource = activeStageLink?.resource ?? null
   const activeResourceNode = root && activeResource ? findNode(root, activeResource.id) : null
   const selectedStage = Math.max(0, stages.indexOf(activeStageType))
 
   const selectCapability = (link: ResourceStageLink) => {
-    if (!selected || !link.resource) return
+    if (!selected || !link.resource || link.available === false) return
     navigate(projectResourceSelectionPath(projectId, selected.id, draftMode ? activeDraft?.id ?? '' : '', link.stage))
   }
 

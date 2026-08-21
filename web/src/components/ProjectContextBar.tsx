@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { ProjectItem, ResourceNode } from '../api/client'
 import Flow360IdLink from './Flow360IdLink'
 
-type StageLink = { stage: string; resource?: ProjectItem | ResourceNode }
+type StageLink = { stage: string; resource?: ProjectItem | ResourceNode; available?: boolean }
 
 type Props = {
   resourceName: string
@@ -52,11 +52,13 @@ export default function ProjectContextBar({
 
       <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages" style={{ gridTemplateColumns: `repeat(${Math.max(1, stages.length)}, minmax(0, 1fr))` }}>
         {stages.map((stage, index) => {
-          const linked = stageLinks?.find((item) => item.stage === stage)?.resource
-          const className = [index === selectedStage ? 'current' : '', index < selectedStage ? 'before' : '', linked ? 'clickable' : 'disabled'].filter(Boolean).join(' ')
+          const link = stageLinks?.find((item) => item.stage === stage)
+          const linked = link?.resource
+          const available = Boolean(linked && link?.available !== false)
+          const className = [index === selectedStage ? 'current' : '', index < selectedStage ? 'before' : '', available ? 'clickable' : 'disabled'].filter(Boolean).join(' ')
           const content = <><span>{index < selectedStage ? <CheckCircle2 size={13} /> : index + 1}</span><small>{stage.replace('Mesh', ' Mesh')}</small></>
-          return linked && onStageSelect ? (
-            <button type="button" className={className} key={stage} onClick={() => onStageSelect({ stage, resource: linked })} aria-current={index === selectedStage ? 'step' : undefined}>
+          return available && linked && onStageSelect ? (
+            <button type="button" className={className} key={stage} onClick={() => onStageSelect({ stage, resource: linked, available })} aria-current={index === selectedStage ? 'step' : undefined}>
               {content}
             </button>
           ) : (
