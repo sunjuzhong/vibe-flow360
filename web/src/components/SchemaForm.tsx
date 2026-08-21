@@ -1342,11 +1342,11 @@ function entityMatchesChoice(entity: Record<string, unknown>, choice: { value: s
   return entityID !== '' && entityID === payloadID
 }
 
-function isDiscriminatorDefault(key: string, schema: DynamicFormSchema): boolean {
-  return (key === 'type' || key === 'type_name' || key === 'output_type')
-    && schema.type === 'enum'
+function isDiscriminatorDefault(_key: string, schema: DynamicFormSchema): boolean {
+  return schema.type === 'enum'
     && schema.default !== undefined
     && schema.options?.length === 1
+    && JSON.stringify(schema.options[0]) === JSON.stringify(schema.default)
 }
 
 function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean {

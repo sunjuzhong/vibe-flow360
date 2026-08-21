@@ -158,6 +158,64 @@ describe('schema-driven Flow360 form', () => {
     expect(serializeValue(schema, hydrated, true)).toEqual({ output_type: 'ForceOutput', name: 'forces', private_attribute_id: 'output-1' })
   })
 
+  it('round-trips Flow360 refinements using schema-defined refinement_type discriminators', () => {
+    const entityList: DynamicFormSchema = { type: 'entity_list', entity_kind: 'Surface', entity_choices: [] }
+    const schema: DynamicFormSchema = {
+      type: 'array',
+      items: {
+        type: 'union',
+        variants: [
+          {
+            type: 'object',
+            title: 'SurfaceEdgeRefinement',
+            properties: {
+              refinement_type: { type: 'enum', options: ['SurfaceEdgeRefinement'], default: 'SurfaceEdgeRefinement' },
+              entities: entityList,
+              feature_angle: { type: 'quantity', unit: 'degree', value_schema: { type: 'number' } },
+            },
+          },
+          {
+            type: 'object',
+            title: 'SurfaceRefinement',
+            properties: {
+              refinement_type: { type: 'enum', options: ['SurfaceRefinement'], default: 'SurfaceRefinement' },
+              entities: entityList,
+              curvature_resolution_angle: { type: 'quantity', unit: 'degree', value_schema: { type: 'number' } },
+            },
+          },
+          {
+            type: 'object',
+            title: 'PassiveSpacing',
+            properties: {
+              refinement_type: { type: 'enum', options: ['PassiveSpacing'], default: 'PassiveSpacing' },
+              entities: entityList,
+              type: { type: 'enum', options: ['projected', 'unchanged'] },
+            },
+          },
+        ],
+      },
+    }
+    const wing = { name: 'wing', private_attribute_id: 'surface-wing' }
+    const symmetry = { name: 'symmetry', private_attribute_id: 'surface-symmetry' }
+    const canonical = [
+      {
+        refinement_type: 'SurfaceRefinement',
+        entities: { stored_entities: [wing] },
+        curvature_resolution_angle: { value: 12, units: 'degree' },
+      },
+      {
+        refinement_type: 'PassiveSpacing',
+        entities: { stored_entities: [symmetry] },
+        type: 'projected',
+      },
+    ]
+
+    const hydrated = hydrateSchemaValue(schema, canonical, true) as Array<{ variant: number }>
+
+    expect(hydrated.map((item) => item.variant)).toEqual([1, 2])
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
+  })
+
   it('initializes a new complex item with required fields and explicit defaults only', () => {
     const schema: DynamicFormSchema = {
       type: 'object',
