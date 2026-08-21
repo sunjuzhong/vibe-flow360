@@ -6207,9 +6207,12 @@ button { color: inherit; }
   max-width: none;
   margin: 0;
 }
-.canvas-stage-strip > div { flex-direction: row; justify-content: center; gap: 6px; }
-.canvas-stage-strip > div:not(:last-child)::after { top: 50%; left: calc(50% + 32px); right: calc(-50% + 32px); }
-.canvas-stage-strip > div > span { width: 20px; height: 20px; background: #f7f7f3; }
+.canvas-stage-strip > div,
+.canvas-stage-strip > button { flex-direction: row; justify-content: center; gap: 6px; }
+.canvas-stage-strip > div:not(:last-child)::after,
+.canvas-stage-strip > button:not(:last-child)::after { top: 50%; left: calc(50% + 32px); right: calc(-50% + 32px); }
+.canvas-stage-strip > div > span,
+.canvas-stage-strip > button > span { width: 20px; height: 20px; background: #f7f7f3; }
 .canvas-stage-strip small {
   position: relative;
   z-index: 2;
