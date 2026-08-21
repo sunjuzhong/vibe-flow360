@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -151,6 +153,139 @@ func (s *Service) chatWithCodex(
 	response := strings.TrimSpace(string(data))
 	if response == "" {
 		return "", errors.New("external Codex returned an empty response")
+	}
+	return response, nil
+}
+
+func (s *Service) chatWithCodexStream(
+	ctx context.Context,
+	systemPrompt string,
+	userPrompt string,
+	requestedModel string,
+	emit func(string) error,
+) (string, error) {
+	binary, environment, err := s.codexCommand()
+	if err != nil {
+		return "", err
+	}
+	runCtx, cancel := context.WithTimeout(ctx, s.CodexTimeout)
+	defer cancel()
+
+	outputDir, err := os.MkdirTemp("", "vibesim-codex-app-server-*")
+	if err != nil {
+		return "", fmt.Errorf("create Codex output directory: %w", err)
+	}
+	defer os.RemoveAll(outputDir)
+	outputPath := filepath.Join(outputDir, "last-message.txt")
+
+	args := []string{
+		"exec",
+		"--ephemeral",
+		"--sandbox", "read-only",
+		"--color", "never",
+		"--skip-git-repo-check",
+		"--output-last-message", outputPath,
+	}
+	if model := firstNonEmpty(requestedModel, s.CodexModel); model != "" {
+		args = append(args, "--model", model)
+	}
+	if s.CodexProfile != "" {
+		args = append(args, "--profile", s.CodexProfile)
+	}
+	if s.WorkDir != "" {
+		args = append(args, "--cd", s.WorkDir)
+	}
+	args = append(args, "-")
+
+	command := exec.CommandContext(runCtx, binary, args...)
+	command.Env = environment
+	command.Stdin = strings.NewReader(codexPrompt(systemPrompt, userPrompt))
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := command.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+
+	var diagnostics limitedBuffer
+	var streamed strings.Builder
+	var streamErr error
+	var mu sync.Mutex
+	if err := command.Start(); err != nil {
+		return "", fmt.Errorf("start external Codex: %w", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(&diagnostics, stderr)
+	}()
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 0, 64*1024), maxCodexOutput)
+		capturing := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			_, _ = diagnostics.Write([]byte(line + "\n"))
+			switch strings.TrimSpace(line) {
+			case "codex":
+				capturing = true
+				continue
+			case "tokens used":
+				capturing = false
+				continue
+			}
+			if !capturing || strings.TrimSpace(line) == "" {
+				continue
+			}
+			delta := line + "\n"
+			mu.Lock()
+			if streamErr == nil {
+				streamErr = emit(delta)
+				if streamErr == nil {
+					streamed.WriteString(delta)
+				}
+			}
+			mu.Unlock()
+		}
+		if err := scanner.Err(); err != nil {
+			mu.Lock()
+			if streamErr == nil {
+				streamErr = err
+			}
+			mu.Unlock()
+		}
+	}()
+
+	waitErr := command.Wait()
+	wg.Wait()
+	if waitErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return "", &GenerationTimeoutError{Provider: "external Codex app-server", After: s.CodexTimeout}
+		}
+		return "", fmt.Errorf("external Codex app-server failed: %w: %s", waitErr, diagnostics.String())
+	}
+	if streamErr != nil {
+		return "", streamErr
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err == nil && len(data) <= maxCodexOutput {
+		response := strings.TrimSpace(string(data))
+		if response != "" {
+			return response, nil
+		}
+	}
+	response := strings.TrimSpace(streamed.String())
+	if response == "" {
+		return "", errors.New("external Codex app-server returned an empty response")
 	}
 	return response, nil
 }

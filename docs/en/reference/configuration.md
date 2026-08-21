@@ -51,6 +51,8 @@ model provider.
 
 ```dotenv
 VIBESIM_AGENT_PROVIDER=codex
+# Experimental streaming mode for the Ask AI panel:
+# VIBESIM_AGENT_PROVIDER=codex-app-server
 VIBESIM_CODEX_BINARY=codex
 VIBESIM_CODEX_MODEL=
 VIBESIM_CODEX_PROFILE=
@@ -58,7 +60,10 @@ VIBESIM_CODEX_TIMEOUT_SECONDS=300
 ```
 
 Codex is invoked with an ephemeral, read-only sandbox. Flow360 and model
-credentials are removed from the subprocess environment.
+credentials are removed from the subprocess environment. The experimental
+`codex-app-server` provider keeps the same safety flags but streams Codex CLI
+assistant output to `/api/agent/chat/stream` as it arrives, so the Ask AI panel
+can show a live response instead of waiting for the final message.
 
 ## CAD runtime
 

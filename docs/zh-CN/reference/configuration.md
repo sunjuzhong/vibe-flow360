@@ -45,13 +45,17 @@ AI Create 必须配置模型服务。
 
 ```dotenv
 VIBESIM_AGENT_PROVIDER=codex
+# Ask AI 面板的实验性流式模式：
+# VIBESIM_AGENT_PROVIDER=codex-app-server
 VIBESIM_CODEX_BINARY=codex
 VIBESIM_CODEX_MODEL=
 VIBESIM_CODEX_PROFILE=
 VIBESIM_CODEX_TIMEOUT_SECONDS=300
 ```
 
-Codex 以临时、只读沙箱运行。Flow360 和模型凭据会从子进程环境中移除。
+Codex 以临时、只读沙箱运行。Flow360 和模型凭据会从子进程环境中移除。实验性的
+`codex-app-server` provider 保持相同安全参数，但会把 Codex CLI 的助手输出实时流式发送到
+`/api/agent/chat/stream`，Ask AI 面板可以先看到生成过程，而不是等待最终消息。
 
 ## CAD 运行环境
 

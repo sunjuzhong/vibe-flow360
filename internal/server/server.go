@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -3546,7 +3545,10 @@ func (s *Server) chatStream(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	writeEvent(c.Writer, flusher, gin.H{"type": "start"})
 
-	reply, err := s.agent.Chat(c.Request.Context(), request)
+	reply, err := s.agent.ChatStream(c.Request.Context(), request, func(delta string) error {
+		writeEvent(c.Writer, flusher, gin.H{"type": "delta", "delta": delta})
+		return nil
+	})
 	if err != nil {
 		writeEvent(c.Writer, flusher, gin.H{"type": "error", "error": err.Error()})
 		return
@@ -3562,11 +3564,6 @@ func (s *Server) chatStream(c *gin.Context) {
 		}
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(reply))
-	scanner.Split(scanWordsWithWhitespace)
-	for scanner.Scan() {
-		writeEvent(c.Writer, flusher, gin.H{"type": "delta", "delta": scanner.Text()})
-	}
 	writeEvent(c.Writer, flusher, gin.H{"type": "done"})
 }
 
@@ -3707,28 +3704,4 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, value any) {
 	data, _ := json.Marshal(value)
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 	flusher.Flush()
-}
-
-func scanWordsWithWhitespace(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
-	}
-	for index := 0; index < len(data); {
-		r, size := utf8.DecodeRune(data[index:])
-		index += size
-		if r == ' ' || r == '\n' || r == '\t' {
-			for index < len(data) {
-				next, nextSize := utf8.DecodeRune(data[index:])
-				if next != ' ' && next != '\n' && next != '\t' {
-					break
-				}
-				index += nextSize
-			}
-			return index, data[:index], nil
-		}
-	}
-	if atEOF {
-		return len(data), data, nil
-	}
-	return 0, nil, nil
 }

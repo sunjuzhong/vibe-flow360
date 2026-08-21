@@ -92,6 +92,8 @@ func (s *Service) SupportsGeneration() bool {
 	switch s.effectiveProvider() {
 	case "codex":
 		return s.codexReady()
+	case "codex-app-server":
+		return s.codexReady()
 	case "builtin":
 		return strings.TrimSpace(s.APIKey) != ""
 	default:
@@ -104,7 +106,7 @@ func (s *Service) SupportsGeneration() bool {
 // grace period beyond this duration instead of imposing a shorter deadline.
 func (s *Service) GenerationTimeout() time.Duration {
 	switch s.effectiveProvider() {
-	case "codex":
+	case "codex", "codex-app-server":
 		if s.CodexTimeout > 0 {
 			return s.CodexTimeout
 		}
@@ -121,9 +123,9 @@ func (s *Service) GenerationTimeout() time.Duration {
 
 func (s *Service) State() State {
 	provider := s.effectiveProvider()
-	if provider == "codex" {
+	if provider == "codex" || provider == "codex-app-server" {
 		model := firstNonEmpty(s.CodexModel, "Codex CLI default")
-		return State{Mode: "codex", Provider: "codex", Model: model, Ready: s.codexReady(), Execution: false}
+		return State{Mode: provider, Provider: provider, Model: model, Ready: s.codexReady(), Execution: false}
 	}
 	if provider != "builtin" {
 		return State{Mode: "configuration-error", Provider: provider, Model: "Unknown provider", Ready: false, Execution: false}
@@ -139,13 +141,13 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 		return "", errors.New("message is required")
 	}
 	provider := s.effectiveProvider()
-	if provider == "codex" {
+	if provider == "codex" || provider == "codex-app-server" {
 		systemPrompt := AgentSystemPrompt()
 		chatPrompt, _ := BuildChatPrompt(request)
 		return s.chatWithCodex(ctx, systemPrompt, chatPrompt, request.Model)
 	}
 	if provider != "builtin" {
-		return "", fmt.Errorf("unsupported agent provider %q; use builtin or codex", provider)
+		return "", fmt.Errorf("unsupported agent provider %q; use builtin, codex, or codex-app-server", provider)
 	}
 	if strings.TrimSpace(s.APIKey) == "" {
 		return localPlan(request), nil
@@ -209,6 +211,32 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 	return result.Choices[0].Message.Content, nil
 }
 
+// ChatStream streams provider deltas when the configured provider can expose
+// them. Providers without native streaming fall back to Chat and emit the final
+// reply as a single delta so callers can share one SSE code path.
+func (s *Service) ChatStream(ctx context.Context, request ChatRequest, emit func(string) error) (string, error) {
+	if strings.TrimSpace(request.Message) == "" {
+		return "", errors.New("message is required")
+	}
+	if emit == nil {
+		return "", errors.New("stream emitter is required")
+	}
+	provider := s.effectiveProvider()
+	if provider == "codex-app-server" {
+		systemPrompt := AgentSystemPrompt()
+		chatPrompt, _ := BuildChatPrompt(request)
+		return s.chatWithCodexStream(ctx, systemPrompt, chatPrompt, request.Model, emit)
+	}
+	reply, err := s.Chat(ctx, request)
+	if err != nil {
+		return "", err
+	}
+	if err := emit(reply); err != nil {
+		return "", err
+	}
+	return reply, nil
+}
+
 // Complete runs a purpose-specific prompt through the configured model without
 // applying the conversational AgentAction contract. Callers are responsible
 // for validating the returned structured output before using it.
@@ -217,11 +245,11 @@ func (s *Service) Complete(ctx context.Context, systemPrompt, userPrompt, reques
 		return "", errors.New("system and user prompts are required")
 	}
 	provider := s.effectiveProvider()
-	if provider == "codex" {
+	if provider == "codex" || provider == "codex-app-server" {
 		return s.chatWithCodex(ctx, systemPrompt, userPrompt, requestedModel)
 	}
 	if provider != "builtin" {
-		return "", fmt.Errorf("unsupported agent provider %q; use builtin or codex", provider)
+		return "", fmt.Errorf("unsupported agent provider %q; use builtin, codex, or codex-app-server", provider)
 	}
 	if strings.TrimSpace(s.APIKey) == "" {
 		return "", errors.New("AI Create requires a configured model provider")

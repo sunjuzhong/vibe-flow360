@@ -184,6 +184,42 @@ func TestCodexProviderRunsEphemeralReadOnlyAndValidatesAction(t *testing.T) {
 	}
 }
 
+func TestCodexAppServerProviderStreamsCodexOutput(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "codex")
+	script := `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then output="$2"; shift 2; else shift; fi
+done
+cat >/dev/null
+printf 'OpenAI Codex v0.test\n'
+printf 'codex\n'
+printf 'first chunk\n'
+printf 'second chunk\n'
+printf 'tokens used\n'
+printf '1\n'
+printf 'first chunk\nsecond chunk\n' > "$output"
+`
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Provider: "codex-app-server", CodexBinary: binary, CodexTimeout: time.Second}
+	var deltas []string
+	reply, err := service.ChatStream(context.Background(), ChatRequest{Message: "stream"}, func(delta string) error {
+		deltas = append(deltas, delta)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "first chunk\nsecond chunk" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+	if strings.Join(deltas, "") != "first chunk\nsecond chunk\n" {
+		t.Fatalf("unexpected deltas: %#v", deltas)
+	}
+}
+
 func TestCodexProviderFindsNodeBesideConfiguredBinary(t *testing.T) {
 	directory := t.TempDir()
 	binary := filepath.Join(directory, "codex")
