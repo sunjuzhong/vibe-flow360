@@ -15,6 +15,7 @@ import {
   projectResourceSelectionPath,
   projectSyncProgress,
   resolveActiveDraftId,
+  resourceCapabilityAvailable,
   resourceContextLabel,
   resourceEstimatedSizeBytes,
   resourceStageLinks,
@@ -69,6 +70,13 @@ describe('resourceStageLinks', () => {
     expect(resourceStageLinks(['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case'], root, items, 'sm-1').map((link) => link.resource?.id)).toEqual([
       'geo-1', 'sm-1', undefined, undefined,
     ])
+  })
+
+  it('marks only completed or metadata-only resources as capability views', () => {
+    expect(resourceCapabilityAvailable({ id: 'geo', name: 'Geometry', type: 'Geometry', parent_id: null, status: 'completed' })).toBe(true)
+    expect(resourceCapabilityAvailable({ id: 'sm', name: 'Surface', type: 'SurfaceMesh', parent_id: 'geo', status: 'failed' })).toBe(false)
+    expect(resourceCapabilityAvailable({ id: 'vm', name: 'Volume', type: 'VolumeMesh', parent_id: 'sm', status: 'processing' })).toBe(false)
+    expect(resourceCapabilityAvailable({ id: 'case', name: 'Case', type: 'Case', parent_id: 'vm' })).toBe(true)
   })
 })
 

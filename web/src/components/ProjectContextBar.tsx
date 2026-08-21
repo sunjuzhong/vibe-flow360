@@ -50,7 +50,7 @@ export default function ProjectContextBar({
         <em className={`status-pill status-${status.toLowerCase()}`}>{status}</em>
       </div>
 
-      <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages">
+      <div className="resource-stage-strip canvas-stage-strip" aria-label="Simulation stages" style={{ gridTemplateColumns: `repeat(${Math.max(1, stages.length)}, minmax(0, 1fr))` }}>
         {stages.map((stage, index) => {
           const linked = stageLinks?.find((item) => item.stage === stage)?.resource
           const className = [index === selectedStage ? 'current' : '', index < selectedStage ? 'before' : '', linked ? 'clickable' : 'disabled'].filter(Boolean).join(' ')

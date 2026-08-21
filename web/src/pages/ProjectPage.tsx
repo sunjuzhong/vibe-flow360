@@ -192,6 +192,16 @@ export function resourceStageLinks(
   return stages.map((stage) => ({ stage, resource: byStage.get(stage) }))
 }
 
+export function resourceCapabilityAvailable(resource: ProjectItem | ResourceNode | undefined): boolean {
+  if (!resource) return false
+  const status = 'status' in resource && typeof resource.status === 'string'
+    ? resource.status.trim().toLowerCase()
+    : 'state' in resource && typeof resource.state === 'string'
+      ? resource.state.trim().toLowerCase()
+      : ''
+  return status === '' || ['completed', 'processed', 'success', 'uploaded'].includes(status)
+}
+
 function stageTypeFromQuery(value: string): string {
   return stageTypeBySlug[value.trim().toLowerCase()] ?? ''
 }
@@ -692,23 +702,21 @@ export default function ProjectPage() {
     void loadDraftDetail()
   }, [loadDraftDetail])
 
-  const stages = useMemo(() => (
-    draftMode && activeDraftSource ? [activeDraftSource.type] : allStages
-  ), [activeDraftSource, draftMode])
-
-  const stageLinks = useMemo(
+  const stageLinks = useMemo<ResourceStageLink[]>(
     () => {
       if (!selected) return []
       if (draftMode && activeDraftSource) return [{ stage: activeDraftSource.type, resource: activeDraftSource }]
-      return resourceStageLinks(stages, root, items, selected.id)
+      return resourceStageLinks(allStages, root, items, selected.id)
+        .filter((link) => resourceCapabilityAvailable(link.resource))
     },
-    [activeDraftSource, draftMode, items, root, selected, stages],
+    [activeDraftSource, draftMode, items, root, selected],
   )
-  const defaultViewType = draftMode && activeDraftSource ? activeDraftSource.type : selected?.type ?? ''
+  const stages = useMemo(() => stageLinks.map((link) => link.stage), [stageLinks])
+  const defaultViewType = stageLinks.some((link) => link.stage === selected?.type) ? selected?.type ?? '' : stageLinks.at(-1)?.stage ?? ''
   const requestedStageLink = stageLinks.find((link) => link.stage === requestedViewType && link.resource)
   const activeStageType = requestedStageLink?.stage ?? defaultViewType
   const activeStageLink = stageLinks.find((link) => link.stage === activeStageType && link.resource)
-  const activeResource = (activeStageLink?.resource ?? (draftMode ? activeDraftSource : selected)) ?? null
+  const activeResource = activeStageLink?.resource ?? null
   const activeResourceNode = root && activeResource ? findNode(root, activeResource.id) : null
   const selectedStage = Math.max(0, stages.indexOf(activeStageType))
 
@@ -716,6 +724,14 @@ export default function ProjectPage() {
     if (!selected || !link.resource) return
     navigate(projectResourceSelectionPath(projectId, selected.id, draftMode ? activeDraft?.id ?? '' : '', link.stage))
   }
+
+  useEffect(() => {
+    if (!selected || !activeStageType || !activeResource) return
+    const invalidRequestedType = Boolean(requestedViewType && requestedViewType !== activeStageType)
+    const implicitUnavailableDefault = !requestedViewType && selected.type !== activeStageType
+    if (!invalidRequestedType && !implicitUnavailableDefault) return
+    navigate(projectResourceSelectionPath(projectId, selected.id, draftMode ? activeDraft?.id ?? '' : '', activeStageType), { replace: true })
+  }, [activeDraft?.id, activeResource, activeStageType, draftMode, navigate, projectId, requestedViewType, selected])
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selected?.id) ?? null,
     [items, selected],
