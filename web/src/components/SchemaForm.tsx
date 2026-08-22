@@ -382,7 +382,7 @@ function SchemaField({
         onChange={onChange}
         title={displayTitle}
         fieldID={fieldID}
-        label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />}
+        label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} hidePath={collapsibleObjects} />}
         fieldIssues={fieldIssues}
         canonicalUnit={canonicalQuantityUnit}
         numberConstraint={numberConstraint}
@@ -422,7 +422,7 @@ function SchemaField({
       <ToggleField
         className="schema-field schema-boolean"
         label={title}
-        path={path}
+        path={collapsibleObjects ? undefined : path}
         checked={Boolean(value)}
         onChange={onChange}
         required={schema.required === true}
@@ -436,7 +436,7 @@ function SchemaField({
   }
   if (schema.type === 'enum') {
     return (
-      <InputField id={fieldID} className="schema-field" label={title} path={path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
+      <InputField id={fieldID} className="schema-field" label={title} path={collapsibleObjects ? undefined : path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
@@ -559,7 +559,7 @@ function SchemaField({
         integerVariant={negativeOneOrPositive.integerVariant}
         sentinelVariant={negativeOneOrPositive.sentinelVariant}
         fieldID={fieldID}
-        label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} />}
+        label={<FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hidePath={collapsibleObjects} />}
         fieldIssues={fieldIssues}
         onChange={onChange}
       />
@@ -606,13 +606,13 @@ function SchemaField({
   }
   if (schema.type === 'json') {
     return (
-      <InputField id={fieldID} className="schema-field" label={title} path={path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
+      <InputField id={fieldID} className="schema-field" label={title} path={collapsibleObjects ? undefined : path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
       </InputField>
     )
   }
   return (
-    <InputField id={fieldID} className="schema-field" label={title} path={path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
+    <InputField id={fieldID} className="schema-field" label={title} path={collapsibleObjects ? undefined : path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
       <input
         id={fieldID}
         type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
@@ -1031,6 +1031,7 @@ function FieldLabel({
   showAll = false,
   descriptionTooltip = false,
   hideTitle = false,
+  hidePath = false,
 }: {
   schema: DynamicFormSchema
   title: string
@@ -1039,19 +1040,23 @@ function FieldLabel({
   showAll?: boolean
   descriptionTooltip?: boolean
   hideTitle?: boolean
+  hidePath?: boolean
 }) {
   const displayTitle = localizeSchemaText(title)
+  const status = showAll && !configured ? <small className="schema-field-state">{localizeSchemaText('Not configured')}</small> : null
+  const description = schema.description && !descriptionTooltip ? localizedSchemaDescription(schema.description) : ''
+  if (hideTitle && hidePath && !description && !status) return null
   return (
     <span className="schema-field-label">
       {!hideTitle && (
         <strong>
           {displayTitle}{schema.required === true ? ' *' : ''}
           {descriptionTooltip && <SchemaDescriptionHelp description={schema.description} title={title} />}
-          {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
+          {status}
         </strong>
       )}
-      <code>{path}</code>
-      {schema.description && !descriptionTooltip && <small>{localizedSchemaDescription(schema.description)}</small>}
+      {!hidePath && <code>{path}</code>}
+      {description && <small>{description}</small>}
     </span>
   )
 }

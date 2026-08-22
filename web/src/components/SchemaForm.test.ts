@@ -766,4 +766,40 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).toContain('Value type')
     expect(markup).toContain('GenericReferenceCondition')
   })
+
+  it('keeps raw schema paths out of the draft root-tab form surface', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        meshing: {
+          type: 'object',
+          title: 'Meshing',
+          properties: {
+            defaults: {
+              type: 'object',
+              title: 'Defaults',
+              properties: {
+                boundary_layer_growth_rate: { type: 'number', title: 'Boundary Layer Growth Rate' },
+                first_layer_height: { type: 'quantity', title: 'First Layer Height', unit: 'm', value_schema: { type: 'number' } },
+              },
+            },
+          },
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { meshing: { defaults: { boundary_layer_growth_rate: 1.2, first_layer_height: { value: 0.01, units: 'm' } } } },
+      sparse: true,
+      showAll: true,
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('Boundary Layer Growth Rate')
+    expect(markup).toContain('First Layer Height')
+    expect(markup).not.toContain('meshing.defaults.boundary_layer_growth_rate')
+    expect(markup).not.toContain('meshing.defaults.first_layer_height')
+  })
 })
