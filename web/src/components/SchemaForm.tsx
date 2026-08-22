@@ -11,6 +11,7 @@ import MultiSelectField from './schema-fields/MultiSelectField'
 import NegativeOneOrPositiveIntegerField from './schema-fields/NegativeOneOrPositiveIntegerField'
 import QuantityField from './schema-fields/QuantityField'
 import UnionVariantPicker from './schema-fields/UnionVariantPicker'
+import { InputField, InputFieldLabel, ToggleField, type InputFieldError } from './InputField'
 
 type SchemaFormDialogProps = {
   schema: DynamicFormSchema
@@ -278,6 +279,7 @@ function SchemaField({
   const displayTitle = localizeSchemaText(title)
   const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
   const fieldIssues = issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path, true)) ?? []
+  const inputErrors: InputFieldError[] = fieldIssues.map((issue, index) => ({ key: `${issue.path}-${index}`, message: issue.message }))
   const branchInvalid = Boolean(path) && issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path))
   const [sectionOpen, setSectionOpen] = useState(path.split('.').length === 1)
   if (schema.type === 'object') {
@@ -417,24 +419,30 @@ function SchemaField({
   }
   if (schema.type === 'boolean') {
     return (
-      <label className={`schema-field schema-boolean${fieldIssues.length ? ' schema-field-invalid' : ''}`}>
-        <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
-        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-      </label>
+      <ToggleField
+        className="schema-field schema-boolean"
+        label={title}
+        path={path}
+        checked={Boolean(value)}
+        onChange={onChange}
+        required={schema.required === true}
+        status={showAll && !configured ? 'Not configured' : undefined}
+        help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
+        description={!collapsibleObjects ? schema.description : undefined}
+        hideLabel={rootTabContent}
+        errors={inputErrors}
+      />
     )
   }
   if (schema.type === 'enum') {
     return (
-      <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
+      <InputField id={fieldID} className="schema-field" label={title} path={path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
           ))}
         </select>
-        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-      </label>
+      </InputField>
     )
   }
   if (schema.type === 'multi_select') {
@@ -598,16 +606,13 @@ function SchemaField({
   }
   if (schema.type === 'json') {
     return (
-      <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-        <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
+      <InputField id={fieldID} className="schema-field" label={title} path={path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
-        {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-      </label>
+      </InputField>
     )
   }
   return (
-    <label className={`schema-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-      <FieldLabel schema={schema} title={title} path={path} configured={configured} showAll={showAll} descriptionTooltip={collapsibleObjects} hideTitle={rootTabContent} />
+    <InputField id={fieldID} className="schema-field" label={title} path={path} required={schema.required === true} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} errors={inputErrors}>
       <input
         id={fieldID}
         type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
@@ -620,8 +625,7 @@ function SchemaField({
         value={String(value ?? '')}
         onChange={(event) => onChange(event.target.value)}
       />
-      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-    </label>
+    </InputField>
   )
 }
 
@@ -1051,6 +1055,7 @@ function FieldLabel({
     </span>
   )
 }
+
 
 function SchemaDescriptionHelp({ description, title }: { description?: string; title: string }) {
   const help = localizedSchemaDescription(description)
