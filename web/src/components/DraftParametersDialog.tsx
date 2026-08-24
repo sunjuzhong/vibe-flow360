@@ -1,5 +1,5 @@
-import { AlertCircle, Braces, RefreshCw, X } from 'lucide-react'
-import { forwardRef } from 'react'
+import { AlertCircle, Check, Copy, FileJson2, RefreshCw, X } from 'lucide-react'
+import { forwardRef, useEffect, useState } from 'react'
 import type { ProjectInfo, ResourceDetail, ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import DraftParameterEditor from './DraftParameterEditor'
@@ -32,6 +32,13 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
   onReviewRun,
 }, ref) {
   const { t } = useI18n()
+  const [copied, setCopied] = useState(false)
+  useEffect(() => setCopied(false), [draftId])
+  const copyDraftID = async () => {
+    await navigator.clipboard.writeText(draftId)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
   return (
     <section
       ref={ref}
@@ -42,12 +49,19 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
       tabIndex={-1}
     >
       <header className="project-parameters-header">
-        <Braces size={16} />
-        <div>
-          <strong>{t('Current Draft')}</strong>
-          <span>{draftName || t('Untitled Draft')} · {draftId} · {t('Changes save automatically to Flow360.')}</span>
+        <span className="project-parameters-icon"><FileJson2 size={18} /></span>
+        <div className="project-parameters-identity">
+          <small>{t('Current Draft')}</small>
+          <strong>{draftName || t('Untitled Draft')}</strong>
+          <span>{resource ? `${resource.type} · ${resource.name}` : project?.name || t('Flow360 resource')}</span>
         </div>
-        <button type="button" onClick={onClose} aria-label={t('Close Draft configuration')}><X size={16} /></button>
+        <div className="project-parameters-meta">
+          <span className="project-parameters-sync"><i />{t('Changes save automatically to Flow360.')}</span>
+          <button type="button" className="project-parameters-copy" onClick={() => void copyDraftID()} title={draftId} aria-label={t('Copy Draft ID')}>
+            {copied ? <Check size={13} /> : <Copy size={13} />}<code>{draftId}</code>
+          </button>
+        </div>
+        <button type="button" className="project-parameters-close" onClick={onClose} aria-label={t('Close Draft configuration')}><X size={17} /></button>
       </header>
 
       <div className="project-parameters-body">

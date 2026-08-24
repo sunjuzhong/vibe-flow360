@@ -200,24 +200,35 @@ function SchemaFormFieldsContent({
     const tabID = (tabKey: string) => `schema-root-tab-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
     const panelID = (tabKey: string) => `schema-root-panel-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
     const selectAdjacentTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()
       const nextIndex = event.key === 'Home'
         ? 0
         : event.key === 'End'
           ? tabKeys.length - 1
-          : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabKeys.length) % tabKeys.length
+          : (index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + tabKeys.length) % tabKeys.length
       const nextKey = tabKeys[nextIndex]
       setActiveTab(nextKey)
       document.getElementById(tabID(nextKey))?.focus()
     }
     return (
       <div className="schema-tab-layout">
+        <label className="schema-root-select">
+          <span>{localizeSchemaText('Parameter group')}</span>
+          <select value={key} onChange={(event) => setActiveTab(event.target.value)}>
+            {tabKeys.map((tabKey) => {
+              const tabSchema = schema.properties?.[tabKey]
+              const stats = schemaGroupStats(tabSchema, object[tabKey], baselineObject[tabKey], issues, tabKey)
+              return <option value={tabKey} key={tabKey}>{localizeSchemaText(tabSchema?.title || humanize(tabKey))} · {groupStatsLabel(stats)}</option>
+            })}
+          </select>
+        </label>
         <div className="schema-root-tabs" role="tablist" aria-label={schema.title || 'Simulation parameter groups'}>
           {tabKeys.map((tabKey, index) => {
             const tabSchema = schema.properties?.[tabKey]
             const configured = Object.prototype.hasOwnProperty.call(object, tabKey) && isConfiguredValue(object[tabKey])
             const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, tabKey))
+            const stats = schemaGroupStats(tabSchema, object[tabKey], baselineObject[tabKey], issues, tabKey)
             return (
               <button
                 id={tabID(tabKey)}
@@ -232,7 +243,12 @@ function SchemaFormFieldsContent({
                 onKeyDown={(event) => selectAdjacentTab(event, index)}
               >
                 <span>{localizeSchemaText(tabSchema?.title || humanize(tabKey))}</span>
-                <small className={invalid ? 'invalid' : configured ? 'configured' : ''}>{invalid ? 'Error' : configured ? 'Set' : 'Empty'}</small>
+                <span className="schema-root-tab-stats">
+                  <small title={localizeSchemaText('Unconfigured fields')}>{stats.unconfigured} {localizeSchemaText('empty')}</small>
+                  {stats.modified > 0 && <small className="modified" title={localizeSchemaText('Modified fields')}>{stats.modified} {localizeSchemaText('changed')}</small>}
+                  {stats.errors > 0 && <small className="invalid" title={localizeSchemaText('Validation errors')}>{stats.errors} {localizeSchemaText('errors')}</small>}
+                  {stats.unconfigured === 0 && stats.modified === 0 && stats.errors === 0 && <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>}
+                </span>
               </button>
             )
           })}
@@ -273,6 +289,39 @@ function SchemaFormFieldsContent({
   }
 
   return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} showAll={showAll} configured baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} />
+}
+
+export type SchemaGroupStats = { unconfigured: number; modified: number; errors: number }
+
+export function schemaGroupStats(
+  schema: DynamicFormSchema | undefined,
+  value: unknown,
+  baseline: unknown,
+  issues: SchemaFormFieldsProps['issues'],
+  rootPath: string,
+): SchemaGroupStats {
+  const leafEntries = (node: DynamicFormSchema | undefined, current: unknown, original: unknown): Array<{ configured: boolean; modified: boolean }> => {
+    if (!node) return []
+    if (node.type === 'object') {
+      const currentObject = isRecord(current) ? current : {}
+      const baselineObject = isRecord(original) ? original : {}
+      return Object.entries(node.properties ?? {}).flatMap(([key, child]) => leafEntries(child, currentObject[key], baselineObject[key]))
+    }
+    return [{ configured: isConfiguredValue(current), modified: JSON.stringify(current) !== JSON.stringify(original) }]
+  }
+  const leaves = leafEntries(schema, value, baseline)
+  return {
+    unconfigured: leaves.filter((leaf) => !leaf.configured).length,
+    modified: leaves.filter((leaf) => leaf.modified).length,
+    errors: issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, rootPath)).length ?? 0,
+  }
+}
+
+function groupStatsLabel(stats: SchemaGroupStats) {
+  const labels = [`${stats.unconfigured} ${localizeSchemaText('empty')}`]
+  if (stats.modified) labels.push(`${stats.modified} ${localizeSchemaText('changed')}`)
+  if (stats.errors) labels.push(`${stats.errors} ${localizeSchemaText('errors')}`)
+  return labels.join(', ')
 }
 
 function SchemaField({
