@@ -365,6 +365,40 @@ func TestInstalledOutputSchemaProjectsEntityListsWithCanonicalPayloads(t *testin
 	}
 }
 
+func TestInstalledSchemaProjectsActiveGeometryEdgeGroups(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	params, err := os.ReadFile(filepath.Join("..", "..", "tutorials", "T04-airfoil-edge-refinement", "simulation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewClient().PreflightSimulationParams(context.Background(), "Geometry", "surface-mesh", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var surfaceMeshSchema map[string]any
+	if err := json.Unmarshal(result.EditorSchemas["SurfaceMesh"], &surfaceMeshSchema); err != nil {
+		t.Fatal(err)
+	}
+	refinement := findSchemaByTitle(surfaceMeshSchema, "SurfaceEdgeRefinement")
+	if refinement == nil {
+		t.Fatal("SurfaceEdgeRefinement variant is missing from the SurfaceMesh editor schema")
+	}
+	properties, _ := refinement["properties"].(map[string]any)
+	entities, _ := properties["entities"].(map[string]any)
+	choices, _ := entities["entity_choices"].([]any)
+	if entities["entity_kind"] != "Edge" || len(choices) == 0 {
+		t.Fatalf("SurfaceEdgeRefinement did not project active grouped_edges: %#v", entities)
+	}
+	for _, raw := range choices {
+		choice := raw.(map[string]any)
+		if choice["model_type"] != "Edge" {
+			t.Fatalf("SurfaceEdgeRefinement exposed a schema-incompatible entity: %#v", choice)
+		}
+	}
+}
+
 func TestInstalledSchemaValidatesTypedExpressionWireAndDimensions(t *testing.T) {
 	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
 		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")

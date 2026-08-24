@@ -1,6 +1,6 @@
 import { createContext, FormEvent, KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, ListFilter, Plus, RefreshCw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { currentLanguage } from '../i18n'
 import { translate } from '../i18n/translations'
@@ -341,6 +341,7 @@ function SchemaField({
   collapsibleObjects,
   rootTabContent = false,
   embeddedObjectContent = false,
+  visibleObjectKeys,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -355,6 +356,7 @@ function SchemaField({
   collapsibleObjects: boolean
   rootTabContent?: boolean
   embeddedObjectContent?: boolean
+  visibleObjectKeys?: Set<string>
 }) {
   const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
@@ -376,7 +378,7 @@ function SchemaField({
     const fields = (
       <>
         {schema.description && path && !collapsibleObjects && !embeddedObjectContent && <p>{localizedSchemaDescription(schema.description)}</p>}
-        {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
+        {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child) && (!visibleObjectKeys || visibleObjectKeys.has(key))).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
           const required = child.required === true || requiredKeys.includes(key)
@@ -804,6 +806,34 @@ export function complexArrayCopy(path: string, title: string) {
   }
 }
 
+export function complexArrayVariantGroup(path: string, title: string, variantTitle: string) {
+  const collection = `${path} ${title}`.toLowerCase()
+  const variant = variantTitle.toLowerCase().replace(/[\s_-]+/g, '')
+  if (collection.includes('output')) {
+    if (variant.includes('probe')) return 'Probe'
+    if (variant.includes('force') || variant.includes('integral')) return 'Force'
+    if (variant.includes('streamline') || variant.includes('isosurface')) return 'Render'
+    if (variant.includes('surface')) return 'Surface'
+    if (variant.includes('volume') || variant.includes('slice')) return 'Volume'
+    return 'Surface'
+  }
+  if (collection.includes('model')) {
+    if (/wall|freestream|inflow|outflow|symmetry|periodic|slip/.test(variant)) return 'Boundary'
+    if (/rotation|porous|actuator|betdisk/.test(variant)) return 'Volume'
+    return 'Physics'
+  }
+  return localizeSchemaText('Types')
+}
+
+export function schemaNeedsUserInput(schema: DynamicFormSchema): boolean {
+  if (schema.required === true) return true
+  if (schema.type === 'object') {
+    const required = new Set(Array.isArray(schema.required) ? schema.required : [])
+    return Object.entries(schema.properties ?? {}).some(([key, child]) => required.has(key) || schemaNeedsUserInput(child))
+  }
+  return false
+}
+
 function ComplexArrayField({
   schema, value, onChange, path, addLabel, removeLabel, collapsibleObjects, rootTabContent, configured, showAll, messages,
 }: {
@@ -823,11 +853,14 @@ function ComplexArrayField({
   const itemSchema = schema.items ?? { type: 'json' as const }
   const variants = itemSchema.type === 'union' ? itemSchema.variants ?? [] : []
   const [menuOpen, setMenuOpen] = useState(false)
+  const [typeSearch, setTypeSearch] = useState('')
+  const [editorFilter, setEditorFilter] = useState(false)
   const [editor, setEditor] = useState<{ index: number | null; schema: DynamicFormSchema; value: unknown } | null>(null)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null)
   const disabled = schema.disabled === true || schema.readOnly === true
+  const issues = useContext(FieldIssueContext)
 
   const openNew = (variantIndex?: number) => {
     const selectedSchema = variantIndex === undefined ? itemSchema : variants[variantIndex]
@@ -840,6 +873,8 @@ function ComplexArrayField({
       schema: selectedSchema,
       value: itemSchema.type === 'union' ? { variant: variantIndex ?? 0, value: initial } : initial,
     })
+    setEditorFilter(false)
+    setTypeSearch('')
     setMenuOpen(false)
   }
 
@@ -849,6 +884,7 @@ function ComplexArrayField({
       ? itemSchema.variants?.[item.variant] ?? itemSchema
       : itemSchema
     setEditor({ index, schema: selected, value: item })
+    setEditorFilter(false)
   }
 
   const saveEditor = () => {
@@ -879,6 +915,41 @@ function ComplexArrayField({
     ))
   }, [])
 
+  const filteredVariantGroups = useMemo(() => {
+    const query = typeSearch.trim().toLocaleLowerCase()
+    const grouped = new Map<string, Array<{ schema: DynamicFormSchema; index: number; label: string }>>()
+    variants.forEach((variant, index) => {
+      const label = formatSchemaLabel(variant.title || `Type ${index + 1}`)
+      if (query && !`${label} ${variant.title ?? ''}`.toLocaleLowerCase().includes(query)) return
+      const group = complexArrayVariantGroup(path, title, variant.title || label)
+      grouped.set(group, [...(grouped.get(group) ?? []), { schema: variant, index, label }])
+    })
+    return [...grouped.entries()]
+  }, [path, title, typeSearch, variants])
+
+  const editorPath = editor ? `${path}.${editor.index ?? array.length}` : ''
+  const editorFields = useMemo(() => editor?.schema.type === 'object'
+    ? Object.entries(editor.schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
+      const childPath = `${editorPath}.${key}`
+      const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, childPath)) ?? false
+      return {
+        key,
+        path: childPath,
+        label: formatSchemaLabel(child.title || humanize(key)),
+        required: (Array.isArray(editor.schema.required) && editor.schema.required.includes(key)) || schemaNeedsUserInput(child),
+        invalid,
+      }
+    })
+    : [], [editor, editorPath, issues])
+  const visibleEditorKeys = useMemo(() => editorFilter
+    ? new Set(editorFields.filter((field) => field.required || field.invalid).map((field) => field.key))
+    : undefined, [editorFields, editorFilter])
+  const jumpToEditorField = (fieldPath: string) => {
+    const target = document.getElementById(schemaFieldID(fieldPath))
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    target?.focus({ preventScroll: true })
+  }
+
   useLayoutEffect(() => {
     if (!menuOpen) return
     updateMenuPosition()
@@ -903,7 +974,9 @@ function ComplexArrayField({
         aria-label={localizeSchemaText('Choose {item} type').replace('{item}', itemCopy.noun)}
         style={menuPosition ? { left: menuPosition.left, top: menuPosition.top } : undefined}
       >
-        {variants.map((variant, index) => <button type="button" role="menuitem" key={index} onClick={() => openNew(index)}>{formatSchemaLabel(variant.title || `Type ${index + 1}`)}</button>)}
+        <label className="schema-array-type-search"><Search size={13} /><span className="sr-only">{localizeSchemaText('Search types')}</span><input autoFocus value={typeSearch} placeholder={localizeSchemaText('Search types')} onChange={(event) => setTypeSearch(event.target.value)} /></label>
+        {filteredVariantGroups.map(([group, entries]) => <section className="schema-array-type-group" key={group}><strong>{localizeSchemaText(group)}</strong>{entries.map((entry) => <button type="button" role="menuitem" key={entry.index} onClick={() => openNew(entry.index)}>{entry.label}</button>)}</section>)}
+        {filteredVariantGroups.length === 0 && <span className="schema-array-type-empty">{localizeSchemaText('No matching types')}</span>}
       </div>,
       document.body,
     )
@@ -936,9 +1009,14 @@ function ComplexArrayField({
   const dialog = editor && <div className="schema-item-editor-backdrop" role="presentation">
     <section className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`}>
       <header><div><span className="schema-item-editor-kicker">{editor.index === null ? itemCopy.newKicker : itemCopy.editKicker}</span><h3>{formatSchemaLabel(editor.schema.title || title)}</h3><small>{itemCopy.fixedType}</small></div><button type="button" className="icon-button" onClick={() => setEditor(null)} aria-label={itemCopy.closeLabel}><X size={17} /></button></header>
+      <div className="schema-item-editor-workspace">
+      {editorFields.length > 4 && <nav className="schema-item-editor-nav" aria-label={localizeSchemaText('Form sections')}>
+        <button type="button" className={editorFilter ? 'active' : ''} aria-pressed={editorFilter} onClick={() => setEditorFilter((current) => !current)}><ListFilter size={13} />{localizeSchemaText('Required / errors only')}</button>
+        {([['Needs attention', editorFields.filter((field) => field.required || field.invalid)], ['Other fields', editorFilter ? [] : editorFields.filter((field) => !field.required && !field.invalid)]] as const).map(([group, fields]) => fields.length > 0 && <section key={group}><strong>{localizeSchemaText(group)}</strong>{fields.map((field) => <button type="button" className={field.invalid ? 'invalid' : ''} key={field.key} onClick={() => jumpToEditorField(field.path)}><span>{field.label}</span>{field.invalid ? <AlertCircle size={12} /> : field.required ? <small>{localizeSchemaText('Required')}</small> : null}</button>)}</section>)}
+      </nav>}
       <div className="schema-item-editor-body"><SchemaField
         schema={editor.schema}
-        path={`${path}.${editor.index ?? array.length}`}
+        path={editorPath}
         value={itemSchema.type === 'union' && isUnionDraft(editor.value) ? editor.value.value : editor.value}
         sparse
         showAll
@@ -948,11 +1026,12 @@ function ComplexArrayField({
         collapsibleObjects
         rootTabContent={false}
         embeddedObjectContent={editor.schema.type === 'object'}
+        visibleObjectKeys={visibleEditorKeys}
         onChange={(next) => setEditor((current) => current ? {
           ...current,
           value: itemSchema.type === 'union' && isUnionDraft(current.value) ? { ...current.value, value: next } : next,
         } : current)}
-      /></div>
+      /></div></div>
       <footer><button type="button" onClick={() => setEditor(null)}>{localizeSchemaText('Cancel')}</button><button type="button" className="primary" onClick={saveEditor}>{itemCopy.saveLabel}</button></footer>
     </section>
   </div>
@@ -1302,7 +1381,7 @@ function EntityAssignmentField({
               </label>
             ))}
           </div>
-          {entityChoices.length === 0 && <div className="schema-array-empty"><strong>{localizeSchemaText('No compatible entities')}</strong><span>{localizeSchemaText('Create a compatible entity before configuring this item.')}</span></div>}
+          {entityChoices.length === 0 && <div className="schema-array-empty"><strong>{localizeSchemaText('No compatible entities')}</strong><span>{localizeSchemaText('No schema-compatible surfaces are available.')}</span><small>{localizeSchemaText('Create one from the Parameter entities panel, then reopen this editor.')}</small></div>}
         </div>
       )}
       </div>}

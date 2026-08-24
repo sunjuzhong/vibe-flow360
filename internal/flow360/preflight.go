@@ -662,16 +662,29 @@ def entity_list_schema(node, base):
         .get("project_entity_info", {})
     )
     candidates = []
-    face_group_tag = info.get("face_group_tag")
-    for group in info.get("grouped_faces", []):
-        if not isinstance(group, list):
-            continue
-        matching = [
-            entity for entity in group
-            if isinstance(entity, dict)
-            and (not face_group_tag or entity.get("private_attribute_tag_key") == face_group_tag)
-        ]
-        candidates.extend(matching)
+
+    def extend_active_group(catalog, tag):
+        active_tag = info.get(tag)
+        for group in info.get(catalog, []):
+            if not isinstance(group, list):
+                continue
+            candidates.extend(
+                entity for entity in group
+                if isinstance(entity, dict)
+                and (not active_tag or entity.get("private_attribute_tag_key") == active_tag)
+            )
+
+    # GeometryEntityInfo exposes three independently grouped catalogs. Flow360's
+    # EntityList[T...] annotation remains the compatibility authority; collecting
+    # all active catalogs here only makes the legal candidates available to it.
+    extend_active_group("grouped_bodies", "body_group_tag")
+    extend_active_group("grouped_faces", "face_group_tag")
+    extend_active_group("grouped_edges", "edge_group_tag")
+
+    # SurfaceMeshEntityInfo and VolumeMeshEntityInfo use flat catalogs instead.
+    for catalog in ("boundaries", "zones"):
+        candidates.extend(item for item in info.get(catalog, []) if isinstance(item, dict))
+
     candidates.extend(item for item in info.get("ghost_entities", []) if isinstance(item, dict))
     candidates.extend(item for item in info.get("draft_entities", []) if isinstance(item, dict))
 

@@ -230,9 +230,10 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint || localValidation.blocking) return
     const validateImmediately = immediateValidationFingerprintRef.current === candidateResult.fingerprint
     if (validateImmediately) immediateValidationFingerprintRef.current = ''
+    const candidate = candidateValueRef.current
     validationTimerRef.current = window.setTimeout(() => {
       validationTimerRef.current = null
-      void validateCandidate(candidateResult.value!, candidateResult.fingerprint)
+      void validateCandidate(candidate, candidateResult.fingerprint)
     }, draftValidationDelay(dirty, validateImmediately))
     return () => {
       if (validationTimerRef.current !== null) {
@@ -240,7 +241,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         validationTimerRef.current = null
       }
     }
-  }, [candidateResult.fingerprint, candidateResult.value, dirty, loading, localValidation.blocking, readOnly, validateCandidate])
+  }, [candidateResult.fingerprint, dirty, loading, localValidation.blocking, readOnly, validateCandidate])
 
   const selectMode = (nextMode: EditorMode) => {
     if (nextMode === mode) return

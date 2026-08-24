@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { cleanSchemaDescription, complexArrayCopy, configurationStatus, formatSchemaLabel, hydrateSchemaValue, initialValue, normalizeIssuePath, placeFloatingMenu, rootTabForIssuePath, SchemaFormFields, serializeValue } from './SchemaForm'
+import { cleanSchemaDescription, complexArrayCopy, complexArrayVariantGroup, configurationStatus, formatSchemaLabel, hydrateSchemaValue, initialValue, normalizeIssuePath, placeFloatingMenu, rootTabForIssuePath, schemaNeedsUserInput, SchemaFormFields, serializeValue } from './SchemaForm'
 
 describe('schema-driven Flow360 form', () => {
   it('keeps deep type menus inside the viewport and flips them above the trigger', () => {
@@ -25,6 +25,20 @@ describe('schema-driven Flow360 form', () => {
     expect(complexArrayCopy('outputs', 'Outputs').newKicker).toBe('NEW OUTPUT')
   })
 
+  it('groups searchable output and model choices with readable product categories', () => {
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'SurfaceProbeOutput')).toBe('Probe')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'ForceOutput')).toBe('Force')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'TimeAverageVolumeOutput')).toBe('Volume')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'StreamlineOutput')).toBe('Render')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'SurfaceOutput')).toBe('Surface')
+    expect(complexArrayVariantGroup('models', 'Models', 'Wall')).toBe('Boundary')
+  })
+
+  it('detects required input recursively for long-form filtering', () => {
+    expect(schemaNeedsUserInput({ type: 'object', required: ['solver'], properties: { solver: { type: 'object', properties: {} } } })).toBe(true)
+    expect(schemaNeedsUserInput({ type: 'object', properties: { optional: { type: 'string' } } })).toBe(false)
+  })
+
   it('only presents a default state when the schema declares one explicitly', () => {
     expect(configurationStatus({ type: 'enum', default: 'auto' }, false, true)).toBe('Default value')
     expect(configurationStatus({ type: 'enum', options: ['auto'] }, false, true)).toBe('Not configured')
@@ -40,7 +54,8 @@ describe('schema-driven Flow360 form', () => {
     }))
     expect(markup).toContain('<button type="button" disabled="">Select all</button>')
     expect(markup).toContain('No compatible entities')
-    expect(markup).toContain('Create a compatible Surface before configuring this item.')
+    expect(markup).toContain('This field accepts: Surface.')
+    expect(markup).toContain('Parameter entities panel')
     expect(markup).not.toContain('configuring this output')
   })
 

@@ -219,6 +219,7 @@ describe('Draft parameter validation navigation', () => {
     })
     await flushTimers()
     await flushTimers()
+    const validationsBeforeBrowsing = vi.mocked(api.validateDraftParameters).mock.calls.length
 
     const formMode = container.querySelector<HTMLElement>('#draft-editor-mode-form')!
     const jsonMode = container.querySelector<HTMLElement>('#draft-editor-mode-json')!
@@ -231,6 +232,65 @@ describe('Draft parameter validation navigation', () => {
     await act(async () => jsonMode.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })))
     expect(formMode.getAttribute('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(formMode)
+    await click(buttonWithText(container, 'Preview'))
+    await click(buttonWithText(container, 'Return to edit'))
+    expect(vi.mocked(api.validateDraftParameters).mock.calls.length).toBe(validationsBeforeBrowsing)
+  })
+
+  it('searches and groups type choices, then provides long-form anchors and filtering', async () => {
+    const outputVariant = (title: string): DynamicFormSchema => ({
+      type: 'object',
+      title,
+      required: ['entities'],
+      properties: {
+        entities: { type: 'entity_list', title: 'Entities', required: true, entity_kind: 'Surface', entity_choices: [] },
+        name: { type: 'string', title: 'Name' },
+        fields: { type: 'multi_select', title: 'Output fields', value_key: 'items', options: ['Cp'] },
+        frequency: { type: 'integer', title: 'Frequency' },
+        format: { type: 'enum', title: 'Format', options: ['paraview'] },
+        notes: { type: 'string', title: 'Notes' },
+      },
+    })
+    const outputSchema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        outputs: {
+          type: 'array', title: 'Outputs', items: { type: 'union', variants: [outputVariant('SurfaceOutput'), outputVariant('ForceOutput')] },
+        },
+      },
+    }
+    vi.mocked(api.draftParameterSchema).mockResolvedValueOnce({
+      schema_version: 1, source_type: 'Case', stages: ['Case'], schema: outputSchema, baseline: { outputs: [] },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-long-form" parameters={{ outputs: [] }} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await click(buttonWithText(container, 'Add item'))
+
+    const search = document.body.querySelector<HTMLInputElement>('.schema-array-type-search input')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!search || !valueSetter) throw new Error('Type search is unavailable')
+    expect(document.body.querySelector('.schema-array-type-menu')?.textContent).toContain('Surface')
+    expect(document.body.querySelector('.schema-array-type-menu')?.textContent).toContain('Force')
+    await act(async () => {
+      valueSetter.call(search, 'force')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const menu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    expect(menu.textContent).toContain('Force Output')
+    expect(menu.textContent).not.toContain('Surface Output')
+    await click(buttonWithText(menu, 'Force Output'))
+
+    const dialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    expect(dialog.querySelector('.schema-item-editor-nav')).not.toBeNull()
+    expect(dialog.textContent).toContain('Required / errors only')
+    expect(dialog.querySelector('#schema-outputs-0-notes')).not.toBeNull()
+    await click(buttonWithText(dialog, 'Required / errors only'))
+    expect(dialog.querySelector('#schema-outputs-0-entities')).not.toBeNull()
+    expect(dialog.querySelector('#schema-outputs-0-notes')).toBeNull()
+    expect(dialog.querySelector('.schema-item-editor-nav')?.textContent).not.toContain('Other fields')
   })
 
   it('shows warnings without error styling and routes an unmapped issue to complete JSON', async () => {
