@@ -1561,6 +1561,7 @@ Object.assign(messages, {
   'engineering question': '个工程问题',
   'Loading the installed Flow360 schema…': '正在加载已安装的 Flow360 schema…',
   'Draft parameter editor mode': '草稿参数编辑模式',
+  'Draft parameter preview': '草稿参数预览',
   'Saving…': '正在保存…',
   'Save Draft': '保存草稿',
   'Configure Draft': '配置草稿',

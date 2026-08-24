@@ -40,6 +40,14 @@ describe('DraftParametersDialog close protection', () => {
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0),
+    })
+    Object.defineProperty(window, 'cancelAnimationFrame', {
+      configurable: true,
+      value: (handle: number) => window.clearTimeout(handle),
+    })
     vi.spyOn(api, 'draftParameterSchema').mockResolvedValue({
       schema_version: 1,
       source_type: 'Case',
@@ -84,10 +92,19 @@ describe('DraftParametersDialog close protection', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
 
-    await click(container.querySelector('[aria-label="Close Draft configuration"]')!)
-    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
+    const closeButton = container.querySelector<HTMLElement>('[aria-label="Close Draft configuration"]')!
+    closeButton.focus()
+    await click(closeButton)
+    const guard = container.querySelector<HTMLElement>('[role="alertdialog"]')!
+    expect(guard.getAttribute('aria-describedby')).toBe('draft-close-guard-description')
+    expect(document.activeElement?.textContent).toContain('Continue editing')
+    const guardButtons = guard.querySelectorAll<HTMLButtonElement>('button')
+    guardButtons[guardButtons.length - 1].focus()
+    await act(async () => guardButtons[guardButtons.length - 1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })))
+    expect(document.activeElement).toBe(guardButtons[0])
     await click(button(container, 'Continue editing'))
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(document.activeElement).toBe(closeButton)
     expect(onClose).not.toHaveBeenCalled()
 
     await click(container.querySelector('[aria-label="Close Draft configuration"]')!)
