@@ -553,7 +553,7 @@ function SchemaField({
     )
   }
   if (schema.type === 'entity_list') {
-    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} /><SchemaInlineIssues issues={fieldIssues} /></div>
+    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} invalid={fieldIssues.length > 0} /><SchemaInlineIssues issues={fieldIssues} /></div>
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }

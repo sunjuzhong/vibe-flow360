@@ -8,19 +8,20 @@ type EntityListFieldProps = {
   title: string
   fieldID: string
   descriptionHelp?: ReactNode
+  invalid?: boolean
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-export default function EntityListField({ schema, value, onChange, title, fieldID, descriptionHelp }: EntityListFieldProps) {
+export default function EntityListField({ schema, value, onChange, title, fieldID, descriptionHelp, invalid = false }: EntityListFieldProps) {
   const draft = isRecord(value) ? value : {}
   const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
   const choices = schema.entity_choices ?? []
   const allSelected = choices.length > 0 && choices.every((choice) => selected.includes(choice.value))
 
-  return <fieldset className="schema-object schema-entity-list" id={fieldID}>
+  return <fieldset className="schema-object schema-entity-list" id={fieldID} tabIndex={invalid ? -1 : undefined} aria-invalid={invalid || undefined}>
     <legend><span className="schema-legend-content">{title}{schema.required === true ? ' *' : ''}{descriptionHelp}</span></legend>
     <div className="schema-entity-header">
       <span>{selected.length} selected</span>

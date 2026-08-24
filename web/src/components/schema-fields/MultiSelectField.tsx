@@ -33,7 +33,12 @@ export default function MultiSelectField({ schema, value, onChange, title, field
   const minimumSelections = schema.minItems ?? 0
   const update = (next: string[]) => onChange({ ...draft, [valueKey]: [...next, ...preserved] })
   return (
-    <fieldset className={`schema-object schema-multi-select-field${fieldIssues.length ? ' schema-field-invalid' : ''}`} id={fieldID}>
+    <fieldset
+      className={`schema-object schema-multi-select-field${fieldIssues.length ? ' schema-field-invalid' : ''}`}
+      id={fieldID}
+      tabIndex={fieldIssues.length ? -1 : undefined}
+      aria-invalid={fieldIssues.length ? true : undefined}
+    >
       <legend>
         <span className="schema-legend-content">
           {title}{schema.required === true ? ' *' : ''}
