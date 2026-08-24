@@ -40,6 +40,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [validating, setValidating] = useState(false)
   const [validatedDraftId, setValidatedDraftId] = useState('')
   const [validatedFingerprint, setValidatedFingerprint] = useState('')
+  const [focusedValidationIssue, setFocusedValidationIssue] = useState<{ index: number; path?: string; request: number } | null>(null)
   const [aiPrompt, setAIPrompt] = useState('')
   const [aiLoading, setAILoading] = useState(false)
   const [aiOpen, setAIOpen] = useState(false)
@@ -371,7 +372,25 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     validatedFingerprint,
     Boolean(validation),
   )
-  const firstValidationError = validation?.issues.find((issue) => issue.level === 'error')?.message
+  const validationErrors = validationIsCurrent
+    ? validation?.issues.filter((issue) => issue.level === 'error') ?? []
+    : []
+  const firstValidationError = validationErrors[0]?.message
+  const goToValidationError = (index: number) => {
+    if (!schema || validationErrors.length === 0) return
+    const normalizedIndex = (index + validationErrors.length) % validationErrors.length
+    const issue = validationErrors[normalizedIndex]
+    selectMode('form')
+    setFocusedValidationIssue((current) => ({
+      index: normalizedIndex,
+      path: issue.path,
+      request: (current?.request ?? 0) + 1,
+    }))
+  }
+
+  useEffect(() => {
+    setFocusedValidationIssue(null)
+  }, [draftId, validatedFingerprint])
   const reviewRunStatus = syncError
     ? t('Retry Draft sync before Review & Run.')
     : dirty || saving
@@ -442,11 +461,25 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
               <strong>{syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}</strong>
               <p>{validationStatusDetail}</p>
               {validationIsCurrent && validation && !validation.valid && (
-                <div className="draft-validation-popover-issues">
-                  {validation.issues.filter((issue) => issue.level === 'error').slice(0, 6).map((issue, index) => (
-                    <div key={`${issue.path}-${issue.code}-${index}`}><code>{issue.path || 'SimulationParams'}</code><span>{issue.message}</span></div>
-                  ))}
-                </div>
+                <>
+                  <div className="draft-validation-popover-navigation">
+                    <span>{focusedValidationIssue ? `${focusedValidationIssue.index + 1} / ${validationErrors.length}` : `${validationErrors.length}`}</span>
+                    <button type="button" onClick={() => goToValidationError(0)}>{t('First error')}</button>
+                    <button type="button" onClick={() => goToValidationError((focusedValidationIssue?.index ?? -1) + 1)}>{t('Next error')}</button>
+                  </div>
+                  <div className="draft-validation-popover-issues">
+                    {validationErrors.map((issue, index) => (
+                      <button
+                        type="button"
+                        className={focusedValidationIssue?.index === index ? 'active' : ''}
+                        key={`${issue.path}-${issue.code}-${index}`}
+                        onClick={() => goToValidationError(index)}
+                      >
+                        <code>{issue.path || 'SimulationParams'}</code><span>{issue.message}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </details>
@@ -473,6 +506,9 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             rootTabs
             collapsibleObjects
             expressionValidator={validateExpression}
+            issues={validationErrors.map((issue) => ({ path: issue.path, message: issue.message, level: 'error' }))}
+            focusIssuePath={focusedValidationIssue?.path}
+            focusIssueRequest={focusedValidationIssue?.request}
             onChange={(next) => {
               setCanonicalCandidate(null)
               setFormValue(next)

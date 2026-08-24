@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { cleanSchemaDescription, hydrateSchemaValue, initialValue, SchemaFormFields, serializeValue } from './SchemaForm'
+import { cleanSchemaDescription, hydrateSchemaValue, initialValue, normalizeIssuePath, rootTabForIssuePath, SchemaFormFields, serializeValue } from './SchemaForm'
 
 describe('schema-driven Flow360 form', () => {
   it('creates and serializes nested values without field-specific code', () => {
@@ -579,6 +579,80 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).toMatch(/schema-root-field-section schema-invalid" open=""/)
     expect(markup).toContain('schema-root-array')
     expect(markup).not.toContain('<legend')
+  })
+
+  it('projects and focuses an issue from a non-current root tab into its section and field', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        meshing: {
+          type: 'object',
+          title: 'Meshing',
+          properties: { defaults: { type: 'number', title: 'Defaults' } },
+        },
+        case: {
+          type: 'object',
+          title: 'Case',
+          properties: {
+            solver: {
+              type: 'object',
+              title: 'Solver',
+              properties: { max_steps: { type: 'integer', title: 'Maximum steps' } },
+            },
+          },
+        },
+      },
+    }
+    const issue = { path: 'simulation_params.case.solver.max_steps', message: 'Must be greater than zero', level: 'error' as const }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { meshing: { defaults: 1 }, case: { solver: { max_steps: 0 } } },
+      rootTabs: true,
+      collapsibleObjects: true,
+      issues: [issue],
+      focusIssuePath: issue.path,
+      focusIssueRequest: 1,
+      onChange: () => undefined,
+    }))
+
+    expect(normalizeIssuePath(issue.path)).toBe('case.solver.max_steps')
+    expect(rootTabForIssuePath(issue.path, ['meshing', 'case'])).toBe('case')
+    expect(markup).toContain('id="schema-root-tab-case"')
+    expect(markup).toMatch(/id="schema-root-tab-case"[^>]*aria-selected="true"/)
+    expect(markup).toMatch(/schema-root-field-section schema-invalid" open=""/)
+    expect(markup).toContain('id="schema-case-solver-max_steps"')
+    expect(markup).toContain('Must be greater than zero')
+  })
+
+  it('projects deep complex-array issues onto the visible field section', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        case: {
+          type: 'object',
+          properties: {
+            models: {
+              type: 'array',
+              title: 'Models',
+              items: { type: 'object', properties: { name: { type: 'string' } } },
+            },
+          },
+        },
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { case: { models: [{ name: '' }] } },
+      rootTabs: true,
+      collapsibleObjects: true,
+      issues: [{ path: 'case.models.0.name', message: 'Name is required', level: 'error' }],
+      focusIssuePath: 'case.models.0.name',
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('id="schema-case-models"')
+    expect(markup).toContain('schema-field-invalid')
+    expect(markup).toContain('Name is required')
   })
 
   it('moves Draft descriptions into help tooltips and removes schema reference noise', () => {
