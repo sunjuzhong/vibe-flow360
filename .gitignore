@@ -12,6 +12,7 @@ __pycache__/
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
+.beads/issues.jsonl
 .beads-credential-key
 .pnpm-store
 .reasonix
