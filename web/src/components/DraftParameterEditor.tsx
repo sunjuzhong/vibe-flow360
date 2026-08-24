@@ -447,11 +447,11 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           <button type="button" role="tab" aria-selected={mode === 'json'} className={mode === 'json' ? 'active' : ''} onClick={() => selectMode('json')}>
             <Code2 size={13} /> {t('JSON')}
           </button>
-          <button type="button" role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => selectMode('preview')}>
-            <Eye size={13} /> {t('Preview')}
-          </button>
         </div>
         <div className="draft-parameter-toolbar-actions">
+          <button type="button" className={`draft-preview-action${mode === 'preview' ? ' active' : ''}`} aria-pressed={mode === 'preview'} onClick={() => selectMode(mode === 'preview' ? 'form' : 'preview')}>
+            <Eye size={13} /> {mode === 'preview' ? t('Return to edit') : t('Preview')}
+          </button>
           <details className={`draft-validation-popover ${validationStatusClass}`}>
             <summary aria-label={validationStatusTitle} title={validationStatusTitle}>
               {validationStatusIcon}
@@ -499,6 +499,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           <SchemaFormFields
             schema={schema}
             value={formValue}
+            baseline={baseline}
             sparse
             showAll
             addLabel={t('Add')}

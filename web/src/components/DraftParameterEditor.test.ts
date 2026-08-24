@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { APIError, type DynamicFormSchema } from '../api/client'
 import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, draftValidationDelay, draftValidationIsCurrent, parseParameterJSON } from './DraftParameterEditor'
+import { schemaGroupStats } from './SchemaForm'
 
 describe('Draft parameter editor', () => {
   const schema: DynamicFormSchema = {
@@ -167,5 +168,18 @@ describe('Draft parameter editor', () => {
     })
     const translated = draftParameterErrorMessage(error, () => '项目版本 {cloudVersion}，当前应用支持 {supportedRelease}。')
     expect(translated).toBe('项目版本 25.11.2，当前应用支持 25.10。')
+  })
+
+  it('summarizes unconfigured, modified, and invalid fields for group navigation', () => {
+    const group = schema.properties?.meshing
+    expect(schemaGroupStats(
+      group,
+      { defaults: { target_surface_node_count: 42 } },
+      { defaults: {} },
+      [{ path: 'meshing.defaults.target_surface_node_count', message: 'Invalid', level: 'error' }],
+      'meshing',
+    )).toEqual({ unconfigured: 0, modified: 1, errors: 1 })
+    expect(schemaGroupStats(group, { defaults: {} }, { defaults: {} }, [], 'meshing'))
+      .toEqual({ unconfigured: 1, modified: 0, errors: 0 })
   })
 })

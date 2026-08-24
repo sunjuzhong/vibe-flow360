@@ -149,7 +149,17 @@ describe('Draft parameter validation navigation', () => {
     await flushTimers()
 
     expect(container.querySelectorAll('.draft-validation-popover-issues button')).toHaveLength(5)
+    expect(container.querySelectorAll('.draft-editor-modes [role="tab"]')).toHaveLength(2)
+    expect(buttonWithText(container, 'Preview').getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelector('.schema-root-select select')).not.toBeNull()
+    expect(container.querySelector('#schema-root-tab-meshing')?.textContent).toContain('errors')
     expect(container.querySelector('#schema-root-tab-meshing')?.getAttribute('aria-selected')).toBe('true')
+
+    const meshingTab = container.querySelector<HTMLElement>('#schema-root-tab-meshing')!
+    await act(async () => meshingTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+    expect(container.querySelector('#schema-root-tab-case')?.getAttribute('aria-selected')).toBe('true')
+    await act(async () => container.querySelector<HTMLElement>('#schema-root-tab-case')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })))
+    expect(meshingTab.getAttribute('aria-selected')).toBe('true')
 
     await click(buttonWithText(container, 'Maximum steps is invalid'))
 
