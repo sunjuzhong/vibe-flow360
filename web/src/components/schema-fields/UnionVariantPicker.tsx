@@ -1,5 +1,7 @@
 import type { DynamicFormSchema } from '../../api/client'
 import type { KeyboardEvent } from 'react'
+import { currentLanguage } from '../../i18n'
+import { translate } from '../../i18n/translations'
 import HelpTooltip from '../HelpTooltip'
 import { cleanSchemaDescription, variantLabel } from './common'
 
@@ -16,6 +18,7 @@ type UnionVariantPickerProps = {
 }
 
 export default function UnionVariantPicker({ id, title, variants, selected, onSelect, disabled = false, describedBy, invalid = false, required = false }: UnionVariantPickerProps) {
+  const t = (value: string) => translate(value, currentLanguage())
   const moveSelection = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
@@ -29,8 +32,8 @@ export default function UnionVariantPicker({ id, title, variants, selected, onSe
     buttons?.[nextIndex]?.focus()
   }
   return (
-    <div id={id} className="schema-union-picker" role="radiogroup" aria-label={`${title} value type`} aria-describedby={describedBy} aria-invalid={invalid || undefined} aria-required={required || undefined} aria-disabled={disabled || undefined}>
-      <span>Value type</span>
+    <div id={id} className="schema-union-picker" role="radiogroup" aria-label={`${title} ${t('Value type')}`} aria-describedby={describedBy} aria-invalid={invalid || undefined} aria-required={required || undefined} aria-disabled={disabled || undefined}>
+      <span>{t('Value type')}</span>
       <div>
         {variants.map((variant, index) => {
           const label = variantLabel(variant, index)
@@ -51,7 +54,7 @@ export default function UnionVariantPicker({ id, title, variants, selected, onSe
               <strong>{label}</strong>
               {description && (
                 <span className="schema-union-option-help" onClick={(event) => event.stopPropagation()}>
-                  <HelpTooltip label={`About ${label}`} placement="bottom" align="start">
+                  <HelpTooltip label={t('About {title}').replace('{title}', label)} placement="bottom" align="start">
                     {description}
                   </HelpTooltip>
                 </span>

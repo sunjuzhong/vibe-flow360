@@ -157,7 +157,7 @@ describe('Draft parameter validation navigation', () => {
     await flushTimers()
     await flushTimers()
 
-    expect(container.querySelectorAll('.draft-validation-popover-issues button')).toHaveLength(5)
+    expect(container.querySelectorAll('.draft-validation-popover-issues button')).toHaveLength(0)
     expect(container.querySelectorAll('.draft-editor-modes [role="tab"]')).toHaveLength(2)
     expect(buttonWithText(container, 'Preview').getAttribute('aria-pressed')).toBe('false')
     expect(container.querySelector('.schema-root-select select')).not.toBeNull()
@@ -170,7 +170,8 @@ describe('Draft parameter validation navigation', () => {
     await act(async () => container.querySelector<HTMLElement>('#schema-root-tab-case')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })))
     expect(meshingTab.getAttribute('aria-selected')).toBe('true')
 
-    await click(buttonWithText(container, 'Maximum steps is invalid'))
+    await click(buttonWithText(container, 'First error'))
+    await click(buttonWithText(container, 'Next error'))
 
     const caseTab = container.querySelector<HTMLElement>('#schema-root-tab-case')
     const maximumSteps = container.querySelector<HTMLInputElement>('#schema-case-solver-max_steps')
@@ -183,12 +184,12 @@ describe('Draft parameter validation navigation', () => {
     expect(multiSelect?.tabIndex).toBe(-1)
     expect(document.activeElement).toBe(multiSelect)
 
-    await click(buttonWithText(container, 'Monitors are invalid'))
+    await click(buttonWithText(container, 'Next error'))
     const entityList = container.querySelector<HTMLElement>('#schema-case-monitors')
     expect(entityList?.tabIndex).toBe(-1)
     expect(document.activeElement).toBe(entityList)
 
-    await click(buttonWithText(container, 'Output format is invalid'))
+    await click(buttonWithText(container, 'Next error'))
     const enumArrayUnion = container.querySelector<HTMLElement>('#schema-case-output_format')
     expect(enumArrayUnion?.tabIndex).toBe(-1)
     expect(document.activeElement).toBe(enumArrayUnion)
@@ -248,9 +249,9 @@ describe('Draft parameter validation navigation', () => {
     await flushTimers()
     await flushTimers()
 
-    const warning = buttonWithText(container, 'Review the selected outputs')
-    expect(warning.classList.contains('warning')).toBe(true)
-    expect(warning.textContent).toContain('Warning')
+    await click(container.querySelector<HTMLElement>('#schema-root-tab-case')!)
+    const warning = [...container.querySelectorAll('.field-shell__message--warning')].find((candidate) => candidate.textContent?.includes('Review the selected outputs'))
+    expect(warning).toBeDefined()
     expect(container.querySelector('#schema-root-tab-case')?.textContent).toContain('warnings')
 
     const globalIssue = buttonWithText(container, 'Inspect the complete candidate')

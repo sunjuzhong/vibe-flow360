@@ -2,9 +2,53 @@ import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { cleanSchemaDescription, hydrateSchemaValue, initialValue, normalizeIssuePath, rootTabForIssuePath, SchemaFormFields, serializeValue } from './SchemaForm'
+import { cleanSchemaDescription, complexArrayCopy, configurationStatus, formatSchemaLabel, hydrateSchemaValue, initialValue, normalizeIssuePath, placeFloatingMenu, rootTabForIssuePath, SchemaFormFields, serializeValue } from './SchemaForm'
 
 describe('schema-driven Flow360 form', () => {
+  it('keeps deep type menus inside the viewport and flips them above the trigger', () => {
+    expect(placeFloatingMenu(
+      { left: 650, right: 690, top: 700, bottom: 734, width: 40, height: 34 },
+      { width: 290, height: 320 },
+      { width: 700, height: 754 },
+    )).toEqual({ left: 398, top: 375 })
+  })
+
+  it('uses collection-specific editor semantics instead of output copy', () => {
+    expect(complexArrayCopy('models', 'Models')).toMatchObject({
+      newKicker: 'NEW MODEL',
+      editKicker: 'EDIT MODEL',
+      fixedType: 'Model type is fixed after creation.',
+      saveLabel: 'Save model',
+    })
+    expect(complexArrayCopy('meshing.refinements', 'Refinements').newKicker).toBe('NEW REFINEMENT')
+    expect(complexArrayCopy('volume_zones', 'Volume Zones').closeLabel).toBe('Close volume zone editor')
+    expect(complexArrayCopy('outputs', 'Outputs').newKicker).toBe('NEW OUTPUT')
+  })
+
+  it('only presents a default state when the schema declares one explicitly', () => {
+    expect(configurationStatus({ type: 'enum', default: 'auto' }, false, true)).toBe('Default value')
+    expect(configurationStatus({ type: 'enum', options: ['auto'] }, false, true)).toBe('Not configured')
+    expect(configurationStatus({ type: 'boolean', default: false }, false, true)).toBe('Default value')
+    expect(configurationStatus({ type: 'enum', default: 'auto' }, true, true)).toBeUndefined()
+  })
+
+  it('disables empty entity bulk actions and describes the current entity kind as an item', () => {
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema: { type: 'entity_list', title: 'Surfaces', entity_kind: 'Surface', entity_choices: [] },
+      value: { entities: [] },
+      onChange: () => undefined,
+    }))
+    expect(markup).toContain('<button type="button" disabled="">Select all</button>')
+    expect(markup).toContain('No compatible entities')
+    expect(markup).toContain('Create a compatible Surface before configuring this item.')
+    expect(markup).not.toContain('configuring this output')
+  })
+
+  it('formats schema class names as readable labels', () => {
+    expect(formatSchemaLabel('SurfaceOutput')).toBe('Surface Output')
+    expect(formatSchemaLabel('TimeAverageSurfaceOutput')).toBe('Time Average Surface Output')
+  })
+
   it('creates and serializes nested values without field-specific code', () => {
     const schema: DynamicFormSchema = {
       type: 'object',
@@ -838,7 +882,7 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).toContain('schema-root-union')
     expect(markup.match(/>Operating Condition</g)).toHaveLength(1)
     expect(markup).toContain('Value type')
-    expect(markup).toContain('GenericReferenceCondition')
+    expect(markup).toContain('Generic Reference Condition')
   })
 
   it('keeps raw schema paths out of the draft root-tab form surface', () => {
