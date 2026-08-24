@@ -92,7 +92,8 @@ import type { DraftEntityMutation } from '../lib/draftEntities'
 import { VirtualizedManifestRows } from './VirtualizedManifestRows'
 import { ResourceSelectionToolbar } from './ResourceSelectionToolbar'
 import { ParameterSelectionGroups } from './ParameterSelectionGroups'
-import { buildGeometryParameterSelectionPresets } from '../lib/parameterSelectionGroups'
+import { DraftSelectionGroupDialog } from './DraftSelectionGroupDialog'
+import { buildGeometryParameterSelectionPresets, type ParameterSelectionMember } from '../lib/parameterSelectionGroups'
 import { UVFAssetLRU } from '../lib/uvf-three'
 import './GeometryWorkspace.css'
 
@@ -346,6 +347,7 @@ export default function GeometryWorkspace({
   onCreateAdvancedPlan,
   onPlanSurfaceMesh,
   onMutateDraftEntity,
+  onSaveDraftSelectionGroup,
   onViewerLoadStateChange,
 }: {
   detail: ResourceDetail | null
@@ -362,6 +364,11 @@ export default function GeometryWorkspace({
   ) => Promise<void>
   onPlanSurfaceMesh: () => Promise<void>
   onMutateDraftEntity?: (mutation: DraftEntityMutation) => Promise<void>
+  onSaveDraftSelectionGroup?: (
+    name: string,
+    faces: readonly ParameterSelectionMember[],
+    edges: readonly ParameterSelectionMember[],
+  ) => Promise<void>
   onViewerLoadStateChange?: (state: ViewerState) => void
 }) {
   const { t, language } = useI18n()
@@ -398,6 +405,7 @@ export default function GeometryWorkspace({
   const [advancedPlanBusy, setAdvancedPlanBusy] = useState(false)
   const [pendingFocusEntityIds, setPendingFocusEntityIds] = useState<string[]>([])
   const [activeCapabilityPanel, setActiveCapabilityPanel] = useState<GeometryCapabilityPanel | null>(null)
+  const [selectionGroupDialogOpen, setSelectionGroupDialogOpen] = useState(false)
   const diagnosticRunToken = useRef(0)
   const { manifest, state: viewerState } = useResourcePreview(
     detail ? 'Geometry' : null,
@@ -1192,6 +1200,23 @@ export default function GeometryWorkspace({
               </button>
             </div>
           )}
+          {onSaveDraftSelectionGroup && (
+            <div className="geometry-selection-save-group">
+              <button
+                type="button"
+                disabled={selectedGroups.length + selectedEdges.length === 0}
+                title={selectedGroups.length + selectedEdges.length === 0
+                  ? t('Select at least one face or edge before saving a selection group.')
+                  : t('Save the current 3D selection as a selection group')}
+                onClick={() => setSelectionGroupDialogOpen(true)}
+              >
+                <Plus size={13} /> {t('Save selection group')}
+              </button>
+              {selectedGroups.length + selectedEdges.length === 0 && (
+                <small>{t('Select faces or edges in the 3D viewer first.')}</small>
+              )}
+            </div>
+          )}
           {selectedGroups.length > 0 && (
             <label className="geometry-selection-material">
               Surface material
@@ -1211,6 +1236,15 @@ export default function GeometryWorkspace({
             </label>
           )}
         </section>
+
+        {selectionGroupDialogOpen && onSaveDraftSelectionGroup && (
+          <DraftSelectionGroupDialog
+            faceCount={selectedGroups.length}
+            edgeCount={selectedEdges.length}
+            onClose={() => setSelectionGroupDialogOpen(false)}
+            onSave={(name) => onSaveDraftSelectionGroup(name, selectedGroups, selectedEdges)}
+          />
+        )}
 
         <div className="geometry-capability-launchers" aria-label="Geometry review tools">
           <button type="button" onClick={() => setActiveCapabilityPanel('appearance')}>

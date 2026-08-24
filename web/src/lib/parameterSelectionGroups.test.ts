@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGeometryParameterSelectionPresets, buildParameterSelectionPresets } from './parameterSelectionGroups'
+import { applyDraftSelectionGroup, buildGeometryParameterSelectionPresets, buildParameterSelectionPresets } from './parameterSelectionGroups'
 
 const params = {
   private_attribute_asset_cache: {
@@ -217,6 +217,102 @@ describe('buildParameterSelectionPresets', () => {
         edgeIds: ['edge-1'],
         available: true,
       },
+    ])
+  })
+})
+
+describe('applyDraftSelectionGroup', () => {
+  it('adds selected faces and edges to groupName schemes without changing the active grouping', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          face_group_tag: 'faceId',
+          edge_group_tag: 'edgeId',
+          face_attribute_names: ['faceId'],
+          edge_attribute_names: ['edgeId'],
+          grouped_faces: [[
+            { name: 'face-1', private_attribute_id: 'face-1', private_attribute_tag_key: 'faceId', private_attribute_sub_components: ['raw-face-1'] },
+          ]],
+          grouped_edges: [[
+            { name: 'edge-1', private_attribute_id: 'edge-1', private_attribute_tag_key: 'edgeId', private_attribute_sub_components: ['raw-edge-1'] },
+          ]],
+        },
+      },
+    }
+
+    const next = applyDraftSelectionGroup(source, {
+      name: ' control surfaces ',
+      faces: [{ id: 'face-1' }],
+      edges: [{ id: 'edge-1' }],
+    })
+    const info = next.private_attribute_asset_cache as {
+      project_entity_info: Record<string, unknown>
+    }
+    expect(info.project_entity_info.face_group_tag).toBe('faceId')
+    expect(info.project_entity_info.edge_group_tag).toBe('edgeId')
+    expect(info.project_entity_info.face_attribute_names).toEqual(['faceId', 'groupName'])
+    expect(info.project_entity_info.edge_attribute_names).toEqual(['edgeId', 'groupName'])
+    expect(info.project_entity_info.grouped_faces).toEqual([
+      source.private_attribute_asset_cache.project_entity_info.grouped_faces[0],
+      [{
+        name: 'control surfaces',
+        private_attribute_entity_type_name: 'Surface',
+        private_attribute_id: 'control surfaces',
+        private_attribute_sub_components: ['raw-face-1'],
+        private_attribute_tag_key: 'groupName',
+      }],
+    ])
+    expect(info.project_entity_info.grouped_edges).toEqual([
+      source.private_attribute_asset_cache.project_entity_info.grouped_edges[0],
+      [{
+        name: 'control surfaces',
+        private_attribute_entity_type_name: 'Edge',
+        private_attribute_id: 'control surfaces',
+        private_attribute_sub_components: ['raw-edge-1'],
+        private_attribute_tag_key: 'groupName',
+      }],
+    ])
+  })
+
+  it('appends to an existing groupName scheme and rejects empty or duplicate groups', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          grouped_faces: [[{
+            name: 'Wing',
+            private_attribute_id: 'wing',
+            private_attribute_tag_key: 'groupName',
+            private_attribute_sub_components: ['face-1'],
+          }]],
+        },
+      },
+    }
+    expect(() => applyDraftSelectionGroup(source, { name: ' wing ', faces: [{ id: 'face-2' }], edges: [] }))
+      .toThrow('already exists')
+    expect(() => applyDraftSelectionGroup(source, { name: 'Tail', faces: [], edges: [] }))
+      .toThrow('Select at least one face or edge')
+    expect(() => applyDraftSelectionGroup(source, { name: ' ', faces: [{ id: 'face-2' }], edges: [] }))
+      .toThrow('name is required')
+  })
+
+  it('preserves legacy flat entity collections while adding a selection group', () => {
+    const legacyFace = {
+      name: 'face-1',
+      private_attribute_id: 'face-1',
+      private_attribute_tag_key: 'faceId',
+      private_attribute_sub_components: ['raw-face-1'],
+    }
+    const next = applyDraftSelectionGroup({
+      private_attribute_asset_cache: { project_entity_info: { grouped_faces: [legacyFace] } },
+    }, {
+      name: 'Wing',
+      faces: [{ id: 'face-1' }],
+      edges: [],
+    })
+    const cache = next.private_attribute_asset_cache as { project_entity_info: { grouped_faces: unknown } }
+    expect(cache.project_entity_info.grouped_faces).toEqual([
+      [legacyFace],
+      [expect.objectContaining({ name: 'Wing', private_attribute_sub_components: ['raw-face-1'] })],
     ])
   })
 })
