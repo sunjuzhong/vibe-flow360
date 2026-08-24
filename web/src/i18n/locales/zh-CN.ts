@@ -1592,6 +1592,8 @@ Object.assign(messages, {
   'Validating current parameters…': '正在验证当前参数…',
   'Flow360 validation passed': 'Flow360 验证通过',
   'Flow360 validation needs attention': 'Flow360 验证需要处理',
+  'First error': '首个错误',
+  'Next error': '下一个错误',
   'This candidate can be saved to the Draft.': '当前候选参数可以保存到草稿。',
   'You can save the Draft and continue editing, but Review & Run remains blocked until validation passes.': '你可以先保存草稿并继续编辑，但验证通过前无法进入审查和运行。',
   'Unsaved parameter changes': '未保存的参数改动',

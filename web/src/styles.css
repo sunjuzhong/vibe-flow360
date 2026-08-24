@@ -2279,7 +2279,11 @@ button { color: inherit; }
 .draft-validation-popover > div strong { font-size: 12px; }
 .draft-validation-popover > div p { margin: 0; color: #70796b; font-size: 11px; line-height: 1.45; }
 .draft-validation-popover-issues { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
-.draft-validation-popover-issues > div { display: grid; gap: 3px; padding: 8px 9px; border-radius: 7px; color: #984433; background: #fff3f0; }
+.draft-validation-popover-navigation { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.draft-validation-popover-navigation > span { margin-right: auto; color: #8a5b52; font: 10px 'DM Mono'; }
+.draft-validation-popover-navigation > button { padding: 5px 8px; border: 1px solid #e1bdb5; border-radius: 6px; color: #91483a; background: #fff; font-size: 10px; cursor: pointer; }
+.draft-validation-popover-issues > button { display: grid; width: 100%; gap: 3px; padding: 8px 9px; border: 1px solid transparent; border-radius: 7px; color: #984433; background: #fff3f0; text-align: left; cursor: pointer; }
+.draft-validation-popover-issues > button:hover,.draft-validation-popover-issues > button.active { border-color: #dfaa9f; background: #ffe8e3; }
 .draft-validation-popover-issues code { font: 10px 'DM Mono'; }
 .draft-validation-popover-issues span { font-size: 11px; line-height: 1.4; }
 .draft-editor-modes { display: inline-flex; overflow: hidden; border: 1px solid #d1d4ca; border-radius: 7px; background: #f0f1ec; }

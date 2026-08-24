@@ -25,6 +25,7 @@ type InputFieldProps = FieldCopy & {
 }
 
 type ToggleFieldProps = FieldCopy & {
+  id?: string
   checked: boolean
   onChange: (checked: boolean) => void
   checkedLabel?: ReactNode
@@ -76,11 +77,11 @@ export function InputField({ id, children, errors = [], className, controlClassN
   )
 }
 
-export function ToggleField({ checked, onChange, checkedLabel, uncheckedLabel, errors = [], className, ...copy }: ToggleFieldProps) {
+export function ToggleField({ id, checked, onChange, checkedLabel, uncheckedLabel, errors = [], className, ...copy }: ToggleFieldProps) {
   const accessibleLabel = typeof copy.label === 'string' ? copy.label : undefined
   const stateLabel = checked ? checkedLabel : uncheckedLabel
   return (
-    <div className={classes('input-field', 'input-field--toggle', errors.length > 0 && 'input-field--invalid', className)}>
+    <div id={id} tabIndex={errors.length ? -1 : undefined} className={classes('input-field', 'input-field--toggle', errors.length > 0 && 'input-field--invalid', className)}>
       <InputFieldLabel {...copy} />
       <label className="input-field__toggle-control">
         <input type="checkbox" aria-label={accessibleLabel} checked={checked} onChange={(event) => onChange(event.target.checked)} />

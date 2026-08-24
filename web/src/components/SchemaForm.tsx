@@ -41,6 +41,8 @@ type SchemaFormFieldsProps = {
   collapsibleObjects?: boolean
   expressionValidator?: ExpressionValidator
   issues?: Array<{ path?: string; message: string; level?: 'error' | 'warning' }>
+  focusIssuePath?: string
+  focusIssueRequest?: number
 }
 
 const ExpressionValidationContext = createContext<ExpressionValidator | undefined>(undefined)
@@ -149,14 +151,42 @@ function SchemaFormFieldsContent({
   removeLabel = 'Keep inherited',
   rootTabs = false,
   collapsibleObjects = false,
+  focusIssuePath,
+  focusIssueRequest,
 }: SchemaFormFieldsProps) {
   const issues = useContext(FieldIssueContext)
   const tabKeys = useMemo(() => rootTabs && schema.type === 'object' ? Object.keys(schema.properties ?? {}) : [], [rootTabs, schema])
-  const [activeTab, setActiveTab] = useState(tabKeys[0] ?? '')
+  const focusedTab = rootTabForIssuePath(focusIssuePath, tabKeys)
+  const [activeTab, setActiveTab] = useState(focusedTab ?? tabKeys[0] ?? '')
+  const handledFocusKeyRef = useRef('')
 
   useEffect(() => {
     if (!tabKeys.includes(activeTab)) setActiveTab(tabKeys[0] ?? '')
   }, [activeTab, tabKeys])
+
+  useEffect(() => {
+    const focusKey = focusIssuePath ? `${focusIssueRequest ?? ''}:${focusIssuePath}` : ''
+    if (!focusedTab || !focusKey || handledFocusKeyRef.current === focusKey) return
+    handledFocusKeyRef.current = focusKey
+    setActiveTab(focusedTab)
+  }, [focusIssuePath, focusIssueRequest, focusedTab])
+
+  useEffect(() => {
+    if (!focusIssuePath || !focusedTab || activeTab !== focusedTab || typeof document === 'undefined') return
+    const frame = window.requestAnimationFrame(() => {
+      const path = normalizeIssuePath(focusIssuePath)
+      const segments = path.split('.')
+      let target: HTMLElement | null = null
+      while (segments.length > 0 && !target) {
+        target = document.getElementById(schemaFieldID(segments.join('.')))
+        segments.pop()
+      }
+      if (!target) target = document.getElementById(`schema-root-tab-${focusedTab.replace(/[^a-zA-Z0-9_-]/g, '-')}`)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeTab, focusIssuePath, focusIssueRequest, focusedTab])
 
   if (rootTabs && schema.type === 'object' && tabKeys.length > 0) {
     const object = isRecord(value) ? value : {}
@@ -277,8 +307,9 @@ function SchemaField({
   const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const displayTitle = localizeSchemaText(title)
-  const fieldID = `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
+  const fieldID = schemaFieldID(path)
   const fieldIssues = issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path, true)) ?? []
+  const branchIssues = issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path)) ?? []
   const inputErrors: InputFieldError[] = fieldIssues.map((issue, index) => ({ key: `${issue.path}-${index}`, message: issue.message }))
   const branchInvalid = Boolean(path) && issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path))
   const [sectionOpen, setSectionOpen] = useState(path.split('.').length === 1)
@@ -390,15 +421,15 @@ function SchemaField({
     )
   }
   if (schema.type === 'expression') {
-    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={title} sectionContent={rootTabContent} />{fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}</div>
+    return <div id={fieldID} tabIndex={fieldIssues.length ? -1 : undefined} className={fieldIssues.length ? 'schema-field-invalid' : ''}><ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={title} sectionContent={rootTabContent} /><SchemaInlineIssues issues={fieldIssues} /></div>
   }
   if (schema.type === 'entity_assignment') {
-    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} configured={configured} showAll={showAll} />
+    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} configured={configured} showAll={showAll} fieldIssues={fieldIssues} />
   }
   if (schema.type === 'field_removal') {
     const recommendation = schema.recommendation
     return (
-      <fieldset className="schema-object schema-entity-assignment">
+      <fieldset id={fieldID} tabIndex={fieldIssues.length ? -1 : undefined} className={`schema-object schema-entity-assignment${fieldIssues.length ? ' schema-invalid' : ''}`}>
         <legend>{displayTitle}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>
         <div className="schema-ai-recommendation">
           <div className="schema-ai-heading">
@@ -414,12 +445,14 @@ function SchemaField({
             </details>
           ) : null}
         </div>
+        <SchemaInlineIssues issues={fieldIssues} />
       </fieldset>
     )
   }
   if (schema.type === 'boolean') {
     return (
       <ToggleField
+        id={fieldID}
         className="schema-field schema-boolean"
         label={title}
         path={path}
@@ -450,7 +483,7 @@ function SchemaField({
   }
   if (schema.type === 'array') {
     if (isComplexArrayItem(schema.items)) {
-      return <ComplexArrayField schema={schema} value={value} onChange={onChange} path={path} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} />
+      return <div id={fieldID} tabIndex={branchIssues.length ? -1 : undefined} className={branchIssues.length ? 'schema-field-invalid' : ''}><ComplexArrayField schema={schema} value={value} onChange={onChange} path={path} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} /><SchemaInlineIssues issues={branchIssues} /></div>
     }
     const array = Array.isArray(value) ? value : []
     const itemSchema = schema.items ?? { type: 'json' as const }
@@ -502,10 +535,10 @@ function SchemaField({
       </>
     )
     if (rootTabContent) {
-      return <div className="schema-array-editor schema-root-array">{arrayEditor}</div>
+      return <div id={fieldID} tabIndex={fieldIssues.length ? -1 : undefined} className={`schema-array-editor schema-root-array${fieldIssues.length ? ' schema-field-invalid' : ''}`}>{arrayEditor}<SchemaInlineIssues issues={fieldIssues} /></div>
     }
     return (
-      <fieldset className="schema-object schema-array schema-array-editor">
+      <fieldset id={fieldID} tabIndex={fieldIssues.length ? -1 : undefined} className={`schema-object schema-array schema-array-editor${fieldIssues.length ? ' schema-invalid' : ''}`}>
         <legend>
           <span className="schema-legend-content">
             {displayTitle}
@@ -515,11 +548,12 @@ function SchemaField({
         </legend>
         {schema.description && !collapsibleObjects && <p>{localizedSchemaDescription(schema.description)}</p>}
         {arrayEditor}
+        <SchemaInlineIssues issues={fieldIssues} />
       </fieldset>
     )
   }
   if (schema.type === 'entity_list') {
-    return <EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} />
+    return <div className={fieldIssues.length ? 'schema-field-invalid' : ''}><EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} invalid={fieldIssues.length > 0} /><SchemaInlineIssues issues={fieldIssues} /></div>
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
@@ -785,12 +819,25 @@ function RootFieldSection({
   )
 }
 
-function issueMatchesPath(issuePath: string | undefined, fieldPath: string, exact = false): boolean {
-  if (!issuePath || !fieldPath) return false
-  const normalized = issuePath
+export function normalizeIssuePath(issuePath: string | undefined): string {
+  return (issuePath ?? '')
     .replace(/^simulation_params\.?/, '')
     .replace(/\[(\d+)\]/g, '.$1')
     .replace(/^\./, '')
+}
+
+export function rootTabForIssuePath(issuePath: string | undefined, tabKeys: string[]): string | undefined {
+  const root = normalizeIssuePath(issuePath).split('.')[0]
+  return tabKeys.includes(root) ? root : undefined
+}
+
+export function schemaFieldID(path: string): string {
+  return `schema-${path.replace(/[^a-zA-Z0-9_-]/g, '-') || 'root'}`
+}
+
+function issueMatchesPath(issuePath: string | undefined, fieldPath: string, exact = false): boolean {
+  if (!issuePath || !fieldPath) return false
+  const normalized = normalizeIssuePath(issuePath)
   if (exact) return normalized === fieldPath
   return normalized === fieldPath || normalized.startsWith(`${fieldPath}.`)
 }
@@ -926,6 +973,7 @@ function EntityAssignmentField({
   title,
   configured,
   showAll,
+  fieldIssues,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -934,6 +982,7 @@ function EntityAssignmentField({
   title: string
   configured: boolean
   showAll: boolean
+  fieldIssues: Array<{ path?: string; message: string; level?: 'error' | 'warning' }>
 }) {
   const [editing, setEditing] = useState(false)
   const draft = isRecord(value) ? value : {}
@@ -944,7 +993,7 @@ function EntityAssignmentField({
   const modelLabel = schema.model_choices?.find((choice) => choice.value === model)?.label ?? model
   const recommendation = schema.recommendation
   return (
-    <fieldset className="schema-object schema-entity-assignment">
+    <fieldset id={fieldID} tabIndex={fieldIssues.length ? -1 : undefined} className={`schema-object schema-entity-assignment${fieldIssues.length ? ' schema-invalid' : ''}`}>
       <legend>{localizeSchemaText(title)}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>
       {recommendation ? (
         <div className="schema-ai-recommendation">
@@ -1019,8 +1068,13 @@ function EntityAssignmentField({
           </div>
         </div>
       )}
+      <SchemaInlineIssues issues={fieldIssues} />
     </fieldset>
   )
+}
+
+function SchemaInlineIssues({ issues }: { issues: Array<{ path?: string; message: string }> }) {
+  return <>{issues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}</>
 }
 
 function FieldLabel({
