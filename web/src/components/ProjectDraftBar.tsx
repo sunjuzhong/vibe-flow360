@@ -21,6 +21,7 @@ type Props = {
   onRename: (draftId: string, name: string) => Promise<void>
   onManage: () => void
   onRefresh: () => void
+  runReady?: boolean
 }
 
 export function draftRecords(payload: { records?: DraftRecord[]; drafts?: DraftRecord[]; items?: DraftRecord[] } | null): DraftRecord[] {
@@ -59,6 +60,7 @@ export default function ProjectDraftBar({
   onRename,
   onManage,
   onRefresh,
+  runReady,
 }: Props) {
   const { t } = useI18n()
   const activeDraft = drafts.find((draft) => draft.id === selectedId) ?? null
@@ -227,8 +229,8 @@ export default function ProjectDraftBar({
         <button
           type="button"
           onClick={onReviewRun}
-          disabled={!selectedId || detailLoading}
-          title={t('Review and run this Draft')}
+          disabled={!selectedId || detailLoading || runReady === false}
+          title={runReady === false ? t('Open Configure Draft and validate the saved version before running.') : t('Review and run this Draft')}
           aria-label={t('Run this Draft')}
           className="project-draft-run"
         >

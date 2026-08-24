@@ -451,6 +451,13 @@ export default function ProjectPage() {
   const [interventionOpen, setInterventionOpen] = useState(false)
   const [interventionPlanId, setInterventionPlanId] = useState('')
   const [activePanel, setActivePanel] = useState<ProjectPanel | null>(initialProjectPanel)
+  const [draftEditorDirty, setDraftEditorDirty] = useState(false)
+  const [draftEditorCandidate, setDraftEditorCandidate] = useState<Record<string, unknown> | null>(null)
+  const [draftRunReady, setDraftRunReady] = useState(false)
+  const [pendingDraftPatch, setPendingDraftPatch] = useState<{ id: number; draftId: string; patch: Record<string, unknown> } | null>(null)
+  const draftPatchIDRef = useRef(0)
+  const parametersCloseRequestRef = useRef<(() => void) | null>(null)
+  const pendingDraftSwitchRef = useRef('')
   const [detailTab, setDetailTab] = useState<ResourceDetailTab>('overview')
   const [projectDataSource, setProjectDataSource] = useState<'live' | 'cache'>('live')
   const [projectCachedAt, setProjectCachedAt] = useState('')
@@ -473,9 +480,24 @@ export default function ProjectPage() {
     setPlanEntryMode(requestedPlanMode)
     setPlanOpen(true)
   }, [requestedPlanId, requestedPlanMode])
-  const closePanel = useCallback(() => setActivePanel(null), [])
+  const closePanel = useCallback(() => {
+    setActivePanel(null)
+    setDraftEditorDirty(false)
+    setDraftEditorCandidate(null)
+    const targetDraftId = pendingDraftSwitchRef.current
+    pendingDraftSwitchRef.current = ''
+    if (targetDraftId && root) {
+      setActiveDraftId(targetDraftId)
+      navigate(projectDraftRootPath(projectId, root, targetDraftId))
+    }
+  }, [navigate, projectId, root])
   const closePanelFromAmbientInteraction = useCallback(() => {
-    if (panelDismissesFromAmbientInteraction(activePanel)) closePanel()
+    if (!panelDismissesFromAmbientInteraction(activePanel)) return
+    if (activePanel === 'parameters' && parametersCloseRequestRef.current) {
+      parametersCloseRequestRef.current()
+      return
+    }
+    closePanel()
   }, [activePanel, closePanel])
   const panelRef = useFocusTrap<HTMLElement>(
     activePanel !== null,
@@ -503,6 +525,16 @@ export default function ProjectPage() {
       previouslyFocused?.focus()
     }
   }, [activePanel, closePanelFromAmbientInteraction, panelRef])
+
+  useEffect(() => {
+    if (!draftEditorDirty) return
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', preventUnload)
+    return () => window.removeEventListener('beforeunload', preventUnload)
+  }, [draftEditorDirty])
 
   const loadProject = useCallback(async (cacheOnly = false, showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -704,6 +736,8 @@ export default function ProjectPage() {
     void loadDraftDetail()
   }, [loadDraftDetail])
 
+  useEffect(() => setDraftRunReady(false), [activeDraftId])
+
   const stageLinks = useMemo<ResourceStageLink[]>(
     () => {
       if (!selected) return []
@@ -797,6 +831,11 @@ export default function ProjectPage() {
   const openDraftContext = (draftId: string) => {
     const target = drafts.find((draft) => draft.id === draftId)
     if (!target || !root) return
+    if (draftEditorDirty && activePanel === 'parameters' && parametersCloseRequestRef.current) {
+      pendingDraftSwitchRef.current = draftId
+      parametersCloseRequestRef.current()
+      return
+    }
     setActiveDraftId(draftId)
     setActivePanel(null)
     navigate(projectDraftRootPath(projectId, root, draftId))
@@ -1132,6 +1171,7 @@ export default function ProjectPage() {
                     setPlanEntryMode('run')
                     setPlanOpen(true)
                   }}
+                  runReady={draftRunReady}
                   onRename={renameDraft}
                   onManage={() => setActivePanel('drafts')}
                   onRefresh={() => void Promise.all([loadDrafts(), loadDraftDetail()])}
@@ -1367,6 +1407,13 @@ export default function ProjectPage() {
               project={project ?? undefined}
               resource={activeDraftSource ?? undefined}
               onClose={closePanel}
+              externalPatch={pendingDraftPatch}
+              onExternalPatchApplied={(id) => setPendingDraftPatch((current) => current?.id === id ? null : current)}
+              onCandidateChange={setDraftEditorCandidate}
+              onDirtyChange={setDraftEditorDirty}
+              onRunReadinessChange={setDraftRunReady}
+              registerCloseRequest={(requestClose) => { parametersCloseRequestRef.current = requestClose }}
+              onCloseCancelled={() => { pendingDraftSwitchRef.current = '' }}
               onRetry={() => void loadDraftDetail()}
               onParametersSynced={(simulationParams) => setDraftDetail((current) => current
                 ? { ...current, simulation_params: simulationParams }
@@ -1403,10 +1450,12 @@ export default function ProjectPage() {
           }
           navigate(`/projects/${projectId}/resources/${encodeURIComponent(plan.source_id)}?plan=${encodeURIComponent(plan.id)}&planMode=review`)
         }}
-        draftParameters={draftMode ? draftDetail?.simulation_params : undefined}
+        draftParameters={draftMode ? draftEditorCandidate ?? draftDetail?.simulation_params : undefined}
         onApplyDraftPatch={draftMode && activeDraft ? async (patch) => {
-          const response = await api.patchDraftParameters(activeDraft.id, patch, projectId)
-          setDraftDetail((current) => current ? { ...current, simulation_params: response.simulation_params } : current)
+          const id = ++draftPatchIDRef.current
+          setPendingDraftPatch({ id, draftId: activeDraft.id, patch })
+          setChatOpen(false)
+          setActivePanel('parameters')
         } : undefined}
         contextLabel={draftMode && activeDraft
           ? `${activeDraft.name} · based on ${selected?.name || activeDraft.source_type || 'Resource'}`
