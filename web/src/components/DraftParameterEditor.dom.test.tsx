@@ -95,6 +95,13 @@ async function click(element: Element) {
   await flushTimers()
 }
 
+async function press(element: Element, key: string, shiftKey = false) {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
+  })
+  await flushTimers()
+}
+
 async function flushTimers() {
   await act(async () => {
     await vi.runOnlyPendingTimersAsync()
@@ -291,6 +298,85 @@ describe('Draft parameter validation navigation', () => {
     expect(dialog.querySelector('#schema-outputs-0-entities')).not.toBeNull()
     expect(dialog.querySelector('#schema-outputs-0-notes')).toBeNull()
     expect(dialog.querySelector('.schema-item-editor-nav')?.textContent).not.toContain('Other fields')
+  })
+
+  it('keeps portal type selection and its nested editor inside a complete keyboard focus flow', async () => {
+    const outputVariant = (title: string): DynamicFormSchema => ({
+      type: 'object',
+      title,
+      properties: {
+        name: { type: 'string', title: 'Name' },
+        frequency: { type: 'integer', title: 'Frequency' },
+        format: { type: 'enum', title: 'Format', options: ['paraview'] },
+        notes: { type: 'string', title: 'Notes' },
+        enabled: { type: 'boolean', title: 'Enabled' },
+      },
+    })
+    const outputSchema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        outputs: {
+          type: 'array', title: 'Outputs', items: { type: 'union', variants: [outputVariant('SurfaceOutput'), outputVariant('ForceOutput')] },
+        },
+      },
+    }
+    vi.mocked(api.draftParameterSchema).mockResolvedValueOnce({
+      schema_version: 1, source_type: 'Case', stages: ['Case'], schema: outputSchema, baseline: { outputs: [] },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-keyboard" parameters={{ outputs: [] }} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    const add = buttonWithText(container, 'Add item') as HTMLButtonElement
+    add.focus()
+    await click(add)
+    const menu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    const search = menu.querySelector<HTMLInputElement>('input')!
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    expect(document.activeElement).toBe(search)
+    await press(search, 'ArrowDown')
+    expect(document.activeElement).toBe(items[0])
+    await press(items[0], 'End')
+    expect(document.activeElement).toBe(items[1])
+    await press(items[1], 'Home')
+    expect(document.activeElement).toBe(items[0])
+    await press(items[0], 'ArrowUp')
+    expect(document.activeElement).toBe(items[1])
+    await press(items[1], 'Enter')
+
+    const dialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    const close = dialog.querySelector<HTMLButtonElement>('.schema-item-editor-close')!
+    const save = dialog.querySelector<HTMLButtonElement>('footer .primary')!
+    expect(document.activeElement).toBe(close)
+    save.focus()
+    await press(save, 'Tab')
+    expect(document.activeElement).toBe(close)
+    await press(close, 'Tab', true)
+    expect(document.activeElement).toBe(save)
+    await press(dialog, 'Escape')
+    expect(document.body.querySelector('.schema-item-editor-dialog')).toBeNull()
+    expect(document.activeElement).toBe(add)
+
+    await click(add)
+    const reopenedMenu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    await press(reopenedMenu.querySelector('input')!, 'Escape')
+    expect(document.body.querySelector('.schema-array-type-menu')).toBeNull()
+    expect(document.activeElement).toBe(add)
+
+    await click(add)
+    const finalMenu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    await press(finalMenu.querySelector('input')!, 'ArrowDown')
+    await press(document.activeElement!, 'Enter')
+    const finalDialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    await click(finalDialog.querySelector<HTMLButtonElement>('footer .primary')!)
+    const edit = buttonWithText(container, 'Edit') as HTMLButtonElement
+    edit.focus()
+    await click(edit)
+    const editDialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    await click(buttonWithText(editDialog, 'Cancel'))
+    expect(document.activeElement).toBe(edit)
   })
 
   it('shows warnings without error styling and routes an unmapped issue to complete JSON', async () => {

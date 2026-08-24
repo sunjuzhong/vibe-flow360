@@ -836,13 +836,46 @@ describe('schema-driven Flow360 form', () => {
     }
     const canonical = { stored_entities: [surface], selectors: ['wing*'] }
     const hydrated = hydrateSchemaValue(schema, canonical, true)
-    expect(hydrated).toEqual({ entities: ['Surface:surface-wing'], selectors: ['wing*'] })
+    expect(hydrated).toEqual({
+      entities: ['Surface:surface-wing'],
+      selectors: ['wing*'],
+      matched_stored_entities: [{ value: 'Surface:surface-wing', payload: surface }],
+    })
     expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
 
     const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema, value: hydrated, onChange: () => undefined }))
     expect(markup).toContain('wing')
     expect(markup).toContain('Surface')
     expect(markup).not.toContain('private_attribute')
+  })
+
+  it('strictly round-trips a stored canonical entity when a catalog choice has the same type and id', () => {
+    const catalogEdge = {
+      name: 'Trailing edge',
+      private_attribute_id: 'edge-shared',
+      private_attribute_entity_type_name: 'Edge',
+    }
+    const storedEdge = {
+      ...catalogEdge,
+      private_attribute_sub_components: ['edge-segment-1', 'edge-segment-2'],
+      private_attribute_registry_bucket: { source: 'draft', revision: 4 },
+    }
+    const schema: DynamicFormSchema = {
+      type: 'entity_list',
+      title: 'Edges',
+      entity_kind: 'Edge',
+      entity_choices: [{ value: 'Edge:edge-shared', label: 'Trailing edge', model_type: 'Edge', payload: catalogEdge }],
+    }
+    const canonical = { stored_entities: [storedEdge] }
+
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+
+    expect(hydrated).toEqual({
+      entities: ['Edge:edge-shared'],
+      selectors: [],
+      matched_stored_entities: [{ value: 'Edge:edge-shared', payload: storedEdge }],
+    })
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
   })
 
   it('preserves canonical entity payloads that are not present in the current form choices', () => {

@@ -5,6 +5,7 @@ import type { DynamicFormSchema } from '../api/client'
 import { currentLanguage } from '../i18n'
 import { translate } from '../i18n/translations'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import HelpTooltip from './HelpTooltip'
 import EntityListField from './schema-fields/EntityListField'
 import MultiSelectField from './schema-fields/MultiSelectField'
@@ -858,9 +859,19 @@ function ComplexArrayField({
   const [editor, setEditor] = useState<{ index: number | null; schema: DynamicFormSchema; value: unknown } | null>(null)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuSearchRef = useRef<HTMLInputElement>(null)
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null)
   const disabled = schema.disabled === true || schema.readOnly === true
   const issues = useContext(FieldIssueContext)
+  const closeEditor = useCallback(() => setEditor(null), [])
+  const editorDialogRef = useFocusTrap<HTMLElement>(Boolean(editor), closeEditor, '.schema-item-editor-close')
+  const menuID = `${schemaFieldID(path)}-type-menu`
+
+  const closeTypeMenu = useCallback((restoreFocus: boolean) => {
+    setMenuOpen(false)
+    setTypeSearch('')
+    if (restoreFocus) requestAnimationFrame(() => menuTriggerRef.current?.focus())
+  }, [])
 
   const openNew = (variantIndex?: number) => {
     const selectedSchema = variantIndex === undefined ? itemSchema : variants[variantIndex]
@@ -868,6 +879,10 @@ function ComplexArrayField({
     // New complex items start sparse, but initialValue includes every explicit
     // schema default so the dialog shows what Flow360 will actually use.
     const initial = initialValue(selectedSchema, true)
+    // A portal menu item disappears in the same commit that opens the nested
+    // dialog. Anchor focus on the durable trigger so useFocusTrap can restore
+    // it when the dialog closes.
+    menuTriggerRef.current?.focus()
     setEditor({
       index: null,
       schema: selectedSchema,
@@ -952,12 +967,16 @@ function ComplexArrayField({
 
   useLayoutEffect(() => {
     if (!menuOpen) return
+    // Keyboard activation can restore focus to the trigger after React's
+    // portal commit. Run in the next task so the search field wins that race.
+    const focusTimer = window.setTimeout(() => menuSearchRef.current?.focus(), 0)
     updateMenuPosition()
     window.addEventListener('resize', updateMenuPosition)
     window.addEventListener('scroll', updateMenuPosition, true)
     window.visualViewport?.addEventListener('resize', updateMenuPosition)
     window.visualViewport?.addEventListener('scroll', updateMenuPosition)
     return () => {
+      window.clearTimeout(focusTimer)
       window.removeEventListener('resize', updateMenuPosition)
       window.removeEventListener('scroll', updateMenuPosition, true)
       window.visualViewport?.removeEventListener('resize', updateMenuPosition)
@@ -965,16 +984,61 @@ function ComplexArrayField({
     }
   }, [menuOpen, updateMenuPosition])
 
+  useEffect(() => {
+    if (!editor) return
+    // useFocusTrap provides containment, Escape, and restoration. This delayed
+    // initial focus additionally covers a dialog opened by a menuitem's native
+    // Enter activation, whose default focus step can run after the portal commit.
+    const focusTimer = window.setTimeout(() => editorDialogRef.current?.querySelector<HTMLElement>('.schema-item-editor-close')?.focus(), 0)
+    return () => window.clearTimeout(focusTimer)
+  }, [editor?.index, editor?.schema, editorDialogRef])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && (menuRef.current?.contains(target) || menuTriggerRef.current?.contains(target))) return
+      closeTypeMenu(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer)
+  }, [closeTypeMenu, menuOpen])
+
+  const handleTypeMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeTypeMenu(true)
+      return
+    }
+    if ((event.key === 'Enter' || event.key === ' ') && (event.target as HTMLElement).getAttribute('role') === 'menuitem') {
+      event.preventDefault()
+      ;(event.target as HTMLButtonElement).click()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    if (!items.length) return
+    event.preventDefault()
+    const current = items.indexOf(event.target as HTMLButtonElement)
+    if (event.key === 'Home') items[0].focus()
+    else if (event.key === 'End') items[items.length - 1].focus()
+    else if (event.key === 'ArrowDown') items[current < 0 ? 0 : (current + 1) % items.length].focus()
+    else items[current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length].focus()
+  }
+
   const typeMenu = menuOpen && variants.length > 0 && typeof document !== 'undefined'
     ? createPortal(
       <div
         ref={menuRef}
         className={`schema-array-type-menu schema-array-type-menu--portal${menuPosition ? ' is-positioned' : ''}`}
         role="menu"
+        id={menuID}
         aria-label={localizeSchemaText('Choose {item} type').replace('{item}', itemCopy.noun)}
         style={menuPosition ? { left: menuPosition.left, top: menuPosition.top } : undefined}
+        onKeyDown={handleTypeMenuKeyDown}
       >
-        <label className="schema-array-type-search"><Search size={13} /><span className="sr-only">{localizeSchemaText('Search types')}</span><input autoFocus value={typeSearch} placeholder={localizeSchemaText('Search types')} onChange={(event) => setTypeSearch(event.target.value)} /></label>
+        <label className="schema-array-type-search"><Search size={13} /><span className="sr-only">{localizeSchemaText('Search types')}</span><input ref={menuSearchRef} value={typeSearch} placeholder={localizeSchemaText('Search types')} onChange={(event) => setTypeSearch(event.target.value)} /></label>
         {filteredVariantGroups.map(([group, entries]) => <section className="schema-array-type-group" key={group}><strong>{localizeSchemaText(group)}</strong>{entries.map((entry) => <button type="button" role="menuitem" key={entry.index} onClick={() => openNew(entry.index)}>{entry.label}</button>)}</section>)}
         {filteredVariantGroups.length === 0 && <span className="schema-array-type-empty">{localizeSchemaText('No matching types')}</span>}
       </div>,
@@ -986,7 +1050,7 @@ function ComplexArrayField({
       <div className="schema-array-toolbar">
         <span><strong>{array.length ? localizeSchemaText('{count} items').replace('{count}', String(array.length)) : localizeSchemaText('No items yet')}</strong>{rootTabContent && <SchemaDescriptionHelp description={schema.description} title={title} />}</span>
         <div className="schema-array-add-wrap">
-          <button ref={menuTriggerRef} type="button" disabled={disabled} className="schema-array-add" aria-haspopup={variants.length ? 'menu' : undefined} aria-expanded={variants.length ? menuOpen : undefined} onClick={() => variants.length ? setMenuOpen((current) => !current) : openNew()}>
+          <button ref={menuTriggerRef} type="button" disabled={disabled} className="schema-array-add" aria-haspopup={variants.length ? 'menu' : undefined} aria-controls={variants.length ? menuID : undefined} aria-expanded={variants.length ? menuOpen : undefined} onClick={() => variants.length ? setMenuOpen((current) => !current) : openNew()}>
             <Plus size={14} /> Add item {variants.length ? <ChevronDown size={13} /> : null}
           </button>
           {typeMenu}
@@ -1007,8 +1071,8 @@ function ComplexArrayField({
   )
 
   const dialog = editor && <div className="schema-item-editor-backdrop" role="presentation">
-    <section className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`}>
-      <header><div><span className="schema-item-editor-kicker">{editor.index === null ? itemCopy.newKicker : itemCopy.editKicker}</span><h3>{formatSchemaLabel(editor.schema.title || title)}</h3><small>{itemCopy.fixedType}</small></div><button type="button" className="icon-button" onClick={() => setEditor(null)} aria-label={itemCopy.closeLabel}><X size={17} /></button></header>
+    <section ref={editorDialogRef} className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`} tabIndex={-1}>
+      <header><div><span className="schema-item-editor-kicker">{editor.index === null ? itemCopy.newKicker : itemCopy.editKicker}</span><h3>{formatSchemaLabel(editor.schema.title || title)}</h3><small>{itemCopy.fixedType}</small></div><button type="button" className="icon-button schema-item-editor-close" onClick={closeEditor} aria-label={itemCopy.closeLabel}><X size={17} /></button></header>
       <div className="schema-item-editor-workspace">
       {editorFields.length > 4 && <nav className="schema-item-editor-nav" aria-label={localizeSchemaText('Form sections')}>
         <button type="button" className={editorFilter ? 'active' : ''} aria-pressed={editorFilter} onClick={() => setEditorFilter((current) => !current)}><ListFilter size={13} />{localizeSchemaText('Required / errors only')}</button>
@@ -1032,7 +1096,7 @@ function ComplexArrayField({
           value: itemSchema.type === 'union' && isUnionDraft(current.value) ? { ...current.value, value: next } : next,
         } : current)}
       /></div></div>
-      <footer><button type="button" onClick={() => setEditor(null)}>{localizeSchemaText('Cancel')}</button><button type="button" className="primary" onClick={saveEditor}>{itemCopy.saveLabel}</button></footer>
+      <footer><button type="button" onClick={closeEditor}>{localizeSchemaText('Cancel')}</button><button type="button" className="primary" onClick={saveEditor}>{itemCopy.saveLabel}</button></footer>
     </section>
   </div>
   const renderedDialog = dialog && typeof document !== 'undefined' ? createPortal(dialog, document.body) : dialog
@@ -1508,16 +1572,21 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
       if (!isRecord(value)) return initialValue(schema, sparse)
       const stored = Array.isArray(value.stored_entities) ? value.stored_entities : []
       const unmatchedStoredEntities: Record<string, unknown>[] = []
+      const matchedStoredEntities: Array<{ value: string; payload: Record<string, unknown> }> = []
       const entities = stored.flatMap((entity) => {
         if (!isRecord(entity)) return []
         const choice = (schema.entity_choices ?? []).find((candidate) => entityMatchesChoice(entity, candidate))
-        if (choice) return [choice.value]
+        if (choice) {
+          matchedStoredEntities.push({ value: choice.value, payload: entity })
+          return [choice.value]
+        }
         unmatchedStoredEntities.push(entity)
         return []
       })
       return {
         entities,
         selectors: Array.isArray(value.selectors) ? value.selectors : [],
+        ...(matchedStoredEntities.length ? { matched_stored_entities: matchedStoredEntities } : {}),
         ...(unmatchedStoredEntities.length ? { unmatched_stored_entities: unmatchedStoredEntities } : {}),
       }
     }
@@ -1601,9 +1670,18 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       const unmatchedStoredEntities = Array.isArray(object.unmatched_stored_entities)
         ? object.unmatched_stored_entities.filter(isRecord)
         : []
+      const matchedStoredEntities = Array.isArray(object.matched_stored_entities)
+        ? object.matched_stored_entities.filter((entry): entry is Record<string, unknown> => isRecord(entry) && typeof entry.value === 'string' && isRecord(entry.payload))
+        : []
       const result: Record<string, unknown> = {
         stored_entities: [
-          ...(schema.entity_choices ?? []).filter((choice) => selected.has(choice.value) && choice.payload).map((choice) => choice.payload),
+          ...(schema.entity_choices ?? []).flatMap((choice) => {
+            if (!selected.has(choice.value)) return []
+            const preserved = matchedStoredEntities
+              .filter((entry) => entry.value === choice.value)
+              .map((entry) => entry.payload as Record<string, unknown>)
+            return preserved.length ? preserved : choice.payload ? [choice.payload] : []
+          }),
           ...unmatchedStoredEntities,
         ],
       }
