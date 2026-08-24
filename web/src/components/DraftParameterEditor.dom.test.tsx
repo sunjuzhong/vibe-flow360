@@ -211,6 +211,27 @@ describe('Draft parameter validation navigation', () => {
     expect(document.activeElement).toBe(maximumSteps)
   })
 
+  it('exposes connected mode tabs with roving arrow, Home, and End keyboard focus', async () => {
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-modes" parameters={baseline} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    const formMode = container.querySelector<HTMLElement>('#draft-editor-mode-form')!
+    const jsonMode = container.querySelector<HTMLElement>('#draft-editor-mode-json')!
+    expect(formMode.getAttribute('aria-controls')).toBe('draft-editor-panel-form')
+    expect(container.querySelector('#draft-editor-panel-form')?.getAttribute('aria-labelledby')).toBe('draft-editor-mode-form')
+    formMode.focus()
+    await act(async () => formMode.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+    expect(jsonMode.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(jsonMode)
+    await act(async () => jsonMode.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })))
+    expect(formMode.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(formMode)
+  })
+
   it('shows warnings without error styling and routes an unmapped issue to complete JSON', async () => {
     vi.mocked(api.validateDraftParameters).mockResolvedValue({
       schema_version: 1,

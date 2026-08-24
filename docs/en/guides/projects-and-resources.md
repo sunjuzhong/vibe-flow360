@@ -58,3 +58,13 @@ is both saved and validated; any subsequent edit disables it immediately.
 
 This replaces the previous automatic Draft update behavior. Existing Flow360
 schema, validation, and update API contracts are unchanged.
+
+If schema loading fails, continue in JSON and retry the Form schema later. If
+validation or saving fails, keep the editor open: the candidate and its undo
+history remain local, and **Retry validation** or **Retry save** resubmits the
+same version. Never discard changes merely to recover a network connection.
+
+Keyboard users can move between Form and JSON with arrow, Home, and End keys.
+Validation summary actions focus the affected field. The unsaved-close dialog
+keeps focus inside until a choice is made and returns focus to the close button
+when editing continues.

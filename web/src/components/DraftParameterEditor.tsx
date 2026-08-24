@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, Redo2, RefreshCw, RotateCcw, Save, ShieldCheck, Sparkles, TriangleAlert, Undo2 } from 'lucide-react'
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { APIError, api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { candidateFingerprint, localDraftValidation, normalizeDraftValidation, type DraftValidationIssue } from '../lib/draftValidation'
@@ -269,6 +269,20 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     } catch (cause) {
       setError(draftParameterErrorMessage(cause, t))
     }
+  }
+
+  const moveModeFocus = (event: KeyboardEvent<HTMLButtonElement>, currentMode: 'form' | 'json') => {
+    const availableModes: Array<'form' | 'json'> = schema ? ['form', 'json'] : ['json']
+    const currentIndex = Math.max(0, availableModes.indexOf(currentMode))
+    let nextMode: 'form' | 'json' | undefined
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextMode = availableModes[(currentIndex + 1) % availableModes.length]
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextMode = availableModes[(currentIndex - 1 + availableModes.length) % availableModes.length]
+    if (event.key === 'Home') nextMode = availableModes[0]
+    if (event.key === 'End') nextMode = availableModes.at(-1)
+    if (!nextMode) return
+    event.preventDefault()
+    selectMode(nextMode)
+    document.getElementById(`draft-editor-mode-${nextMode}`)?.focus()
   }
 
   const validateExpression: ExpressionValidator = useCallback(async (path) => {
@@ -567,10 +581,10 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       <div className="draft-parameter-editor">
       <div className="draft-parameter-toolbar">
         <div className="draft-editor-modes" role="tablist" aria-label={t('Draft parameter editor mode')}>
-          <button type="button" role="tab" aria-selected={mode === 'form'} className={mode === 'form' ? 'active' : ''} disabled={!schema} onClick={() => selectMode('form')}>
+          <button id="draft-editor-mode-form" type="button" role="tab" aria-controls="draft-editor-panel-form" aria-selected={mode === 'form'} tabIndex={mode === 'json' ? -1 : 0} className={mode === 'form' ? 'active' : ''} disabled={!schema} onKeyDown={(event) => moveModeFocus(event, 'form')} onClick={() => selectMode('form')}>
             <ListTree size={13} /> {t('Form')}
           </button>
-          <button type="button" role="tab" aria-selected={mode === 'json'} className={mode === 'json' ? 'active' : ''} onClick={() => selectMode('json')}>
+          <button id="draft-editor-mode-json" type="button" role="tab" aria-controls="draft-editor-panel-json" aria-selected={mode === 'json'} tabIndex={mode === 'json' ? 0 : -1} className={mode === 'json' ? 'active' : ''} onKeyDown={(event) => moveModeFocus(event, 'json')} onClick={() => selectMode('json')}>
             <Code2 size={13} /> {t('JSON')}
           </button>
         </div>
@@ -647,7 +661,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         }}>{t('Discard changes')}</button>
       </div>}
       {mode === 'form' && schema && (
-        <div className="draft-parameter-form" role="tabpanel">
+        <div id="draft-editor-panel-form" className="draft-parameter-form" role="tabpanel" aria-labelledby="draft-editor-mode-form">
           <SchemaFormFields
             schema={schema}
             value={formValue}
@@ -671,7 +685,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         </div>
       )}
       {mode === 'json' && (
-        <div role="tabpanel">
+        <div id="draft-editor-panel-json" role="tabpanel" aria-labelledby="draft-editor-mode-json">
           <div className="draft-json-label">{t('Complete SimulationParams JSON')}</div>
           <JsonEditor
             ariaLabel={`Draft ${draftId} SimulationParams JSON`}
@@ -689,7 +703,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         </div>
       )}
       {mode === 'preview' && (
-        <div role="tabpanel">
+        <div role="region" aria-label={t('Draft parameter preview')}>
           <JsonPreview value={previewValue} empty={t('No Draft parameters to preview.')} className="draft-json-preview" />
         </div>
       )}

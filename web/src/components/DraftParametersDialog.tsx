@@ -2,6 +2,7 @@ import { AlertCircle, Check, Copy, FileJson2, RefreshCw, Save, X } from 'lucide-
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import type { ProjectInfo, ResourceDetail, ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import DraftParameterEditor, { type DraftParameterEditorHandle } from './DraftParameterEditor'
 
 type Props = {
@@ -51,6 +52,11 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
   const [closeGuardOpen, setCloseGuardOpen] = useState(false)
   const [saveClosing, setSaveClosing] = useState(false)
   const editorRef = useRef<DraftParameterEditorHandle>(null)
+  const cancelClose = useCallback(() => {
+    setCloseGuardOpen(false)
+    onCloseCancelled?.()
+  }, [onCloseCancelled])
+  const closeGuardRef = useFocusTrap<HTMLElement>(closeGuardOpen, cancelClose, '.draft-close-guard-cancel')
   useEffect(() => setCopied(false), [draftId])
   const requestClose = useCallback(() => {
     if (dirty) setCloseGuardOpen(true)
@@ -110,7 +116,7 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
 
       <div className="project-parameters-body">
         {loading && (
-          <div className="detail-empty"><RefreshCw size={16} className="spin" /> {t('Reading Draft parameters…')}</div>
+          <div className="detail-empty" role="status" aria-live="polite"><RefreshCw size={16} className="spin" /> {t('Reading Draft parameters…')}</div>
         )}
         {!loading && (error || !detail) && (
           <div className="detail-state error">
@@ -140,14 +146,14 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
         )}
       </div>
       {closeGuardOpen && <div className="draft-close-guard-backdrop">
-        <section className="draft-close-guard" role="alertdialog" aria-modal="true" aria-labelledby="draft-close-guard-title">
+        <section ref={closeGuardRef} className="draft-close-guard" role="alertdialog" aria-modal="true" aria-labelledby="draft-close-guard-title" aria-describedby="draft-close-guard-description" tabIndex={-1}>
           <AlertCircle size={20} />
           <div>
             <strong id="draft-close-guard-title">{t('Save changes before closing?')}</strong>
-            <p>{t('Your current candidate has not been saved to Flow360.')}</p>
+            <p id="draft-close-guard-description">{t('Your current candidate has not been saved to Flow360.')}</p>
           </div>
           <div className="draft-close-guard-actions">
-            <button type="button" disabled={saveClosing} onClick={() => { setCloseGuardOpen(false); onCloseCancelled?.() }}>{t('Continue editing')}</button>
+            <button type="button" className="draft-close-guard-cancel" disabled={saveClosing} onClick={cancelClose}>{t('Continue editing')}</button>
             <button type="button" disabled={saveClosing} onClick={discardAndClose}>{t('Discard changes')}</button>
             <button type="button" className="primary" disabled={saveClosing} onClick={() => void saveAndClose()}>
               {saveClosing ? <RefreshCw size={13} className="spin" /> : <Save size={13} />}{saveClosing ? t('Saving…') : t('Save and close')}

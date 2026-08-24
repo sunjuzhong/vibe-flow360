@@ -2293,7 +2293,7 @@ button { color: inherit; }
 .draft-validation-popover-issues code { font: 10px 'DM Mono'; }
 .draft-validation-popover-issues span { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; line-height: 1.4; }
 .draft-validation-popover-issues span b { flex: 0 0 auto; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
-.draft-validation-popover-issues small { color: #747b70; font-size: 9px; line-height: 1.35; }
+.draft-validation-popover-issues small { color: #62685e; font-size: 9px; line-height: 1.35; }
 .draft-parameter-recovery { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 9px; margin: 0 14px 10px; padding: 10px 11px; border: 1px solid #e4b5ac; border-radius: 8px; color: #8d3f32; background: #fff3f0; }
 .draft-parameter-recovery > svg { align-self: start; margin-top: 2px; }
 .draft-parameter-recovery span { display: grid; gap: 2px; min-width: 0; }
@@ -2415,7 +2415,7 @@ button { color: inherit; }
 .draft-ai-composer button { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; padding: 0; border: 1px solid #6d7f3e; border-radius: 9px; color: #fff; background: #5d7130; cursor: pointer; }
 .draft-ai-composer button:disabled { cursor: not-allowed; opacity: .4; }
 .draft-config-actions { z-index: 4; display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 9px; margin: 14px -18px 0; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid #dfe1d9; background: rgba(250,250,247,.97); box-shadow: 0 -8px 22px rgba(35,42,28,.08); backdrop-filter: blur(10px); }
-.draft-config-actions > span { min-width: 0; flex: 1; color: #7c8277; font-size: 11px; line-height: 1.4; }
+.draft-config-actions > span { min-width: 0; flex: 1; color: #686e64; font-size: 11px; line-height: 1.4; }
 .draft-parameter-validate { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #b8c29f; border-radius: 8px; color: #5f702f; background: #f4f7eb; font-size: 12px; font-weight: 700; cursor: pointer; }
 .draft-parameter-validate:hover:not(:disabled) { border-color: #8fa35a; background: #edf3dc; }
 .draft-parameter-validate:disabled { cursor: not-allowed; opacity: .5; }
@@ -5740,6 +5740,16 @@ button { color: inherit; }
   .project-loading-progress > span { transition: none; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .typing-dot,
+  .resource-status-dot,
+  .viewer-pivot-marker { animation: none !important; }
+  .draft-config-workspace *,
+  .draft-close-guard-backdrop,
+  .draft-close-guard { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
+
 .project-shell-header {
   position: fixed;
   z-index: 80;
@@ -7428,13 +7438,13 @@ button { color: inherit; }
 .project-parameters-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 9px; color: #53691b; background: #e3eccb; }
 .project-parameters-identity { min-width: 0; }
 .project-parameters-identity small,.project-parameters-identity strong,.project-parameters-identity span { display: block; }
-.project-parameters-identity small { color: #7b8470; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+.project-parameters-identity small { color: #60685a; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
 .project-parameters-identity strong { margin-top: 2px; overflow: hidden; color: #30372b; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.project-parameters-identity span { margin-top: 3px; overflow: hidden; color: #7d8576; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.project-parameters-identity span { margin-top: 3px; overflow: hidden; color: #626a5d; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .project-parameters-meta { display: grid; justify-items: end; gap: 5px; }
-.project-parameters-sync { display: inline-flex; align-items: center; gap: 5px; color: #687652; font-size: 9px; }
+.project-parameters-sync { display: inline-flex; align-items: center; gap: 5px; color: #5d6b45; font-size: 9px; }
 .project-parameters-sync i { width: 6px; height: 6px; border-radius: 50%; background: #8eaa3a; box-shadow: 0 0 0 3px rgba(142,170,58,.13); }
-.project-parameters-copy { display: inline-flex; max-width: 190px; min-height: 25px; align-items: center; gap: 5px; padding: 0 7px; border: 0; border-radius: 5px; color: #858c7d; background: transparent; cursor: pointer; }
+.project-parameters-copy { display: inline-flex; max-width: 190px; min-height: 25px; align-items: center; gap: 5px; padding: 0 7px; border: 0; border-radius: 5px; color: #626a5d; background: transparent; cursor: pointer; }
 .project-parameters-copy:hover { color: #52651f; background: #e9eedf; }
 .project-parameters-copy code { overflow: hidden; font: 8px 'DM Mono'; text-overflow: ellipsis; white-space: nowrap; }
 .project-parameters-header > .project-parameters-close {

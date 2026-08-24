@@ -73,6 +73,25 @@ describe('language settings', () => {
     expect(translate('About {title}', 'zh-CN').replace('{title}', translate('Models', 'zh-CN'))).toBe('关于 模型')
   })
 
+  it('keeps Draft editor release-gate terminology complete in Chinese', () => {
+    const messages = [
+      'Current Draft',
+      'Unsaved local changes',
+      'Save to Draft',
+      'Draft save failed',
+      'Validation connection failed',
+      'Flow360 validation passed with warnings',
+      'Draft parameter preview',
+      'Save changes before closing?',
+      'Continue editing',
+      'Discard changes',
+      'Save and close',
+      'Run this Draft',
+    ]
+
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
   it('covers the new Project source selector in Chinese', () => {
     const messages = [
       'Project source method',
