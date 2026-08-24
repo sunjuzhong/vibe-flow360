@@ -19,12 +19,14 @@ export type Flow360Status = {
 
 export class APIError extends Error {
   code?: string
+  status?: number
   details: Record<string, unknown>
 
-  constructor(message: string, details: Record<string, unknown> = {}) {
+  constructor(message: string, details: Record<string, unknown> = {}, status?: number) {
     super(message)
     this.name = 'APIError'
     this.code = typeof details.code === 'string' ? details.code : undefined
+    this.status = status
     this.details = details
   }
 }
@@ -596,7 +598,7 @@ export type DraftParameterValidationResponse = {
   schema_version: number
   validator_version?: string
   valid: boolean
-  issues: Array<{ level: string; code: string; path?: string; message: string; stages?: string[] }>
+  issues: Array<{ level: 'error' | 'warning' | string; code: string; path?: string; message: string; stages?: string[] }>
 }
 
 export type GeometryDiagnosticCapability = {
@@ -1090,14 +1092,14 @@ export type SweepResult = {
 async function json<T>(path: string): Promise<T> {
   const response = await fetch(path)
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new APIError(body.error || response.statusText, body)
+  if (!response.ok) throw new APIError(body.error || response.statusText, body, response.status)
   return body as T
 }
 
 async function flow360JSON<T>(path: string): Promise<Flow360DataResponse<T>> {
   const response = await fetch(path)
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new APIError(body.error || response.statusText, body)
+  if (!response.ok) throw new APIError(body.error || response.statusText, body, response.status)
   const source = response.headers.get('X-VibeSim-Data-Source') === 'cache' ? 'cache' : 'live'
   return {
     data: body as T,
@@ -1114,7 +1116,7 @@ async function mutate<T>(path: string, body?: unknown): Promise<T> {
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new APIError(payload.error || payload.message || response.statusText, payload)
+  if (!response.ok) throw new APIError(payload.error || payload.message || response.statusText, payload, response.status)
   return payload as T
 }
 

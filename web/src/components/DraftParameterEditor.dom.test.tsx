@@ -123,6 +123,14 @@ describe('Draft parameter validation navigation', () => {
       configurable: true,
       value: vi.fn(),
     })
+    Object.defineProperty(Range.prototype, 'getClientRects', {
+      configurable: true,
+      value: () => [],
+    })
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) }),
+    })
     vi.spyOn(api, 'draftParameterSchema').mockResolvedValue({
       schema_version: 1,
       source_type: 'Case',
@@ -131,6 +139,7 @@ describe('Draft parameter validation navigation', () => {
       baseline,
     })
     vi.spyOn(api, 'validateDraftParameters').mockResolvedValue(validation)
+    vi.spyOn(api, 'updateDraftParameters').mockResolvedValue({ simulation_params: baseline })
   })
 
   afterEach(async () => {
@@ -186,6 +195,7 @@ describe('Draft parameter validation navigation', () => {
 
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     if (!maximumSteps || !valueSetter) throw new Error('Maximum steps input is unavailable')
+    maximumSteps.focus()
     await act(async () => {
       valueSetter.call(maximumSteps, '10')
       maximumSteps.dispatchEvent(new Event('input', { bubbles: true }))
@@ -196,5 +206,82 @@ describe('Draft parameter validation navigation', () => {
     expect(container.querySelectorAll('.schema-inline-error')).toHaveLength(0)
     expect(container.querySelectorAll('.schema-invalid, .schema-field-invalid, .input-field--invalid')).toHaveLength(0)
     expect(caseTab?.classList.contains('invalid')).toBe(false)
+    expect(document.activeElement).toBe(maximumSteps)
+    await flushTimers()
+    expect(document.activeElement).toBe(maximumSteps)
+  })
+
+  it('shows warnings without error styling and routes an unmapped issue to complete JSON', async () => {
+    vi.mocked(api.validateDraftParameters).mockResolvedValue({
+      schema_version: 1,
+      valid: false,
+      issues: [
+        { level: 'warning', code: 'review', path: 'case.output_fields', message: 'Review the selected outputs' },
+        { level: 'error', code: 'hidden', path: 'private_attribute_cache.hidden', message: 'Inspect the complete candidate' },
+      ],
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-1" parameters={baseline} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    const warning = buttonWithText(container, 'Review the selected outputs')
+    expect(warning.classList.contains('warning')).toBe(true)
+    expect(warning.textContent).toContain('Warning')
+    expect(container.querySelector('#schema-root-tab-case')?.textContent).toContain('warnings')
+
+    const globalIssue = buttonWithText(container, 'Inspect the complete candidate')
+    expect(globalIssue.textContent).toContain('General Draft issue')
+    expect(globalIssue.textContent).toContain('No matching form field')
+    await click(globalIssue)
+    expect(buttonWithText(container, 'JSON').getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('keeps the candidate recoverable when schema loading or validation transport fails', async () => {
+    vi.mocked(api.draftParameterSchema).mockRejectedValueOnce(new Error('schema runtime unavailable'))
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-schema" parameters={baseline} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(container.textContent).toContain('Flow360 form schema is unavailable')
+    expect(buttonWithText(container, 'JSON').getAttribute('aria-selected')).toBe('true')
+    await click(buttonWithText(container, 'Retry schema'))
+    expect(buttonWithText(container, 'Form').hasAttribute('disabled')).toBe(false)
+
+    vi.mocked(api.validateDraftParameters).mockRejectedValue(new TypeError('Failed to fetch'))
+    await click(buttonWithText(container, 'Validate again'))
+    expect(container.textContent).toContain('Validation connection failed')
+    expect(container.textContent).toContain('candidate is still local')
+    expect(buttonWithText(container, 'Retry validation')).not.toBeNull()
+  })
+
+  it('presents a failed automatic sync as a recoverable global state', async () => {
+    vi.mocked(api.validateDraftParameters).mockResolvedValue({ schema_version: 1, valid: true, issues: [] })
+    vi.mocked(api.updateDraftParameters).mockRejectedValue(new Error('connection interrupted while saving'))
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-sync" parameters={baseline} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    await click(container.querySelector<HTMLElement>('#schema-root-tab-case')!)
+    const input = container.querySelector<HTMLInputElement>('#schema-case-solver-max_steps')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!input || !valueSetter) throw new Error('Maximum steps input is unavailable')
+    await act(async () => {
+      valueSetter.call(input, '20')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flushTimers()
+    await flushTimers()
+
+    expect(container.textContent).toContain('Draft sync failed')
+    expect(container.textContent).toContain('validated candidate remains in this editor')
+    expect(buttonWithText(container, 'Retry sync')).not.toBeNull()
   })
 })

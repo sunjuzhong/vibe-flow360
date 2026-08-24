@@ -247,7 +247,8 @@ function SchemaFormFieldsContent({
                   <small title={localizeSchemaText('Unconfigured fields')}>{stats.unconfigured} {localizeSchemaText('empty')}</small>
                   {stats.modified > 0 && <small className="modified" title={localizeSchemaText('Modified fields')}>{stats.modified} {localizeSchemaText('changed')}</small>}
                   {stats.errors > 0 && <small className="invalid" title={localizeSchemaText('Validation errors')}>{stats.errors} {localizeSchemaText('errors')}</small>}
-                  {stats.unconfigured === 0 && stats.modified === 0 && stats.errors === 0 && <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>}
+                  {stats.warnings > 0 && <small className="warning" title={localizeSchemaText('Validation warnings')}>{stats.warnings} {localizeSchemaText('warnings')}</small>}
+                  {stats.unconfigured === 0 && stats.modified === 0 && stats.errors === 0 && stats.warnings === 0 && <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>}
                 </span>
               </button>
             )
@@ -291,7 +292,7 @@ function SchemaFormFieldsContent({
   return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} showAll={showAll} configured baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} />
 }
 
-export type SchemaGroupStats = { unconfigured: number; modified: number; errors: number }
+export type SchemaGroupStats = { unconfigured: number; modified: number; errors: number; warnings: number }
 
 export function schemaGroupStats(
   schema: DynamicFormSchema | undefined,
@@ -314,6 +315,7 @@ export function schemaGroupStats(
     unconfigured: leaves.filter((leaf) => !leaf.configured).length,
     modified: leaves.filter((leaf) => leaf.modified).length,
     errors: issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, rootPath)).length ?? 0,
+    warnings: issues?.filter((issue) => issue.level === 'warning' && issueMatchesPath(issue.path, rootPath)).length ?? 0,
   }
 }
 
@@ -321,6 +323,7 @@ function groupStatsLabel(stats: SchemaGroupStats) {
   const labels = [`${stats.unconfigured} ${localizeSchemaText('empty')}`]
   if (stats.modified) labels.push(`${stats.modified} ${localizeSchemaText('changed')}`)
   if (stats.errors) labels.push(`${stats.errors} ${localizeSchemaText('errors')}`)
+  if (stats.warnings) labels.push(`${stats.warnings} ${localizeSchemaText('warnings')}`)
   return labels.join(', ')
 }
 

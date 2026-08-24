@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { APIError, type DynamicFormSchema } from '../api/client'
-import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, draftValidationDelay, draftValidationIsCurrent, parseParameterJSON } from './DraftParameterEditor'
+import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, draftValidationDelay, draftValidationFailureKind, draftValidationIsCurrent, parseParameterJSON } from './DraftParameterEditor'
 import { schemaGroupStats } from './SchemaForm'
 
 describe('Draft parameter editor', () => {
@@ -170,6 +170,12 @@ describe('Draft parameter editor', () => {
     expect(translated).toBe('项目版本 25.11.2，当前应用支持 25.10。')
   })
 
+  it('distinguishes transport failures from an unavailable Flow360 schema runtime', () => {
+    expect(draftValidationFailureKind(new TypeError('Failed to fetch'))).toBe('network')
+    expect(draftValidationFailureKind(new APIError('too many requests', {}, 429))).toBe('network')
+    expect(draftValidationFailureKind(new APIError('preflight unavailable', {}, 503))).toBe('schema')
+  })
+
   it('summarizes unconfigured, modified, and invalid fields for group navigation', () => {
     const group = schema.properties?.meshing
     expect(schemaGroupStats(
@@ -178,8 +184,8 @@ describe('Draft parameter editor', () => {
       { defaults: {} },
       [{ path: 'meshing.defaults.target_surface_node_count', message: 'Invalid', level: 'error' }],
       'meshing',
-    )).toEqual({ unconfigured: 0, modified: 1, errors: 1 })
+    )).toEqual({ unconfigured: 0, modified: 1, errors: 1, warnings: 0 })
     expect(schemaGroupStats(group, { defaults: {} }, { defaults: {} }, [], 'meshing'))
-      .toEqual({ unconfigured: 1, modified: 0, errors: 0 })
+      .toEqual({ unconfigured: 1, modified: 0, errors: 0, warnings: 0 })
   })
 })

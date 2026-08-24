@@ -2276,6 +2276,7 @@ button { color: inherit; }
 .draft-validation-popover > summary svg { flex: 0 0 auto; }
 .draft-validation-popover.ready > summary { border-color: #c7d8a1; color: #587018; background: #edf4dc; }
 .draft-validation-popover.error > summary { border-color: #e6b7ae; color: #984433; background: #fff2ef; }
+.draft-validation-popover.warning > summary { border-color: #dfc77d; color: #806218; background: #fff8e6; }
 .draft-validation-popover.checking > summary { border-color: #e2d49d; color: #79621d; background: #faf4df; }
 .draft-validation-popover[open] > summary { box-shadow: 0 0 0 3px rgba(127,150,61,.13); }
 .draft-validation-popover > div { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; display: grid; width: min(440px, calc(100vw - 42px)); gap: 8px; padding: 12px; border: 1px solid #d6dccd; border-radius: 10px; color: #4e5749; background: #fff; box-shadow: 0 16px 46px rgba(35,42,25,.18); }
@@ -2287,8 +2288,23 @@ button { color: inherit; }
 .draft-validation-popover-navigation > button { padding: 5px 8px; border: 1px solid #e1bdb5; border-radius: 6px; color: #91483a; background: #fff; font-size: 10px; cursor: pointer; }
 .draft-validation-popover-issues > button { display: grid; width: 100%; gap: 3px; padding: 8px 9px; border: 1px solid transparent; border-radius: 7px; color: #984433; background: #fff3f0; text-align: left; cursor: pointer; }
 .draft-validation-popover-issues > button:hover,.draft-validation-popover-issues > button.active { border-color: #dfaa9f; background: #ffe8e3; }
+.draft-validation-popover-issues > button.warning { color: #795d18; background: #fff8e7; }
+.draft-validation-popover-issues > button.warning:hover,.draft-validation-popover-issues > button.warning.active { border-color: #ddc16c; background: #fff1c9; }
 .draft-validation-popover-issues code { font: 10px 'DM Mono'; }
-.draft-validation-popover-issues span { font-size: 11px; line-height: 1.4; }
+.draft-validation-popover-issues span { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; line-height: 1.4; }
+.draft-validation-popover-issues span b { flex: 0 0 auto; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
+.draft-validation-popover-issues small { color: #747b70; font-size: 9px; line-height: 1.35; }
+.draft-parameter-recovery { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 9px; margin: 0 14px 10px; padding: 10px 11px; border: 1px solid #e4b5ac; border-radius: 8px; color: #8d3f32; background: #fff3f0; }
+.draft-parameter-recovery > svg { align-self: start; margin-top: 2px; }
+.draft-parameter-recovery span { display: grid; gap: 2px; min-width: 0; }
+.draft-parameter-recovery strong { font-size: 11px; }
+.draft-parameter-recovery small { color: #765b55; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.draft-parameter-recovery button { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #d5a198; border-radius: 7px; color: #884235; background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
+.draft-parameter-recovery button:disabled { cursor: not-allowed; opacity: .5; }
+@media (max-width: 600px) {
+  .draft-parameter-recovery { grid-template-columns: auto minmax(0,1fr); }
+  .draft-parameter-recovery button { grid-column: 1 / -1; width: 100%; }
+}
 .draft-editor-modes { display: inline-flex; overflow: hidden; border: 1px solid #d1d4ca; border-radius: 7px; background: #f0f1ec; }
 .draft-editor-modes button { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-right: 1px solid #d8dad2; color: #70776b; background: transparent; font-size: 12px; cursor: pointer; }
 .draft-editor-modes button:last-child { border-right: 0; }
@@ -2452,6 +2468,7 @@ button { color: inherit; }
 .draft-parameter-form .schema-root-tabs button.invalid { color: #a04435; background: #fff3ef; }
 .draft-parameter-form .schema-root-tabs button.invalid::after { background: #c85d49; }
 .draft-parameter-form .schema-root-tabs small.invalid { color: #a04435; background: #f6d8d1; }
+.draft-parameter-form .schema-root-tabs small.warning { color: #80621a; background: #f7edcf; }
 .draft-parameter-form .schema-root-panel { min-height: 0; overflow-y: auto; padding: 16px 18px 18px; border: 0; background: #fff; overscroll-behavior: contain; }
 .draft-parameter-form .schema-root-object-content { min-width: 0; }
 .draft-parameter-form .schema-root-object-content > .schema-edit-field:first-child { padding-top: 0; }
