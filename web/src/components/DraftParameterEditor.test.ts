@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { APIError, type DynamicFormSchema } from '../api/client'
-import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftAutoSyncReady, draftParameterErrorMessage, draftReviewRunReady, draftValidationDelay, draftValidationFailureKind, draftValidationIsCurrent, parseParameterJSON } from './DraftParameterEditor'
+import { applyDraftAIProposal, buildDraftParameters, configuredExpressionPaths, createJSONMergePatch, draftAIAssistPatch, draftAIConversationHistory, draftParameterErrorMessage, draftReviewRunReady, draftValidationDelay, draftValidationFailureKind, draftValidationIsCurrent, parseParameterJSON } from './DraftParameterEditor'
 import { schemaGroupStats } from './SchemaForm'
 
 describe('Draft parameter editor', () => {
@@ -108,28 +108,6 @@ describe('Draft parameter editor', () => {
       { role: 'user', content: 'Set alpha to 5 degrees.' },
       { role: 'assistant', content: 'Updated alpha.' },
     ])
-  })
-
-  it('auto-syncs only the latest validated candidate and stops retrying a failed revision', () => {
-    const ready = {
-      dirty: true,
-      saving: false,
-      validating: false,
-      candidate: { version: '25.2' },
-      fingerprint: '{"version":"25.2"}',
-      draftId: 'draft-2',
-      validatedDraftId: 'draft-2',
-      validatedFingerprint: '{"version":"25.2"}',
-      hasValidation: true,
-      validationValid: true,
-      failedSyncFingerprint: '',
-    }
-    expect(draftAutoSyncReady(ready)).toBe(true)
-    expect(draftAutoSyncReady({ ...ready, validatedFingerprint: 'older' })).toBe(false)
-    expect(draftAutoSyncReady({ ...ready, validatedDraftId: 'draft-1' })).toBe(false)
-    expect(draftAutoSyncReady({ ...ready, saving: true })).toBe(false)
-    expect(draftAutoSyncReady({ ...ready, validationValid: false })).toBe(false)
-    expect(draftAutoSyncReady({ ...ready, failedSyncFingerprint: ready.fingerprint })).toBe(false)
   })
 
   it('enables Review & Run only for the latest synced and valid revision', () => {

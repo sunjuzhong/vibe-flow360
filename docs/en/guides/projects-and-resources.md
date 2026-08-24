@@ -41,3 +41,20 @@ Project is created.
 
 The workbench also provides Project-scoped annotations, Draft management, Ask
 AI, and Case comparison when the Project contains Case resources.
+
+## Editing a Draft
+
+Draft configuration uses an explicit-save workflow. Form, JSON, and AI changes
+all update one local candidate and do not update the remote Flow360 Draft until
+you choose **Save to Draft**. Undo and redo span all three edit sources, while
+**Discard changes** restores the last successfully saved version.
+
+Saving validates the exact candidate again. Errors block the write and link to
+the affected field; warnings remain visible but do not block saving. A failed
+save preserves the candidate and its history so the same version can be retried.
+Closing with unsaved changes offers **Continue editing**, **Discard changes**,
+or **Save and close**. Running is available only while the current exact version
+is both saved and validated; any subsequent edit disables it immediately.
+
+This replaces the previous automatic Draft update behavior. Existing Flow360
+schema, validation, and update API contracts are unchanged.

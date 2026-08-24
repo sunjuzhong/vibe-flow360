@@ -7459,6 +7459,15 @@ button { color: inherit; }
 .project-parameters-body:has(.draft-config-workspace) { min-height: 0; overflow: hidden; padding: 0; }
 .project-parameters-body > .detail-empty,
 .project-parameters-body > .detail-state { min-height: 240px; }
+.draft-close-guard-backdrop { position: absolute; z-index: 80; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(32,38,27,.42); backdrop-filter: blur(2px); }
+.draft-close-guard { display: grid; width: min(440px,100%); grid-template-columns: auto minmax(0,1fr); gap: 12px; padding: 20px; border: 1px solid #d9ddcf; border-radius: 12px; color: #3f4738; background: #fff; box-shadow: 0 22px 70px rgba(28,33,24,.28); }
+.draft-close-guard > svg { color: #a16a20; }
+.draft-close-guard strong { font-size: 14px; }
+.draft-close-guard p { margin: 5px 0 0; color: #747c6e; font-size: 11px; line-height: 1.5; }
+.draft-close-guard-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.draft-close-guard-actions button { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #d6dacd; border-radius: 7px; color: #586052; background: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
+.draft-close-guard-actions button.primary { border-color: #718a2e; color: #fff; background: #718a2e; }
+.draft-close-guard-actions button:disabled { cursor: not-allowed; opacity: .55; }
 
 .project-page > .project-sync-state {
   position: fixed;

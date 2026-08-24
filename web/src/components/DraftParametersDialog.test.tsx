@@ -21,7 +21,7 @@ describe('DraftParametersDialog', () => {
     expect(markup).toContain('High AoA')
     expect(markup).toContain('draft-1')
     expect(markup).toContain('aria-label="Copy Draft ID"')
-    expect(markup).toContain('Changes save automatically to Flow360.')
+    expect(markup).toContain('Draft matches the saved Flow360 version.')
     expect(markup).toContain('Loading the installed Flow360 schema…')
     expect(markup).not.toContain('Resource details')
     expect(markup).not.toContain('Overview')
