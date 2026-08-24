@@ -876,4 +876,51 @@ describe('schema-driven Flow360 form', () => {
     expect(markup).not.toContain('meshing.defaults.boundary_layer_growth_rate')
     expect(markup).not.toContain('meshing.defaults.first_layer_height')
   })
+
+  it('applies the shared required, disabled, and warning contract across schema editors', () => {
+    const disabled = { disabled: true, required: true }
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      required: ['text', 'number', 'select', 'toggle', 'quantity', 'multi', 'entities', 'variant', 'array', 'expression', 'fallback'],
+      properties: {
+        text: { type: 'string', title: 'Text', ...disabled },
+        number: { type: 'number', title: 'Number', ...disabled },
+        select: { type: 'enum', title: 'Select', options: ['one'], ...disabled },
+        toggle: { type: 'boolean', title: 'Toggle', ...disabled },
+        quantity: { type: 'quantity', title: 'Quantity', unit: 'm', value_schema: { type: 'number' }, ...disabled },
+        multi: { type: 'multi_select', title: 'Multi', options: ['Cp'], value_key: 'items', ...disabled },
+        entities: { type: 'entity_list', title: 'Entities', entity_choices: [{ value: 'wing', label: 'Wing' }], ...disabled },
+        variant: { type: 'union', title: 'Variant', variants: [{ type: 'string', title: 'Text variant' }, { type: 'number', title: 'Number variant' }], ...disabled },
+        array: { type: 'array', title: 'Array', items: { type: 'string' }, ...disabled },
+        expression: { type: 'expression', title: 'Expression', wire_discriminator: { field: 'type_name', value: 'expression' }, ...disabled },
+        fallback: { type: 'json', title: 'JSON fallback', ...disabled },
+      },
+    }
+    const value = hydrateSchemaValue(schema, {
+      text: 'air', number: 1, select: 'one', toggle: true,
+      quantity: { value: 1, units: 'm' }, multi: { items: ['Cp'] },
+      entities: { stored_entities: [] }, variant: 'fixed', array: ['item'],
+      expression: { type_name: 'expression', expression: '1 * u.m' }, fallback: { custom: true },
+    }, true)
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value,
+      sparse: true,
+      showAll: true,
+      issues: [{ path: 'text', level: 'warning', message: 'Review this value.' }],
+      onChange: () => undefined,
+    }))
+
+    expect((markup.match(/field-shell--disabled/g) ?? []).length).toBeGreaterThanOrEqual(11)
+    expect((markup.match(/aria-required="true"/g) ?? []).length).toBeGreaterThanOrEqual(8)
+    expect(markup).toContain('field-shell--warning')
+    expect(markup).toContain('Review this value.')
+    expect(markup).toContain('role="status"')
+    expect(markup).toContain('schema-multi-select')
+    expect(markup).toContain('schema-entity-list')
+    expect(markup).toContain('schema-union-picker')
+    expect(markup).toContain('schema-array-editor')
+    expect(markup).toContain('schema-expression')
+    expect(markup).toContain('plan-code-input')
+  })
 })

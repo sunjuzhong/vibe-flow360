@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { DynamicFormSchema } from '../../api/client'
+import { FieldShell, type FieldMessage } from '../FieldShell'
 
 type EntityListFieldProps = {
   schema: DynamicFormSchema
@@ -9,24 +10,47 @@ type EntityListFieldProps = {
   fieldID: string
   descriptionHelp?: ReactNode
   invalid?: boolean
+  configured?: boolean
+  showAll?: boolean
+  messages?: FieldMessage[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-export default function EntityListField({ schema, value, onChange, title, fieldID, descriptionHelp, invalid = false }: EntityListFieldProps) {
+export default function EntityListField({ schema, value, onChange, title, fieldID, descriptionHelp, invalid = false, configured = true, showAll = false, messages = [] }: EntityListFieldProps) {
   const draft = isRecord(value) ? value : {}
   const selected = Array.isArray(draft.entities) ? draft.entities.filter((item): item is string => typeof item === 'string') : []
   const choices = schema.entity_choices ?? []
   const allSelected = choices.length > 0 && choices.every((choice) => selected.includes(choice.value))
+  const disabled = schema.disabled === true || schema.readOnly === true
 
-  return <fieldset className="schema-object schema-entity-list" id={fieldID} tabIndex={invalid ? -1 : undefined} aria-invalid={invalid || undefined}>
-    <legend><span className="schema-legend-content">{title}{schema.required === true ? ' *' : ''}{descriptionHelp}</span></legend>
-    <div className="schema-entity-header">
-      <span>{selected.length} selected</span>
-      <button type="button" onClick={() => onChange({ ...draft, entities: allSelected ? [] : choices.map((choice) => choice.value) })}>{allSelected ? 'Clear all' : 'Select all'}</button>
-    </div>
-    {choices.length ? <div className="schema-entity-grid">{choices.map((choice) => <label key={choice.value} className={selected.includes(choice.value) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(choice.value)} onChange={(event) => onChange({ ...draft, entities: event.target.checked ? [...selected, choice.value] : selected.filter((item) => item !== choice.value) })} /><span><code>{choice.label}</code>{choice.model_type && <small>{choice.model_type}</small>}</span></label>)}</div> : <div className="schema-array-empty"><strong>No compatible entities</strong><span>Create a compatible entity before configuring this output.</span></div>}
-  </fieldset>
+  return <FieldShell
+    id={fieldID}
+    label={title}
+    required={schema.required === true}
+    disabled={disabled}
+    help={descriptionHelp}
+    status={showAll && !configured ? 'Not configured' : undefined}
+    messages={messages}
+    className={`schema-object schema-entity-list${invalid ? ' schema-field-invalid' : ''}`}
+  >
+    {(controlProps) => <div
+      id={controlProps.id}
+      role="group"
+      aria-label={controlProps['aria-label']}
+      tabIndex={invalid && !disabled ? -1 : undefined}
+      aria-invalid={controlProps['aria-invalid']}
+      aria-required={controlProps['aria-required']}
+      aria-describedby={controlProps['aria-describedby']}
+      aria-errormessage={controlProps['aria-errormessage']}
+    >
+      <div className="schema-entity-header">
+        <span>{selected.length} selected</span>
+        <button type="button" disabled={disabled} onClick={() => onChange({ ...draft, entities: allSelected ? [] : choices.map((choice) => choice.value) })}>{allSelected ? 'Clear all' : 'Select all'}</button>
+      </div>
+      {choices.length ? <div className="schema-entity-grid">{choices.map((choice) => <label key={choice.value} className={selected.includes(choice.value) ? 'selected' : ''}><input type="checkbox" disabled={disabled} checked={selected.includes(choice.value)} onChange={(event) => onChange({ ...draft, entities: event.target.checked ? [...selected, choice.value] : selected.filter((item) => item !== choice.value) })} /><span><code>{choice.label}</code>{choice.model_type && <small>{choice.model_type}</small>}</span></label>)}</div> : <div className="schema-array-empty"><strong>No compatible entities</strong><span>Create a compatible entity before configuring this output.</span></div>}
+    </div>}
+  </FieldShell>
 }
