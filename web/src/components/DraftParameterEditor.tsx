@@ -1,7 +1,8 @@
-import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, RefreshCw, ShieldCheck, Sparkles, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APIError, api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
+import { candidateFingerprint, localDraftValidation, normalizeDraftValidation, type DraftValidationIssue } from '../lib/draftValidation'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
 import JsonPreview from './JsonPreview'
 import DraftAISession, { type DraftAISessionMessage } from './DraftAISession'
@@ -34,18 +35,23 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
+  const [schemaError, setSchemaError] = useState('')
+  const [schemaLoadNonce, setSchemaLoadNonce] = useState(0)
   const [syncError, setSyncError] = useState('')
   const [failedSyncFingerprint, setFailedSyncFingerprint] = useState('')
   const [validation, setValidation] = useState<DraftParameterValidationResponse | null>(null)
+  const [validationError, setValidationError] = useState<{ kind: 'network' | 'schema'; message: string } | null>(null)
   const [validating, setValidating] = useState(false)
   const [validatedDraftId, setValidatedDraftId] = useState('')
   const [validatedFingerprint, setValidatedFingerprint] = useState('')
-  const [focusedValidationIssue, setFocusedValidationIssue] = useState<{ index: number; path?: string; request: number } | null>(null)
+  const [focusedValidationIssue, setFocusedValidationIssue] = useState<{ id: string; path?: string; request: number } | null>(null)
   const [aiPrompt, setAIPrompt] = useState('')
   const [aiLoading, setAILoading] = useState(false)
   const [aiOpen, setAIOpen] = useState(false)
   const [aiMessages, setAIMessages] = useState<DraftAISessionMessage[]>([])
   const aiMessageIDRef = useRef(0)
+  const jsonValueRef = useRef(jsonValue)
+  const schemaLoadedDraftRef = useRef('')
   const latestFingerprintRef = useRef('')
   const validationRequestRef = useRef(0)
   const validationTimerRef = useRef<number | null>(null)
@@ -55,9 +61,12 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   currentDraftIdRef.current = draftId
   onSavedRef.current = onSaved
+  jsonValueRef.current = jsonValue
 
   useEffect(() => {
     setSyncError('')
+    setSchemaError('')
+    setValidationError(null)
     setFailedSyncFingerprint('')
     setSaving(false)
     setAILoading(false)
@@ -75,31 +84,42 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
       setPreviewValue(initialBaseline)
       return () => { active = false }
     }
+    const retrying = schemaLoadedDraftRef.current === draftId
+    schemaLoadedDraftRef.current = draftId
     setLoading(true)
     setError('')
-    setDirty(false)
-    setJSONValue(JSON.stringify(initialBaseline, null, 2))
+    setSchemaError('')
+    if (!retrying) {
+      setDirty(false)
+      setJSONValue(JSON.stringify(initialBaseline, null, 2))
+    }
     api.draftParameterSchema(draftId)
       .then((response) => {
         if (!active) return
         const canonical = response.baseline
+        let editorCandidate = canonical
+        if (retrying) {
+          try {
+            editorCandidate = parseParameterJSON(jsonValueRef.current)
+          } catch { /* Invalid JSON remains in JSON mode; Form safely uses the synced baseline. */ }
+        }
         setBaseline(canonical)
         setSchema(response.schema)
-        setFormValue(hydrateSchemaValue(response.schema, canonical, true))
-        setJSONValue(JSON.stringify(canonical, null, 2))
-        setPreviewValue(canonical)
+        setFormValue(hydrateSchemaValue(response.schema, editorCandidate, true))
+        if (!retrying) setJSONValue(JSON.stringify(canonical, null, 2))
+        setPreviewValue(editorCandidate)
         setCanonicalCandidate(null)
-        setMode('form')
+        if (!retrying || editorCandidate !== canonical) setMode('form')
       })
       .catch((cause) => {
         if (!active) return
         setSchema(null)
         setMode('json')
-        setError(`The Flow360 form schema is unavailable. You can still edit valid JSON. ${draftParameterErrorMessage(cause, t)}`)
+        setSchemaError(draftParameterErrorMessage(cause, t))
       })
       .finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [draftId, readOnly])
+  }, [draftId, readOnly, schemaLoadNonce])
 
   const candidateResult = useMemo(() => {
     try {
@@ -108,13 +128,17 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         : mode === 'preview'
           ? isRecord(previewValue) ? previewValue : baseline
           : schema ? buildDraftParameters(schema, formValue) : baseline)
-      return { value, fingerprint: JSON.stringify(value), error: '' }
+      return { value, fingerprint: candidateFingerprint(value), error: '' }
     } catch (cause) {
       return { value: null, fingerprint: '', error: draftParameterErrorMessage(cause, t) }
     }
   }, [baseline, canonicalCandidate, formValue, jsonValue, mode, previewValue, schema])
 
   latestFingerprintRef.current = candidateResult.fingerprint
+  const localValidation = useMemo(
+    () => localDraftValidation(schema, candidateResult.value, candidateResult.error),
+    [candidateResult.error, candidateResult.value, schema],
+  )
 
   const validateCandidate = useCallback(async (candidate: Record<string, unknown>, fingerprint: string) => {
     const requestDraftId = draftId
@@ -124,6 +148,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setValidatedDraftId('')
     setValidatedFingerprint('')
     setError('')
+    setValidationError(null)
     try {
       const response = await api.validateDraftParameters(draftId, candidate)
       if (
@@ -144,7 +169,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         setValidation(null)
         setValidatedDraftId('')
         setValidatedFingerprint('')
-        setError(draftParameterErrorMessage(cause, t))
+        setValidationError({ kind: draftValidationFailureKind(cause), message: draftParameterErrorMessage(cause, t) })
       }
       return null
     } finally {
@@ -161,7 +186,8 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setValidatedFingerprint('')
     setValidating(false)
     if (validationTimerRef.current !== null) window.clearTimeout(validationTimerRef.current)
-    if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint) return
+    setValidationError(null)
+    if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint || localValidation.blocking) return
     const validateImmediately = immediateValidationFingerprintRef.current === candidateResult.fingerprint
     if (validateImmediately) immediateValidationFingerprintRef.current = ''
     validationTimerRef.current = window.setTimeout(() => {
@@ -174,7 +200,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         validationTimerRef.current = null
       }
     }
-  }, [candidateResult.fingerprint, candidateResult.value, dirty, loading, readOnly, validateCandidate])
+  }, [candidateResult.fingerprint, candidateResult.value, dirty, loading, localValidation.blocking, readOnly, validateCandidate])
 
   const selectMode = (nextMode: EditorMode) => {
     if (nextMode === mode) return
@@ -216,7 +242,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   }, [draftId, formValue, schema])
 
   const applyCandidate = (next: Record<string, unknown>) => {
-    immediateValidationFingerprintRef.current = JSON.stringify(next)
+    immediateValidationFingerprintRef.current = candidateFingerprint(next)
     setCanonicalCandidate(next)
     setJSONValue(JSON.stringify(next, null, 2))
     setPreviewValue(next)
@@ -226,6 +252,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     setSyncError('')
     setFailedSyncFingerprint('')
     setValidation(null)
+    setValidationError(null)
     setValidatedDraftId('')
     setValidatedFingerprint('')
   }
@@ -235,6 +262,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     const requestDraftId = draftId
     const prompt = aiPrompt.trim()
     const candidate = candidateResult.value ?? baseline
+    const requestFingerprint = candidateFingerprint(candidate)
     const userMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
     setAIMessages((current) => [...current, { id: userMessageID, role: 'user', content: prompt }])
     setAIPrompt('')
@@ -255,6 +283,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         autonomous: true,
       })
       if (currentDraftIdRef.current !== requestDraftId) return
+      if (latestFingerprintRef.current !== requestFingerprint) throw new Error(t('The Draft changed while AI was preparing a response. Review the latest candidate and ask again.'))
       if (!response.proposal) throw new Error(response.action.message || t('AI did not return parameter changes.'))
       const next = applyDraftAIProposal(baseline, candidate, response.proposal.patch)
       const aiChanges = diffParameterValues(candidate, next)
@@ -304,26 +333,17 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
 
   const save = async () => {
     const next = candidateResult.value
+    const fingerprint = candidateResult.fingerprint
     if (!next) {
       setSyncError(candidateResult.error || t('Draft SimulationParams are invalid.'))
       return
     }
     let currentValidation = validation
-    if (!currentValidation || validatedFingerprint !== candidateResult.fingerprint) {
-      try {
-        setValidating(true)
-        currentValidation = await api.validateDraftParameters(draftId, next)
-        setValidation(currentValidation)
-        setValidatedDraftId(draftId)
-        setValidatedFingerprint(candidateResult.fingerprint)
-      } catch (cause) {
-        setSyncError(draftParameterErrorMessage(cause, t))
-        return
-      } finally {
-        setValidating(false)
-      }
+    if (!currentValidation || validatedFingerprint !== fingerprint) {
+      currentValidation = await validateCandidate(next, fingerprint)
     }
-    await persistCandidate(next, candidateResult.fingerprint)
+    if (!currentValidation || latestFingerprintRef.current !== fingerprint || !currentValidation.valid) return
+    await persistCandidate(next, fingerprint)
   }
 
   const validateNow = () => {
@@ -372,17 +392,30 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
     validatedFingerprint,
     Boolean(validation),
   )
-  const validationErrors = validationIsCurrent
-    ? validation?.issues.filter((issue) => issue.level === 'error') ?? []
-    : []
+  const normalizedValidation = useMemo(
+    () => normalizeDraftValidation(validationIsCurrent ? validation : null, schema),
+    [schema, validation, validationIsCurrent],
+  )
+  const validationIssues = normalizedValidation.issues
+  const validationErrors = validationIssues.filter((issue) => issue.severity === 'error')
+  const validationWarnings = validationIssues.filter((issue) => issue.severity === 'warning')
+  const displayedIssues = [...localValidation.issues, ...validationIssues]
+  const displayedErrors = displayedIssues.filter((issue) => issue.severity === 'error')
+  const displayedWarnings = displayedIssues.filter((issue) => issue.severity === 'warning')
   const firstValidationError = validationErrors[0]?.message
   const goToValidationError = (index: number) => {
-    if (!schema || validationErrors.length === 0) return
+    if (validationErrors.length === 0) return
     const normalizedIndex = (index + validationErrors.length) % validationErrors.length
-    const issue = validationErrors[normalizedIndex]
-    selectMode('form')
+    goToValidationIssue(validationErrors[normalizedIndex])
+  }
+  const goToValidationIssue = (issue: DraftValidationIssue) => {
+    if (issue.mapping === 'global' || !issue.path || !schema) {
+      selectMode('json')
+    } else {
+      selectMode('form')
+    }
     setFocusedValidationIssue((current) => ({
-      index: normalizedIndex,
+      id: issue.id,
       path: issue.path,
       request: (current?.request ?? 0) + 1,
     }))
@@ -391,6 +424,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
   useEffect(() => {
     setFocusedValidationIssue(null)
   }, [draftId, validatedFingerprint])
+  const focusedErrorIndex = validationErrors.findIndex((issue) => issue.id === focusedValidationIssue?.id)
   const reviewRunStatus = syncError
     ? t('Retry Draft sync before Review & Run.')
     : dirty || saving
@@ -401,32 +435,54 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
           ? firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')
           : t('Latest Draft parameters are synced and ready for review.')
 
-  const validationStatusClass = validating ? 'checking' : validationIsCurrent && validation?.valid ? 'ready' : validationIsCurrent && validation ? 'error' : 'idle'
+  const validationStatusClass = validating
+    ? 'checking'
+    : localValidation.blocking || validationError || validationIsCurrent && normalizedValidation.blocking
+      ? 'error'
+      : validationIsCurrent && validationWarnings.length
+        ? 'warning'
+        : validationIsCurrent && validation?.valid
+          ? 'ready'
+          : 'idle'
   const validationStatusIcon = validating
     ? <RefreshCw size={14} className="spin" />
-    : validationIsCurrent && validation?.valid
-      ? <CheckCircle2 size={14} />
-      : validationIsCurrent && validation
+    : localValidation.blocking || validationError || validationIsCurrent && normalizedValidation.blocking
         ? <AlertCircle size={14} />
-        : <ShieldCheck size={14} />
+        : validationIsCurrent && validationWarnings.length
+          ? <TriangleAlert size={14} />
+          : validationIsCurrent && validation?.valid
+            ? <CheckCircle2 size={14} />
+            : <ShieldCheck size={14} />
   const validationStatusTitle = validating
     ? t('Validating current parameters…')
-    : validationIsCurrent && validation?.valid
-      ? t('Flow360 validation passed')
-      : validationIsCurrent && validation
-        ? t('Flow360 validation needs attention')
-        : t('Waiting for Flow360 validation')
+    : localValidation.blocking
+        ? t('Fix local input errors')
+        : validationError
+          ? validationError.kind === 'network' ? t('Validation connection failed') : t('Flow360 schema validation is unavailable')
+          : validationIsCurrent && normalizedValidation.blocking
+            ? t('Flow360 validation needs attention')
+            : validationIsCurrent && validationWarnings.length
+              ? t('Flow360 validation passed with warnings')
+              : validationIsCurrent && validation?.valid
+                ? t('Flow360 validation passed')
+                : t('Waiting for Flow360 validation')
   const validationStatusDetail = syncError
     ? syncError
-    : saving
-      ? t('Validation passed. Syncing these parameters to the Draft…')
-      : dirty
-        ? t('After validation passes, changes sync automatically to the Draft.')
-        : validationIsCurrent && validation?.valid
-          ? t('Latest Draft parameters are synced and ready for review.')
-          : validationIsCurrent && validation && firstValidationError
-            ? firstValidationError
-            : t('Flow360 checks the current candidate before it is saved to the Draft.')
+    : localValidation.issues[0]?.message
+      ? localValidation.issues[0].message
+      : validationError?.message
+        ? validationError.message
+        : saving
+          ? t('Validation passed. Syncing these parameters to the Draft…')
+          : dirty
+            ? t('After validation passes, changes sync automatically to the Draft.')
+            : validationIsCurrent && normalizedValidation.blocking && firstValidationError
+              ? firstValidationError
+              : validationIsCurrent && validationWarnings.length
+                ? t('Warnings do not block syncing or Review & Run. Review them before continuing.')
+                : validationIsCurrent && validation?.valid
+                  ? t('Latest Draft parameters are synced and ready for review.')
+                  : t('Flow360 checks the current candidate before it is saved to the Draft.')
 
   if (readOnly) {
     return <JsonPreview value={previewValue} empty={t('Flow360 did not return simulation parameters.')} className="draft-json-preview" />
@@ -457,25 +513,28 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
               {validationStatusIcon}
               <span>{validationStatusTitle}</span>
             </summary>
-            <div>
+            <div aria-label={t('Draft validation summary')}>
               <strong>{syncError ? t('Draft sync failed') : saving ? t('Syncing changes to Flow360…') : dirty ? t('Changes waiting to sync') : t('Draft is synced with Flow360')}</strong>
               <p>{validationStatusDetail}</p>
-              {validationIsCurrent && validation && !validation.valid && (
+              {displayedIssues.length > 0 && (
                 <>
                   <div className="draft-validation-popover-navigation">
-                    <span>{focusedValidationIssue ? `${focusedValidationIssue.index + 1} / ${validationErrors.length}` : `${validationErrors.length}`}</span>
-                    <button type="button" onClick={() => goToValidationError(0)}>{t('First error')}</button>
-                    <button type="button" onClick={() => goToValidationError((focusedValidationIssue?.index ?? -1) + 1)}>{t('Next error')}</button>
+                    <span>{displayedErrors.length} {t('errors')} · {displayedWarnings.length} {t('warnings')}</span>
+                    {validationErrors.length > 0 && <button type="button" onClick={() => goToValidationError(0)}>{t('First error')}</button>}
+                    {validationErrors.length > 0 && <button type="button" onClick={() => goToValidationError(focusedErrorIndex + 1)}>{t('Next error')}</button>}
                   </div>
                   <div className="draft-validation-popover-issues">
-                    {validationErrors.map((issue, index) => (
+                    {displayedIssues.map((issue) => (
                       <button
                         type="button"
-                        className={focusedValidationIssue?.index === index ? 'active' : ''}
-                        key={`${issue.path}-${issue.code}-${index}`}
-                        onClick={() => goToValidationError(index)}
+                        className={`${issue.severity}${focusedValidationIssue?.id === issue.id ? ' active' : ''}`}
+                        key={issue.id}
+                        onClick={() => goToValidationIssue(issue)}
                       >
-                        <code>{issue.path || 'SimulationParams'}</code><span>{issue.message}</span>
+                        <code>{issue.mapping === 'global' ? t('General Draft issue') : issue.path}</code>
+                        <span><b>{issue.severity === 'warning' ? t('Warning') : t('Error')}</b>{issue.message}</span>
+                        {issue.mapping === 'ancestor' && <small>{t('Shown at the nearest editable parent.')}</small>}
+                        {issue.mapping === 'global' && <small>{t('No matching form field. Open JSON to inspect the complete candidate.')}</small>}
                       </button>
                     ))}
                   </div>
@@ -492,8 +551,31 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         </div>
       </div>
 
+      <span className="sr-only" role="status" aria-live="polite">{validationStatusTitle}. {validationStatusDetail}</span>
       {error && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{error}</div>}
-      {syncError && <div className="draft-parameter-message error" role="alert"><AlertCircle size={14} />{syncError}</div>}
+      {schemaError && <div className="draft-parameter-recovery error" role="alert">
+        <AlertCircle size={15} />
+        <span><strong>{t('Flow360 form schema is unavailable')}</strong><small>{schemaError} {t('You can keep editing complete JSON while the form schema is unavailable.')}</small></span>
+        <button type="button" onClick={() => setSchemaLoadNonce((current) => current + 1)}><RefreshCw size={13} />{t('Retry schema')}</button>
+      </div>}
+      {validationError && <div className="draft-parameter-recovery error" role="alert">
+        <AlertCircle size={15} />
+        <span><strong>{validationError.kind === 'network' ? t('Validation connection failed') : t('Flow360 schema validation is unavailable')}</strong><small>{validationError.message} {t('Your candidate is still local and has not been overwritten.')}</small></span>
+        <button type="button" disabled={!candidateResult.value} onClick={validateNow}><RefreshCw size={13} />{t('Retry validation')}</button>
+      </div>}
+      {syncError && <div className="draft-parameter-recovery error" role="alert">
+        <AlertCircle size={15} />
+        <span><strong>{t('Draft sync failed')}</strong><small>{syncError} {t('The validated candidate remains in this editor. Retry when the connection is available.')}</small></span>
+      </div>}
+      {localValidation.issues.some((issue) => issue.code === 'json_syntax') && <div className="draft-parameter-recovery error" role="alert">
+        <Code2 size={15} />
+        <span><strong>{t('JSON syntax needs attention')}</strong><small>{localValidation.issues[0].message} {t('Fix the JSON syntax before Flow360 validation can run.')}</small></span>
+        <button type="button" onClick={() => {
+          setCanonicalCandidate(null)
+          setJSONValue(JSON.stringify(baseline, null, 2))
+          setDirty(false)
+        }}>{t('Restore synced JSON')}</button>
+      </div>}
       {mode === 'form' && schema && (
         <div className="draft-parameter-form" role="tabpanel">
           <SchemaFormFields
@@ -507,7 +589,9 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
             rootTabs
             collapsibleObjects
             expressionValidator={validateExpression}
-            issues={validationErrors.map((issue) => ({ path: issue.path, message: issue.message, level: 'error' }))}
+            issues={[...localValidation.issues, ...validationIssues]
+              .filter((issue) => Boolean(issue.path))
+              .map((issue) => ({ path: issue.path, message: issue.message, level: issue.severity }))}
             focusIssuePath={focusedValidationIssue?.path}
             focusIssueRequest={focusedValidationIssue?.request}
             onChange={(next) => {
@@ -547,7 +631,7 @@ export default function DraftParameterEditor({ draftId, parameters, onSaved, onR
         <button
           type="button"
           className="draft-parameter-validate"
-          disabled={validating || aiLoading || !candidateResult.value || Boolean(candidateResult.error) || (mode === 'json' && Boolean(jsonSyntaxIssue(jsonValue)))}
+          disabled={validating || aiLoading || !candidateResult.value || localValidation.blocking || (mode === 'json' && Boolean(jsonSyntaxIssue(jsonValue)))}
           onClick={validateNow}
         >
           {validating ? <RefreshCw size={13} className="spin" /> : <ShieldCheck size={13} />}
@@ -748,6 +832,14 @@ export function draftParameterErrorMessage(cause: unknown, t: (text: string) => 
     }
   }
   return (cause instanceof Error ? cause.message : String(cause)).replace(/^Error:\s*/, '')
+}
+
+export function draftValidationFailureKind(cause: unknown): 'network' | 'schema' {
+  if (cause instanceof TypeError || /failed to fetch|network|connection|offline/i.test(cause instanceof Error ? cause.message : String(cause))) {
+    return 'network'
+  }
+  if (cause instanceof APIError && (cause.status === 408 || cause.status === 429)) return 'network'
+  return 'schema'
 }
 
 export function createJSONMergePatch(before: Record<string, unknown>, after: Record<string, unknown>): Record<string, unknown> {
