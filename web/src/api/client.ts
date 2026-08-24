@@ -746,6 +746,8 @@ export type DynamicFormSchema = {
   path?: string
   required?: string[] | boolean
   nullable?: boolean
+  disabled?: boolean
+  readOnly?: boolean
   properties?: Record<string, DynamicFormSchema>
   items?: DynamicFormSchema
   variants?: DynamicFormSchema[]

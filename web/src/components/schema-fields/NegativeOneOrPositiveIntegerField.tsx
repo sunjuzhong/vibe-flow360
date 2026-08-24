@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { FieldShell, type FieldMessage } from '../FieldShell'
 
 type UnionDraft = { variant: number; value: unknown; values?: unknown[] }
 
@@ -10,7 +10,15 @@ export default function NegativeOneOrPositiveIntegerField({
   integerVariant,
   sentinelVariant,
   fieldID,
-  label,
+  title,
+  path,
+  help,
+  description,
+  status,
+  hideLabel,
+  required,
+  disabled,
+  messages,
   fieldIssues,
   onChange,
 }: {
@@ -18,7 +26,15 @@ export default function NegativeOneOrPositiveIntegerField({
   integerVariant: number
   sentinelVariant: number
   fieldID: string
-  label: ReactNode
+  title: ReactNode
+  path?: string
+  help?: ReactNode
+  description?: ReactNode
+  status?: ReactNode
+  hideLabel?: boolean
+  required?: boolean
+  disabled?: boolean
+  messages?: FieldMessage[]
   fieldIssues: FieldIssue[]
   onChange: (value: unknown) => void
 }) {
@@ -32,23 +48,32 @@ export default function NegativeOneOrPositiveIntegerField({
     values[draft.variant] = draft.value
     onChange({ variant, value: next, values })
   }
-  const errorID = `${fieldID}-constraint`
+  const constraintMessage: FieldMessage = {
+    key: 'constraint',
+    level: valid ? 'success' : 'error',
+    message: valid ? 'Use -1 for the end of the simulation; otherwise enter a positive integer.' : 'Enter -1 or a positive integer.',
+  }
   return (
-    <label className={`schema-field schema-sentinel-integer${!valid || fieldIssues.length ? ' schema-field-invalid' : ''}`} htmlFor={fieldID}>
-      {label}
-      <input
-        id={fieldID}
+    <FieldShell
+      id={fieldID}
+      label={title}
+      path={path}
+      help={help}
+      description={description}
+      status={status}
+      hideLabel={hideLabel}
+      required={required}
+      disabled={disabled}
+      messages={[constraintMessage, ...(messages ?? fieldIssues.map((issue) => ({ ...issue, level: 'error' as const })))]}
+      className={`schema-field schema-sentinel-integer${!valid || fieldIssues.length ? ' schema-field-invalid' : ''}`}
+    >
+      {(controlProps) => <input
+        {...controlProps}
         type="number"
         step={1}
         value={raw}
-        aria-invalid={!valid}
-        aria-describedby={errorID}
         onChange={(event) => update(event.target.value)}
-      />
-      <small id={errorID} className={valid ? 'schema-field-hint' : 'schema-inline-error'} role={valid ? undefined : 'alert'}>
-        {valid ? 'Use -1 for the end of the simulation; otherwise enter a positive integer.' : <><AlertCircle size={12} />Enter -1 or a positive integer.</>}
-      </small>
-      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-    </label>
+      />}
+    </FieldShell>
   )
 }

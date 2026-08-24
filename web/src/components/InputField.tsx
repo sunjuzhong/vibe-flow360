@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
-import { AlertCircle, Check } from 'lucide-react'
+import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from 'react'
+import { Check } from 'lucide-react'
+import { FieldShell, type FieldControlProps, type FieldMessage, type FieldShellProps } from './FieldShell'
 
 export type InputFieldError = {
   key?: string
@@ -20,8 +21,10 @@ type InputFieldProps = FieldCopy & {
   id?: string
   children: ReactNode
   errors?: InputFieldError[]
+  messages?: FieldMessage[]
   className?: string
   controlClassName?: string
+  disabled?: boolean
 }
 
 type ToggleFieldProps = FieldCopy & {
@@ -31,7 +34,9 @@ type ToggleFieldProps = FieldCopy & {
   checkedLabel?: ReactNode
   uncheckedLabel?: ReactNode
   errors?: InputFieldError[]
+  messages?: FieldMessage[]
   className?: string
+  disabled?: boolean
 }
 
 function classes(...values: Array<string | false | undefined>) {
@@ -54,41 +59,66 @@ export function InputFieldLabel({ label, path, description, help, required, stat
   )
 }
 
-export function InputFieldErrors({ errors = [] }: { errors?: InputFieldError[] }) {
-  if (!errors.length) return null
+function fieldMessages(errors: InputFieldError[]): FieldMessage[] {
+  return errors.map((error) => ({ ...error, level: 'error' }))
+}
+
+function enhanceControl(children: ReactNode, controlProps: FieldControlProps) {
+  const child = Children.only(children)
+  if (!isValidElement(child)) return child
+  return cloneElement(child as ReactElement<Record<string, unknown>>, controlProps)
+}
+
+export function InputField({ id = 'field', children, errors = [], messages = [], className, controlClassName, disabled, ...copy }: InputFieldProps) {
+  const allMessages = [...messages, ...fieldMessages(errors)]
   return (
-    <span className="input-field__errors">
-      {errors.map((error, index) => (
-        <small role="alert" key={error.key ?? `${error.message}-${index}`}>
-          <AlertCircle size={13} />{error.message}
-        </small>
-      ))}
-    </span>
+    <FieldShell
+      id={id}
+      label={copy.label}
+      path={copy.path}
+      description={copy.description}
+      help={copy.help}
+      required={copy.required}
+      status={copy.status}
+      hideLabel={copy.hideLabel}
+      disabled={disabled}
+      messages={allMessages}
+      className={classes('input-field', allMessages.some((message) => (message.level ?? 'error') === 'error') && 'input-field--invalid', className)}
+      controlClassName={classes('input-field__control', controlClassName)}
+    >
+      {(controlProps) => enhanceControl(children, controlProps)}
+    </FieldShell>
   )
 }
 
-export function InputField({ id, children, errors = [], className, controlClassName, ...copy }: InputFieldProps) {
-  return (
-    <div className={classes('input-field', errors.length > 0 && 'input-field--invalid', className)}>
-      <label className="input-field__label-wrap" htmlFor={id}><InputFieldLabel {...copy} /></label>
-      <span className={classes('input-field__control', controlClassName)}>{children}</span>
-      <InputFieldErrors errors={errors} />
-    </div>
-  )
-}
-
-export function ToggleField({ id, checked, onChange, checkedLabel, uncheckedLabel, errors = [], className, ...copy }: ToggleFieldProps) {
+export function ToggleField({ id = 'toggle-field', checked, onChange, checkedLabel, uncheckedLabel, errors = [], messages = [], className, disabled, ...copy }: ToggleFieldProps) {
   const accessibleLabel = typeof copy.label === 'string' ? copy.label : undefined
   const stateLabel = checked ? checkedLabel : uncheckedLabel
+  const allMessages = [...messages, ...fieldMessages(errors)]
   return (
-    <div id={id} tabIndex={errors.length ? -1 : undefined} className={classes('input-field', 'input-field--toggle', errors.length > 0 && 'input-field--invalid', className)}>
-      <InputFieldLabel {...copy} />
-      <label className="input-field__toggle-control">
-        <input type="checkbox" aria-label={accessibleLabel} checked={checked} onChange={(event) => onChange(event.target.checked)} />
-        <span aria-hidden="true"><Check size={14} /></span>
-        {stateLabel ? <small>{stateLabel}</small> : null}
-      </label>
-      <InputFieldErrors errors={errors} />
-    </div>
+    <FieldShell
+      id={id}
+      label={copy.label}
+      path={copy.path}
+      description={copy.description}
+      help={copy.help}
+      required={copy.required}
+      status={copy.status}
+      hideLabel={copy.hideLabel}
+      disabled={disabled}
+      messages={allMessages}
+      className={classes('input-field', 'input-field--toggle', allMessages.some((message) => (message.level ?? 'error') === 'error') && 'input-field--invalid', className)}
+    >
+      {(controlProps) => (
+        <label className="input-field__toggle-control">
+          <input {...controlProps} type="checkbox" aria-label={accessibleLabel} checked={checked} onChange={(event) => onChange(event.target.checked)} />
+          <span aria-hidden="true"><Check size={14} /></span>
+          {stateLabel ? <small>{stateLabel}</small> : null}
+        </label>
+      )}
+    </FieldShell>
   )
 }
+
+export { FieldShell }
+export type { FieldControlProps, FieldMessage, FieldShellProps }

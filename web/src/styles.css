@@ -4357,6 +4357,25 @@ button { color: inherit; }
 .schema-field-label strong { color: #5c6357; font-size: 8px; }
 .schema-field-label code { margin-top: 2px; color: #92978d; font: 6px 'DM Mono'; }
 .schema-field-label small { max-width: 650px; margin-top: 4px; color: #858b80; font-size: 7px; line-height: 1.45; }
+.field-shell {
+  --field-border: #c9cec1;
+  --field-border-focus: #8da642;
+  --field-focus-ring: rgba(141,166,66,.14);
+  --field-surface: #fff;
+  --field-text: #343a31;
+  display: block;
+  min-width: 0;
+}
+.field-shell--error { --field-border: #d98474; --field-focus-ring: rgba(200,93,73,.12); }
+.field-shell--warning { --field-border: #d5ad51; --field-focus-ring: rgba(198,145,34,.13); }
+.field-shell--success { --field-border: #91aa40; --field-focus-ring: rgba(116,148,39,.13); }
+.field-shell.field-shell--error { border-color: #d98474; }
+.field-shell.field-shell--warning { border-color: #d5ad51; background: #fffdf6; }
+.field-shell.field-shell--success { border-color: #a9be6d; background: #fbfdf6; }
+.field-shell--disabled { color: #838a7e; background: #f1f2ee !important; cursor: not-allowed; opacity: .72; }
+.field-shell--disabled .field-shell__control { pointer-events: none; }
+.field-shell :is(button,input,select,textarea,[role="radio"],[role="group"],summary):focus-visible { outline: 3px solid var(--field-focus-ring); outline-offset: 2px; }
+.field-shell :is(button,input,select,textarea):disabled { color: #7f867b; background-color: #eceee9; cursor: not-allowed; }
 .input-field { display: block; min-width: 0; margin: 0 0 12px; }
 .input-field__label-wrap { min-width: 0; cursor: pointer; }
 .input-field__label { display: block; min-width: 0; margin-bottom: 7px; }
@@ -4368,11 +4387,18 @@ button { color: inherit; }
 .input-field__description { display: block; max-width: 650px; margin-top: 5px; color: #7f8779; font-size: 7px; line-height: 1.5; }
 .input-field__control { display: block; min-width: 0; }
 .input-field__control > input,.input-field__control > select,.input-field__control > textarea { width: 100%; min-height: 38px; padding: 8px 11px; border: 1px solid #c9cec1; border-radius: 8px; outline: 0; color: #343a31; background: #fff; font: inherit; font-size: 9px; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.field-shell__control > input,.field-shell__control > select,.field-shell__control > textarea { border-color: var(--field-border); color: var(--field-text); background: var(--field-surface); }
 .input-field__control > input:hover,.input-field__control > select:hover,.input-field__control > textarea:hover { border-color: #aeb7a2; }
 .input-field__control > input:focus,.input-field__control > select:focus,.input-field__control > textarea:focus { border-color: #8da642; background: #fff; box-shadow: 0 0 0 3px rgba(141,166,66,.14); }
+.field-shell__control > input:focus-visible,.field-shell__control > select:focus-visible,.field-shell__control > textarea:focus-visible { border-color: var(--field-border-focus); box-shadow: 0 0 0 3px var(--field-focus-ring); }
 .input-field__errors { display: grid; grid-column: 1 / -1; gap: 4px; margin-top: 7px; }
 .input-field__errors small { display: flex; align-items: flex-start; gap: 5px; color: #a04435; font-size: 9px; font-weight: 650; line-height: 1.4; }
 .input-field__errors svg { flex: 0 0 auto; margin-top: 1px; }
+.field-shell__message--warning { color: #8a6416 !important; }
+.field-shell__message--success { color: #587318 !important; }
+.field-shell__status--warning { color: #845f16; background: #f6e9c8; }
+.field-shell__status--success { color: #526d13; background: #e7efd1; }
+.field-shell__status--error { color: #9b4637; background: #f7e1dc; }
 .input-field--invalid .input-field__control > input,.input-field--invalid .input-field__control > select,.input-field--invalid .input-field__control > textarea { border-color: #d98474; background: #fff8f6; box-shadow: 0 0 0 2px rgba(200,93,73,.09); }
 .input-field__toggle-control { position: relative; display: inline-flex; width: fit-content; align-items: center; gap: 8px; cursor: pointer; }
 .input-field__toggle-control > input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }

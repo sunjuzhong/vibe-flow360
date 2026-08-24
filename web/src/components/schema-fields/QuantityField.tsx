@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { AlertCircle } from 'lucide-react'
 import type { DynamicFormSchema } from '../../api/client'
+import { FieldShell, type FieldMessage } from '../FieldShell'
 
 type QuantityFieldProps = {
   schema: DynamicFormSchema
@@ -8,7 +8,12 @@ type QuantityFieldProps = {
   onChange: (value: unknown) => void
   title: string
   fieldID: string
-  label: ReactNode
+  path?: string
+  help?: ReactNode
+  description?: ReactNode
+  status?: ReactNode
+  hideLabel?: boolean
+  messages?: FieldMessage[]
   fieldIssues: Array<{ path?: string; message: string }>
   canonicalUnit: (schema: DynamicFormSchema, unit: string) => string
   numberConstraint: (schema: DynamicFormSchema | undefined, key: 'minimum' | 'maximum') => number | undefined
@@ -54,7 +59,12 @@ export default function QuantityField({
   onChange,
   title,
   fieldID,
-  label,
+  path,
+  help,
+  description,
+  status,
+  hideLabel,
+  messages,
   fieldIssues,
   canonicalUnit,
   numberConstraint,
@@ -66,16 +76,28 @@ export default function QuantityField({
   const unsupportedUnit = Boolean(selectedUnit) && !unitOptions.includes(selectedUnit)
   const valueSchema = schema.value_schema ?? { type: 'number' as const }
   const scalarValue = valueSchema.type === 'number' || valueSchema.type === 'integer'
+  const disabled = schema.disabled === true || schema.readOnly === true
+  const fieldMessages = messages ?? fieldIssues.map((issue) => ({ ...issue, level: 'error' as const }))
 
   return (
-    <div className={`schema-field schema-quantity-field${fieldIssues.length ? ' schema-field-invalid' : ''}`}>
-      {label}
-      <span className="schema-quantity">
+    <FieldShell
+      id={fieldID}
+      label={title}
+      path={path}
+      help={help}
+      description={description}
+      status={status}
+      hideLabel={hideLabel}
+      required={schema.required === true}
+      disabled={disabled}
+      messages={fieldMessages}
+      className={`schema-field schema-quantity-field${fieldIssues.length ? ' schema-field-invalid' : ''}`}
+    >
+      {(controlProps) => <span className="schema-quantity">
         {scalarValue ? (
           <input
-            id={fieldID}
+            {...controlProps}
             type="number"
-            required
             step={valueSchema.type === 'integer' ? 1 : 'any'}
             min={numberConstraint(valueSchema, 'minimum')}
             max={numberConstraint(valueSchema, 'maximum')}
@@ -84,7 +106,7 @@ export default function QuantityField({
           />
         ) : (
           <textarea
-            id={fieldID}
+            {...controlProps}
             rows={2}
             spellCheck={false}
             value={formatQuantityValue(object.value)}
@@ -93,16 +115,18 @@ export default function QuantityField({
           />
         )}
         <select
+          id={`${fieldID}-unit`}
           aria-label={`${title} unit`}
+          aria-describedby={controlProps['aria-describedby']}
           value={selectedUnit}
           onChange={(event) => onChange({ ...object, units: event.target.value })}
+          disabled={disabled}
           required
         >
           {unsupportedUnit && <option value={selectedUnit} disabled>Unsupported: {selectedUnit}</option>}
           {unitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
         </select>
-      </span>
-      {fieldIssues.map((issue, index) => <small className="schema-inline-error" role="alert" key={`${issue.path}-${index}`}><AlertCircle size={12} />{issue.message}</small>)}
-    </div>
+      </span>}
+    </FieldShell>
   )
 }
