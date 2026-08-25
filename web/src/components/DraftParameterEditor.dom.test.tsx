@@ -279,6 +279,8 @@ describe('Draft parameter validation navigation', () => {
     const search = document.body.querySelector<HTMLInputElement>('.schema-array-type-search input')
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     if (!search || !valueSetter) throw new Error('Type search is unavailable')
+    expect(search.placeholder).toBe('Search types')
+    expect(search.closest('label')?.querySelectorAll('.sr-only')).toHaveLength(1)
     expect(document.body.querySelector('.schema-array-type-menu')?.textContent).toContain('Surface')
     expect(document.body.querySelector('.schema-array-type-menu')?.textContent).toContain('Force')
     await act(async () => {
@@ -298,6 +300,41 @@ describe('Draft parameter validation navigation', () => {
     expect(dialog.querySelector('#schema-outputs-0-entities')).not.toBeNull()
     expect(dialog.querySelector('#schema-outputs-0-notes')).toBeNull()
     expect(dialog.querySelector('.schema-item-editor-nav')?.textContent).not.toContain('Other fields')
+  })
+
+  it('gives a short item editor the full no-navigation workspace', async () => {
+    const shortSchema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        outputs: {
+          type: 'array', title: 'Outputs', items: {
+            type: 'object', title: 'MeshSliceOutput',
+            properties: {
+              name: { type: 'string', title: 'Name' },
+              origin: { type: 'quantity', title: 'Origin', unit: 'm', unit_options: ['m'], value_schema: { type: 'number' } },
+              normal: { type: 'string', title: 'Normal' },
+            },
+          },
+        },
+      },
+    }
+    vi.mocked(api.draftParameterSchema).mockResolvedValueOnce({
+      schema_version: 1, source_type: 'Case', stages: ['Case'], schema: shortSchema,
+      baseline: { outputs: [{ name: 'slice', origin: { value: 0, units: 'm' }, normal: 'x' }] },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-no-nav" parameters={{ outputs: [{ name: 'slice' }] }} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await click(buttonWithText(container, 'Edit'))
+
+    const dialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    const workspace = dialog.querySelector<HTMLElement>('.schema-item-editor-workspace')!
+    expect(workspace.classList.contains('no-nav')).toBe(true)
+    expect(workspace.classList.contains('has-nav')).toBe(false)
+    expect(dialog.querySelector('.schema-item-editor-nav')).toBeNull()
+    expect(workspace.firstElementChild).toBe(dialog.querySelector('.schema-item-editor-body'))
   })
 
   it('keeps portal type selection and its nested editor inside a complete keyboard focus flow', async () => {

@@ -11,6 +11,7 @@ type Props = {
 }
 
 type Rect = Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left' | 'width' | 'height'>
+const HELP_TOOLTIP_OPEN_EVENT = 'flow360-help-tooltip-open'
 
 export function placeTooltip(
   trigger: Rect,
@@ -65,6 +66,13 @@ export default function HelpTooltip({
   const portal = mounted && width !== 'guide'
 
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    const closeForAnotherTooltip = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== tooltipId) setOpen(false)
+    }
+    document.addEventListener(HELP_TOOLTIP_OPEN_EVENT, closeForAnotherTooltip)
+    return () => document.removeEventListener(HELP_TOOLTIP_OPEN_EVENT, closeForAnotherTooltip)
+  }, [tooltipId])
   useLayoutEffect(() => {
     if (mounted) setDraftContext(Boolean(triggerRef.current?.closest('.draft-parameter-form')))
   }, [mounted])
@@ -105,6 +113,7 @@ export default function HelpTooltip({
   }, [open, portal, updatePosition])
 
   const show = () => {
+    document.dispatchEvent(new CustomEvent(HELP_TOOLTIP_OPEN_EVENT, { detail: tooltipId }))
     setPosition(null)
     setOpen(true)
   }

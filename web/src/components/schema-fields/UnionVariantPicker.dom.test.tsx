@@ -32,11 +32,13 @@ describe('UnionVariantPicker keyboard contract', () => {
         onSelect={onSelect}
       />)
     })
-    const buttons = container.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    const buttons = container.querySelectorAll<HTMLElement>('[role="radio"]')
     buttons[0].focus()
     await act(async () => buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
     expect(onSelect).toHaveBeenCalledWith(1)
     expect(document.activeElement).toBe(buttons[1])
+    await act(async () => buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(onSelect).toHaveBeenLastCalledWith(1)
   })
 
   it('removes disabled variants from keyboard interaction', async () => {
@@ -49,8 +51,21 @@ describe('UnionVariantPicker keyboard contract', () => {
         onSelect={() => undefined}
       />)
     })
-    expect(container.querySelector<HTMLButtonElement>('[role="radio"]')?.disabled).toBe(true)
+    expect(container.querySelector<HTMLElement>('[role="radio"]')?.getAttribute('aria-disabled')).toBe('true')
+    expect(container.querySelector<HTMLElement>('[role="radio"]')?.tabIndex).toBe(-1)
     expect(container.querySelector('[role="radiogroup"]')?.getAttribute('aria-disabled')).toBe('true')
   })
-})
 
+  it('keeps help triggers outside native buttons', async () => {
+    await act(async () => {
+      root.render(<UnionVariantPicker
+        title="Heat Spec"
+        variants={[{ type: 'object', title: 'HeatFlux', description: 'Controls the wall heat flux.' }]}
+        selected={0}
+        onSelect={() => undefined}
+      />)
+    })
+    expect(container.querySelector('[role="radio"] > .schema-union-option-help button')).not.toBeNull()
+    expect(container.querySelector('button button')).toBeNull()
+  })
+})

@@ -25,6 +25,16 @@ export function cleanSchemaDescription(description: string): string {
 export function variantLabel(schema: DynamicFormSchema, index: number): string {
   if (schema.title) return schemaLabel(schema.title)
   if (schema.wire_discriminator?.value) return schemaLabel(String(schema.wire_discriminator.value))
+  if (schema.type === 'union') {
+    const nested = (schema.variants ?? []).map((variant, nestedIndex) => variantLabel(variant, nestedIndex))
+    if (nested.length) return nested.join(' / ')
+    return t('Choice')
+  }
+  if (schema.type === 'array') return schema.minItems === 3 && schema.maxItems === 3 ? t('Vector') : t('List')
+  if (schema.type === 'quantity' || schema.type === 'number' || schema.type === 'integer') return t('Fixed value')
+  if (schema.type === 'expression') return t('Expression')
+  if (schema.type === 'string') return t('Text value')
+  if (schema.type === 'json') return t('Custom value')
   return schemaLabel(schema.type || `Type ${index + 1}`)
 }
 

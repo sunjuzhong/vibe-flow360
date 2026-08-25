@@ -196,8 +196,6 @@ function SchemaFormFieldsContent({
     const child = schema.properties?.[key]
     if (!child) return null
     const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
-    const requiredKeys = Array.isArray(schema.required) ? schema.required : []
-    const required = child.required === true || requiredKeys.includes(key)
     const tabID = (tabKey: string) => `schema-root-tab-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
     const panelID = (tabKey: string) => `schema-root-panel-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
     const selectAdjacentTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -220,16 +218,17 @@ function SchemaFormFieldsContent({
             {tabKeys.map((tabKey) => {
               const tabSchema = schema.properties?.[tabKey]
               const stats = schemaGroupStats(tabSchema, object[tabKey], baselineObject[tabKey], issues, tabKey)
-              return <option value={tabKey} key={tabKey}>{localizeSchemaText(tabSchema?.title || humanize(tabKey))} · {groupStatsLabel(stats)}</option>
+              const statsLabel = groupStatsLabel(stats)
+              return <option value={tabKey} key={tabKey}>{localizeSchemaText(tabSchema?.title || humanize(tabKey))}{statsLabel ? ` · ${statsLabel}` : ''}</option>
             })}
           </select>
         </label>
         <div className="schema-root-tabs" role="tablist" aria-label={schema.title || 'Simulation parameter groups'}>
           {tabKeys.map((tabKey, index) => {
             const tabSchema = schema.properties?.[tabKey]
-            const configured = Object.prototype.hasOwnProperty.call(object, tabKey) && isConfiguredValue(object[tabKey])
             const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, tabKey))
             const stats = schemaGroupStats(tabSchema, object[tabKey], baselineObject[tabKey], issues, tabKey)
+            const showStats = stats.modified > 0 || stats.errors > 0 || stats.warnings > 0
             return (
               <button
                 id={tabID(tabKey)}
@@ -244,13 +243,11 @@ function SchemaFormFieldsContent({
                 onKeyDown={(event) => selectAdjacentTab(event, index)}
               >
                 <span>{localizeSchemaText(tabSchema?.title || humanize(tabKey))}</span>
-                <span className="schema-root-tab-stats">
-                  <small title={localizeSchemaText('Unconfigured fields')}>{stats.unconfigured} {localizeSchemaText('empty')}</small>
+                {showStats && <span className="schema-root-tab-stats">
                   {stats.modified > 0 && <small className="modified" title={localizeSchemaText('Modified fields')}>{stats.modified} {localizeSchemaText('changed')}</small>}
                   {stats.errors > 0 && <small className="invalid" title={localizeSchemaText('Validation errors')}>{stats.errors} {localizeSchemaText('errors')}</small>}
                   {stats.warnings > 0 && <small className="warning" title={localizeSchemaText('Validation warnings')}>{stats.warnings} {localizeSchemaText('warnings')}</small>}
-                  {stats.unconfigured === 0 && stats.modified === 0 && stats.errors === 0 && stats.warnings === 0 && <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>}
-                </span>
+                </span>}
               </button>
             )
           })}
@@ -270,21 +267,6 @@ function SchemaFormFieldsContent({
             rootTabContent
             onChange={(next) => onChange({ ...object, [key]: next })}
           />
-          {sparse && !required && present && (!Array.isArray(object[key]) || object[key].length > 1) && (
-            <button
-              type="button"
-              className="schema-remove-change schema-root-remove"
-              onClick={() => {
-                const next = { ...object }
-                delete next[key]
-                onChange(next)
-              }}
-            >
-              <Trash2 size={12} /> {Array.isArray(object[key])
-                ? `Remove all ${child.title || humanize(key)}`
-                : removeLabel === 'Remove' ? `Remove ${child.title || humanize(key)} configuration` : removeLabel}
-            </button>
-          )}
         </div>
       </div>
     )
@@ -321,7 +303,7 @@ export function schemaGroupStats(
 }
 
 function groupStatsLabel(stats: SchemaGroupStats) {
-  const labels = [`${stats.unconfigured} ${localizeSchemaText('empty')}`]
+  const labels: string[] = []
   if (stats.modified) labels.push(`${stats.modified} ${localizeSchemaText('changed')}`)
   if (stats.errors) labels.push(`${stats.errors} ${localizeSchemaText('errors')}`)
   if (stats.warnings) labels.push(`${stats.warnings} ${localizeSchemaText('warnings')}`)
@@ -343,6 +325,7 @@ function SchemaField({
   rootTabContent = false,
   embeddedObjectContent = false,
   visibleObjectKeys,
+  compactUnion = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -358,6 +341,7 @@ function SchemaField({
   rootTabContent?: boolean
   embeddedObjectContent?: boolean
   visibleObjectKeys?: Set<string>
+  compactUnion?: boolean
 }) {
   const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
@@ -372,6 +356,60 @@ function SchemaField({
   const branchInvalid = Boolean(path) && issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path))
   const disabled = schema.disabled === true || schema.readOnly === true
   const [sectionOpen, setSectionOpen] = useState(path.split('.').length === 1)
+  const quantityObject = quantityLikeObjectSchema(schema, value)
+  if (quantityObject) {
+    return <QuantityField
+      schema={quantityObject}
+      value={value}
+      onChange={onChange}
+      title={displayTitle}
+      fieldID={fieldID}
+      path={collapsibleObjects ? undefined : path}
+      help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
+      description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
+      status={configurationStatus(schema, configured, showAll)}
+      hideLabel={rootTabContent}
+      fieldIssues={fieldIssues}
+      messages={fieldMessages}
+      canonicalUnit={canonicalQuantityUnit}
+      numberConstraint={numberConstraint}
+    />
+  }
+  const nullableChild = nullableSingleProperty(schema)
+  if (nullableChild) {
+    const [childKey, childSchema] = nullableChild
+    const object = isRecord(value) ? value : {}
+    const childValue = Object.prototype.hasOwnProperty.call(object, childKey) ? object[childKey] : initialValue(childSchema, true)
+    return <div className="schema-nullable-object">
+      <ToggleField
+        id={fieldID}
+        className="schema-field schema-nullable-object-toggle"
+        label={displayTitle}
+        checked={configured}
+        onChange={(enabled) => onChange(enabled ? initialValue(schema, true) : null)}
+        checkedLabel={localizeSchemaText('Enabled')}
+        uncheckedLabel={localizeSchemaText('Disabled')}
+        disabled={disabled}
+        status={configurationStatus(schema, configured, showAll)}
+        help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
+        description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
+        hideLabel={rootTabContent}
+        messages={fieldMessages}
+      />
+      {configured && <SchemaField
+        schema={childSchema}
+        value={childValue}
+        onChange={(next) => onChange({ ...object, [childKey]: next })}
+        path={`${path}.${childKey}`}
+        sparse={sparse}
+        showAll={showAll}
+        configured={isConfiguredValue(childValue)}
+        addLabel={addLabel}
+        removeLabel={removeLabel}
+        collapsibleObjects={collapsibleObjects}
+      />}
+    </div>
+  }
   if (schema.type === 'object') {
     const object = isRecord(value) ? value : {}
     const baselineObject = isRecord(baseline) ? baseline : {}
@@ -400,6 +438,7 @@ function SchemaField({
               </div>
             )
           }
+          const directRootControl = rootTabContent && collapsibleObjects && isSingleControlRootSchema(child)
           const editor = (
             <div className={`schema-edit-field schema-edit-field-${child.type} schema-field-key-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`} key={key}>
               <SchemaField
@@ -413,13 +452,13 @@ function SchemaField({
                 addLabel={addLabel}
                 removeLabel={removeLabel}
                 collapsibleObjects={collapsibleObjects}
-                rootTabContent={rootTabContent && child.type !== 'object'}
+                rootTabContent={rootTabContent && child.type !== 'object' && !directRootControl}
                 embeddedObjectContent={rootTabContent && child.type === 'object'}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
             </div>
           )
-          if (rootTabContent && collapsibleObjects) {
+          if (rootTabContent && collapsibleObjects && !directRootControl) {
             const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, childPath)) ?? false
             const childTitle = child.title || humanize(key)
             return (
@@ -687,12 +726,29 @@ function SchemaField({
       })
     }
     const selectedSchema = disabled ? { ...selected, disabled: true } : selected
-    const selectedEditor = selected.type === 'expression' && valueOrExpression
+    const compactValueProperty = singleValueProperty(selected)
+    const selectedObject = isRecord(draft.value) ? draft.value : {}
+    const selectedEditor = compactValueProperty
+      ? <SchemaField
+          schema={disabled ? { ...compactValueProperty[1], disabled: true } : compactValueProperty[1]}
+          value={selectedObject[compactValueProperty[0]]}
+          path={`${path}.${compactValueProperty[0]}`}
+          sparse={sparse}
+          showAll={showAll}
+          configured={isConfiguredValue(selectedObject[compactValueProperty[0]])}
+          addLabel={addLabel}
+          removeLabel={removeLabel}
+          collapsibleObjects={collapsibleObjects}
+          rootTabContent
+          compactUnion
+          onChange={(next) => onChange({ ...draft, value: { ...selectedObject, [compactValueProperty[0]]: next } })}
+        />
+      : selected.type === 'expression' && valueOrExpression
       ? <ExpressionField schema={selectedSchema} value={draft.value} path={path} title={title} embedded onChange={(next) => onChange({ ...draft, value: next })} />
       : <SchemaField schema={selectedSchema} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent onChange={(next) => onChange({ ...draft, value: next })} />
     const unionEditor = (controlProps: FieldControlProps) => (
       <>
-        {valueOrExpression ? (
+        {compactUnion ? null : valueOrExpression ? (
           <div id={controlProps.id} className="schema-value-kind" role="group" aria-label={`${title} value type`} aria-required={controlProps['aria-required']} aria-describedby={controlProps['aria-describedby']} aria-invalid={controlProps['aria-invalid']}>
             <button type="button" disabled={disabled} className={draft.variant === valueVariant ? 'active' : ''} aria-pressed={draft.variant === valueVariant} onClick={() => selectVariant(valueVariant)}>Fixed value</button>
             <button type="button" disabled={disabled} className={draft.variant === expressionVariant ? 'active' : ''} aria-pressed={draft.variant === expressionVariant} onClick={() => selectVariant(expressionVariant)}><Code2 size={13} /> Expression</button>
@@ -715,7 +771,7 @@ function SchemaField({
         status={configurationStatus(schema, configured, showAll)}
         hideLabel={rootTabContent}
         messages={fieldMessages}
-        className={`${rootTabContent ? 'schema-root-union' : 'schema-object'}${valueOrExpression ? ' schema-value-or-expression' : ''}`}
+        className={`${rootTabContent ? 'schema-root-union' : 'schema-object'}${valueOrExpression ? ' schema-value-or-expression' : ''}${compactUnion ? ' schema-compact-union' : ''}`}
       >
         {unionEditor}
       </FieldShell>
@@ -1073,7 +1129,7 @@ function ComplexArrayField({
   const dialog = editor && <div className="schema-item-editor-backdrop" role="presentation">
     <section ref={editorDialogRef} className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`} tabIndex={-1}>
       <header><div><span className="schema-item-editor-kicker">{editor.index === null ? itemCopy.newKicker : itemCopy.editKicker}</span><h3>{formatSchemaLabel(editor.schema.title || title)}</h3><small>{itemCopy.fixedType}</small></div><button type="button" className="icon-button schema-item-editor-close" onClick={closeEditor} aria-label={itemCopy.closeLabel}><X size={17} /></button></header>
-      <div className="schema-item-editor-workspace">
+      <div className={`schema-item-editor-workspace ${editorFields.length > 4 ? 'has-nav' : 'no-nav'}`}>
       {editorFields.length > 4 && <nav className="schema-item-editor-nav" aria-label={localizeSchemaText('Form sections')}>
         <button type="button" className={editorFilter ? 'active' : ''} aria-pressed={editorFilter} onClick={() => setEditorFilter((current) => !current)}><ListFilter size={13} />{localizeSchemaText('Required / errors only')}</button>
         {([['Needs attention', editorFields.filter((field) => field.required || field.invalid)], ['Other fields', editorFilter ? [] : editorFields.filter((field) => !field.required && !field.invalid)]] as const).map(([group, fields]) => fields.length > 0 && <section key={group}><strong>{localizeSchemaText(group)}</strong>{fields.map((field) => <button type="button" className={field.invalid ? 'invalid' : ''} key={field.key} onClick={() => jumpToEditorField(field.path)}><span>{field.label}</span>{field.invalid ? <AlertCircle size={12} /> : field.required ? <small>{localizeSchemaText('Required')}</small> : null}</button>)}</section>)}
@@ -1553,6 +1609,7 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
 // small wrapper so an existing Draft can be edited without losing its value.
 export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
   if (value === undefined) return initialValue(schema, sparse)
+  if (value === null && schema.nullable) return null
   switch (schema.type) {
     case 'object': {
       if (!isRecord(value)) return initialValue(schema, sparse)
@@ -1611,6 +1668,7 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
 }
 
 export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
+  if (value === null && schema.nullable) return null
   switch (schema.type) {
     case 'object': {
       const object = isRecord(value) ? value : {}
@@ -1722,6 +1780,36 @@ function numberConstraint(schema: DynamicFormSchema | undefined, key: 'minimum' 
   return schema?.[key]
 }
 
+function quantityLikeObjectSchema(schema: DynamicFormSchema, value: unknown): DynamicFormSchema | null {
+  if (schema.type !== 'object') return null
+  const properties = schema.properties ?? {}
+  const keys = Object.keys(properties)
+  if (keys.length !== 2 || !keys.includes('value') || !keys.includes('units')) return null
+  if (!['number', 'integer'].includes(properties.value.type) || properties.units.type !== 'string') return null
+  const object = isRecord(value) ? value : isRecord(schema.default) ? schema.default : {}
+  const unit = String(object.units ?? '')
+  if (!unit) return null
+  return {
+    ...schema,
+    type: 'quantity',
+    unit,
+    unit_options: [unit],
+    value_schema: properties.value,
+  }
+}
+
+function nullableSingleProperty(schema: DynamicFormSchema): [string, DynamicFormSchema] | null {
+  if (schema.type !== 'object' || !schema.nullable) return null
+  const entries = Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child))
+  return entries.length === 1 && entries[0][1].type === 'enum' ? entries[0] : null
+}
+
+function singleValueProperty(schema: DynamicFormSchema): [string, DynamicFormSchema] | null {
+  if (schema.type !== 'object') return null
+  const entries = Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child))
+  return entries.length === 1 && entries[0][0] === 'value' ? entries[0] : null
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -1746,6 +1834,11 @@ function negativeOneOrPositiveIntegerUnion(schema: DynamicFormSchema): { integer
     && variant.options?.length === 1
     && variant.options[0] === -1)
   return integerVariant >= 0 && sentinelVariant >= 0 ? { integerVariant, sentinelVariant } : null
+}
+
+function isSingleControlRootSchema(schema: DynamicFormSchema): boolean {
+  return ['string', 'number', 'integer', 'boolean', 'enum', 'quantity'].includes(schema.type)
+    || negativeOneOrPositiveIntegerUnion(schema) !== null
 }
 
 function enumArrayUnion(schema: DynamicFormSchema): { variant: number; schema: DynamicFormSchema; options: string[] } | null {
