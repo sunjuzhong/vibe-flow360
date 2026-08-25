@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { buildGeometryParameterSelectionPresets, buildParameterSelectionPresets } from './parameterSelectionGroups'
+import { describe, expect, it, vi } from 'vitest'
+import { applyDraftSelectionGroup, buildGeometryParameterSelectionPresets, buildParameterSelectionPresets, persistDraftSelectionGroup } from './parameterSelectionGroups'
 
 const params = {
   private_attribute_asset_cache: {
@@ -218,5 +218,210 @@ describe('buildParameterSelectionPresets', () => {
         available: true,
       },
     ])
+  })
+})
+
+describe('applyDraftSelectionGroup', () => {
+  it('adds selected faces and edges to groupName schemes without changing the active grouping', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          face_group_tag: 'faceId',
+          edge_group_tag: 'edgeId',
+          face_attribute_names: ['faceId'],
+          edge_attribute_names: ['edgeId'],
+          grouped_faces: [[
+            { name: 'face-1', private_attribute_id: 'face-1', private_attribute_tag_key: 'faceId', private_attribute_sub_components: ['raw-face-1'] },
+          ]],
+          grouped_edges: [[
+            { name: 'edge-1', private_attribute_id: 'edge-1', private_attribute_tag_key: 'edgeId', private_attribute_sub_components: ['raw-edge-1'] },
+          ]],
+        },
+      },
+    }
+
+    const next = applyDraftSelectionGroup(source, {
+      name: ' control surfaces ',
+      faces: [{ id: 'face-1' }],
+      edges: [{ id: 'edge-1' }],
+    })
+    const info = next.private_attribute_asset_cache as {
+      project_entity_info: Record<string, unknown>
+    }
+    expect(info.project_entity_info.face_group_tag).toBe('faceId')
+    expect(info.project_entity_info.edge_group_tag).toBe('edgeId')
+    expect(info.project_entity_info.face_attribute_names).toEqual(['faceId', 'groupName'])
+    expect(info.project_entity_info.edge_attribute_names).toEqual(['edgeId', 'groupName'])
+    expect(info.project_entity_info.grouped_faces).toEqual([
+      source.private_attribute_asset_cache.project_entity_info.grouped_faces[0],
+      [{
+        name: 'control surfaces',
+        private_attribute_entity_type_name: 'Surface',
+        private_attribute_id: 'control surfaces',
+        private_attribute_sub_components: ['raw-face-1'],
+        private_attribute_tag_key: 'groupName',
+      }],
+    ])
+    expect(info.project_entity_info.grouped_edges).toEqual([
+      source.private_attribute_asset_cache.project_entity_info.grouped_edges[0],
+      [{
+        name: 'control surfaces',
+        private_attribute_entity_type_name: 'Edge',
+        private_attribute_id: 'control surfaces',
+        private_attribute_sub_components: ['raw-edge-1'],
+        private_attribute_tag_key: 'groupName',
+      }],
+    ])
+  })
+
+  it('appends to an existing groupName scheme and rejects empty or duplicate groups', () => {
+    const source = {
+      private_attribute_asset_cache: {
+        project_entity_info: {
+          grouped_faces: [[{
+            name: 'Wing',
+            private_attribute_id: 'wing',
+            private_attribute_tag_key: 'groupName',
+            private_attribute_sub_components: ['face-1'],
+          }]],
+        },
+      },
+    }
+    expect(() => applyDraftSelectionGroup(source, { name: ' wing ', faces: [{ id: 'face-2' }], edges: [] }))
+      .toThrow('already exists')
+    expect(() => applyDraftSelectionGroup(source, { name: 'Tail', faces: [], edges: [] }))
+      .toThrow('Select at least one face or edge')
+    expect(() => applyDraftSelectionGroup(source, { name: ' ', faces: [{ id: 'face-2' }], edges: [] }))
+      .toThrow('name is required')
+  })
+
+  it('preserves multi-entity legacy face and edge collections as schemes', () => {
+    const legacyFaces = [{
+      name: 'face-1',
+      private_attribute_id: 'face-1',
+      private_attribute_tag_key: 'faceId',
+      private_attribute_sub_components: ['raw-face-1'],
+    }, {
+      name: 'face-2',
+      private_attribute_id: 'face-2',
+      private_attribute_tag_key: 'faceId',
+      private_attribute_sub_components: ['raw-face-2'],
+    }]
+    const legacyEdges = [{
+      name: 'edge-1',
+      private_attribute_id: 'edge-1',
+      private_attribute_tag_key: 'edgeId',
+      private_attribute_sub_components: ['raw-edge-1'],
+    }, {
+      name: 'edge-2',
+      private_attribute_id: 'edge-2',
+      private_attribute_tag_key: 'edgeId',
+      private_attribute_sub_components: ['raw-edge-2'],
+    }]
+    const next = applyDraftSelectionGroup({
+      private_attribute_asset_cache: { project_entity_info: {
+        face_group_tag: 'faceId',
+        edge_group_tag: 'edgeId',
+        face_attribute_names: ['faceId', 'groupName', 'groupName'],
+        edge_attribute_names: ['edgeId', 'groupName', 'groupName'],
+        grouped_faces: legacyFaces,
+        grouped_edges: legacyEdges,
+      } },
+    }, {
+      name: 'Wing',
+      faces: [{ id: 'face-1' }],
+      edges: [{ id: 'edge-2' }],
+    })
+    const cache = next.private_attribute_asset_cache as { project_entity_info: Record<string, unknown> }
+    expect(cache.project_entity_info.face_attribute_names).toEqual(['faceId', 'groupName'])
+    expect(cache.project_entity_info.edge_attribute_names).toEqual(['edgeId', 'groupName'])
+    expect(cache.project_entity_info.grouped_faces).toEqual([
+      legacyFaces,
+      [expect.objectContaining({ name: 'Wing', private_attribute_sub_components: ['raw-face-1'] })],
+    ])
+    expect(cache.project_entity_info.grouped_edges).toEqual([
+      legacyEdges,
+      [expect.objectContaining({ name: 'Wing', private_attribute_sub_components: ['raw-edge-2'] })],
+    ])
+  })
+})
+
+describe('persistDraftSelectionGroup', () => {
+  const baseline = {
+    private_attribute_asset_cache: {
+      project_entity_info: {
+        face_group_tag: 'faceId',
+        grouped_faces: [[
+          { name: 'face-1', private_attribute_id: 'face-1', private_attribute_tag_key: 'faceId', private_attribute_sub_components: ['raw-face-1'] },
+          { name: 'face-2', private_attribute_id: 'face-2', private_attribute_tag_key: 'faceId', private_attribute_sub_components: ['raw-face-2'] },
+        ]],
+      },
+    },
+  }
+
+  it.each([
+    ['invalid response', { valid: false, issues: [] }, 'invalid'],
+    ['error issue', { valid: true, issues: [{ level: 'error', path: 'asset_cache', message: 'Rejected group' }] }, 'asset_cache: Rejected group'],
+  ])('does not update or mutate current params after %s', async (_label, validation, message) => {
+    const snapshot = structuredClone(baseline)
+    const update = vi.fn(async (next: Record<string, unknown>) => ({ simulation_params: next }))
+    await expect(persistDraftSelectionGroup(
+      baseline,
+      { name: 'Wing', faces: [{ id: 'face-1' }], edges: [] },
+      vi.fn(async () => validation),
+      update,
+    )).rejects.toThrow(message)
+    expect(update).not.toHaveBeenCalled()
+    expect(baseline).toEqual(snapshot)
+  })
+
+  it('does not mutate current params when update rejects', async () => {
+    const current = structuredClone(baseline)
+    const snapshot = structuredClone(current)
+    await expect(persistDraftSelectionGroup(
+      current,
+      { name: 'Wing', faces: [{ id: 'face-1' }], edges: [] },
+      vi.fn(async () => ({ valid: true, issues: [] })),
+      vi.fn(async () => { throw new Error('update failed') }),
+    )).rejects.toThrow('update failed')
+    expect(current).toEqual(snapshot)
+  })
+
+  it('validates before updating and preserves the first group on a consecutive save', async () => {
+    const events: string[] = []
+    const updateRequests: Record<string, unknown>[] = []
+    const names = (candidate: Record<string, unknown>) => {
+      const cache = candidate.private_attribute_asset_cache as { project_entity_info: { grouped_faces: Array<Array<{ name: string; private_attribute_tag_key: string }>> } }
+      return cache.project_entity_info.grouped_faces.flat()
+        .filter((entity) => entity.private_attribute_tag_key === 'groupName')
+        .map((entity) => entity.name)
+    }
+    const validate = vi.fn(async (next: Record<string, unknown>) => {
+      events.push(`validate:${names(next).at(-1)}`)
+      return { valid: true, issues: [] }
+    })
+    const update = vi.fn(async (next: Record<string, unknown>) => {
+      events.push(`update:${names(next).at(-1)}`)
+      updateRequests.push(next)
+      return { simulation_params: next }
+    })
+
+    let current: Record<string, unknown> = baseline
+    current = await persistDraftSelectionGroup(
+      current,
+      { name: 'first', faces: [{ id: 'face-1' }], edges: [] },
+      validate,
+      update,
+    )
+    current = await persistDraftSelectionGroup(
+      current,
+      { name: 'second', faces: [{ id: 'face-2' }], edges: [] },
+      validate,
+      update,
+    )
+
+    expect(events).toEqual(['validate:first', 'update:first', 'validate:second', 'update:second'])
+    expect(names(updateRequests[1])).toEqual(['first', 'second'])
+    expect(names(current)).toEqual(['first', 'second'])
   })
 })

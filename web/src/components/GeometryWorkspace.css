@@ -46,6 +46,40 @@
   background: #f5f8eb;
 }
 
+.geometry-selection-save-group {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.geometry-selection-save-group > button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #aebc83;
+  border-radius: 6px;
+  color: #435516;
+  background: #f4f8e9;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.geometry-selection-save-group > button:disabled {
+  border-color: #dfe2da;
+  color: #9a9f95;
+  background: #f7f8f5;
+  cursor: not-allowed;
+}
+
+.geometry-selection-save-group > small {
+  color: #92988d;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
 .geometry-capability-launchers {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -194,6 +228,85 @@
 .geometry-capability-dialog .geometry-checks > div { padding: 10px 4px; }
 .geometry-capability-dialog .geometry-checks strong,
 .geometry-capability-dialog .geometry-checks small { white-space: normal; }
+
+.draft-selection-group-dialog { width: min(460px, calc(100vw - 48px)); }
+
+.draft-selection-group-form {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.draft-selection-group-summary {
+  display: flex;
+  gap: 8px;
+}
+
+.draft-selection-group-summary span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #5c6853;
+  background: #edf1e7;
+  font: 10px 'DM Mono';
+}
+
+.draft-selection-group-form label {
+  display: grid;
+  gap: 6px;
+  color: #4d5747;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.draft-selection-group-form input {
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid #cfd5c7;
+  border-radius: 6px;
+  color: #35402f;
+  background: #fff;
+}
+
+.draft-selection-group-form input:focus {
+  border-color: #879d4d;
+  outline: 2px solid rgb(116 135 58 / 14%);
+}
+
+.draft-selection-group-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9b453b;
+  font-size: var(--text-sm);
+}
+
+.draft-selection-group-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.draft-selection-group-actions button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid #d3d8cc;
+  border-radius: 6px;
+  color: #596452;
+  background: #fff;
+  cursor: pointer;
+}
+
+.draft-selection-group-actions button.primary {
+  border-color: #657d28;
+  color: #fff;
+  background: #657d28;
+}
+
+.draft-selection-group-actions button:disabled { cursor: not-allowed; opacity: .58; }
 
 .geometry-advanced-diagnostics {
   font-size: var(--text-sm);

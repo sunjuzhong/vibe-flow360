@@ -35,7 +35,106 @@ const activeTagByKind = {
   body: 'body_group_tag',
 } as const
 
+const attributeNamesByKind = {
+  face: 'face_attribute_names',
+  edge: 'edge_attribute_names',
+  body: 'body_attribute_names',
+} as const
+
 export type ParameterSelectionKind = keyof typeof collectionByKind
+
+export type DraftSelectionGroup = {
+  name: string
+  faces: readonly ParameterSelectionMember[]
+  edges: readonly ParameterSelectionMember[]
+}
+
+type DraftParameterValidation = {
+  valid: boolean
+  issues: Array<{ level: string; path?: string; message: string }>
+}
+
+export async function persistDraftSelectionGroup(
+  simulationParams: Record<string, unknown>,
+  group: DraftSelectionGroup,
+  validate: (next: Record<string, unknown>) => Promise<DraftParameterValidation>,
+  update: (next: Record<string, unknown>) => Promise<{ simulation_params: Record<string, unknown> }>,
+): Promise<Record<string, unknown>> {
+  const next = applyDraftSelectionGroup(simulationParams, group)
+  const validation = await validate(next)
+  const blockingIssue = validation.issues.find((issue) => issue.level === 'error')
+  if (!validation.valid || blockingIssue) {
+    throw new Error(blockingIssue
+      ? `${blockingIssue.path ? `${blockingIssue.path}: ` : ''}${blockingIssue.message}`
+      : 'The updated Draft SimulationParams are invalid.')
+  }
+  const response = await update(next)
+  return response.simulation_params
+}
+
+export function applyDraftSelectionGroup(
+  simulationParams: Record<string, unknown>,
+  group: DraftSelectionGroup,
+): Record<string, unknown> {
+  const name = group.name.trim()
+  if (!name) throw new Error('Selection group name is required.')
+  if (group.faces.length + group.edges.length === 0) {
+    throw new Error('Select at least one face or edge before saving a selection group.')
+  }
+
+  const cache = record(simulationParams.private_attribute_asset_cache)
+  const info = record(cache.project_entity_info)
+  const duplicate = [...parameterEntities(info.grouped_faces), ...parameterEntities(info.grouped_edges)]
+    .some((entity) => entity.tag === 'groupName' && normalize(entity.name) === normalize(name))
+  if (duplicate) throw new Error(`A selection group named “${name}” already exists.`)
+
+  const nextInfo: Record<string, unknown> = { ...info }
+  const selections: Array<{
+    kind: 'face' | 'edge'
+    members: readonly ParameterSelectionMember[]
+    entityType: 'Surface' | 'Edge'
+  }> = [
+    { kind: 'face', members: group.faces, entityType: 'Surface' },
+    { kind: 'edge', members: group.edges, entityType: 'Edge' },
+  ]
+  for (const selection of selections) {
+    if (selection.members.length === 0) continue
+    const collectionKey = collectionByKind[selection.kind]
+    const schemes = entitySchemes(info[collectionKey])
+    const entities = schemes.flat().map(parameterEntity).filter(isDefined)
+    const activeTag = text(info[activeTagByKind[selection.kind]])
+    const components = [...new Set(selection.members.flatMap((member) => (
+      [...resolveMemberComponents(member, entities, activeTag)]
+    )))]
+    if (components.length === 0) continue
+    const entity = {
+      name,
+      private_attribute_entity_type_name: selection.entityType,
+      private_attribute_id: name,
+      private_attribute_sub_components: components,
+      private_attribute_tag_key: 'groupName',
+    }
+    const groupNameIndex = schemes.findIndex((scheme) => scheme.some((candidate) => (
+      text(record(candidate).private_attribute_tag_key) === 'groupName'
+    )))
+    nextInfo[collectionKey] = groupNameIndex >= 0
+      ? schemes.map((scheme, index) => index === groupNameIndex ? [...scheme, entity] : scheme)
+      : [...schemes, [entity]]
+    const attributeNamesKey = attributeNamesByKind[selection.kind]
+    nextInfo[attributeNamesKey] = [...new Set([
+      ...array(info[attributeNamesKey]).map(text).filter(Boolean),
+      'groupName',
+    ])]
+  }
+
+  return {
+    ...simulationParams,
+    private_attribute_asset_cache: {
+      ...cache,
+      project_entity_info: nextInfo,
+    },
+  }
+}
 
 export function buildGeometryParameterSelectionPresets(
   simulationParams: unknown,
@@ -166,9 +265,16 @@ function parameterEntities(value: unknown): ParameterEntity[] {
 }
 
 function entitySchemeList(value: unknown): ParameterEntity[][] {
-  return array(value)
-    .map((candidate) => array(candidate).map(parameterEntity).filter(isDefined))
+  return entitySchemes(value)
+    .map((scheme) => scheme.map(parameterEntity).filter(isDefined))
     .filter((scheme) => scheme.length > 0)
+}
+
+function entitySchemes(value: unknown): unknown[][] {
+  const collection = array(value)
+  if (collection.length === 0) return []
+  if (collection.every((candidate) => !Array.isArray(candidate))) return [collection]
+  return collection.map((candidate) => Array.isArray(candidate) ? candidate : [candidate])
 }
 
 function memberComponentIndex(
