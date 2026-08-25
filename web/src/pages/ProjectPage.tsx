@@ -71,7 +71,7 @@ import {
   isDraftEntityValidationIssue,
   type DraftEntityMutation,
 } from '../lib/draftEntities'
-import { applyDraftSelectionGroup, type ParameterSelectionMember } from '../lib/parameterSelectionGroups'
+import { persistDraftSelectionGroup, type ParameterSelectionMember } from '../lib/parameterSelectionGroups'
 
 const allStages = ['Geometry', 'SurfaceMesh', 'VolumeMesh', 'Case']
 const stageTypeSlugs: Record<string, string> = {
@@ -825,16 +825,13 @@ export default function ProjectPage() {
       throw new Error('Open an editable Draft before saving a selection group.')
     }
     const params = workspaceDetail?.simulation_params ?? draftDetail.simulation_params
-    const next = applyDraftSelectionGroup(params, { name, faces, edges })
-    const validation = await api.validateDraftParameters(activeDraft.id, next)
-    const blockingIssue = validation.issues.find((issue) => issue.level === 'error')
-    if (!validation.valid || blockingIssue) {
-      throw new Error(blockingIssue
-        ? `${blockingIssue.path ? `${blockingIssue.path}: ` : ''}${blockingIssue.message}`
-        : 'The updated Draft SimulationParams are invalid.')
-    }
-    const response = await api.updateDraftParameters(activeDraft.id, next, projectId)
-    setDraftDetail((current) => current ? { ...current, simulation_params: response.simulation_params } : current)
+    const simulationParams = await persistDraftSelectionGroup(
+      params,
+      { name, faces, edges },
+      (next) => api.validateDraftParameters(activeDraft.id, next),
+      (next) => api.updateDraftParameters(activeDraft.id, next, projectId),
+    )
+    setDraftDetail((current) => current ? { ...current, simulation_params: simulationParams } : current)
   }, [activeDraft, draftDetail?.simulation_params, draftMode, projectId, workspaceDetail?.simulation_params])
   const surfaceMeshVersions = useMemo(
     () => items.filter((item) => (

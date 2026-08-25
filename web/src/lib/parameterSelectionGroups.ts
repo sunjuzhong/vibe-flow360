@@ -49,6 +49,29 @@ export type DraftSelectionGroup = {
   edges: readonly ParameterSelectionMember[]
 }
 
+type DraftParameterValidation = {
+  valid: boolean
+  issues: Array<{ level: string; path?: string; message: string }>
+}
+
+export async function persistDraftSelectionGroup(
+  simulationParams: Record<string, unknown>,
+  group: DraftSelectionGroup,
+  validate: (next: Record<string, unknown>) => Promise<DraftParameterValidation>,
+  update: (next: Record<string, unknown>) => Promise<{ simulation_params: Record<string, unknown> }>,
+): Promise<Record<string, unknown>> {
+  const next = applyDraftSelectionGroup(simulationParams, group)
+  const validation = await validate(next)
+  const blockingIssue = validation.issues.find((issue) => issue.level === 'error')
+  if (!validation.valid || blockingIssue) {
+    throw new Error(blockingIssue
+      ? `${blockingIssue.path ? `${blockingIssue.path}: ` : ''}${blockingIssue.message}`
+      : 'The updated Draft SimulationParams are invalid.')
+  }
+  const response = await update(next)
+  return response.simulation_params
+}
+
 export function applyDraftSelectionGroup(
   simulationParams: Record<string, unknown>,
   group: DraftSelectionGroup,
@@ -77,7 +100,7 @@ export function applyDraftSelectionGroup(
   for (const selection of selections) {
     if (selection.members.length === 0) continue
     const collectionKey = collectionByKind[selection.kind]
-    const schemes = array(info[collectionKey]).map((scheme) => Array.isArray(scheme) ? scheme : [scheme])
+    const schemes = entitySchemes(info[collectionKey])
     const entities = schemes.flat().map(parameterEntity).filter(isDefined)
     const activeTag = text(info[activeTagByKind[selection.kind]])
     const components = [...new Set(selection.members.flatMap((member) => (
@@ -242,9 +265,16 @@ function parameterEntities(value: unknown): ParameterEntity[] {
 }
 
 function entitySchemeList(value: unknown): ParameterEntity[][] {
-  return array(value)
-    .map((candidate) => (Array.isArray(candidate) ? candidate : [candidate]).map(parameterEntity).filter(isDefined))
+  return entitySchemes(value)
+    .map((scheme) => scheme.map(parameterEntity).filter(isDefined))
     .filter((scheme) => scheme.length > 0)
+}
+
+function entitySchemes(value: unknown): unknown[][] {
+  const collection = array(value)
+  if (collection.length === 0) return []
+  if (collection.every((candidate) => !Array.isArray(candidate))) return [collection]
+  return collection.map((candidate) => Array.isArray(candidate) ? candidate : [candidate])
 }
 
 function memberComponentIndex(
