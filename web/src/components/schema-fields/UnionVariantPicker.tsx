@@ -35,7 +35,7 @@ export default function UnionVariantPicker({ id, title, variants, selected, onSe
         ? variants.length - 1
         : (index + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + variants.length) % variants.length
     onSelect(nextIndex)
-    const buttons = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="radio"]')
+    const buttons = event.currentTarget.closest('[role="radiogroup"]')?.querySelectorAll<HTMLElement>('[role="radio"]')
     buttons?.[nextIndex]?.focus()
   }
   return (
@@ -46,20 +46,21 @@ export default function UnionVariantPicker({ id, title, variants, selected, onSe
           const label = variantLabel(variant, index)
           const description = variant.description ? cleanSchemaDescription(variant.description) : ''
           return (
-            <div
-              role="radio"
-              aria-checked={selected === index}
-              aria-disabled={disabled || undefined}
-              tabIndex={!disabled && selected === index ? 0 : -1}
-              className={selected === index ? 'active' : ''}
-              key={index}
-              title={description ? `${label}: ${description}` : label}
-              onClick={() => { if (!disabled) onSelect(index) }}
-              onKeyDown={(event) => moveSelection(event, index)}
-            >
-              <strong>{label}</strong>
+            <div className={`schema-union-option${description && !disabled ? ' has-help' : ''}`} key={index}>
+              <div
+                role="radio"
+                aria-checked={selected === index}
+                aria-disabled={disabled || undefined}
+                tabIndex={!disabled && selected === index ? 0 : -1}
+                className={selected === index ? 'active' : ''}
+                title={description ? `${label}: ${description}` : label}
+                onClick={() => { if (!disabled) onSelect(index) }}
+                onKeyDown={(event) => moveSelection(event, index)}
+              >
+                <strong>{label}</strong>
+              </div>
               {description && !disabled && (
-                <span className="schema-union-option-help" onClick={(event) => event.stopPropagation()}>
+                <span className="schema-union-option-help">
                   <HelpTooltip label={t('About {title}').replace('{title}', label)} placement="bottom" align="start">
                     {description}
                   </HelpTooltip>

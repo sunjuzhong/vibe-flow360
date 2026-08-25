@@ -56,7 +56,7 @@ describe('UnionVariantPicker keyboard contract', () => {
     expect(container.querySelector('[role="radiogroup"]')?.getAttribute('aria-disabled')).toBe('true')
   })
 
-  it('keeps help triggers outside native buttons', async () => {
+  it('keeps help triggers outside radios while preserving the tooltip keyboard path', async () => {
     await act(async () => {
       root.render(<UnionVariantPicker
         title="Heat Spec"
@@ -65,7 +65,21 @@ describe('UnionVariantPicker keyboard contract', () => {
         onSelect={() => undefined}
       />)
     })
-    expect(container.querySelector('[role="radio"] > .schema-union-option-help button')).not.toBeNull()
-    expect(container.querySelector('button button')).toBeNull()
+    const radio = container.querySelector<HTMLElement>('[role="radio"]')!
+    const help = container.querySelector<HTMLButtonElement>('.schema-union-option-help button')!
+    const helpContainer = help.closest('.schema-union-option-help')!
+    expect(help.closest('[role="radio"]')).toBeNull()
+    expect(helpContainer.parentElement).toBe(radio.parentElement)
+    expect(radio.nextElementSibling).toBe(helpContainer)
+    expect(help.tabIndex).toBe(0)
+
+    radio.focus()
+    expect(document.activeElement).toBe(radio)
+    await act(async () => help.focus())
+    expect(document.activeElement).toBe(help)
+    expect(document.body.querySelector('.help-tooltip__content--portal.is-visible')).not.toBeNull()
+
+    await act(async () => help.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.body.querySelector('.help-tooltip__content--portal.is-visible')).toBeNull()
   })
 })
