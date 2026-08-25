@@ -139,8 +139,11 @@ export default function HelpTooltip({
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hide()
       }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') hide()
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation()
+          hide()
+        }
       }}
     >
       <button

@@ -347,6 +347,12 @@ describe('Draft parameter validation navigation', () => {
         format: { type: 'enum', title: 'Format', options: ['paraview'] },
         notes: { type: 'string', title: 'Notes' },
         enabled: { type: 'boolean', title: 'Enabled' },
+        mode: {
+          type: 'union', title: 'Mode', variants: [
+            { type: 'string', title: 'Automatic', description: 'Use automatic mode.' },
+            { type: 'string', title: 'Manual', description: 'Use manual mode.' },
+          ],
+        },
       },
     })
     const outputSchema: DynamicFormSchema = {
@@ -392,7 +398,15 @@ describe('Draft parameter validation navigation', () => {
     expect(document.activeElement).toBe(close)
     await press(close, 'Tab', true)
     expect(document.activeElement).toBe(save)
-    await press(dialog, 'Escape')
+
+    const help = dialog.querySelector<HTMLButtonElement>('.schema-union-option-help button')!
+    await act(async () => help.focus())
+    expect(document.body.querySelector('.help-tooltip__content--portal.is-visible')).not.toBeNull()
+    await press(help, 'Escape')
+    expect(document.body.querySelector('.schema-item-editor-dialog')).toBe(dialog)
+    expect(document.body.querySelector('.help-tooltip__content--portal.is-visible')).toBeNull()
+    expect(document.activeElement).toBe(help)
+    await press(help, 'Escape')
     expect(document.body.querySelector('.schema-item-editor-dialog')).toBeNull()
     expect(document.activeElement).toBe(add)
 
