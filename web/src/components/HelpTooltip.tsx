@@ -11,35 +11,40 @@ type Props = {
 }
 
 type Rect = Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left' | 'width' | 'height'>
+const HELP_TOOLTIP_OPEN_EVENT = 'flow360-help-tooltip-open'
 
 export function placeTooltip(
   trigger: Rect,
   tooltip: Pick<Rect, 'width' | 'height'>,
-  viewport: { width: number; height: number },
+  viewport: { width: number; height: number; left?: number; top?: number },
   placement: 'top' | 'bottom',
   align: 'start' | 'center' | 'end',
 ) {
   const margin = 12
   const gap = 7
+  const viewportLeft = viewport.left ?? 0
+  const viewportTop = viewport.top ?? 0
+  const viewportRight = viewportLeft + viewport.width
+  const viewportBottom = viewportTop + viewport.height
   const alignedLeft = align === 'start'
     ? trigger.left
     : align === 'end'
       ? trigger.right - tooltip.width
       : trigger.left + (trigger.width - tooltip.width) / 2
   const left = Math.min(
-    Math.max(alignedLeft, margin),
-    Math.max(margin, viewport.width - tooltip.width - margin),
+    Math.max(alignedLeft, viewportLeft + margin),
+    Math.max(viewportLeft + margin, viewportRight - tooltip.width - margin),
   )
   const above = trigger.top - tooltip.height - gap
   const below = trigger.bottom + gap
   const preferredTop = placement === 'top' ? above : below
   const alternateTop = placement === 'top' ? below : above
-  const preferredFits = preferredTop >= margin && preferredTop + tooltip.height <= viewport.height - margin
-  const alternateFits = alternateTop >= margin && alternateTop + tooltip.height <= viewport.height - margin
+  const preferredFits = preferredTop >= viewportTop + margin && preferredTop + tooltip.height <= viewportBottom - margin
+  const alternateFits = alternateTop >= viewportTop + margin && alternateTop + tooltip.height <= viewportBottom - margin
   const candidateTop = preferredFits || !alternateFits ? preferredTop : alternateTop
   const top = Math.min(
-    Math.max(candidateTop, margin),
-    Math.max(margin, viewport.height - tooltip.height - margin),
+    Math.max(candidateTop, viewportTop + margin),
+    Math.max(viewportTop + margin, viewportBottom - tooltip.height - margin),
   )
   return { left, top }
 }
@@ -61,6 +66,13 @@ export default function HelpTooltip({
   const portal = mounted && width !== 'guide'
 
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    const closeForAnotherTooltip = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== tooltipId) setOpen(false)
+    }
+    document.addEventListener(HELP_TOOLTIP_OPEN_EVENT, closeForAnotherTooltip)
+    return () => document.removeEventListener(HELP_TOOLTIP_OPEN_EVENT, closeForAnotherTooltip)
+  }, [tooltipId])
   useLayoutEffect(() => {
     if (mounted) setDraftContext(Boolean(triggerRef.current?.closest('.draft-parameter-form')))
   }, [mounted])
@@ -70,10 +82,16 @@ export default function HelpTooltip({
     const content = contentRef.current
     if (!trigger || !content) return
     const contentRect = content.getBoundingClientRect()
+    const viewport = window.visualViewport
     setPosition(placeTooltip(
       trigger.getBoundingClientRect(),
       contentRect,
-      { width: window.innerWidth, height: window.innerHeight },
+      {
+        width: viewport?.width ?? window.innerWidth,
+        height: viewport?.height ?? window.innerHeight,
+        left: viewport?.offsetLeft ?? 0,
+        top: viewport?.offsetTop ?? 0,
+      },
       placement,
       align,
     ))
@@ -84,13 +102,18 @@ export default function HelpTooltip({
     updatePosition()
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition, true)
+    window.visualViewport?.addEventListener('resize', updatePosition)
+    window.visualViewport?.addEventListener('scroll', updatePosition)
     return () => {
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
+      window.visualViewport?.removeEventListener('resize', updatePosition)
+      window.visualViewport?.removeEventListener('scroll', updatePosition)
     }
   }, [open, portal, updatePosition])
 
   const show = () => {
+    document.dispatchEvent(new CustomEvent(HELP_TOOLTIP_OPEN_EVENT, { detail: tooltipId }))
     setPosition(null)
     setOpen(true)
   }
@@ -116,8 +139,11 @@ export default function HelpTooltip({
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hide()
       }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') hide()
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation()
+          hide()
+        }
       }}
     >
       <button

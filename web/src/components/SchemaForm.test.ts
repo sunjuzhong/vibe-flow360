@@ -2,9 +2,167 @@ import { describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { DynamicFormSchema } from '../api/client'
-import { cleanSchemaDescription, hydrateSchemaValue, initialValue, normalizeIssuePath, rootTabForIssuePath, SchemaFormFields, serializeValue } from './SchemaForm'
+import { cleanSchemaDescription, complexArrayCopy, complexArrayVariantGroup, configurationStatus, formatSchemaLabel, hydrateSchemaValue, initialValue, normalizeIssuePath, placeFloatingMenu, rootTabForIssuePath, schemaNeedsUserInput, SchemaFormFields, serializeValue } from './SchemaForm'
+import { variantLabel } from './schema-fields/common'
 
 describe('schema-driven Flow360 form', () => {
+  it('keeps deep type menus inside the viewport and flips them above the trigger', () => {
+    expect(placeFloatingMenu(
+      { left: 650, right: 690, top: 700, bottom: 734, width: 40, height: 34 },
+      { width: 290, height: 320 },
+      { width: 700, height: 754 },
+    )).toEqual({ left: 398, top: 375 })
+  })
+
+  it('uses collection-specific editor semantics instead of output copy', () => {
+    expect(complexArrayCopy('models', 'Models')).toMatchObject({
+      newKicker: 'NEW MODEL',
+      editKicker: 'EDIT MODEL',
+      fixedType: 'Model type is fixed after creation.',
+      saveLabel: 'Save model',
+    })
+    expect(complexArrayCopy('meshing.refinements', 'Refinements').newKicker).toBe('NEW REFINEMENT')
+    expect(complexArrayCopy('volume_zones', 'Volume Zones').closeLabel).toBe('Close volume zone editor')
+    expect(complexArrayCopy('outputs', 'Outputs').newKicker).toBe('NEW OUTPUT')
+  })
+
+  it('groups searchable output and model choices with readable product categories', () => {
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'SurfaceProbeOutput')).toBe('Probe')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'ForceOutput')).toBe('Force')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'TimeAverageVolumeOutput')).toBe('Volume')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'StreamlineOutput')).toBe('Render')
+    expect(complexArrayVariantGroup('outputs', 'Outputs', 'SurfaceOutput')).toBe('Surface')
+    expect(complexArrayVariantGroup('models', 'Models', 'Wall')).toBe('Boundary')
+  })
+
+  it('detects required input recursively for long-form filtering', () => {
+    expect(schemaNeedsUserInput({ type: 'object', required: ['solver'], properties: { solver: { type: 'object', properties: {} } } })).toBe(true)
+    expect(schemaNeedsUserInput({ type: 'object', properties: { optional: { type: 'string' } } })).toBe(false)
+  })
+
+  it('only presents a default state when the schema declares one explicitly', () => {
+    expect(configurationStatus({ type: 'enum', default: 'auto' }, false, true)).toBe('Default value')
+    expect(configurationStatus({ type: 'enum', options: ['auto'] }, false, true)).toBe('Not configured')
+    expect(configurationStatus({ type: 'boolean', default: false }, false, true)).toBe('Default value')
+    expect(configurationStatus({ type: 'enum', default: 'auto' }, true, true)).toBeUndefined()
+  })
+
+  it('omits unconfigured and zero-state badges from root navigation', () => {
+    const schema: DynamicFormSchema = { type: 'object', properties: { alpha: { type: 'number', title: 'Alpha' } } }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { alpha: 2 },
+      baseline: { alpha: 2 },
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+    expect(markup).not.toContain('schema-root-tab-stats')
+    expect(markup).not.toContain(' empty')
+    expect(markup).not.toContain('>Set<')
+    expect(markup).not.toContain('>Empty<')
+
+    const changed = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { alpha: 3 },
+      baseline: { alpha: 2 },
+      rootTabs: true,
+      collapsibleObjects: true,
+      onChange: () => undefined,
+    }))
+    expect(changed).toContain('1 changed')
+  })
+
+  it('presents quantity-shaped objects directly without changing their wire shape', () => {
+    const schema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        roughness_height: {
+          type: 'object', title: 'Roughness Height',
+          properties: { units: { type: 'string', required: true }, value: { type: 'number', minimum: 0, required: true } },
+        },
+      },
+    }
+    const canonical = { roughness_height: { units: 'm', value: 0.001 } }
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema, value: hydrated, onChange: () => undefined }))
+    expect(markup).toContain('schema-quantity-field')
+    expect(markup).not.toContain('<details')
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
+  })
+
+  it('keeps nullable wall-function state explicit and round-trips null unchanged', () => {
+    const wallFunction: DynamicFormSchema = {
+      type: 'object', title: 'Use Wall Function', nullable: true, default: null,
+      properties: { wall_function_type: { type: 'enum', title: 'Wall Function Type', default: 'BoundaryLayer', options: ['BoundaryLayer', 'InnerLayer'] } },
+    }
+    const schema: DynamicFormSchema = { type: 'object', properties: { use_wall_function: wallFunction } }
+    const hydrated = hydrateSchemaValue(schema, { use_wall_function: null }, true)
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema, value: hydrated, showAll: true, onChange: () => undefined }))
+    expect(markup).toContain('type="checkbox"')
+    expect(markup).toContain('Disabled')
+    expect(markup).not.toContain('Wall Function Type')
+    expect(serializeValue(schema, hydrated, true)).toEqual({ use_wall_function: null })
+
+    const enabled = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: hydrateSchemaValue(schema, { use_wall_function: { wall_function_type: 'InnerLayer' } }, true),
+      showAll: true,
+      onChange: () => undefined,
+    }))
+    expect(enabled).toContain('Wall Function Type')
+  })
+
+  it('shows heat specification as one domain picker with a direct branch value', () => {
+    const quantityOrText: DynamicFormSchema = { type: 'union', title: 'Value', variants: [{ type: 'quantity', unit: 'W/m**2', unit_options: ['W/m**2'], value_schema: { type: 'number' } }, { type: 'string' }] }
+    const heatSpec: DynamicFormSchema = {
+      type: 'union', title: 'Heat Spec',
+      variants: [
+        { type: 'object', title: 'HeatFlux', properties: { type_name: { type: 'enum', default: 'HeatFlux', options: ['HeatFlux'] }, value: quantityOrText } },
+        { type: 'object', title: 'Temperature', properties: { type_name: { type: 'enum', default: 'Temperature', options: ['Temperature'] }, value: { ...quantityOrText, variants: [{ type: 'quantity', unit: 'K', unit_options: ['K'], value_schema: { type: 'number' } }, { type: 'string' }] } } },
+      ],
+    }
+    const schema: DynamicFormSchema = { type: 'object', properties: { heat_spec: heatSpec } }
+    const canonical = { heat_spec: { type_name: 'HeatFlux', value: { value: 0, units: 'W/m**2' } } }
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema, value: hydrated, showAll: true, onChange: () => undefined }))
+    expect(markup.match(/schema-union-picker/g)).toHaveLength(1)
+    expect(markup).toContain('Heat Flux')
+    expect(markup).toContain('Temperature')
+    expect(markup).not.toContain('Text value')
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
+  })
+
+  it('uses domain labels for nested velocity choices instead of schema container types', () => {
+    const schema: DynamicFormSchema = {
+      type: 'union',
+      variants: [
+        { type: 'union', variants: [{ type: 'object', title: 'SlaterPorousBleed' }, { type: 'object', title: 'WallRotation' }] },
+        { type: 'array', minItems: 3, maxItems: 3, items: { type: 'number' } },
+        { type: 'union', variants: [{ type: 'quantity' }, { type: 'expression' }] },
+      ],
+    }
+    expect(schema.variants?.map(variantLabel)).toEqual(['Slater Porous Bleed / Wall Rotation', 'Vector', 'Fixed value / Expression'])
+  })
+
+  it('disables empty entity bulk actions and describes the current entity kind as an item', () => {
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema: { type: 'entity_list', title: 'Surfaces', entity_kind: 'Surface', entity_choices: [] },
+      value: { entities: [] },
+      onChange: () => undefined,
+    }))
+    expect(markup).toContain('<button type="button" disabled="">Select all</button>')
+    expect(markup).toContain('No compatible entities')
+    expect(markup).toContain('This field accepts: Surface.')
+    expect(markup).toContain('Parameter entities panel')
+    expect(markup).not.toContain('configuring this output')
+  })
+
+  it('formats schema class names as readable labels', () => {
+    expect(formatSchemaLabel('SurfaceOutput')).toBe('Surface Output')
+    expect(formatSchemaLabel('TimeAverageSurfaceOutput')).toBe('Time Average Surface Output')
+  })
+
   it('creates and serializes nested values without field-specific code', () => {
     const schema: DynamicFormSchema = {
       type: 'object',
@@ -543,7 +701,7 @@ describe('schema-driven Flow360 form', () => {
     expect(markup.match(/>Meshing</g)).toHaveLength(1)
   })
 
-  it('renders every first-level Draft field as the same collapsible section', () => {
+  it('renders atomic root fields directly and keeps complex root fields collapsible', () => {
     const schema: DynamicFormSchema = {
       type: 'object',
       properties: {
@@ -573,10 +731,11 @@ describe('schema-driven Flow360 form', () => {
       onChange: () => undefined,
     }))
 
-    expect(markup.match(/schema-root-field-section/g)).toHaveLength(3)
+    expect(markup.match(/schema-root-field-section/g)).toHaveLength(2)
     expect(markup.match(/>Gap Treatment Strength</g)).toHaveLength(1)
     expect(markup.match(/>Outputs</g)).toHaveLength(1)
-    expect(markup).toMatch(/schema-root-field-section schema-invalid" open=""/)
+    expect(markup).toContain('id="schema-meshing-gap_treatment_strength"')
+    expect(markup).toMatch(/id="schema-meshing-gap_treatment_strength"[^>]*aria-invalid="true"/)
     expect(markup).toContain('schema-root-array')
     expect(markup).not.toContain('<legend')
   })
@@ -723,7 +882,7 @@ describe('schema-driven Flow360 form', () => {
     expect(emptyMarkup).toContain('schema-root-array')
     expect(emptyMarkup).toContain('This list is empty')
     expect(emptyMarkup).not.toContain('<legend')
-    expect(emptyMarkup.match(/>Models</g)).toHaveLength(1)
+    expect(emptyMarkup.match(/>Models</g)).toHaveLength(2)
     expect(populatedMarkup).toContain('Item 1')
     expect(populatedMarkup).toContain('Edit')
     expect(populatedMarkup).not.toContain('Model name')
@@ -731,7 +890,7 @@ describe('schema-driven Flow360 form', () => {
     expect(populatedMarkup).not.toContain('>0<')
   })
 
-  it('shows the root array clear action only for multiple items and labels it as remove all', () => {
+  it('never renders a whole-group clear action while retaining per-item remove controls', () => {
     const schema: DynamicFormSchema = {
       type: 'object',
       properties: {
@@ -758,8 +917,9 @@ describe('schema-driven Flow360 form', () => {
 
     expect(render([{ name: 'Fluid' }])).not.toContain('schema-root-remove')
     const multipleMarkup = render([{ name: 'Fluid' }, { name: 'Wall' }])
-    expect(multipleMarkup).toContain('schema-root-remove')
-    expect(multipleMarkup).toContain('Remove all Models')
+    expect(multipleMarkup).not.toContain('schema-root-remove')
+    expect(multipleMarkup).not.toContain('Remove all Models')
+    expect(multipleMarkup.match(/schema-array-remove/g)).toHaveLength(2)
   })
 
   it('round-trips schema-provided Surface and Slice entity payloads without exposing wire metadata', () => {
@@ -777,13 +937,46 @@ describe('schema-driven Flow360 form', () => {
     }
     const canonical = { stored_entities: [surface], selectors: ['wing*'] }
     const hydrated = hydrateSchemaValue(schema, canonical, true)
-    expect(hydrated).toEqual({ entities: ['Surface:surface-wing'], selectors: ['wing*'] })
+    expect(hydrated).toEqual({
+      entities: ['Surface:surface-wing'],
+      selectors: ['wing*'],
+      matched_stored_entities: [{ value: 'Surface:surface-wing', payload: surface }],
+    })
     expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
 
     const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema, value: hydrated, onChange: () => undefined }))
     expect(markup).toContain('wing')
     expect(markup).toContain('Surface')
     expect(markup).not.toContain('private_attribute')
+  })
+
+  it('strictly round-trips a stored canonical entity when a catalog choice has the same type and id', () => {
+    const catalogEdge = {
+      name: 'Trailing edge',
+      private_attribute_id: 'edge-shared',
+      private_attribute_entity_type_name: 'Edge',
+    }
+    const storedEdge = {
+      ...catalogEdge,
+      private_attribute_sub_components: ['edge-segment-1', 'edge-segment-2'],
+      private_attribute_registry_bucket: { source: 'draft', revision: 4 },
+    }
+    const schema: DynamicFormSchema = {
+      type: 'entity_list',
+      title: 'Edges',
+      entity_kind: 'Edge',
+      entity_choices: [{ value: 'Edge:edge-shared', label: 'Trailing edge', model_type: 'Edge', payload: catalogEdge }],
+    }
+    const canonical = { stored_entities: [storedEdge] }
+
+    const hydrated = hydrateSchemaValue(schema, canonical, true)
+
+    expect(hydrated).toEqual({
+      entities: ['Edge:edge-shared'],
+      selectors: [],
+      matched_stored_entities: [{ value: 'Edge:edge-shared', payload: storedEdge }],
+    })
+    expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
   })
 
   it('preserves canonical entity payloads that are not present in the current form choices', () => {
@@ -836,9 +1029,9 @@ describe('schema-driven Flow360 form', () => {
     }))
 
     expect(markup).toContain('schema-root-union')
-    expect(markup.match(/>Operating Condition</g)).toHaveLength(1)
+    expect(markup.match(/>Operating Condition</g)).toHaveLength(2)
     expect(markup).toContain('Value type')
-    expect(markup).toContain('GenericReferenceCondition')
+    expect(markup).toContain('Generic Reference Condition')
   })
 
   it('keeps raw schema paths out of the draft root-tab form surface', () => {

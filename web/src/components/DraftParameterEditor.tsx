@@ -230,9 +230,10 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint || localValidation.blocking) return
     const validateImmediately = immediateValidationFingerprintRef.current === candidateResult.fingerprint
     if (validateImmediately) immediateValidationFingerprintRef.current = ''
+    const candidate = candidateValueRef.current
     validationTimerRef.current = window.setTimeout(() => {
       validationTimerRef.current = null
-      void validateCandidate(candidateResult.value!, candidateResult.fingerprint)
+      void validateCandidate(candidate, candidateResult.fingerprint)
     }, draftValidationDelay(dirty, validateImmediately))
     return () => {
       if (validationTimerRef.current !== null) {
@@ -240,7 +241,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         validationTimerRef.current = null
       }
     }
-  }, [candidateResult.fingerprint, candidateResult.value, dirty, loading, localValidation.blocking, readOnly, validateCandidate])
+  }, [candidateResult.fingerprint, dirty, loading, localValidation.blocking, readOnly, validateCandidate])
 
   const selectMode = (nextMode: EditorMode) => {
     if (nextMode === mode) return
@@ -480,13 +481,14 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     () => normalizeDraftValidation(validationIsCurrent ? validation : null, schema),
     [schema, validation, validationIsCurrent],
   )
-  const validationIssues = normalizedValidation.issues
+  const validationIssues = normalizedValidation.issues.map((issue) => ({ ...issue, message: t(issue.message) }))
   const validationErrors = validationIssues.filter((issue) => issue.severity === 'error')
   const validationWarnings = validationIssues.filter((issue) => issue.severity === 'warning')
-  const displayedIssues = [...localValidation.issues, ...validationIssues]
+  const localizedLocalIssues = localValidation.issues.map((issue) => ({ ...issue, message: t(issue.message) }))
+  const displayedIssues = [...localizedLocalIssues, ...validationIssues]
   const displayedErrors = displayedIssues.filter((issue) => issue.severity === 'error')
   const displayedWarnings = displayedIssues.filter((issue) => issue.severity === 'warning')
-  const firstValidationError = validationErrors[0]?.message
+  const globalIssues = displayedIssues.filter((issue) => issue.mapping === 'global')
   const goToValidationError = (index: number) => {
     if (validationErrors.length === 0) return
     const normalizedIndex = (index + validationErrors.length) % validationErrors.length
@@ -516,7 +518,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       : !validation || validatedFingerprint !== candidateResult.fingerprint
         ? t('Waiting for Flow360 validation before Review & Run.')
         : !validation.valid
-          ? firstValidationError || t('Resolve the Flow360 validation errors before Review & Run.')
+          ? t('Resolve the Flow360 validation errors before Review & Run.')
           : t('The current Draft version is saved, validated, and ready to run.')
 
   const validationStatusClass = validating
@@ -560,8 +562,8 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
           ? t('Validation passed. Saving this exact version to the Draft…')
           : dirty
             ? t('Changes remain local until you choose Save to Draft.')
-            : validationIsCurrent && normalizedValidation.blocking && firstValidationError
-              ? firstValidationError
+            : validationIsCurrent && normalizedValidation.blocking
+              ? t('{count} Flow360 validation errors need attention.').replace('{count}', String(validationErrors.length))
               : validationIsCurrent && validationWarnings.length
                 ? t('Warnings are shown explicitly but do not block saving. Review them before continuing.')
                 : validationIsCurrent && validation?.valid
@@ -609,21 +611,20 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
                     {validationErrors.length > 0 && <button type="button" onClick={() => goToValidationError(0)}>{t('First error')}</button>}
                     {validationErrors.length > 0 && <button type="button" onClick={() => goToValidationError(focusedErrorIndex + 1)}>{t('Next error')}</button>}
                   </div>
-                  <div className="draft-validation-popover-issues">
-                    {displayedIssues.map((issue) => (
+                  {globalIssues.length > 0 && <div className="draft-validation-popover-issues">
+                    {globalIssues.map((issue) => (
                       <button
                         type="button"
                         className={`${issue.severity}${focusedValidationIssue?.id === issue.id ? ' active' : ''}`}
                         key={issue.id}
                         onClick={() => goToValidationIssue(issue)}
                       >
-                        <code>{issue.mapping === 'global' ? t('General Draft issue') : issue.path}</code>
+                        <code>{t('General Draft issue')}</code>
                         <span><b>{issue.severity === 'warning' ? t('Warning') : t('Error')}</b>{issue.message}</span>
-                        {issue.mapping === 'ancestor' && <small>{t('Shown at the nearest editable parent.')}</small>}
-                        {issue.mapping === 'global' && <small>{t('No matching form field. Open JSON to inspect the complete candidate.')}</small>}
+                        <small>{t('No matching form field. Open JSON to inspect the complete candidate.')}</small>
                       </button>
                     ))}
-                  </div>
+                  </div>}
                 </>
               )}
             </div>
@@ -673,7 +674,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
             rootTabs
             collapsibleObjects
             expressionValidator={validateExpression}
-            issues={[...localValidation.issues, ...validationIssues]
+            issues={[...localizedLocalIssues, ...validationIssues]
               .filter((issue) => Boolean(issue.path))
               .map((issue) => ({ path: issue.path, message: issue.message, level: issue.severity }))}
             focusIssuePath={focusedValidationIssue?.path}

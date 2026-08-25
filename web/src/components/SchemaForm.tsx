@@ -1,10 +1,11 @@
-import { createContext, FormEvent, KeyboardEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, FormEvent, KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Code2, Edit3, ListFilter, Plus, RefreshCw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import type { DynamicFormSchema } from '../api/client'
 import { currentLanguage } from '../i18n'
 import { translate } from '../i18n/translations'
 import { schemaContainsRecommendation, schemaRequiresUserInput } from '../lib/planPresentation'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import HelpTooltip from './HelpTooltip'
 import EntityListField from './schema-fields/EntityListField'
 import MultiSelectField from './schema-fields/MultiSelectField'
@@ -195,8 +196,6 @@ function SchemaFormFieldsContent({
     const child = schema.properties?.[key]
     if (!child) return null
     const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
-    const requiredKeys = Array.isArray(schema.required) ? schema.required : []
-    const required = child.required === true || requiredKeys.includes(key)
     const tabID = (tabKey: string) => `schema-root-tab-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
     const panelID = (tabKey: string) => `schema-root-panel-${tabKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`
     const selectAdjacentTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -219,16 +218,17 @@ function SchemaFormFieldsContent({
             {tabKeys.map((tabKey) => {
               const tabSchema = schema.properties?.[tabKey]
               const stats = schemaGroupStats(tabSchema, object[tabKey], baselineObject[tabKey], issues, tabKey)
-              return <option value={tabKey} key={tabKey}>{localizeSchemaText(tabSchema?.title || humanize(tabKey))} · {groupStatsLabel(stats)}</option>
+              const statsLabel = groupStatsLabel(stats)
+              return <option value={tabKey} key={tabKey}>{localizeSchemaText(tabSchema?.title || humanize(tabKey))}{statsLabel ? ` · ${statsLabel}` : ''}</option>
             })}
           </select>
         </label>
         <div className="schema-root-tabs" role="tablist" aria-label={schema.title || 'Simulation parameter groups'}>
           {tabKeys.map((tabKey, index) => {
             const tabSchema = schema.properties?.[tabKey]
-            const configured = Object.prototype.hasOwnProperty.call(object, tabKey) && isConfiguredValue(object[tabKey])
             const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, tabKey))
             const stats = schemaGroupStats(tabSchema, object[tabKey], baselineObject[tabKey], issues, tabKey)
+            const showStats = stats.modified > 0 || stats.errors > 0 || stats.warnings > 0
             return (
               <button
                 id={tabID(tabKey)}
@@ -243,13 +243,11 @@ function SchemaFormFieldsContent({
                 onKeyDown={(event) => selectAdjacentTab(event, index)}
               >
                 <span>{localizeSchemaText(tabSchema?.title || humanize(tabKey))}</span>
-                <span className="schema-root-tab-stats">
-                  <small title={localizeSchemaText('Unconfigured fields')}>{stats.unconfigured} {localizeSchemaText('empty')}</small>
+                {showStats && <span className="schema-root-tab-stats">
                   {stats.modified > 0 && <small className="modified" title={localizeSchemaText('Modified fields')}>{stats.modified} {localizeSchemaText('changed')}</small>}
                   {stats.errors > 0 && <small className="invalid" title={localizeSchemaText('Validation errors')}>{stats.errors} {localizeSchemaText('errors')}</small>}
                   {stats.warnings > 0 && <small className="warning" title={localizeSchemaText('Validation warnings')}>{stats.warnings} {localizeSchemaText('warnings')}</small>}
-                  {stats.unconfigured === 0 && stats.modified === 0 && stats.errors === 0 && stats.warnings === 0 && <small className={configured ? 'configured' : ''}>{configured ? 'Set' : 'Empty'}</small>}
-                </span>
+                </span>}
               </button>
             )
           })}
@@ -269,21 +267,6 @@ function SchemaFormFieldsContent({
             rootTabContent
             onChange={(next) => onChange({ ...object, [key]: next })}
           />
-          {sparse && !required && present && (!Array.isArray(object[key]) || object[key].length > 1) && (
-            <button
-              type="button"
-              className="schema-remove-change schema-root-remove"
-              onClick={() => {
-                const next = { ...object }
-                delete next[key]
-                onChange(next)
-              }}
-            >
-              <Trash2 size={12} /> {Array.isArray(object[key])
-                ? `Remove all ${child.title || humanize(key)}`
-                : removeLabel === 'Remove' ? `Remove ${child.title || humanize(key)} configuration` : removeLabel}
-            </button>
-          )}
         </div>
       </div>
     )
@@ -320,7 +303,7 @@ export function schemaGroupStats(
 }
 
 function groupStatsLabel(stats: SchemaGroupStats) {
-  const labels = [`${stats.unconfigured} ${localizeSchemaText('empty')}`]
+  const labels: string[] = []
   if (stats.modified) labels.push(`${stats.modified} ${localizeSchemaText('changed')}`)
   if (stats.errors) labels.push(`${stats.errors} ${localizeSchemaText('errors')}`)
   if (stats.warnings) labels.push(`${stats.warnings} ${localizeSchemaText('warnings')}`)
@@ -341,6 +324,8 @@ function SchemaField({
   collapsibleObjects,
   rootTabContent = false,
   embeddedObjectContent = false,
+  visibleObjectKeys,
+  compactUnion = false,
 }: {
   schema: DynamicFormSchema
   value: unknown
@@ -355,10 +340,12 @@ function SchemaField({
   collapsibleObjects: boolean
   rootTabContent?: boolean
   embeddedObjectContent?: boolean
+  visibleObjectKeys?: Set<string>
+  compactUnion?: boolean
 }) {
   const issues = useContext(FieldIssueContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
-  const displayTitle = localizeSchemaText(title)
+  const displayTitle = formatSchemaLabel(title)
   const fieldID = schemaFieldID(path)
   const fieldIssues = issues?.filter((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path, true)) ?? []
   const fieldMessages: FieldMessage[] = (issues?.filter((issue) => issueMatchesPath(issue.path, path, true)) ?? [])
@@ -369,6 +356,60 @@ function SchemaField({
   const branchInvalid = Boolean(path) && issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, path))
   const disabled = schema.disabled === true || schema.readOnly === true
   const [sectionOpen, setSectionOpen] = useState(path.split('.').length === 1)
+  const quantityObject = quantityLikeObjectSchema(schema, value)
+  if (quantityObject) {
+    return <QuantityField
+      schema={quantityObject}
+      value={value}
+      onChange={onChange}
+      title={displayTitle}
+      fieldID={fieldID}
+      path={collapsibleObjects ? undefined : path}
+      help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
+      description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
+      status={configurationStatus(schema, configured, showAll)}
+      hideLabel={rootTabContent}
+      fieldIssues={fieldIssues}
+      messages={fieldMessages}
+      canonicalUnit={canonicalQuantityUnit}
+      numberConstraint={numberConstraint}
+    />
+  }
+  const nullableChild = nullableSingleProperty(schema)
+  if (nullableChild) {
+    const [childKey, childSchema] = nullableChild
+    const object = isRecord(value) ? value : {}
+    const childValue = Object.prototype.hasOwnProperty.call(object, childKey) ? object[childKey] : initialValue(childSchema, true)
+    return <div className="schema-nullable-object">
+      <ToggleField
+        id={fieldID}
+        className="schema-field schema-nullable-object-toggle"
+        label={displayTitle}
+        checked={configured}
+        onChange={(enabled) => onChange(enabled ? initialValue(schema, true) : null)}
+        checkedLabel={localizeSchemaText('Enabled')}
+        uncheckedLabel={localizeSchemaText('Disabled')}
+        disabled={disabled}
+        status={configurationStatus(schema, configured, showAll)}
+        help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
+        description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
+        hideLabel={rootTabContent}
+        messages={fieldMessages}
+      />
+      {configured && <SchemaField
+        schema={childSchema}
+        value={childValue}
+        onChange={(next) => onChange({ ...object, [childKey]: next })}
+        path={`${path}.${childKey}`}
+        sparse={sparse}
+        showAll={showAll}
+        configured={isConfiguredValue(childValue)}
+        addLabel={addLabel}
+        removeLabel={removeLabel}
+        collapsibleObjects={collapsibleObjects}
+      />}
+    </div>
+  }
   if (schema.type === 'object') {
     const object = isRecord(value) ? value : {}
     const baselineObject = isRecord(baseline) ? baseline : {}
@@ -376,7 +417,7 @@ function SchemaField({
     const fields = (
       <>
         {schema.description && path && !collapsibleObjects && !embeddedObjectContent && <p>{localizedSchemaDescription(schema.description)}</p>}
-        {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
+        {Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child) && (!visibleObjectKeys || visibleObjectKeys.has(key))).map(([key, child]) => {
           const childPath = path ? `${path}.${key}` : key
           const present = Object.prototype.hasOwnProperty.call(object, key) && isConfiguredValue(object[key])
           const required = child.required === true || requiredKeys.includes(key)
@@ -397,6 +438,7 @@ function SchemaField({
               </div>
             )
           }
+          const directRootControl = rootTabContent && collapsibleObjects && isSingleControlRootSchema(child)
           const editor = (
             <div className={`schema-edit-field schema-edit-field-${child.type} schema-field-key-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`} key={key}>
               <SchemaField
@@ -410,13 +452,13 @@ function SchemaField({
                 addLabel={addLabel}
                 removeLabel={removeLabel}
                 collapsibleObjects={collapsibleObjects}
-                rootTabContent={rootTabContent && child.type !== 'object'}
+                rootTabContent={rootTabContent && child.type !== 'object' && !directRootControl}
                 embeddedObjectContent={rootTabContent && child.type === 'object'}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
             </div>
           )
-          if (rootTabContent && collapsibleObjects) {
+          if (rootTabContent && collapsibleObjects && !directRootControl) {
             const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, childPath)) ?? false
             const childTitle = child.title || humanize(key)
             return (
@@ -425,6 +467,7 @@ function SchemaField({
                 title={childTitle}
                 description={child.description}
                 configured={present}
+                defaulted={hasExplicitDefault(child)}
                 showAll={showAll}
                 invalid={invalid}
               >
@@ -447,7 +490,7 @@ function SchemaField({
               <span>{displayTitle}</span>
               <SchemaDescriptionHelp description={schema.description} title={title} />
             </span>
-            {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
+            {configurationStatus(schema, configured, showAll) && <small className="schema-field-state">{configurationStatus(schema, configured, showAll)}</small>}
             <ChevronDown size={16} />
           </summary>
           <div className="schema-section-body">{fields}</div>
@@ -456,7 +499,7 @@ function SchemaField({
     }
     return (
       <fieldset className={`schema-object${branchInvalid ? ' schema-invalid' : ''}`}>
-        {path && <legend>{displayTitle}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>}
+        {path && <legend>{displayTitle}{configurationStatus(schema, configured, showAll) && <small className="schema-field-state">{configurationStatus(schema, configured, showAll)}</small>}</legend>}
         {fields}
       </fieldset>
     )
@@ -472,7 +515,7 @@ function SchemaField({
         path={collapsibleObjects ? undefined : path}
         help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
         description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
-        status={showAll && !configured ? localizeSchemaText('Not configured') : undefined}
+        status={configurationStatus(schema, configured, showAll)}
         hideLabel={rootTabContent}
         fieldIssues={fieldIssues}
         messages={fieldMessages}
@@ -482,16 +525,16 @@ function SchemaField({
     )
   }
   if (schema.type === 'expression') {
-    return <ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={title} sectionContent={rootTabContent} configured={configured} showAll={showAll} messages={fieldMessages} />
+    return <ExpressionField schema={schema} value={value} onChange={onChange} path={path} title={displayTitle} sectionContent={rootTabContent} configured={configured} showAll={showAll} messages={fieldMessages} />
   }
   if (schema.type === 'entity_assignment') {
-    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={title} configured={configured} showAll={showAll} fieldIssues={fieldIssues} messages={fieldMessages} />
+    return <EntityAssignmentField schema={schema} value={value} onChange={onChange} fieldID={fieldID} title={displayTitle} configured={configured} showAll={showAll} fieldIssues={fieldIssues} messages={fieldMessages} />
   }
   if (schema.type === 'field_removal') {
     const recommendation = schema.recommendation
     return (
       <fieldset id={fieldID} tabIndex={fieldIssues.length ? -1 : undefined} className={`schema-object schema-entity-assignment${fieldIssues.length ? ' schema-invalid' : ''}`}>
-        <legend>{displayTitle}{showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}</legend>
+        <legend>{displayTitle}{configurationStatus(schema, configured, showAll) && <small className="schema-field-state">{configurationStatus(schema, configured, showAll)}</small>}</legend>
         <div className="schema-ai-recommendation">
           <div className="schema-ai-heading">
             <span><Sparkles size={15} /><strong>Schema-safe repair</strong></span>
@@ -515,13 +558,13 @@ function SchemaField({
       <ToggleField
         id={fieldID}
         className="schema-field schema-boolean"
-        label={title}
+        label={displayTitle}
         path={collapsibleObjects ? undefined : path}
         checked={Boolean(value)}
         onChange={onChange}
         disabled={disabled}
         required={schema.required === true}
-        status={showAll && !configured ? 'Not configured' : undefined}
+        status={configurationStatus(schema, configured, showAll)}
         help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
         description={!collapsibleObjects ? schema.description : undefined}
         hideLabel={rootTabContent}
@@ -531,7 +574,7 @@ function SchemaField({
   }
   if (schema.type === 'enum') {
     return (
-      <InputField id={fieldID} className="schema-field" label={title} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
+      <InputField id={fieldID} className="schema-field" label={displayTitle} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={configurationStatus(schema, configured, showAll)} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
         <select id={fieldID} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
           {(schema.options ?? []).map((option) => (
             <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>
@@ -541,7 +584,7 @@ function SchemaField({
     )
   }
   if (schema.type === 'multi_select') {
-    return <MultiSelectField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} configured={configured} showAll={showAll} fieldIssues={fieldIssues} messages={fieldMessages} />
+    return <MultiSelectField schema={schema} value={value} onChange={onChange} title={displayTitle} fieldID={fieldID} configured={configured} showAll={showAll} status={configurationStatus(schema, configured, showAll)} fieldIssues={fieldIssues} messages={fieldMessages} />
   }
   if (schema.type === 'array') {
     if (isComplexArrayItem(schema.items)) {
@@ -605,7 +648,7 @@ function SchemaField({
         disabled={disabled}
         help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
         description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
-        status={showAll && !configured ? localizeSchemaText('Not configured') : undefined}
+        status={configurationStatus(schema, configured, showAll)}
         hideLabel={rootTabContent}
         messages={fieldMessages}
         className={`${rootTabContent ? 'schema-root-array' : 'schema-object schema-array'} schema-array-editor${fieldIssues.length ? ' schema-field-invalid' : ''}`}
@@ -615,7 +658,7 @@ function SchemaField({
     )
   }
   if (schema.type === 'entity_list') {
-    return <EntityListField schema={schema} value={value} onChange={onChange} title={title} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} invalid={fieldIssues.length > 0} configured={configured} showAll={showAll} messages={fieldMessages} />
+    return <EntityListField schema={schema} value={value} onChange={onChange} title={displayTitle} fieldID={fieldID} descriptionHelp={<SchemaDescriptionHelp description={schema.description} title={title} />} invalid={fieldIssues.length > 0} configured={configured} showAll={showAll} status={configurationStatus(schema, configured, showAll)} messages={fieldMessages} />
   }
   if (schema.type === 'union') {
     const draft = isUnionDraft(value) ? value : { variant: 0, value: initialValue(schema.variants?.[0] ?? { type: 'json' }, sparse) }
@@ -634,7 +677,7 @@ function SchemaField({
           maxItems: enumArray.schema.maxItems ?? schema.maxItems ?? schema.maxLength,
         }}
         value={{ items: selected }}
-        title={title}
+        title={displayTitle}
         fieldID={fieldID}
         configured={configured}
         showAll={showAll}
@@ -660,7 +703,7 @@ function SchemaField({
         path={collapsibleObjects ? undefined : path}
         help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
         description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
-        status={showAll && !configured ? localizeSchemaText('Not configured') : undefined}
+        status={configurationStatus(schema, configured, showAll)}
         required={schema.required === true}
         disabled={disabled}
         fieldIssues={fieldIssues}
@@ -683,12 +726,29 @@ function SchemaField({
       })
     }
     const selectedSchema = disabled ? { ...selected, disabled: true } : selected
-    const selectedEditor = selected.type === 'expression' && valueOrExpression
+    const compactValueProperty = singleValueProperty(selected)
+    const selectedObject = isRecord(draft.value) ? draft.value : {}
+    const selectedEditor = compactValueProperty
+      ? <SchemaField
+          schema={disabled ? { ...compactValueProperty[1], disabled: true } : compactValueProperty[1]}
+          value={selectedObject[compactValueProperty[0]]}
+          path={`${path}.${compactValueProperty[0]}`}
+          sparse={sparse}
+          showAll={showAll}
+          configured={isConfiguredValue(selectedObject[compactValueProperty[0]])}
+          addLabel={addLabel}
+          removeLabel={removeLabel}
+          collapsibleObjects={collapsibleObjects}
+          rootTabContent
+          compactUnion
+          onChange={(next) => onChange({ ...draft, value: { ...selectedObject, [compactValueProperty[0]]: next } })}
+        />
+      : selected.type === 'expression' && valueOrExpression
       ? <ExpressionField schema={selectedSchema} value={draft.value} path={path} title={title} embedded onChange={(next) => onChange({ ...draft, value: next })} />
       : <SchemaField schema={selectedSchema} value={draft.value} path={path} sparse={sparse} showAll={showAll} configured={configured} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent onChange={(next) => onChange({ ...draft, value: next })} />
     const unionEditor = (controlProps: FieldControlProps) => (
       <>
-        {valueOrExpression ? (
+        {compactUnion ? null : valueOrExpression ? (
           <div id={controlProps.id} className="schema-value-kind" role="group" aria-label={`${title} value type`} aria-required={controlProps['aria-required']} aria-describedby={controlProps['aria-describedby']} aria-invalid={controlProps['aria-invalid']}>
             <button type="button" disabled={disabled} className={draft.variant === valueVariant ? 'active' : ''} aria-pressed={draft.variant === valueVariant} onClick={() => selectVariant(valueVariant)}>Fixed value</button>
             <button type="button" disabled={disabled} className={draft.variant === expressionVariant ? 'active' : ''} aria-pressed={draft.variant === expressionVariant} onClick={() => selectVariant(expressionVariant)}><Code2 size={13} /> Expression</button>
@@ -708,10 +768,10 @@ function SchemaField({
         disabled={disabled}
         help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
         description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
-        status={showAll && !configured ? localizeSchemaText('Not configured') : undefined}
+        status={configurationStatus(schema, configured, showAll)}
         hideLabel={rootTabContent}
         messages={fieldMessages}
-        className={`${rootTabContent ? 'schema-root-union' : 'schema-object'}${valueOrExpression ? ' schema-value-or-expression' : ''}`}
+        className={`${rootTabContent ? 'schema-root-union' : 'schema-object'}${valueOrExpression ? ' schema-value-or-expression' : ''}${compactUnion ? ' schema-compact-union' : ''}`}
       >
         {unionEditor}
       </FieldShell>
@@ -719,13 +779,13 @@ function SchemaField({
   }
   if (schema.type === 'json') {
     return (
-      <InputField id={fieldID} className="schema-field" label={title} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
+      <InputField id={fieldID} className="schema-field" label={displayTitle} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={configurationStatus(schema, configured, showAll)} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
         <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
       </InputField>
     )
   }
   return (
-    <InputField id={fieldID} className="schema-field" label={title} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={showAll && !configured ? 'Not configured' : undefined} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? schema.description : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
+    <InputField id={fieldID} className="schema-field" label={displayTitle} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={configurationStatus(schema, configured, showAll)} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
       <input
         id={fieldID}
         type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
@@ -747,6 +807,90 @@ function isComplexArrayItem(schema?: DynamicFormSchema) {
     || schema?.type === 'union' && Boolean(schema.variants?.some((variant) => variant.type === 'object'))
 }
 
+type FloatingRect = Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left' | 'width' | 'height'>
+
+export function placeFloatingMenu(
+  trigger: FloatingRect,
+  menu: Pick<FloatingRect, 'width' | 'height'>,
+  viewport: { width: number; height: number; left?: number; top?: number },
+) {
+  const margin = 12
+  const gap = 5
+  const viewportLeft = viewport.left ?? 0
+  const viewportTop = viewport.top ?? 0
+  const viewportRight = viewportLeft + viewport.width
+  const viewportBottom = viewportTop + viewport.height
+  const left = Math.min(
+    Math.max(trigger.right - menu.width, viewportLeft + margin),
+    Math.max(viewportLeft + margin, viewportRight - menu.width - margin),
+  )
+  const below = trigger.bottom + gap
+  const above = trigger.top - menu.height - gap
+  const preferredTop = below + menu.height <= viewportBottom - margin ? below : above
+  const top = Math.min(
+    Math.max(preferredTop, viewportTop + margin),
+    Math.max(viewportTop + margin, viewportBottom - menu.height - margin),
+  )
+  return { left, top }
+}
+
+export function complexArrayCopy(path: string, title: string) {
+  const identity = `${path} ${title}`.toLowerCase().replace(/[_-]+/g, ' ')
+  const kind = identity.includes('volume zone')
+    ? 'volume zone'
+    : identity.includes('refinement')
+      ? 'refinement'
+      : identity.includes('model')
+        ? 'model'
+        : identity.includes('output')
+          ? 'output'
+          : 'item'
+  const keys = {
+    item: ['ITEM', 'Item'],
+    model: ['MODEL', 'Model'],
+    refinement: ['REFINEMENT', 'Refinement'],
+    'volume zone': ['VOLUME ZONE', 'Volume zone'],
+    output: ['OUTPUT', 'Output'],
+  } as const
+  const [uppercaseNoun, noun] = keys[kind]
+  return {
+    noun: localizeSchemaText(noun),
+    newKicker: localizeSchemaText(`NEW ${uppercaseNoun}`),
+    editKicker: localizeSchemaText(`EDIT ${uppercaseNoun}`),
+    fixedType: localizeSchemaText(`${noun} type is fixed after creation.`),
+    closeLabel: localizeSchemaText(`Close ${kind} editor`),
+    saveLabel: localizeSchemaText(`Save ${kind}`),
+  }
+}
+
+export function complexArrayVariantGroup(path: string, title: string, variantTitle: string) {
+  const collection = `${path} ${title}`.toLowerCase()
+  const variant = variantTitle.toLowerCase().replace(/[\s_-]+/g, '')
+  if (collection.includes('output')) {
+    if (variant.includes('probe')) return 'Probe'
+    if (variant.includes('force') || variant.includes('integral')) return 'Force'
+    if (variant.includes('streamline') || variant.includes('isosurface')) return 'Render'
+    if (variant.includes('surface')) return 'Surface'
+    if (variant.includes('volume') || variant.includes('slice')) return 'Volume'
+    return 'Surface'
+  }
+  if (collection.includes('model')) {
+    if (/wall|freestream|inflow|outflow|symmetry|periodic|slip/.test(variant)) return 'Boundary'
+    if (/rotation|porous|actuator|betdisk/.test(variant)) return 'Volume'
+    return 'Physics'
+  }
+  return localizeSchemaText('Types')
+}
+
+export function schemaNeedsUserInput(schema: DynamicFormSchema): boolean {
+  if (schema.required === true) return true
+  if (schema.type === 'object') {
+    const required = new Set(Array.isArray(schema.required) ? schema.required : [])
+    return Object.entries(schema.properties ?? {}).some(([key, child]) => required.has(key) || schemaNeedsUserInput(child))
+  }
+  return false
+}
+
 function ComplexArrayField({
   schema, value, onChange, path, addLabel, removeLabel, collapsibleObjects, rootTabContent, configured, showAll, messages,
 }: {
@@ -766,8 +910,24 @@ function ComplexArrayField({
   const itemSchema = schema.items ?? { type: 'json' as const }
   const variants = itemSchema.type === 'union' ? itemSchema.variants ?? [] : []
   const [menuOpen, setMenuOpen] = useState(false)
+  const [typeSearch, setTypeSearch] = useState('')
+  const [editorFilter, setEditorFilter] = useState(false)
   const [editor, setEditor] = useState<{ index: number | null; schema: DynamicFormSchema; value: unknown } | null>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuSearchRef = useRef<HTMLInputElement>(null)
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null)
   const disabled = schema.disabled === true || schema.readOnly === true
+  const issues = useContext(FieldIssueContext)
+  const closeEditor = useCallback(() => setEditor(null), [])
+  const editorDialogRef = useFocusTrap<HTMLElement>(Boolean(editor), closeEditor, '.schema-item-editor-close')
+  const menuID = `${schemaFieldID(path)}-type-menu`
+
+  const closeTypeMenu = useCallback((restoreFocus: boolean) => {
+    setMenuOpen(false)
+    setTypeSearch('')
+    if (restoreFocus) requestAnimationFrame(() => menuTriggerRef.current?.focus())
+  }, [])
 
   const openNew = (variantIndex?: number) => {
     const selectedSchema = variantIndex === undefined ? itemSchema : variants[variantIndex]
@@ -775,11 +935,17 @@ function ComplexArrayField({
     // New complex items start sparse, but initialValue includes every explicit
     // schema default so the dialog shows what Flow360 will actually use.
     const initial = initialValue(selectedSchema, true)
+    // A portal menu item disappears in the same commit that opens the nested
+    // dialog. Anchor focus on the durable trigger so useFocusTrap can restore
+    // it when the dialog closes.
+    menuTriggerRef.current?.focus()
     setEditor({
       index: null,
       schema: selectedSchema,
       value: itemSchema.type === 'union' ? { variant: variantIndex ?? 0, value: initial } : initial,
     })
+    setEditorFilter(false)
+    setTypeSearch('')
     setMenuOpen(false)
   }
 
@@ -789,6 +955,7 @@ function ComplexArrayField({
       ? itemSchema.variants?.[item.variant] ?? itemSchema
       : itemSchema
     setEditor({ index, schema: selected, value: item })
+    setEditorFilter(false)
   }
 
   const saveEditor = () => {
@@ -800,18 +967,149 @@ function ComplexArrayField({
   }
 
   const title = schema.title || humanize(path.split('.').pop() || 'Items')
-  const displayTitle = localizeSchemaText(title)
+  const displayTitle = formatSchemaLabel(title)
+  const itemCopy = complexArrayCopy(path, title)
+  const updateMenuPosition = useCallback(() => {
+    const trigger = menuTriggerRef.current
+    const menu = menuRef.current
+    if (!trigger || !menu) return
+    const viewport = window.visualViewport
+    setMenuPosition(placeFloatingMenu(
+      trigger.getBoundingClientRect(),
+      menu.getBoundingClientRect(),
+      {
+        width: viewport?.width ?? window.innerWidth,
+        height: viewport?.height ?? window.innerHeight,
+        left: viewport?.offsetLeft ?? 0,
+        top: viewport?.offsetTop ?? 0,
+      },
+    ))
+  }, [])
+
+  const filteredVariantGroups = useMemo(() => {
+    const query = typeSearch.trim().toLocaleLowerCase()
+    const grouped = new Map<string, Array<{ schema: DynamicFormSchema; index: number; label: string }>>()
+    variants.forEach((variant, index) => {
+      const label = formatSchemaLabel(variant.title || `Type ${index + 1}`)
+      if (query && !`${label} ${variant.title ?? ''}`.toLocaleLowerCase().includes(query)) return
+      const group = complexArrayVariantGroup(path, title, variant.title || label)
+      grouped.set(group, [...(grouped.get(group) ?? []), { schema: variant, index, label }])
+    })
+    return [...grouped.entries()]
+  }, [path, title, typeSearch, variants])
+
+  const editorPath = editor ? `${path}.${editor.index ?? array.length}` : ''
+  const editorFields = useMemo(() => editor?.schema.type === 'object'
+    ? Object.entries(editor.schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child)).map(([key, child]) => {
+      const childPath = `${editorPath}.${key}`
+      const invalid = issues?.some((issue) => issue.level !== 'warning' && issueMatchesPath(issue.path, childPath)) ?? false
+      return {
+        key,
+        path: childPath,
+        label: formatSchemaLabel(child.title || humanize(key)),
+        required: (Array.isArray(editor.schema.required) && editor.schema.required.includes(key)) || schemaNeedsUserInput(child),
+        invalid,
+      }
+    })
+    : [], [editor, editorPath, issues])
+  const visibleEditorKeys = useMemo(() => editorFilter
+    ? new Set(editorFields.filter((field) => field.required || field.invalid).map((field) => field.key))
+    : undefined, [editorFields, editorFilter])
+  const jumpToEditorField = (fieldPath: string) => {
+    const target = document.getElementById(schemaFieldID(fieldPath))
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    target?.focus({ preventScroll: true })
+  }
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return
+    // Keyboard activation can restore focus to the trigger after React's
+    // portal commit. Run in the next task so the search field wins that race.
+    const focusTimer = window.setTimeout(() => menuSearchRef.current?.focus(), 0)
+    updateMenuPosition()
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    window.visualViewport?.addEventListener('resize', updateMenuPosition)
+    window.visualViewport?.addEventListener('scroll', updateMenuPosition)
+    return () => {
+      window.clearTimeout(focusTimer)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      window.visualViewport?.removeEventListener('resize', updateMenuPosition)
+      window.visualViewport?.removeEventListener('scroll', updateMenuPosition)
+    }
+  }, [menuOpen, updateMenuPosition])
+
+  useEffect(() => {
+    if (!editor) return
+    // useFocusTrap provides containment, Escape, and restoration. This delayed
+    // initial focus additionally covers a dialog opened by a menuitem's native
+    // Enter activation, whose default focus step can run after the portal commit.
+    const focusTimer = window.setTimeout(() => editorDialogRef.current?.querySelector<HTMLElement>('.schema-item-editor-close')?.focus(), 0)
+    return () => window.clearTimeout(focusTimer)
+  }, [editor?.index, editor?.schema, editorDialogRef])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && (menuRef.current?.contains(target) || menuTriggerRef.current?.contains(target))) return
+      closeTypeMenu(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer)
+  }, [closeTypeMenu, menuOpen])
+
+  const handleTypeMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeTypeMenu(true)
+      return
+    }
+    if ((event.key === 'Enter' || event.key === ' ') && (event.target as HTMLElement).getAttribute('role') === 'menuitem') {
+      event.preventDefault()
+      ;(event.target as HTMLButtonElement).click()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    if (!items.length) return
+    event.preventDefault()
+    const current = items.indexOf(event.target as HTMLButtonElement)
+    if (event.key === 'Home') items[0].focus()
+    else if (event.key === 'End') items[items.length - 1].focus()
+    else if (event.key === 'ArrowDown') items[current < 0 ? 0 : (current + 1) % items.length].focus()
+    else items[current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length].focus()
+  }
+
+  const typeMenu = menuOpen && variants.length > 0 && typeof document !== 'undefined'
+    ? createPortal(
+      <div
+        ref={menuRef}
+        className={`schema-array-type-menu schema-array-type-menu--portal${menuPosition ? ' is-positioned' : ''}`}
+        role="menu"
+        id={menuID}
+        aria-label={localizeSchemaText('Choose {item} type').replace('{item}', itemCopy.noun)}
+        style={menuPosition ? { left: menuPosition.left, top: menuPosition.top } : undefined}
+        onKeyDown={handleTypeMenuKeyDown}
+      >
+        <label className="schema-array-type-search"><Search size={13} /><span className="sr-only">{localizeSchemaText('Search types')}</span><input ref={menuSearchRef} value={typeSearch} placeholder={localizeSchemaText('Search types')} onChange={(event) => setTypeSearch(event.target.value)} /></label>
+        {filteredVariantGroups.map(([group, entries]) => <section className="schema-array-type-group" key={group}><strong>{localizeSchemaText(group)}</strong>{entries.map((entry) => <button type="button" role="menuitem" key={entry.index} onClick={() => openNew(entry.index)}>{entry.label}</button>)}</section>)}
+        {filteredVariantGroups.length === 0 && <span className="schema-array-type-empty">{localizeSchemaText('No matching types')}</span>}
+      </div>,
+      document.body,
+    )
+    : null
   const editorContent = (
     <>
       <div className="schema-array-toolbar">
         <span><strong>{array.length ? localizeSchemaText('{count} items').replace('{count}', String(array.length)) : localizeSchemaText('No items yet')}</strong>{rootTabContent && <SchemaDescriptionHelp description={schema.description} title={title} />}</span>
         <div className="schema-array-add-wrap">
-          <button type="button" disabled={disabled} className="schema-array-add" aria-haspopup={variants.length ? 'menu' : undefined} aria-expanded={variants.length ? menuOpen : undefined} onClick={() => variants.length ? setMenuOpen((current) => !current) : openNew()}>
+          <button ref={menuTriggerRef} type="button" disabled={disabled} className="schema-array-add" aria-haspopup={variants.length ? 'menu' : undefined} aria-controls={variants.length ? menuID : undefined} aria-expanded={variants.length ? menuOpen : undefined} onClick={() => variants.length ? setMenuOpen((current) => !current) : openNew()}>
             <Plus size={14} /> Add item {variants.length ? <ChevronDown size={13} /> : null}
           </button>
-          {menuOpen && <div className="schema-array-type-menu" role="menu" aria-label={`Choose ${title} type`}>
-            {variants.map((variant, index) => <button type="button" role="menuitem" key={index} onClick={() => openNew(index)}>{variant.title || `Type ${index + 1}`}</button>)}
-          </div>}
+          {typeMenu}
         </div>
       </div>
       {array.length === 0 ? <div className="schema-array-empty"><strong>This list is empty</strong><span>Add an item to configure this parameter group.</span></div> : (
@@ -829,11 +1127,16 @@ function ComplexArrayField({
   )
 
   const dialog = editor && <div className="schema-item-editor-backdrop" role="presentation">
-    <section className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`}>
-      <header><div><span className="schema-item-editor-kicker">{editor.index === null ? 'NEW OUTPUT' : 'EDIT OUTPUT'}</span><h3>{humanize(editor.schema.title || title)}</h3><small>Output type is fixed after creation.</small></div><button type="button" className="icon-button" onClick={() => setEditor(null)} aria-label="Close item editor"><X size={17} /></button></header>
+    <section ref={editorDialogRef} className="schema-item-editor-dialog" role="dialog" aria-modal="true" aria-label={`${editor.index === null ? 'Add' : 'Edit'} ${editor.schema.title || 'item'}`} tabIndex={-1}>
+      <header><div><span className="schema-item-editor-kicker">{editor.index === null ? itemCopy.newKicker : itemCopy.editKicker}</span><h3>{formatSchemaLabel(editor.schema.title || title)}</h3><small>{itemCopy.fixedType}</small></div><button type="button" className="icon-button schema-item-editor-close" onClick={closeEditor} aria-label={itemCopy.closeLabel}><X size={17} /></button></header>
+      <div className={`schema-item-editor-workspace ${editorFields.length > 4 ? 'has-nav' : 'no-nav'}`}>
+      {editorFields.length > 4 && <nav className="schema-item-editor-nav" aria-label={localizeSchemaText('Form sections')}>
+        <button type="button" className={editorFilter ? 'active' : ''} aria-pressed={editorFilter} onClick={() => setEditorFilter((current) => !current)}><ListFilter size={13} />{localizeSchemaText('Required / errors only')}</button>
+        {([['Needs attention', editorFields.filter((field) => field.required || field.invalid)], ['Other fields', editorFilter ? [] : editorFields.filter((field) => !field.required && !field.invalid)]] as const).map(([group, fields]) => fields.length > 0 && <section key={group}><strong>{localizeSchemaText(group)}</strong>{fields.map((field) => <button type="button" className={field.invalid ? 'invalid' : ''} key={field.key} onClick={() => jumpToEditorField(field.path)}><span>{field.label}</span>{field.invalid ? <AlertCircle size={12} /> : field.required ? <small>{localizeSchemaText('Required')}</small> : null}</button>)}</section>)}
+      </nav>}
       <div className="schema-item-editor-body"><SchemaField
         schema={editor.schema}
-        path={`${path}.${editor.index ?? array.length}`}
+        path={editorPath}
         value={itemSchema.type === 'union' && isUnionDraft(editor.value) ? editor.value.value : editor.value}
         sparse
         showAll
@@ -843,12 +1146,13 @@ function ComplexArrayField({
         collapsibleObjects
         rootTabContent={false}
         embeddedObjectContent={editor.schema.type === 'object'}
+        visibleObjectKeys={visibleEditorKeys}
         onChange={(next) => setEditor((current) => current ? {
           ...current,
           value: itemSchema.type === 'union' && isUnionDraft(current.value) ? { ...current.value, value: next } : next,
         } : current)}
-      /></div>
-      <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button type="button" className="primary" onClick={saveEditor}>Save item</button></footer>
+      /></div></div>
+      <footer><button type="button" onClick={closeEditor}>{localizeSchemaText('Cancel')}</button><button type="button" className="primary" onClick={saveEditor}>{itemCopy.saveLabel}</button></footer>
     </section>
   </div>
   const renderedDialog = dialog && typeof document !== 'undefined' ? createPortal(dialog, document.body) : dialog
@@ -860,7 +1164,7 @@ function ComplexArrayField({
     disabled={disabled}
     help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined}
     description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined}
-    status={showAll && !configured ? localizeSchemaText('Not configured') : undefined}
+    status={configurationStatus(schema, configured, showAll)}
     hideLabel={rootTabContent}
     messages={messages}
     className={`${rootTabContent ? 'schema-root-array' : 'schema-object schema-array'} schema-array-editor${messages.some((message) => (message.level ?? 'error') === 'error') ? ' schema-field-invalid' : ''}`}
@@ -883,6 +1187,7 @@ function RootFieldSection({
   title,
   description,
   configured,
+  defaulted,
   showAll,
   invalid,
   children,
@@ -890,6 +1195,7 @@ function RootFieldSection({
   title: string
   description?: string
   configured: boolean
+  defaulted: boolean
   showAll: boolean
   invalid: boolean
   children: ReactNode
@@ -903,10 +1209,10 @@ function RootFieldSection({
     >
       <summary>
         <span className="schema-section-title">
-          <span>{localizeSchemaText(title)}</span>
+          <span>{formatSchemaLabel(title)}</span>
           <SchemaDescriptionHelp description={description} title={title} />
         </span>
-        {showAll && !configured && <small className="schema-field-state">{localizeSchemaText('Not configured')}</small>}
+        {showAll && !configured && <small className="schema-field-state">{localizeSchemaText(defaulted ? 'Default value' : 'Not configured')}</small>}
         <ChevronDown size={16} />
       </summary>
       <div className="schema-section-body">{children}</div>
@@ -1072,13 +1378,13 @@ function ExpressionField({
   return (
     <FieldShell
       id={fieldID}
-      label={localizeSchemaText(title)}
+      label={title}
       path={path}
       required={schema.required === true}
       disabled={disabled}
       help={<SchemaDescriptionHelp description={schema.description} title={title} />}
       hideLabel={sectionContent}
-      status={status === 'idle' ? showAll && !configured ? localizeSchemaText('Not configured') : undefined : status === 'valid' ? 'Valid' : status === 'error' ? 'Invalid' : 'Checking'}
+      status={status === 'idle' ? configurationStatus(schema, configured, showAll) : status === 'valid' ? 'Valid' : status === 'error' ? 'Invalid' : 'Checking'}
       statusTone={status === 'valid' ? 'success' : status === 'error' ? 'error' : status === 'checking' ? 'warning' : 'neutral'}
       messages={messages}
       className="schema-field schema-expression"
@@ -1119,7 +1425,7 @@ function EntityAssignmentField({
   const recommendation = schema.recommendation
   const disabled = schema.disabled === true || schema.readOnly === true
   return (
-    <FieldShell id={fieldID} label={localizeSchemaText(title)} required={schema.required === true} disabled={disabled} help={<SchemaDescriptionHelp description={schema.description} title={title} />} status={showAll && !configured ? localizeSchemaText('Not configured') : undefined} messages={messages} className={`schema-object schema-entity-assignment${fieldIssues.length ? ' schema-field-invalid' : ''}`}>
+    <FieldShell id={fieldID} label={formatSchemaLabel(title)} required={schema.required === true} disabled={disabled} help={<SchemaDescriptionHelp description={schema.description} title={title} />} status={configurationStatus(schema, configured, showAll)} messages={messages} className={`schema-object schema-entity-assignment${fieldIssues.length ? ' schema-field-invalid' : ''}`}>
       {(controlProps) => <div id={controlProps.id} role="group" tabIndex={fieldIssues.length && !disabled ? -1 : undefined} aria-required={controlProps['aria-required']} aria-invalid={controlProps['aria-invalid']} aria-describedby={controlProps['aria-describedby']} aria-errormessage={controlProps['aria-errormessage']}>
       {recommendation ? (
         <div className="schema-ai-recommendation">
@@ -1155,7 +1461,7 @@ function EntityAssignmentField({
             <select
               id={`${fieldID}-model`}
               required
-              disabled={disabled}
+              disabled={disabled || entityChoices.length === 0}
               value={model}
               onChange={(event) => onChange({ ...draft, model: event.target.value })}
             >
@@ -1195,6 +1501,7 @@ function EntityAssignmentField({
               </label>
             ))}
           </div>
+          {entityChoices.length === 0 && <div className="schema-array-empty"><strong>{localizeSchemaText('No compatible entities')}</strong><span>{localizeSchemaText('No schema-compatible surfaces are available.')}</span><small>{localizeSchemaText('Create one from the Parameter entities panel, then reopen this editor.')}</small></div>}
         </div>
       )}
       </div>}
@@ -1218,6 +1525,22 @@ function SchemaDescriptionHelp({ description, title }: { description?: string; t
 
 function localizeSchemaText(value: string): string {
   return translate(value, currentLanguage())
+}
+
+export function formatSchemaLabel(value: string): string {
+  const translated = localizeSchemaText(value)
+  if (translated !== value) return translated
+  const needsFormatting = /[_-]/.test(value) || /[a-z0-9][A-Z]/.test(value)
+  return needsFormatting ? localizeSchemaText(humanize(value)) : value
+}
+
+function hasExplicitDefault(schema: DynamicFormSchema): boolean {
+  return schema.default !== undefined && schema.default !== null
+}
+
+export function configurationStatus(schema: DynamicFormSchema, configured: boolean, showAll: boolean): string | undefined {
+  if (!showAll || configured) return undefined
+  return localizeSchemaText(hasExplicitDefault(schema) ? 'Default value' : 'Not configured')
 }
 
 function localizedSchemaDescription(description?: string): string {
@@ -1286,6 +1609,7 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
 // small wrapper so an existing Draft can be edited without losing its value.
 export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
   if (value === undefined) return initialValue(schema, sparse)
+  if (value === null && schema.nullable) return null
   switch (schema.type) {
     case 'object': {
       if (!isRecord(value)) return initialValue(schema, sparse)
@@ -1305,16 +1629,21 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
       if (!isRecord(value)) return initialValue(schema, sparse)
       const stored = Array.isArray(value.stored_entities) ? value.stored_entities : []
       const unmatchedStoredEntities: Record<string, unknown>[] = []
+      const matchedStoredEntities: Array<{ value: string; payload: Record<string, unknown> }> = []
       const entities = stored.flatMap((entity) => {
         if (!isRecord(entity)) return []
         const choice = (schema.entity_choices ?? []).find((candidate) => entityMatchesChoice(entity, candidate))
-        if (choice) return [choice.value]
+        if (choice) {
+          matchedStoredEntities.push({ value: choice.value, payload: entity })
+          return [choice.value]
+        }
         unmatchedStoredEntities.push(entity)
         return []
       })
       return {
         entities,
         selectors: Array.isArray(value.selectors) ? value.selectors : [],
+        ...(matchedStoredEntities.length ? { matched_stored_entities: matchedStoredEntities } : {}),
         ...(unmatchedStoredEntities.length ? { unmatched_stored_entities: unmatchedStoredEntities } : {}),
       }
     }
@@ -1339,6 +1668,7 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
 }
 
 export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse = false): unknown {
+  if (value === null && schema.nullable) return null
   switch (schema.type) {
     case 'object': {
       const object = isRecord(value) ? value : {}
@@ -1398,9 +1728,18 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
       const unmatchedStoredEntities = Array.isArray(object.unmatched_stored_entities)
         ? object.unmatched_stored_entities.filter(isRecord)
         : []
+      const matchedStoredEntities = Array.isArray(object.matched_stored_entities)
+        ? object.matched_stored_entities.filter((entry): entry is Record<string, unknown> => isRecord(entry) && typeof entry.value === 'string' && isRecord(entry.payload))
+        : []
       const result: Record<string, unknown> = {
         stored_entities: [
-          ...(schema.entity_choices ?? []).filter((choice) => selected.has(choice.value) && choice.payload).map((choice) => choice.payload),
+          ...(schema.entity_choices ?? []).flatMap((choice) => {
+            if (!selected.has(choice.value)) return []
+            const preserved = matchedStoredEntities
+              .filter((entry) => entry.value === choice.value)
+              .map((entry) => entry.payload as Record<string, unknown>)
+            return preserved.length ? preserved : choice.payload ? [choice.payload] : []
+          }),
           ...unmatchedStoredEntities,
         ],
       }
@@ -1441,6 +1780,36 @@ function numberConstraint(schema: DynamicFormSchema | undefined, key: 'minimum' 
   return schema?.[key]
 }
 
+function quantityLikeObjectSchema(schema: DynamicFormSchema, value: unknown): DynamicFormSchema | null {
+  if (schema.type !== 'object') return null
+  const properties = schema.properties ?? {}
+  const keys = Object.keys(properties)
+  if (keys.length !== 2 || !keys.includes('value') || !keys.includes('units')) return null
+  if (!['number', 'integer'].includes(properties.value.type) || properties.units.type !== 'string') return null
+  const object = isRecord(value) ? value : isRecord(schema.default) ? schema.default : {}
+  const unit = String(object.units ?? '')
+  if (!unit) return null
+  return {
+    ...schema,
+    type: 'quantity',
+    unit,
+    unit_options: [unit],
+    value_schema: properties.value,
+  }
+}
+
+function nullableSingleProperty(schema: DynamicFormSchema): [string, DynamicFormSchema] | null {
+  if (schema.type !== 'object' || !schema.nullable) return null
+  const entries = Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child))
+  return entries.length === 1 && entries[0][1].type === 'enum' ? entries[0] : null
+}
+
+function singleValueProperty(schema: DynamicFormSchema): [string, DynamicFormSchema] | null {
+  if (schema.type !== 'object') return null
+  const entries = Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child))
+  return entries.length === 1 && entries[0][0] === 'value' ? entries[0] : null
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -1465,6 +1834,11 @@ function negativeOneOrPositiveIntegerUnion(schema: DynamicFormSchema): { integer
     && variant.options?.length === 1
     && variant.options[0] === -1)
   return integerVariant >= 0 && sentinelVariant >= 0 ? { integerVariant, sentinelVariant } : null
+}
+
+function isSingleControlRootSchema(schema: DynamicFormSchema): boolean {
+  return ['string', 'number', 'integer', 'boolean', 'enum', 'quantity'].includes(schema.type)
+    || negativeOneOrPositiveIntegerUnion(schema) !== null
 }
 
 function enumArrayUnion(schema: DynamicFormSchema): { variant: number; schema: DynamicFormSchema; options: string[] } | null {

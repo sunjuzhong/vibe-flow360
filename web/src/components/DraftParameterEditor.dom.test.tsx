@@ -95,6 +95,13 @@ async function click(element: Element) {
   await flushTimers()
 }
 
+async function press(element: Element, key: string, shiftKey = false) {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
+  })
+  await flushTimers()
+}
+
 async function flushTimers() {
   await act(async () => {
     await vi.runOnlyPendingTimersAsync()
@@ -157,7 +164,7 @@ describe('Draft parameter validation navigation', () => {
     await flushTimers()
     await flushTimers()
 
-    expect(container.querySelectorAll('.draft-validation-popover-issues button')).toHaveLength(5)
+    expect(container.querySelectorAll('.draft-validation-popover-issues button')).toHaveLength(0)
     expect(container.querySelectorAll('.draft-editor-modes [role="tab"]')).toHaveLength(2)
     expect(buttonWithText(container, 'Preview').getAttribute('aria-pressed')).toBe('false')
     expect(container.querySelector('.schema-root-select select')).not.toBeNull()
@@ -170,7 +177,8 @@ describe('Draft parameter validation navigation', () => {
     await act(async () => container.querySelector<HTMLElement>('#schema-root-tab-case')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })))
     expect(meshingTab.getAttribute('aria-selected')).toBe('true')
 
-    await click(buttonWithText(container, 'Maximum steps is invalid'))
+    await click(buttonWithText(container, 'First error'))
+    await click(buttonWithText(container, 'Next error'))
 
     const caseTab = container.querySelector<HTMLElement>('#schema-root-tab-case')
     const maximumSteps = container.querySelector<HTMLInputElement>('#schema-case-solver-max_steps')
@@ -183,12 +191,12 @@ describe('Draft parameter validation navigation', () => {
     expect(multiSelect?.tabIndex).toBe(-1)
     expect(document.activeElement).toBe(multiSelect)
 
-    await click(buttonWithText(container, 'Monitors are invalid'))
+    await click(buttonWithText(container, 'Next error'))
     const entityList = container.querySelector<HTMLElement>('#schema-case-monitors')
     expect(entityList?.tabIndex).toBe(-1)
     expect(document.activeElement).toBe(entityList)
 
-    await click(buttonWithText(container, 'Output format is invalid'))
+    await click(buttonWithText(container, 'Next error'))
     const enumArrayUnion = container.querySelector<HTMLElement>('#schema-case-output_format')
     expect(enumArrayUnion?.tabIndex).toBe(-1)
     expect(document.activeElement).toBe(enumArrayUnion)
@@ -218,6 +226,7 @@ describe('Draft parameter validation navigation', () => {
     })
     await flushTimers()
     await flushTimers()
+    const validationsBeforeBrowsing = vi.mocked(api.validateDraftParameters).mock.calls.length
 
     const formMode = container.querySelector<HTMLElement>('#draft-editor-mode-form')!
     const jsonMode = container.querySelector<HTMLElement>('#draft-editor-mode-json')!
@@ -230,6 +239,195 @@ describe('Draft parameter validation navigation', () => {
     await act(async () => jsonMode.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })))
     expect(formMode.getAttribute('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(formMode)
+    await click(buttonWithText(container, 'Preview'))
+    await click(buttonWithText(container, 'Return to edit'))
+    expect(vi.mocked(api.validateDraftParameters).mock.calls.length).toBe(validationsBeforeBrowsing)
+  })
+
+  it('searches and groups type choices, then provides long-form anchors and filtering', async () => {
+    const outputVariant = (title: string): DynamicFormSchema => ({
+      type: 'object',
+      title,
+      required: ['entities'],
+      properties: {
+        entities: { type: 'entity_list', title: 'Entities', required: true, entity_kind: 'Surface', entity_choices: [] },
+        name: { type: 'string', title: 'Name' },
+        fields: { type: 'multi_select', title: 'Output fields', value_key: 'items', options: ['Cp'] },
+        frequency: { type: 'integer', title: 'Frequency' },
+        format: { type: 'enum', title: 'Format', options: ['paraview'] },
+        notes: { type: 'string', title: 'Notes' },
+      },
+    })
+    const outputSchema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        outputs: {
+          type: 'array', title: 'Outputs', items: { type: 'union', variants: [outputVariant('SurfaceOutput'), outputVariant('ForceOutput')] },
+        },
+      },
+    }
+    vi.mocked(api.draftParameterSchema).mockResolvedValueOnce({
+      schema_version: 1, source_type: 'Case', stages: ['Case'], schema: outputSchema, baseline: { outputs: [] },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-long-form" parameters={{ outputs: [] }} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await click(buttonWithText(container, 'Add item'))
+
+    const search = document.body.querySelector<HTMLInputElement>('.schema-array-type-search input')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!search || !valueSetter) throw new Error('Type search is unavailable')
+    expect(search.placeholder).toBe('Search types')
+    expect(search.closest('label')?.querySelectorAll('.sr-only')).toHaveLength(1)
+    expect(document.body.querySelector('.schema-array-type-menu')?.textContent).toContain('Surface')
+    expect(document.body.querySelector('.schema-array-type-menu')?.textContent).toContain('Force')
+    await act(async () => {
+      valueSetter.call(search, 'force')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const menu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    expect(menu.textContent).toContain('Force Output')
+    expect(menu.textContent).not.toContain('Surface Output')
+    await click(buttonWithText(menu, 'Force Output'))
+
+    const dialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    expect(dialog.querySelector('.schema-item-editor-nav')).not.toBeNull()
+    expect(dialog.textContent).toContain('Required / errors only')
+    expect(dialog.querySelector('#schema-outputs-0-notes')).not.toBeNull()
+    await click(buttonWithText(dialog, 'Required / errors only'))
+    expect(dialog.querySelector('#schema-outputs-0-entities')).not.toBeNull()
+    expect(dialog.querySelector('#schema-outputs-0-notes')).toBeNull()
+    expect(dialog.querySelector('.schema-item-editor-nav')?.textContent).not.toContain('Other fields')
+  })
+
+  it('gives a short item editor the full no-navigation workspace', async () => {
+    const shortSchema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        outputs: {
+          type: 'array', title: 'Outputs', items: {
+            type: 'object', title: 'MeshSliceOutput',
+            properties: {
+              name: { type: 'string', title: 'Name' },
+              origin: { type: 'quantity', title: 'Origin', unit: 'm', unit_options: ['m'], value_schema: { type: 'number' } },
+              normal: { type: 'string', title: 'Normal' },
+            },
+          },
+        },
+      },
+    }
+    vi.mocked(api.draftParameterSchema).mockResolvedValueOnce({
+      schema_version: 1, source_type: 'Case', stages: ['Case'], schema: shortSchema,
+      baseline: { outputs: [{ name: 'slice', origin: { value: 0, units: 'm' }, normal: 'x' }] },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-no-nav" parameters={{ outputs: [{ name: 'slice' }] }} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await click(buttonWithText(container, 'Edit'))
+
+    const dialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    const workspace = dialog.querySelector<HTMLElement>('.schema-item-editor-workspace')!
+    expect(workspace.classList.contains('no-nav')).toBe(true)
+    expect(workspace.classList.contains('has-nav')).toBe(false)
+    expect(dialog.querySelector('.schema-item-editor-nav')).toBeNull()
+    expect(workspace.firstElementChild).toBe(dialog.querySelector('.schema-item-editor-body'))
+  })
+
+  it('keeps portal type selection and its nested editor inside a complete keyboard focus flow', async () => {
+    const outputVariant = (title: string): DynamicFormSchema => ({
+      type: 'object',
+      title,
+      properties: {
+        name: { type: 'string', title: 'Name' },
+        frequency: { type: 'integer', title: 'Frequency' },
+        format: { type: 'enum', title: 'Format', options: ['paraview'] },
+        notes: { type: 'string', title: 'Notes' },
+        enabled: { type: 'boolean', title: 'Enabled' },
+        mode: {
+          type: 'union', title: 'Mode', variants: [
+            { type: 'string', title: 'Automatic', description: 'Use automatic mode.' },
+            { type: 'string', title: 'Manual', description: 'Use manual mode.' },
+          ],
+        },
+      },
+    })
+    const outputSchema: DynamicFormSchema = {
+      type: 'object',
+      properties: {
+        outputs: {
+          type: 'array', title: 'Outputs', items: { type: 'union', variants: [outputVariant('SurfaceOutput'), outputVariant('ForceOutput')] },
+        },
+      },
+    }
+    vi.mocked(api.draftParameterSchema).mockResolvedValueOnce({
+      schema_version: 1, source_type: 'Case', stages: ['Case'], schema: outputSchema, baseline: { outputs: [] },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-keyboard" parameters={{ outputs: [] }} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    const add = buttonWithText(container, 'Add item') as HTMLButtonElement
+    add.focus()
+    await click(add)
+    const menu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    const search = menu.querySelector<HTMLInputElement>('input')!
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    expect(document.activeElement).toBe(search)
+    await press(search, 'ArrowDown')
+    expect(document.activeElement).toBe(items[0])
+    await press(items[0], 'End')
+    expect(document.activeElement).toBe(items[1])
+    await press(items[1], 'Home')
+    expect(document.activeElement).toBe(items[0])
+    await press(items[0], 'ArrowUp')
+    expect(document.activeElement).toBe(items[1])
+    await press(items[1], 'Enter')
+
+    const dialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    const close = dialog.querySelector<HTMLButtonElement>('.schema-item-editor-close')!
+    const save = dialog.querySelector<HTMLButtonElement>('footer .primary')!
+    expect(document.activeElement).toBe(close)
+    save.focus()
+    await press(save, 'Tab')
+    expect(document.activeElement).toBe(close)
+    await press(close, 'Tab', true)
+    expect(document.activeElement).toBe(save)
+
+    const help = dialog.querySelector<HTMLButtonElement>('.schema-union-option-help button')!
+    await act(async () => help.focus())
+    expect(document.body.querySelector('.help-tooltip__content--portal.is-visible')).not.toBeNull()
+    await press(help, 'Escape')
+    expect(document.body.querySelector('.schema-item-editor-dialog')).toBe(dialog)
+    expect(document.body.querySelector('.help-tooltip__content--portal.is-visible')).toBeNull()
+    expect(document.activeElement).toBe(help)
+    await press(help, 'Escape')
+    expect(document.body.querySelector('.schema-item-editor-dialog')).toBeNull()
+    expect(document.activeElement).toBe(add)
+
+    await click(add)
+    const reopenedMenu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    await press(reopenedMenu.querySelector('input')!, 'Escape')
+    expect(document.body.querySelector('.schema-array-type-menu')).toBeNull()
+    expect(document.activeElement).toBe(add)
+
+    await click(add)
+    const finalMenu = document.body.querySelector<HTMLElement>('.schema-array-type-menu')!
+    await press(finalMenu.querySelector('input')!, 'ArrowDown')
+    await press(document.activeElement!, 'Enter')
+    const finalDialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    await click(finalDialog.querySelector<HTMLButtonElement>('footer .primary')!)
+    const edit = buttonWithText(container, 'Edit') as HTMLButtonElement
+    edit.focus()
+    await click(edit)
+    const editDialog = document.body.querySelector<HTMLElement>('.schema-item-editor-dialog')!
+    await click(buttonWithText(editDialog, 'Cancel'))
+    expect(document.activeElement).toBe(edit)
   })
 
   it('shows warnings without error styling and routes an unmapped issue to complete JSON', async () => {
@@ -248,9 +446,9 @@ describe('Draft parameter validation navigation', () => {
     await flushTimers()
     await flushTimers()
 
-    const warning = buttonWithText(container, 'Review the selected outputs')
-    expect(warning.classList.contains('warning')).toBe(true)
-    expect(warning.textContent).toContain('Warning')
+    await click(container.querySelector<HTMLElement>('#schema-root-tab-case')!)
+    const warning = [...container.querySelectorAll('.field-shell__message--warning')].find((candidate) => candidate.textContent?.includes('Review the selected outputs'))
+    expect(warning).toBeDefined()
     expect(container.querySelector('#schema-root-tab-case')?.textContent).toContain('warnings')
 
     const globalIssue = buttonWithText(container, 'Inspect the complete candidate')

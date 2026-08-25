@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import type { DynamicFormSchema } from '../../api/client'
 import { FieldShell, type FieldMessage } from '../FieldShell'
@@ -12,6 +12,7 @@ type MultiSelectFieldProps = {
   fieldID: string
   configured: boolean
   showAll: boolean
+  status?: ReactNode
   fieldIssues: Array<{ path?: string; message: string }>
   messages?: FieldMessage[]
 }
@@ -20,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-export default function MultiSelectField({ schema, value, onChange, title, fieldID, configured, showAll, fieldIssues, messages }: MultiSelectFieldProps) {
+export default function MultiSelectField({ schema, value, onChange, title, fieldID, status, fieldIssues, messages }: MultiSelectFieldProps) {
   const [query, setQuery] = useState('')
   const draft = isRecord(value) ? value : {}
   const valueKey = schema.value_key || 'items'
@@ -43,7 +44,7 @@ export default function MultiSelectField({ schema, value, onChange, title, field
       required={schema.required === true}
       disabled={disabled}
       help={<SchemaDescriptionHelp description={schema.description} title={title} />}
-      status={showAll && !configured ? 'Not configured' : undefined}
+      status={status}
       messages={fieldMessages}
       className={`schema-object schema-multi-select-field${fieldIssues.length ? ' schema-field-invalid' : ''}`}
     >
