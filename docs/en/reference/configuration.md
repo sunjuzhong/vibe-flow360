@@ -47,6 +47,32 @@ Without an AI API key, the built-in provider can use the deterministic local
 planner for supported planning responses. AI Create requires a configured
 model provider.
 
+## Conversation knowledge base
+
+```dotenv
+VIBESIM_KNOWLEDGE_BACKEND=local
+VIBESIM_EMBEDDING_PROVIDER=local
+VIBESIM_KNOWLEDGE_AUTO_INDEX=true
+```
+
+The defaults require no additional service or API key. Documentation,
+tutorials, and project conversations are persisted in
+`VIBESIM_DATA_DIR/knowledge/index.json`; docs and tutorials are indexed at
+startup and saved conversations update the index automatically. For stronger
+semantic retrieval, opt into HelixDB and OpenAI-compatible embeddings:
+
+```dotenv
+VIBESIM_KNOWLEDGE_BACKEND=helixdb
+VIBESIM_HELIX_URL=http://localhost:6969
+VIBESIM_EMBEDDING_PROVIDER=openai
+VIBESIM_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+Hosted embeddings reuse `VIBESIM_AI_API_KEY` and `VIBESIM_AI_BASE_URL` and do
+not auto-index the corpus at startup unless `VIBESIM_KNOWLEDGE_AUTO_INDEX=true`
+is explicitly set. When starting outside the repository, point
+`VIBESIM_KNOWLEDGE_DOCS_DIR` and `VIBESIM_KNOWLEDGE_TUTORIALS_DIR` at the corpus.
+
 ## Codex CLI agent
 
 ```dotenv

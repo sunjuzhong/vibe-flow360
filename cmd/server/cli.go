@@ -318,6 +318,8 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	updates := map[string]string{
 		"FLOW360_APIKEY":              apiKey,
 		"VIBESIM_AGENT_PROVIDER":      firstValue(existing["VIBESIM_AGENT_PROVIDER"], "builtin"),
+		"VIBESIM_EMBEDDING_PROVIDER":  firstValue(existing["VIBESIM_EMBEDDING_PROVIDER"], "local"),
+		"VIBESIM_KNOWLEDGE_BACKEND":   firstValue(existing["VIBESIM_KNOWLEDGE_BACKEND"], "local"),
 		"VIBESIM_CAD_OFFLINE":         firstValue(existing["VIBESIM_CAD_OFFLINE"], "false"),
 		"VIBESIM_CAD_PYTHON":          bootstrap.DefaultPythonVersion,
 		"VIBESIM_CAD_TIMEOUT_SECONDS": firstValue(existing["VIBESIM_CAD_TIMEOUT_SECONDS"], "90"),

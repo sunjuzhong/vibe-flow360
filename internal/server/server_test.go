@@ -78,6 +78,30 @@ func TestWebAppHandlerDoesNotServeHTMLForMissingAssets(t *testing.T) {
 	})
 }
 
+func TestKnowledgeRoutesUseSingleAPIPrefix(t *testing.T) {
+	t.Setenv("VIBESIM_DATA_DIR", t.TempDir())
+	t.Setenv("VIBESIM_KNOWLEDGE_AUTO_INDEX", "false")
+	app := New()
+	found := map[string]bool{}
+	for _, route := range app.router.Routes() {
+		if strings.Contains(route.Path, "knowledge") {
+			found[route.Method+" "+route.Path] = true
+			if strings.Contains(route.Path, "/api/api/") {
+				t.Fatalf("knowledge route has duplicate API prefix: %s", route.Path)
+			}
+		}
+	}
+	for _, route := range []string{
+		"GET /api/knowledge/status",
+		"POST /api/knowledge/index",
+		"POST /api/knowledge/retrieve",
+	} {
+		if !found[route] {
+			t.Errorf("missing route %s", route)
+		}
+	}
+}
+
 func TestTutorialCSMImportWaitsForProcessedGeometry(t *testing.T) {
 	if !slices.Contains(allowedImportExtensions["geometry"], ".csm") {
 		t.Fatal("tutorial CSM is not an allowed Geometry import")

@@ -2,11 +2,14 @@ package knowledge
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func (s *KBService) ChunkText(text string, sourceType ChunkSourceType, sourceID, projectID string) ([]Chunk, error) {
@@ -22,6 +25,9 @@ func (s *KBService) ChunkText(text string, sourceType ChunkSourceType, sourceID,
 		}
 		if end == defaultChunkSize-defaultChunkOverlap {
 			end = defaultChunkSize
+		}
+		for end > 0 && !utf8.RuneStart(text[end]) {
+			end--
 		}
 		chunkText := strings.TrimSpace(text[:end])
 		chunks = append(chunks, Chunk{
@@ -48,7 +54,8 @@ func (s *KBService) ChunkText(text string, sourceType ChunkSourceType, sourceID,
 		chunks = chunks[len(chunks)-defaultMaxChunks:]
 	}
 	for i := range chunks {
-		chunks[i].ID = fmt.Sprintf("kb-%s-%d-%d", chunks[i].SourceType, chunks[i].CreatedAt.UnixNano(), i)
+		digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s", chunks[i].SourceType, sourceID, projectID, i, chunks[i].Content)))
+		chunks[i].ID = fmt.Sprintf("kb-%s-%x", chunks[i].SourceType, digest[:12])
 	}
 	return chunks, nil
 }
@@ -87,7 +94,16 @@ func (s *KBService) IndexChatMessages(ctx context.Context, messages []Message, p
 }
 
 func (s *KBService) IndexDocs(ctx context.Context, docsDir, projectID string) (int, []string, error) {
-	files, err := filepath.Glob(filepath.Join(docsDir, "**/*.md"))
+	var files []string
+	err := filepath.WalkDir(docsDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && strings.EqualFold(filepath.Ext(path), ".md") {
+			files = append(files, path)
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, nil, fmt.Errorf("find doc files: %w", err)
 	}
@@ -100,7 +116,11 @@ func (s *KBService) IndexDocs(ctx context.Context, docsDir, projectID string) (i
 			continue
 		}
 		text := string(content)
-		chunks, err := s.ChunkText(text, SourceDoc, filepath.Base(file), projectID)
+		sourceID, relErr := filepath.Rel(docsDir, file)
+		if relErr != nil {
+			sourceID = filepath.Base(file)
+		}
+		chunks, err := s.ChunkText(text, SourceDoc, sourceID, projectID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("chunk %s: %v", file, err))
 			continue

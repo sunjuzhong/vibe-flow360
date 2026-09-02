@@ -2,7 +2,10 @@ package knowledge
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 type fakeVectorStore struct {
@@ -66,6 +69,19 @@ func TestChunkTextEmpty(t *testing.T) {
 	}
 }
 
+func TestChunkTextPreservesUTF8(t *testing.T) {
+	svc := &KBService{}
+	chunks, err := svc.ChunkText(strings.Repeat("收敛曲线需要检查残差与升阻力。", 80), SourceDoc, "cn.md", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range chunks {
+		if strings.ContainsRune(chunk.Content, '\uFFFD') || !utf8.ValidString(chunk.Content) {
+			t.Fatalf("invalid UTF-8 chunk: %q", chunk.Content)
+		}
+	}
+}
+
 func TestSourceLabel(t *testing.T) {
 	tests := []struct {
 		st  ChunkSourceType
@@ -120,14 +136,72 @@ func TestIndexChatMessagesEmpty(t *testing.T) {
 }
 
 func TestNewKBService(t *testing.T) {
+	t.Setenv("VIBESIM_KNOWLEDGE_BACKEND", "local")
+	t.Setenv("VIBESIM_EMBEDDING_PROVIDER", "local")
 	svc, err := NewKBService("")
 	if err != nil {
-		t.Skipf("HelixDB not available: %v", err)
+		t.Fatalf("default local knowledge service: %v", err)
 	}
 	if svc == nil {
 		t.Fatal("expected non-nil KBService")
 	}
 	svc.Close()
+}
+
+func TestLocalKnowledgeStorePersistsAndScopesResults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "knowledge", "index.json")
+	store, err := NewLocalStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := store.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	embedder := NewLocalEmbedder()
+	docVector, _ := embedder.GenerateEmbedding("Flow360 convergence residuals")
+	chatVector, _ := embedder.GenerateEmbedding("private project discussion")
+	for _, chunk := range []Chunk{
+		{ID: "doc", Content: "Flow360 convergence residuals", SourceType: SourceDoc, Embedding: docVector},
+		{ID: "chat-a", Content: "private project discussion", SourceType: SourceChat, ProjectID: "project-a", Embedding: chatVector},
+	} {
+		if err := store.Upsert(ctx, chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reopened, err := NewLocalStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := reopened.Search(ctx, SourceDoc, docVector, "project-b", 5)
+	if err != nil || len(docs) != 1 || docs[0].ID != "doc" {
+		t.Fatalf("global docs unavailable after reopen: %#v, %v", docs, err)
+	}
+	if len(docs[0].Embedding) != 0 {
+		t.Fatal("retrieval response must not expose internal embedding vectors")
+	}
+	chats, err := reopened.Search(ctx, SourceChat, chatVector, "project-b", 5)
+	if err != nil || len(chats) != 0 {
+		t.Fatalf("cross-project chat leaked: %#v, %v", chats, err)
+	}
+	chat, docsCount, tutorials := reopened.Stats()
+	if chat != 1 || docsCount != 1 || tutorials != 0 {
+		t.Fatalf("unexpected stats: chat=%d docs=%d tutorials=%d", chat, docsCount, tutorials)
+	}
+}
+
+func TestLocalEmbedderRanksRelatedText(t *testing.T) {
+	embedder := NewLocalEmbedder()
+	query, _ := embedder.GenerateEmbedding("检查收敛残差")
+	related, _ := embedder.GenerateEmbedding("如何检查收敛残差曲线")
+	unrelated, _ := embedder.GenerateEmbedding("创建新的机翼几何")
+	if cosineDistance(query, related) >= cosineDistance(query, unrelated) {
+		t.Fatal("expected related CFD text to rank ahead of unrelated text")
+	}
 }
 
 func TestKBServiceUsesInjectedVectorStore(t *testing.T) {
