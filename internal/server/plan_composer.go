@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
@@ -20,6 +21,7 @@ import (
 
 const maxPlanComposerRequestBytes = 300 << 10
 const maxPlanAssistRepairAttempts = 3
+const maxPlanAssistSchemaCatalogBytes = 60 << 10
 
 type planComposerRequest struct {
 	ProjectID       string          `json:"project_id"`
@@ -103,7 +105,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 // Flow360 stage schemas, validates the candidate against the real client, and
 // gives the Agent bounded opportunities to repair schema-mechanical failures.
 func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComposerContext) (planAssistResponse, error) {
-	catalog, err := schemaPromptCatalog(composer.Form)
+	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt)
 	if err != nil {
 		return planAssistResponse{}, errors.New("could not prepare the active Flow360 schema for the Agent")
 	}
@@ -231,7 +233,12 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			break
 		}
 		repairForm = includePlanRecoverySchema(repairForm, preflight.FormSchema)
-		repairCatalog, catalogErr := schemaPromptCatalog(repairForm)
+		repairCatalog, catalogErr := schemaPromptCatalog(
+			repairForm,
+			composer.Request.Intent,
+			composer.Request.Prompt,
+			strings.Join(planAssistIssueContext(preflight.Issues), " "),
+		)
 		if catalogErr != nil {
 			action.Warnings = append(action.Warnings, "Automatic parameter repair could not read the candidate schema.")
 			break
@@ -1045,6 +1052,8 @@ This is parameter assistance, not geometry generation. Never claim CAD dimension
 
 %s when the requested values can be supported. Its operations may only address fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
+Treat the runtime Flow360 form_schema as the parameter mapping table for the installed solver version. Do not rely on a hardcoded list of supported natural-language parameters. Resolve the user's wording semantically against every catalog path, title, description, type, unit, enum, model choice, and union variant. The compact parameter_index covers every schema field when the detailed catalog is too large; use it to find candidates, then use the supplied detailed field contracts and preflight repair loop to produce exact values. If multiple schema fields remain genuinely plausible after considering stage and baseline context, ask one focused clarification instead of guessing.
+
 Read the schema catalog field-by-field before composing operations. Convert catalog dot paths to RFC 6901 JSON Pointers. Use set for a scalar, quantity, entity-list, or existing object child; set on an existing object preserves unspecified canonical children. Use append only to add one complete new array item. Use unset to remove one field or array item. Never set an entire existing object array such as models, meshing.refinements, meshing.volume_zones, or outputs, and never replace an existing object array item; address the item's child path instead. Quantities use {"value":...,"units":"..."}; enum and model values must exactly match the catalog. Never invent a nearby field name and never emit patch together with operations.
 
 Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact and include only deliberate path-level operations.
@@ -1261,16 +1270,180 @@ type promptSchemaField struct {
 	Items           any    `json:"items,omitempty"`
 }
 
-func schemaPromptCatalog(form flow360.PlanFormSchema) (json.RawMessage, error) {
+type promptSchemaIndexField struct {
+	Stage string `json:"s"`
+	Path  string `json:"p"`
+	Type  string `json:"t"`
+	Title string `json:"n,omitempty"`
+}
+
+func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.RawMessage, error) {
 	fields := make([]promptSchemaField, 0, 128)
+	index := make([]promptSchemaIndexField, 0, 256)
+	indexed := make(map[string]struct{}, 256)
 	for _, stage := range form.Stages {
 		var root map[string]any
 		if err := json.Unmarshal(form.Schemas[stage], &root); err != nil {
 			return nil, err
 		}
-		collectPromptSchemaFields(stage, "", root, &fields, 320)
+		collectPromptSchemaFields(stage, "", root, &fields, 0)
+		collectPromptSchemaIndex(stage, "", root, &index, indexed, 0)
 	}
-	return json.Marshal(map[string]any{"stages": form.Stages, "fields": fields})
+	full := map[string]any{
+		"source":       "runtime Flow360 form schema",
+		"stages":       form.Stages,
+		"total_fields": len(fields),
+		"fields":       fields,
+	}
+	payload, err := json.Marshal(full)
+	if err != nil || len(payload) <= maxPlanAssistSchemaCatalogBytes {
+		return payload, err
+	}
+
+	query := strings.Join(queries, " ")
+	type rankedField struct {
+		Field promptSchemaField
+		Score int
+		Order int
+	}
+	ranked := make([]rankedField, len(fields))
+	for i, field := range fields {
+		ranked[i] = rankedField{Field: field, Score: promptSchemaFieldRelevance(field, query), Order: i}
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Score != ranked[j].Score {
+			return ranked[i].Score > ranked[j].Score
+		}
+		return ranked[i].Order < ranked[j].Order
+	})
+
+	detailed := make([]promptSchemaField, 0, len(fields))
+	compact := map[string]any{
+		"source":        "runtime Flow360 form schema",
+		"stages":        form.Stages,
+		"total_fields":  len(fields),
+		"indexed_paths": len(index),
+		"parameter_index_keys": map[string]string{
+			"s": "stage", "p": "path", "t": "type", "n": "title",
+		},
+		"parameter_index": index,
+		"fields":          detailed,
+	}
+	if base, marshalErr := json.Marshal(compact); marshalErr != nil {
+		return nil, marshalErr
+	} else if len(base) > maxPlanAssistSchemaCatalogBytes {
+		// Titles improve semantic routing, but paths and types are the complete
+		// executable contract. Drop only titles before ever dropping a path.
+		for i := range index {
+			index[i].Title = ""
+		}
+		compact["parameter_index"] = index
+	}
+	for _, candidate := range ranked {
+		compact["fields"] = append(detailed, candidate.Field)
+		next, marshalErr := json.Marshal(compact)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		if len(next) > maxPlanAssistSchemaCatalogBytes {
+			compact["fields"] = detailed
+			break
+		}
+		detailed = append(detailed, candidate.Field)
+		payload = next
+	}
+	compact["detailed_fields"] = len(detailed)
+	compact["fields"] = detailed
+	payload, err = json.Marshal(compact)
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) > maxPlanAssistSchemaCatalogBytes {
+		return nil, fmt.Errorf("Flow360 parameter index exceeds the safe Agent context budget")
+	}
+	return payload, nil
+}
+
+func collectPromptSchemaIndex(stage, path string, node map[string]any, index *[]promptSchemaIndexField, seen map[string]struct{}, depth int) {
+	if depth > 32 {
+		return
+	}
+	nodeType, _ := node["type"].(string)
+	title, _ := node["title"].(string)
+	add := func(candidatePath, candidateType, candidateTitle string) {
+		if candidatePath == "" || candidateType == "" {
+			return
+		}
+		key := stage + "\x00" + candidatePath + "\x00" + candidateType + "\x00" + candidateTitle
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		*index = append(*index, promptSchemaIndexField{Stage: stage, Path: candidatePath, Type: candidateType, Title: candidateTitle})
+	}
+
+	if properties, ok := node["properties"].(map[string]any); ok {
+		keys := make([]string, 0, len(properties))
+		for key := range properties {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			child, ok := properties[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			childPath := key
+			if path != "" {
+				childPath = path + "." + key
+			}
+			collectPromptSchemaIndex(stage, childPath, child, index, seen, depth+1)
+		}
+		return
+	}
+
+	add(path, nodeType, title)
+	if items, ok := node["items"].(map[string]any); ok {
+		collectPromptSchemaIndex(stage, path+"[*]", items, index, seen, depth+1)
+	}
+	if variants, ok := node["variants"].([]any); ok {
+		for _, raw := range variants {
+			if variant, ok := raw.(map[string]any); ok {
+				collectPromptSchemaIndex(stage, path, variant, index, seen, depth+1)
+			}
+		}
+	}
+}
+
+func promptSchemaFieldRelevance(field promptSchemaField, query string) int {
+	queryTerms := semanticCatalogTerms(query)
+	if len(queryTerms) == 0 {
+		return 0
+	}
+	encoded, _ := json.Marshal(field)
+	fieldTerms := semanticCatalogTerms(string(encoded))
+	score := 0
+	for _, queryTerm := range queryTerms {
+		for _, fieldTerm := range fieldTerms {
+			if queryTerm == fieldTerm {
+				score += 8
+			} else if len(queryTerm) >= 2 && len(fieldTerm) >= 2 &&
+				(strings.Contains(queryTerm, fieldTerm) || strings.Contains(fieldTerm, queryTerm)) {
+				score += 2
+			}
+		}
+	}
+	return score
+}
+
+func semanticCatalogTerms(value string) []string {
+	value = strings.ToLower(strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return r
+		}
+		return ' '
+	}, value))
+	return strings.Fields(value)
 }
 
 func combinedPlanFormSchema(form flow360.PlanFormSchema) (json.RawMessage, error) {
@@ -1318,7 +1491,7 @@ func mergeSchemaObjects(base, addition map[string]any) map[string]any {
 }
 
 func collectPromptSchemaFields(stage, path string, node map[string]any, fields *[]promptSchemaField, limit int) {
-	if len(*fields) >= limit {
+	if limit > 0 && len(*fields) >= limit {
 		return
 	}
 	nodeType, _ := node["type"].(string)
@@ -1339,7 +1512,7 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 				childPath = path + "." + key
 			}
 			collectPromptSchemaFields(stage, childPath, child, fields, limit)
-			if len(*fields) >= limit {
+			if limit > 0 && len(*fields) >= limit {
 				return
 			}
 		}

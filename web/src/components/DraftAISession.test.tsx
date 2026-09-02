@@ -20,6 +20,7 @@ describe('DraftAISession', () => {
     expect(markup).toContain('No AI changes yet')
     expect(markup).toContain('aria-label="Describe the Draft change"')
     expect(markup).toContain('aria-label="Close AI Draft session"')
+    expect(markup).toContain('lower CFL to 3')
   })
 
   it('keeps user, AI, errors, and parameter diffs in the transcript', () => {
