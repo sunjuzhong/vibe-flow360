@@ -14,14 +14,14 @@ import (
 
 const (
 	defaultEmbeddingModelEnv = "VIBESIM_EMBEDDING_MODEL"
-	defaultEmbeddingModel  = "text-embedding-3-small"
-	embeddingMaxBatchSize  = 100
+	defaultEmbeddingModel    = "text-embedding-3-small"
+	embeddingMaxBatchSize    = 100
 )
 
 type Embedder struct {
-	apiKey    string
-	baseURL   string
-	model     string
+	apiKey     string
+	baseURL    string
+	model      string
 	httpClient *http.Client
 }
 
@@ -31,9 +31,9 @@ func NewEmbedder() *Embedder {
 		model = defaultEmbeddingModel
 	}
 	return &Embedder{
-		apiKey:    firstNonEmpty(os.Getenv("VIBESIM_AI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
-		baseURL:   strings.TrimRight(firstNonEmpty(os.Getenv("VIBESIM_AI_BASE_URL"), "https://api.openai.com/v1"), "/"),
-		model:     model,
+		apiKey:     firstNonEmpty(os.Getenv("VIBESIM_AI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		baseURL:    strings.TrimRight(firstNonEmpty(os.Getenv("VIBESIM_AI_BASE_URL"), "https://api.openai.com/v1"), "/"),
+		model:      model,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }

@@ -19,3 +19,7 @@ type EmbeddingProvider interface {
 	Ready() bool
 	GenerateEmbedding(string) ([]float32, error)
 }
+
+type storeStatsProvider interface {
+	Stats() (chat, docs, tutorials int)
+}

@@ -285,6 +285,25 @@ func TestCodexEnvironmentRemovesFlow360Secrets(t *testing.T) {
 	}
 }
 
+type fakeKnowledgeService struct {
+	context string
+}
+
+func (s fakeKnowledgeService) BuildContextForChat(_, _ string) (string, error) {
+	return s.context, nil
+}
+
+func TestChatPromptWithKnowledgeAppliesToEveryModelProvider(t *testing.T) {
+	service := &Service{KnowledgeService: fakeKnowledgeService{context: "## Retrieved Knowledge\n\nUse bounded CFL."}}
+	prompt := service.chatPromptWithKnowledge(ChatRequest{Message: "Improve convergence", ProjectID: "project-1"})
+	if !strings.HasPrefix(prompt, "## Retrieved Knowledge") {
+		t.Fatalf("knowledge context was not prepended: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Improve convergence") {
+		t.Fatalf("chat request was lost: %s", prompt)
+	}
+}
+
 func writeFakeCodex(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "codex")

@@ -148,7 +148,7 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 	provider := s.effectiveProvider()
 	if provider == "codex" || provider == "codex-app-server" {
 		systemPrompt := AgentSystemPrompt()
-		chatPrompt, _ := BuildChatPrompt(request)
+		chatPrompt := s.chatPromptWithKnowledge(request)
 		return s.chatWithCodex(ctx, systemPrompt, chatPrompt, request.Model)
 	}
 	if provider != "builtin" {
@@ -160,13 +160,7 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 
 	model := firstNonEmpty(request.Model, s.Model)
 	systemPrompt := AgentSystemPrompt()
-	chatPrompt, _ := BuildChatPrompt(request)
-
-	if s.KnowledgeService != nil {
-		if knowledgeCtx, err := s.KnowledgeService.BuildContextForChat(request.Message, request.ProjectID); err == nil && knowledgeCtx != "" {
-			chatPrompt = knowledgeCtx + "\n\n" + chatPrompt
-		}
-	}
+	chatPrompt := s.chatPromptWithKnowledge(request)
 
 	// BuildChatPrompt already carries the bounded conversation history. Keeping
 	// one canonical prompt path avoids sending the same history twice to the
@@ -235,7 +229,7 @@ func (s *Service) ChatStream(ctx context.Context, request ChatRequest, emit func
 	provider := s.effectiveProvider()
 	if provider == "codex-app-server" {
 		systemPrompt := AgentSystemPrompt()
-		chatPrompt, _ := BuildChatPrompt(request)
+		chatPrompt := s.chatPromptWithKnowledge(request)
 		return s.chatWithCodexStream(ctx, systemPrompt, chatPrompt, request.Model, emit)
 	}
 	reply, err := s.Chat(ctx, request)
@@ -246,6 +240,16 @@ func (s *Service) ChatStream(ctx context.Context, request ChatRequest, emit func
 		return "", err
 	}
 	return reply, nil
+}
+
+func (s *Service) chatPromptWithKnowledge(request ChatRequest) string {
+	chatPrompt, _ := BuildChatPrompt(request)
+	if s.KnowledgeService != nil {
+		if knowledgeCtx, err := s.KnowledgeService.BuildContextForChat(request.Message, request.ProjectID); err == nil && knowledgeCtx != "" {
+			return knowledgeCtx + "\n\n" + chatPrompt
+		}
+	}
+	return chatPrompt
 }
 
 // Complete runs a purpose-specific prompt through the configured model without

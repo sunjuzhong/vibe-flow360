@@ -189,6 +189,10 @@ func New() *Server {
 		ctx := context.Background()
 		if err := kbService.Init(ctx); err != nil {
 			log.Printf("Warning: could not initialize knowledge base schema: %v", err)
+		} else if knowledgeAutoIndexEnabled() {
+			if err := kbService.IndexDefaultCorpus(""); err != nil {
+				log.Printf("Warning: could not index built-in knowledge corpus: %v", err)
+			}
 		}
 		aiService.KnowledgeService = kbService
 	}
@@ -448,9 +452,9 @@ func (s *Server) routes() {
 		api.GET("/agent/chat/session", s.getChatSession)
 		api.POST("/agent/chat/stream", s.chatStream)
 		api.POST("/agent/plan-from-action", s.planFromAction)
-		api.GET("/api/knowledge/status", s.knowledgeStatus)
-		api.POST("/api/knowledge/index", s.knowledgeIndex)
-		api.POST("/api/knowledge/retrieve", s.knowledgeRetrieve)
+		api.GET("/knowledge/status", s.knowledgeStatus)
+		api.POST("/knowledge/index", s.knowledgeIndex)
+		api.POST("/knowledge/retrieve", s.knowledgeRetrieve)
 		api.GET("/interventions", s.listInterventions)
 		api.GET("/interventions/:intervention_id", s.getIntervention)
 		api.POST("/interventions", s.createIntervention)
@@ -3578,10 +3582,27 @@ func (s *Server) chatStream(c *gin.Context) {
 			agent.Message{Role: "assistant", Content: reply},
 		); err != nil {
 			log.Printf("Could not persist Ask AI session for project %s: %v", request.ProjectID, err)
+		} else if s.kbService != nil {
+			if err := s.kbService.IndexMessages(request.ProjectID, []knowledge.Message{
+				{Role: "user", Content: request.Message},
+				{Role: "assistant", Content: reply},
+			}); err != nil {
+				log.Printf("Could not index Ask AI session for project %s: %v", request.ProjectID, err)
+			}
 		}
 	}
 
 	writeEvent(c.Writer, flusher, gin.H{"type": "done"})
+}
+
+func knowledgeAutoIndexEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("VIBESIM_KNOWLEDGE_AUTO_INDEX"))
+	if value == "" {
+		provider := strings.ToLower(strings.TrimSpace(os.Getenv("VIBESIM_EMBEDDING_PROVIDER")))
+		return provider == "" || provider == "local"
+	}
+	enabled, err := strconv.ParseBool(value)
+	return err == nil && enabled
 }
 
 func (s *Server) getChatSession(c *gin.Context) {

@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -23,6 +24,10 @@ func (s *KBService) RetrieveContext(ctx context.Context, query string, projectID
 		allChunks = append(allChunks, chunks...)
 	}
 	allChunks = dedupChunks(allChunks)
+	sort.SliceStable(allChunks, func(i, j int) bool { return allChunks[i].Distance < allChunks[j].Distance })
+	if len(allChunks) > limit {
+		allChunks = allChunks[:limit]
+	}
 	return allChunks, nil
 }
 

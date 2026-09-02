@@ -9,6 +9,7 @@ const (
 	defaultChunkOverlap = 100
 	defaultHelixURL     = "http://localhost:6969"
 	defaultMaxChunks    = 50
+	localEmbeddingSize  = 1536
 )
 
 type ChunkSourceType string

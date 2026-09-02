@@ -41,6 +41,30 @@ VIBESIM_AI_MODEL=gpt-4.1-mini
 没有 AI API Key 时，内置 provider 可以在支持的规划场景中使用确定性本地规划器。
 AI Create 必须配置模型服务。
 
+## 对话知识库
+
+```dotenv
+VIBESIM_KNOWLEDGE_BACKEND=local
+VIBESIM_EMBEDDING_PROVIDER=local
+VIBESIM_KNOWLEDGE_AUTO_INDEX=true
+```
+
+默认配置不依赖额外服务或 API Key：文档、教程和项目对话会写入
+`VIBESIM_DATA_DIR/knowledge/index.json`，启动时自动建立文档与教程索引，对话成功保存后自动
+更新索引。若需要更强的语义召回，可以改用 HelixDB 和 OpenAI 兼容 embedding：
+
+```dotenv
+VIBESIM_KNOWLEDGE_BACKEND=helixdb
+VIBESIM_HELIX_URL=http://localhost:6969
+VIBESIM_EMBEDDING_PROVIDER=openai
+VIBESIM_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+此时 embedding 复用 `VIBESIM_AI_API_KEY` 和 `VIBESIM_AI_BASE_URL`。托管 embedding
+默认不会在启动时自动批量索引；如确实需要，可显式设置
+`VIBESIM_KNOWLEDGE_AUTO_INDEX=true`。从非仓库目录启动时，还可以通过
+`VIBESIM_KNOWLEDGE_DOCS_DIR` 和 `VIBESIM_KNOWLEDGE_TUTORIALS_DIR` 指定语料目录。
+
 ## Codex CLI Agent
 
 ```dotenv
