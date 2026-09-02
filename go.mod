@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/gin-gonic/gin v1.9.1
+	github.com/helixdb/helix-db/sdks/go v0.3.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 

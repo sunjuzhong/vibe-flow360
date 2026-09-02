@@ -34,6 +34,7 @@ import (
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/geometrydiag"
 	importplans "github.com/sunjuzhong/vibe-flow360/internal/imports"
+	"github.com/sunjuzhong/vibe-flow360/internal/knowledge"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectcache"
 	"github.com/sunjuzhong/vibe-flow360/internal/projectmirror"
@@ -83,6 +84,7 @@ type Server struct {
 	aiCreateSessions    map[string]aiCreateSession
 	aiCreateProgressMu  sync.Mutex
 	aiCreateProgress    map[string]aiCreateProgress
+	kbService           *knowledge.KBService
 }
 
 const (
@@ -179,6 +181,16 @@ func New() *Server {
 	}
 	interventionEngine := agent.NewEngine(interventionStore, planStore, aiService)
 	cadRuntime := aicreate.NewCadQueryGenerator()
+	kbService, err := knowledge.NewKBService(filepath.Join(dataDir, "knowledge"))
+	if err != nil {
+		log.Printf("Warning: could not initialize knowledge base service: %v", err)
+	}
+	if kbService != nil {
+		ctx := context.Background()
+		if err := kbService.Init(ctx); err != nil {
+			log.Printf("Warning: could not initialize knowledge base schema: %v", err)
+		}
+	}
 
 	app := &Server{
 		router:             router,
@@ -210,6 +222,7 @@ func New() *Server {
 		slicePlayerSlots:   make(chan struct{}, 1),
 		slicePlayerCancels: map[string]context.CancelFunc{},
 		annotationHandlers: NewAnnotationHandlers(annotationStore),
+		kbService:          kbService,
 	}
 	app.loadAICreateState()
 	app.resumeSTEPValidations()
@@ -434,6 +447,9 @@ func (s *Server) routes() {
 		api.GET("/agent/chat/session", s.getChatSession)
 		api.POST("/agent/chat/stream", s.chatStream)
 		api.POST("/agent/plan-from-action", s.planFromAction)
+		api.GET("/api/knowledge/status", s.knowledgeStatus)
+		api.POST("/api/knowledge/index", s.knowledgeIndex)
+		api.POST("/api/knowledge/retrieve", s.knowledgeRetrieve)
 		api.GET("/interventions", s.listInterventions)
 		api.GET("/interventions/:intervention_id", s.getIntervention)
 		api.POST("/interventions", s.createIntervention)
@@ -3704,4 +3720,80 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, value any) {
 	data, _ := json.Marshal(value)
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 	flusher.Flush()
+}
+
+func (s *Server) knowledgeStatus(c *gin.Context) {
+	if s.kbService == nil {
+		c.JSON(http.StatusOK, gin.H{"ready": false})
+		return
+	}
+	status, err := s.kbService.Status()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) knowledgeIndex(c *gin.Context) {
+	if s.kbService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "knowledge base service unavailable"})
+		return
+	}
+	var req struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.ProjectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project_id is required"})
+		return
+	}
+	go func() {
+		if s.chatSessions == nil {
+			return
+		}
+		session, err := s.chatSessions.GetScope(req.ProjectID, agent.ChatScope{Type: agent.ChatScopeProject, ID: ""})
+		if err != nil {
+			log.Printf("Knowledge index: could not get chat session: %v", err)
+			return
+		}
+		var msgs []knowledge.Message
+		for _, m := range session.Messages {
+			msgs = append(msgs, knowledge.Message{Role: m.Role, Content: m.Content})
+		}
+		if err := s.kbService.RebuildIndex(req.ProjectID, msgs); err != nil {
+			log.Printf("Knowledge index rebuild failed: %v", err)
+		}
+	}()
+	c.JSON(http.StatusOK, gin.H{"status": "indexing started"})
+}
+
+func (s *Server) knowledgeRetrieve(c *gin.Context) {
+	if s.kbService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "knowledge base service unavailable"})
+		return
+	}
+	var req struct {
+		Query    string `json:"query"`
+		ProjectID string `json:"project_id"`
+		Limit    int    `json:"limit"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "query is required"})
+		return
+	}
+	ctx := context.Background()
+	chunks, err := s.kbService.RetrieveContext(ctx, req.Query, req.ProjectID, req.Limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"chunks": chunks})
 }

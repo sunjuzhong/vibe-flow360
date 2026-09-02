@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/sunjuzhong/vibe-flow360/internal/knowledge"
 )
 
 type Message struct {
@@ -50,6 +52,7 @@ type Service struct {
 	CodexProfile string
 	CodexTimeout time.Duration
 	WorkDir      string
+	KnowledgeService *knowledge.KBService
 }
 
 // ProviderError preserves the failure class of a model-provider request so
@@ -156,6 +159,12 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 	model := firstNonEmpty(request.Model, s.Model)
 	systemPrompt := AgentSystemPrompt()
 	chatPrompt, _ := BuildChatPrompt(request)
+
+	if s.KnowledgeService != nil {
+		if knowledgeCtx, err := s.KnowledgeService.BuildContextForChat(request.Message, request.ProjectID); err == nil && knowledgeCtx != "" {
+			chatPrompt = knowledgeCtx + "\n\n" + chatPrompt
+		}
+	}
 
 	// BuildChatPrompt already carries the bounded conversation history. Keeping
 	// one canonical prompt path avoids sending the same history twice to the
