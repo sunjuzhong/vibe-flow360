@@ -23,18 +23,19 @@ const (
 var errResultInterpretationNotFound = errors.New("result interpretation not found")
 
 type resultInterpretationRecord struct {
-	SchemaVersion  int             `json:"schema_version"`
-	Key            string          `json:"key"`
-	Scope          string          `json:"scope"`
-	Path           string          `json:"path"`
-	Language       string          `json:"language"`
-	Provider       string          `json:"provider"`
-	Model          string          `json:"model"`
-	PromptVersion  string          `json:"prompt_version"`
-	Interpretation string          `json:"interpretation"`
-	Messages       []agent.Message `json:"messages"`
-	GeneratedAt    time.Time       `json:"generated_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	SchemaVersion  int                    `json:"schema_version"`
+	Key            string                 `json:"key"`
+	Scope          string                 `json:"scope"`
+	Path           string                 `json:"path"`
+	Language       string                 `json:"language"`
+	Provider       string                 `json:"provider"`
+	Model          string                 `json:"model"`
+	PromptVersion  string                 `json:"prompt_version"`
+	Interpretation string                 `json:"interpretation"`
+	Messages       []agent.Message        `json:"messages"`
+	GeneratedAt    time.Time              `json:"generated_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	Diagnostics    resultDiagnosticReport `json:"diagnostics"`
 }
 
 type resultInterpretationStore struct {

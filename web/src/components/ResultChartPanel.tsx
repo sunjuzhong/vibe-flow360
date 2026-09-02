@@ -2,6 +2,7 @@ import { BarChart3, Check, LineChart, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useI18n } from '../i18n'
 import type { ParsedResultTable } from './ResultTablePreview'
+import type { ResultDiagnosticAnnotation } from '../api/client'
 
 export type ChartKind = 'line' | 'bar' | 'scatter'
 export type ScaleKind = 'linear' | 'log'
@@ -119,12 +120,13 @@ function formatTick(value: number): string {
   return Number(value.toPrecision(4)).toString()
 }
 
-function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
+function ChartCanvas({ datasets, xColumn, yColumns, kind, scale, annotations = [] }: {
   datasets: ChartDataset[]
   xColumn: string | null
   yColumns: string[]
   kind: ChartKind
   scale: ScaleKind
+  annotations?: ResultDiagnosticAnnotation[]
 }) {
   const { t } = useI18n()
   const [hovered, setHovered] = useState<{
@@ -233,6 +235,18 @@ function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
             </g>
           )
         })}
+        {annotations.flatMap((annotation, index) => {
+          if (!yColumns.includes(annotation.field) || annotation.row_index < 0 || annotation.row_index >= datasets[0].table.rows.length || (scale === 'log' && annotation.value <= 0)) return []
+          const xIndex = xColumn ? datasets[0].table.headers.indexOf(xColumn) : -1
+          const row = datasets[0].table.rows[annotation.row_index]
+          const xValue = xIndex >= 0 ? xProfile?.numeric === false ? categoryIndex.get(row[xIndex] ?? '') : finiteNumber(row[xIndex] ?? '') : annotation.row_index
+          if (xValue === undefined || xValue === null) return []
+          const color = annotation.severity === 'critical' ? '#b43c31' : '#d08733'
+          return <g className="result-chart-annotation" key={`${annotation.field}-${annotation.row_index}-${index}`} transform={`translate(${xScale(xValue)} ${yScale(annotation.value)})`}>
+            <circle r="7" fill={color} stroke="#fff" strokeWidth="2" />
+            <title>{`${annotation.field}: ${annotation.label}`}</title>
+          </g>
+        })}
         <text x={margin.left + plotWidth / 2} y={height - 15} textAnchor="middle" className="result-chart-label">{xColumn ?? t('Row index')}</text>
         <text transform={`translate(17 ${margin.top + plotHeight / 2}) rotate(-90)`} textAnchor="middle" className="result-chart-label">{t(scale === 'log' ? 'Value · log₁₀ scale' : 'Value')}</text>
       </svg>
@@ -252,9 +266,10 @@ function ChartCanvas({ datasets, xColumn, yColumns, kind, scale }: {
   )
 }
 
-export function ResultChartPanel({ datasets, recommendation, onRemoveDataset }: {
+export function ResultChartPanel({ datasets, recommendation, annotations = [], onRemoveDataset }: {
   datasets: ChartDataset[]
   recommendation: ChartRecommendation
+  annotations?: ResultDiagnosticAnnotation[]
   onRemoveDataset?: (path: string) => void
 }) {
   const { t } = useI18n()
@@ -319,7 +334,7 @@ export function ResultChartPanel({ datasets, recommendation, onRemoveDataset }: 
       </aside>
       <main className="result-chart-stage">
         <div className="result-chart-insight"><BarChart3 size={14} /><span><strong>{t('Adaptive view')}</strong>{t(recommendation.reason)}</span></div>
-        <ChartCanvas datasets={datasets} xColumn={xColumn} yColumns={yColumns} kind={kind} scale={scale} />
+        <ChartCanvas datasets={datasets} xColumn={xColumn} yColumns={yColumns} kind={kind} scale={scale} annotations={annotations} />
       </main>
     </div>
   )
