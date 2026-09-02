@@ -48,9 +48,43 @@ export type ResultColumnSummary = {
   minimum?: number
   maximum?: number
   mean?: number
+  standard_deviation?: number
+  recent_mean?: number
+  recent_standard_deviation?: number
+  relative_drift?: number
+  max_normalized_jump?: number
+  max_jump_value?: number
+  minimum_row?: number
+  maximum_row?: number
+  max_jump_row?: number
   first?: string
   last?: string
   sample_values?: string[]
+}
+
+export type ResultDiagnosticFinding = {
+  code: string
+  severity: 'info' | 'warning' | 'critical'
+  field?: string
+  message: string
+  value?: number
+}
+
+export type ResultDiagnosticAnnotation = {
+  field: string
+  row_index: number
+  value: number
+  label: string
+  severity: 'info' | 'warning' | 'critical'
+}
+
+export type ResultDiagnosticReport = {
+  family: 'convergence' | 'loads' | 'pressure' | 'generic'
+  status: 'healthy' | 'watch' | 'critical' | 'insufficient'
+  summary: string
+  findings: ResultDiagnosticFinding[]
+  annotations: ResultDiagnosticAnnotation[]
+  compare_url?: string
 }
 
 export type ResultInterpretationRequest = {
@@ -76,6 +110,7 @@ export type ResultInterpretationResponse = {
   prompt_version: string
   generated_at: string
   updated_at: string
+  diagnostics: ResultDiagnosticReport
 }
 
 export type ChatMessage = {

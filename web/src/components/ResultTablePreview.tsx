@@ -1,6 +1,6 @@
 import { AlertCircle, BarChart3, FileSpreadsheet, Loader2, RefreshCw, Sparkles, Table2, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { ResultInterpretationRequest } from '../api/client'
+import type { ResultDiagnosticAnnotation, ResultDiagnosticReport, ResultInterpretationRequest } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { DatasetPicker, datasetCompatibility, recommendResultChart, ResultChartPanel, type ChartDataset } from './ResultChartPanel'
@@ -36,7 +36,11 @@ export function summarizeResultTable(table: ParsedResultTable, scope: string, pa
   const columns = table.headers.map((field, columnIndex) => {
     const values = table.analysisRows.map((row) => row[columnIndex] ?? '')
     const present = values.filter((value) => value.trim() !== '')
-    const numbers = present.map(Number).filter(Number.isFinite)
+    const indexedNumbers = values.flatMap((value, rowIndex) => {
+      const parsed = Number(value)
+      return value.trim() !== '' && Number.isFinite(parsed) ? [{ value: parsed, rowIndex }] : []
+    })
+    const numbers = indexedNumbers.map((entry) => entry.value)
     const numeric = present.length > 0 && numbers.length / present.length >= 0.9
     const base = {
       field: clip(field, 160),
@@ -53,11 +57,38 @@ export function summarizeResultTable(table: ParsedResultTable, scope: string, pa
       maximum: Math.max(result.maximum, value),
       sum: result.sum + value,
     }), { minimum: Number.POSITIVE_INFINITY, maximum: Number.NEGATIVE_INFINITY, sum: 0 })
+    const mean = statistics.sum / numbers.length
+    const standardDeviation = Math.sqrt(numbers.reduce((sum, value) => sum + (value - mean) ** 2, 0) / numbers.length)
+    const recent = numbers.slice(-Math.min(100, Math.max(5, Math.ceil(numbers.length * 0.1))))
+    const recentMean = recent.reduce((sum, value) => sum + value, 0) / recent.length
+    const recentStandardDeviation = Math.sqrt(recent.reduce((sum, value) => sum + (value - recentMean) ** 2, 0) / recent.length)
+    const split = Math.max(1, Math.floor(recent.length / 2))
+    const firstRecentMean = recent.slice(0, split).reduce((sum, value) => sum + value, 0) / split
+    const secondRecent = recent.slice(split)
+    const secondRecentMean = secondRecent.length ? secondRecent.reduce((sum, value) => sum + value, 0) / secondRecent.length : firstRecentMean
+    const driftScale = Math.max(Math.abs(recentMean), Math.abs(statistics.maximum - statistics.minimum) * 0.01, 1e-30)
+    const jumps = indexedNumbers.slice(1).map((entry, index) => ({
+      rowIndex: entry.rowIndex,
+      value: entry.value,
+      normalized: Math.abs(entry.value - indexedNumbers[index].value) / Math.max(standardDeviation, Math.abs(mean) * 0.01, 1e-30),
+    }))
+    const largestJump = jumps.reduce<{ rowIndex: number; value: number; normalized: number } | undefined>((largest, jump) => !largest || jump.normalized > largest.normalized ? jump : largest, undefined)
+    const minimumEntry = indexedNumbers.reduce((best, entry) => entry.value < best.value ? entry : best)
+    const maximumEntry = indexedNumbers.reduce((best, entry) => entry.value > best.value ? entry : best)
     return {
       ...base,
       minimum: statistics.minimum,
       maximum: statistics.maximum,
-      mean: statistics.sum / numbers.length,
+      mean,
+      standard_deviation: standardDeviation,
+      recent_mean: recentMean,
+      recent_standard_deviation: recentStandardDeviation,
+      relative_drift: Math.abs(secondRecentMean - firstRecentMean) / driftScale,
+      max_normalized_jump: largestJump?.normalized,
+      max_jump_value: largestJump?.value,
+      minimum_row: minimumEntry.rowIndex,
+      maximum_row: maximumEntry.rowIndex,
+      max_jump_row: largestJump?.rowIndex,
     }
   })
   const sampleIndexes = new Set<number>()
@@ -261,6 +292,7 @@ export function ResultTablePreview({
   const [aiOpen, setAIOpen] = useState(false)
   const [aiInput, setAIInput] = useState<ResultInterpretationRequest | null>(null)
   const [preparingAI, setPreparingAI] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<ResultDiagnosticReport | null>(null)
   const datasets = useMemo<ChartDataset[]>(() => table ? [{ path, table }, ...extraDatasets] : extraDatasets, [extraDatasets, path, table])
   const selectedTable = datasets.find((dataset) => dataset.path === tablePath) ?? datasets[0]
 
@@ -269,6 +301,7 @@ export function ResultTablePreview({
     setTablePath(path)
     setAIOpen(false)
     setAIInput(null)
+    setDiagnostics(null)
   }, [path])
 
   useEffect(() => {
@@ -380,6 +413,7 @@ export function ResultTablePreview({
                     <ResultChartPanel
                       datasets={datasets}
                       recommendation={recommendation}
+                      annotations={(diagnostics?.annotations ?? []) as ResultDiagnosticAnnotation[]}
                       onRemoveDataset={(datasetPath) => {
                         setExtraDatasets((current) => current.filter((dataset) => dataset.path !== datasetPath))
                         if (tablePath === datasetPath) setTablePath(path)
@@ -412,7 +446,7 @@ export function ResultTablePreview({
               </>
             )}
           </div>
-          <ResultAIInterpretationDialog open={aiOpen} input={aiInput} onClose={() => setAIOpen(false)} />
+          <ResultAIInterpretationDialog open={aiOpen} input={aiInput} onResponse={(result) => setDiagnostics(result.diagnostics)} onClose={() => setAIOpen(false)} />
         </div>
       </section>
     </div>

@@ -57,7 +57,7 @@ func TestInterpretResultUsesBoundedWholeTableSummary(t *testing.T) {
 	for _, expected := range []string{
 		`4000`, `Simplified Chinese`, `Field dictionary`, `EVERY supplied field`,
 		`continuity/mass-conservation`, `momentum equation residuals`, `per-step pseudo-convergence`,
-		`nonlinear_residual_v2.csv`, `0_cont`, `1_momx`,
+		`nonlinear_residual_v2.csv`, `0_cont`, `1_momx`, `Deterministic diagnostics`,
 	} {
 		if !strings.Contains(providerBody, expected) {
 			t.Fatalf("provider prompt is missing %q: %s", expected, providerBody)
@@ -86,6 +86,52 @@ func TestInterpretResultUsesBoundedWholeTableSummary(t *testing.T) {
 	app.interpretResult(cachedContext)
 	if cachedRecorder.Code != http.StatusOK || !strings.Contains(cachedRecorder.Body.String(), `"cached":true`) || providerCalls != 1 {
 		t.Fatalf("cached interpretation called provider: calls=%d status=%d body=%s", providerCalls, cachedRecorder.Code, cachedRecorder.Body.String())
+	}
+}
+
+func TestAnalyzeResultDiagnosticsDetectsResidualAndLinksCaseCompare(t *testing.T) {
+	maxRow, jumpRow := 0, 7
+	minimum, maximum, mean, standardDeviation, jump, jumpValue := 0.08, 1.2, 0.2, 0.1, 6.5, 0.9
+	request := resultInterpretationRequest{
+		Scope: "project-1:Case:case-1", Path: "results/nonlinear_residual_v2.csv", TotalRows: 10,
+		Columns: []resultColumnSummary{{
+			Field: "0_cont", Kind: "numeric", Count: 10, First: "0.1", Last: "0.8",
+			Minimum: &minimum, Maximum: &maximum, Mean: &mean, StdDev: &standardDeviation,
+			MaximumRow: &maxRow, MaxNormalizedJump: &jump, MaxJumpRow: &jumpRow, MaxJumpValue: &jumpValue,
+		}},
+	}
+	report := analyzeResultDiagnostics(request)
+	if report.Family != "convergence" || report.Status != "critical" {
+		t.Fatalf("unexpected report classification: %#v", report)
+	}
+	if report.CompareURL != "/projects/project-1/compare?cases=case-1" {
+		t.Fatalf("unexpected compare URL %q", report.CompareURL)
+	}
+	codes := map[string]bool{}
+	for _, finding := range report.Findings {
+		codes[finding.Code] = true
+	}
+	if !codes["residual-growth"] || !codes["abrupt-jump"] || len(report.Annotations) != 2 {
+		t.Fatalf("expected residual growth and jump annotations: %#v", report)
+	}
+}
+
+func TestAnalyzeResultDiagnosticsDetectsLoadDriftAndPressureOutlier(t *testing.T) {
+	drift, stddev, mean, minimum, maximum := 0.12, 1.0, 5.0, 0.0, 11.0
+	lastRow, maxRow := 19, 12
+	load := analyzeResultDiagnostics(resultInterpretationRequest{
+		Path: "results/total_forces_v2.csv", TotalRows: 20,
+		Columns: []resultColumnSummary{{Field: "CL", Kind: "numeric", Count: 20, First: "0.4", Last: "0.6", RelativeDrift: &drift}},
+	})
+	if load.Family != "loads" || load.Status != "watch" || len(load.Findings) != 1 || load.Annotations[0].RowIndex != lastRow {
+		t.Fatalf("unexpected load report: %#v", load)
+	}
+	pressure := analyzeResultDiagnostics(resultInterpretationRequest{
+		Path: "results/surface_pressure.csv", TotalRows: 20,
+		Columns: []resultColumnSummary{{Field: "pressure", Kind: "numeric", Count: 20, First: "5", Last: "5", Mean: &mean, StdDev: &stddev, Minimum: &minimum, Maximum: &maximum, MaximumRow: &maxRow}},
+	})
+	if pressure.Family != "pressure" || pressure.Status != "watch" || pressure.Findings[0].Code != "pressure-outlier" || pressure.Annotations[0].RowIndex != maxRow {
+		t.Fatalf("unexpected pressure report: %#v", pressure)
 	}
 }
 

@@ -46,6 +46,11 @@ describe('parseResultTable', () => {
     expect(summary.columns.find((column) => column.field === 'label')?.unique).toBe(2)
     expect(summary.sample_rows).toHaveLength(24)
     expect(summary.sample_rows.at(-1)?.step).toBe('5101')
+    const value = summary.columns.find((column) => column.field === 'value')
+    expect(value?.minimum_row).toBe(0)
+    expect(value?.maximum_row).toBe(5100)
+    expect(value?.recent_mean).toBe(10101)
+    expect(value?.relative_drift).toBeGreaterThan(0)
   })
 
   it('fingerprints full CSV content for stable cache invalidation', async () => {

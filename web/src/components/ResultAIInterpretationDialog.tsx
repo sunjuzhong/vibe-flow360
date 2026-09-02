@@ -1,4 +1,4 @@
-import { Clock3, Database, Loader2, RefreshCw, Send, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Clock3, Database, GitCompare, Loader2, RefreshCw, Send, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -24,9 +24,10 @@ export function resultInterpretationErrorMessage(failure: unknown): string {
   return failure instanceof Error ? failure.message : String(failure)
 }
 
-export function ResultAIInterpretationDialog({ open, input, onClose }: {
+export function ResultAIInterpretationDialog({ open, input, onResponse, onClose }: {
   open: boolean
   input: ResultInterpretationRequest | null
+  onResponse?: (response: ResultInterpretationResponse) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
@@ -48,6 +49,7 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
     try {
       const result = await api.interpretResult({ ...input, mode, question: nextQuestion || undefined })
       setResponse(result)
+      onResponse?.(result)
       if (mode === 'ask') setPendingQuestion('')
     } catch (failure) {
       setError(resultInterpretationErrorMessage(failure))
@@ -125,6 +127,14 @@ export function ResultAIInterpretationDialog({ open, input, onClose }: {
           {error && <div className="result-ai-dialog-error" role="alert">{t(error)}<button type="button" onClick={() => void request(lastRequestRef.current.mode, lastRequestRef.current.question)} disabled={busy}>{t('Retry')}</button></div>}
           {response && (
             <>
+              <section className={`result-ai-diagnostics ${response.diagnostics.status}`}>
+                <header><AlertTriangle size={14} /><span><strong>{t('Anomaly screening')}</strong><small>{t(response.diagnostics.family)}</small></span><b>{t(response.diagnostics.status)}</b></header>
+                <p>{t(response.diagnostics.summary)}</p>
+                {response.diagnostics.findings.length > 0 && <ul>{response.diagnostics.findings.map((finding, index) => (
+                  <li className={finding.severity} key={`${finding.code}-${finding.field ?? ''}-${index}`}><span>{finding.field ?? t('Dataset')}</span>{t(finding.message)}</li>
+                ))}</ul>}
+                {response.diagnostics.compare_url && <a href={response.diagnostics.compare_url}><GitCompare size={12} />{t('Open Case Compare')}</a>}
+              </section>
               <article className="result-ai-base-answer">
                 <div className="result-ai-answer-label"><Sparkles size={13} />{t('CFD interpretation')}</div>
                 <ResultMarkdown>{response.interpretation}</ResultMarkdown>
