@@ -15,3 +15,6 @@ __pycache__/
 .beads-credential-key
 .pnpm-store
 .reasonix
+.helix/
+target/
+*.log
