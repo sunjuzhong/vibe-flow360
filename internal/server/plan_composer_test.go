@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -802,6 +803,9 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 	})
 	for _, expected := range []string{
 		"parameter assistance, not geometry generation",
+		"runtime Flow360 form_schema as the parameter mapping table",
+		"Do not rely on a hardcoded list",
+		"parameter_index covers every schema field",
 		"Never claim CAD dimensions",
 		"Read the schema catalog field-by-field",
 		"Never invent a nearby field name",
@@ -949,6 +953,89 @@ func TestSchemaPromptCatalogPreservesArrayItemUnionContracts(t *testing.T) {
 		if !strings.Contains(string(catalog), expected) {
 			t.Fatalf("array item contract omitted %s: %s", expected, catalog)
 		}
+	}
+}
+
+func TestSchemaPromptCatalogIndexesEveryFieldWhenDetailsExceedBudget(t *testing.T) {
+	properties := make(map[string]any, 700)
+	for index := 0; index < 700; index++ {
+		name := fmt.Sprintf("parameter_%03d", index)
+		properties[name] = map[string]any{
+			"type":        "number",
+			"title":       fmt.Sprintf("Parameter %03d", index),
+			"description": strings.Repeat("Runtime schema detail for semantic parameter resolution. ", 5),
+			"minimum":     0,
+			"maximum":     1000,
+		}
+	}
+	schema, err := json.Marshal(map[string]any{"type": "object", "properties": properties})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := schemaPromptCatalog(flow360.PlanFormSchema{
+		Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{"Case": schema},
+	}, "set parameter 699 to 3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) > maxPlanAssistSchemaCatalogBytes {
+		t.Fatalf("catalog exceeded prompt budget: %d", len(catalog))
+	}
+	var decoded struct {
+		TotalFields    int                      `json:"total_fields"`
+		DetailedFields int                      `json:"detailed_fields"`
+		Index          []promptSchemaIndexField `json:"parameter_index"`
+		Fields         []promptSchemaField      `json:"fields"`
+	}
+	if err := json.Unmarshal(catalog, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.TotalFields != 700 || len(decoded.Index) != 700 || decoded.DetailedFields >= decoded.TotalFields {
+		t.Fatalf("large runtime schema was not compacted without coverage loss: %#v", decoded)
+	}
+	if decoded.Index[len(decoded.Index)-1].Path != "parameter_699" {
+		t.Fatalf("last runtime schema field is missing from index: %#v", decoded.Index[len(decoded.Index)-1])
+	}
+	foundRelevantDetail := false
+	for _, field := range decoded.Fields {
+		if field.Path == "parameter_699" {
+			foundRelevantDetail = true
+			break
+		}
+	}
+	if !foundRelevantDetail {
+		t.Fatalf("query-relevant field was not retained in detailed catalog")
+	}
+}
+
+func TestPromptSchemaIndexExpandsNestedArrayAndUnionPaths(t *testing.T) {
+	root := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"models": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "union",
+					"variants": []any{
+						map[string]any{"type": "object", "title": "Fluid", "properties": map[string]any{
+							"turbulence_model_solver": map[string]any{"type": "model", "title": "Turbulence model"},
+						}},
+					},
+				},
+			},
+		},
+	}
+	index := []promptSchemaIndexField{}
+	collectPromptSchemaIndex("Case", "", root, &index, map[string]struct{}{}, 0)
+	found := false
+	for _, field := range index {
+		if field.Path == "models[*].turbulence_model_solver" && field.Type == "model" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("nested runtime path is missing from complete parameter index: %#v", index)
 	}
 }
 
