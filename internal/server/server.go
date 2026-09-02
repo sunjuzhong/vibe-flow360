@@ -190,6 +190,7 @@ func New() *Server {
 		if err := kbService.Init(ctx); err != nil {
 			log.Printf("Warning: could not initialize knowledge base schema: %v", err)
 		}
+		aiService.KnowledgeService = kbService
 	}
 
 	app := &Server{
@@ -3777,9 +3778,9 @@ func (s *Server) knowledgeRetrieve(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Query    string `json:"query"`
+		Query     string `json:"query"`
 		ProjectID string `json:"project_id"`
-		Limit    int    `json:"limit"`
+		Limit     int    `json:"limit"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

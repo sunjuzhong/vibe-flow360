@@ -9,8 +9,8 @@ import (
 )
 
 type KBService struct {
-	client      *HelixClient
-	embedder    *Embedder
+	store       VectorStore
+	embedder    EmbeddingProvider
 	dataDir     string
 	mu          sync.Mutex
 	lastIndexed time.Time
@@ -24,27 +24,42 @@ func NewKBService(dataDir string) (*KBService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create HelixDB client: %w", err)
 	}
-	embedder := NewEmbedder()
-	svc := &KBService{
-		client:   client,
-		embedder: embedder,
-		dataDir:  dataDir,
+	svc, err := NewKBServiceWithDependencies(dataDir, client, NewEmbedder())
+	if err != nil {
+		_ = client.Close()
+		return nil, err
 	}
 	return svc, nil
+}
+
+// NewKBServiceWithDependencies constructs the orchestration service against
+// interfaces so another vector database or embedding provider can be plugged
+// in without changing indexing, retrieval, or chat integration code.
+func NewKBServiceWithDependencies(dataDir string, store VectorStore, embedder EmbeddingProvider) (*KBService, error) {
+	if store == nil {
+		return nil, fmt.Errorf("vector store is required")
+	}
+	if embedder == nil {
+		return nil, fmt.Errorf("embedding provider is required")
+	}
+	if dataDir == "" {
+		dataDir = ".vibesim"
+	}
+	return &KBService{store: store, embedder: embedder, dataDir: dataDir}, nil
 }
 
 func (s *KBService) Init(ctx context.Context) error {
 	if !s.embedder.Ready() {
 		return fmt.Errorf("embedding provider not configured")
 	}
-	if err := s.client.EnsureSchema(ctx); err != nil {
-		return fmt.Errorf("ensure schema: %w", err)
+	if err := s.store.Init(ctx); err != nil {
+		return fmt.Errorf("initialize vector store: %w", err)
 	}
 	return nil
 }
 
 func (s *KBService) Close() error {
-	return s.client.Close()
+	return s.store.Close()
 }
 
 func (s *KBService) BuildContextForChat(query string, projectID string) (string, error) {
@@ -86,8 +101,17 @@ func (s *KBService) RebuildIndex(projectID string, messages []Message) error {
 
 func (s *KBService) Status() (KBStatus, error) {
 	return KBStatus{
-		Ready:        s.embedder.Ready(),
-		HelixURL:     s.client.URL(),
+		Ready:         s.embedder.Ready(),
+		Backend:       s.store.Backend(),
+		BackendURL:    s.store.URL(),
+		HelixURL:      helixURL(s.store),
 		LastIndexedAt: s.lastIndexed,
 	}, nil
+}
+
+func helixURL(store VectorStore) string {
+	if store.Backend() == "helixdb" {
+		return store.URL()
+	}
+	return ""
 }

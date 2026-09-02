@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	helix "github.com/helixdb/helix-db/sdks/go"
 )
 
 func (s *KBService) ChunkText(text string, sourceType ChunkSourceType, sourceID, projectID string) ([]Chunk, error) {
@@ -165,22 +163,7 @@ func (s *KBService) IndexTutorials(ctx context.Context, tutorialsDir, projectID 
 }
 
 func (s *KBService) insertChunk(ctx context.Context, chunk Chunk) error {
-	req := helix.WriteQuery("").
-		VarAs("node",
-			helix.G().AddN(chunk.sourceLabel(), helix.Props{
-				helix.Prop("id", chunk.ID),
-				helix.Prop("content", chunk.Content),
-				helix.Prop("sourceType", string(chunk.SourceType)),
-				helix.Prop("sourceId", chunk.SourceID),
-				helix.Prop("projectId", chunk.ProjectID),
-				helix.Prop("createdAt", chunk.CreatedAt.Format(time.RFC3339)),
-				helix.Prop("embedding", chunk.Embedding),
-			}),
-		).Returning("node")
-	var out struct {
-		Node any `json:"node"`
-	}
-	return s.client.Exec(ctx, req, &out)
+	return s.store.Upsert(ctx, chunk)
 }
 
 func (c Chunk) sourceLabel() string {

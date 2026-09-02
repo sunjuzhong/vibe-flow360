@@ -33,3 +33,7 @@ func (c *HelixClient) Close() error {
 func (c *HelixClient) URL() string {
 	return c.client.BaseURL()
 }
+
+func (c *HelixClient) Backend() string {
+	return "helixdb"
+}
