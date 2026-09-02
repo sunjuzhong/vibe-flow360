@@ -1646,6 +1646,7 @@ Object.assign(messages, {
   'Preparing changes…': '正在准备改动…',
   'Apply AI changes': '应用 AI 改动',
   'AI did not return parameter changes.': 'AI 未返回参数改动。',
+  'For example: lower CFL to 3, or switch to the k-omega SST turbulence model.': '例如：把 CFL 降到 3，或换成 k-omega SST 湍流模型。',
   'The Draft changed while AI was preparing a response. Review the latest candidate and ask again.': 'AI 准备响应期间草稿已发生变化。请检查最新候选参数后重新提问。',
   'Draft SimulationParams are invalid.': '草稿 SimulationParams 无效。',
   'Resolve the Flow360 validation errors before saving.': '请先解决 Flow360 验证错误再保存。',

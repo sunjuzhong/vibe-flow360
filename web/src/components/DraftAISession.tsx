@@ -79,7 +79,7 @@ export default function DraftAISession({ messages, prompt, loading, onPromptChan
         <textarea
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
-          placeholder={t('For example: change angle of attack to 5° and keep the current solver settings.')}
+          placeholder={t('For example: lower CFL to 3, or switch to the k-omega SST turbulence model.')}
           aria-label={t('Describe the Draft change')}
         />
         <div>

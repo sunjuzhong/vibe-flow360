@@ -119,7 +119,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	if err != nil {
 		return planAssistResponse{}, errors.New("could not prepare the plan context")
 	}
-	message := planAssistPrompt(composer.Request)
+	message := planAssistPrompt(composer.Request) + planAssistNaturalLanguageHints(composer.Request.Prompt)
 	_, action, err := s.agent.ChatWithValidation(ctx, agent.ChatRequest{
 		Message: message, Context: string(contextPayload), History: composer.Request.History, Session: "web:plan-composer",
 	})
