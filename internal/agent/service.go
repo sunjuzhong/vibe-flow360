@@ -11,8 +11,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/sunjuzhong/vibe-flow360/internal/knowledge"
 )
 
 type Message struct {
@@ -41,18 +39,22 @@ type State struct {
 	Execution bool   `json:"execution"`
 }
 
+type KnowledgeService interface {
+	BuildContextForChat(query, projectID string) (string, error)
+}
+
 type Service struct {
-	Provider     string
-	APIKey       string
-	BaseURL      string
-	Model        string
-	Client       *http.Client
-	CodexBinary  string
-	CodexModel   string
-	CodexProfile string
-	CodexTimeout time.Duration
-	WorkDir      string
-	KnowledgeService *knowledge.KBService
+	Provider         string
+	APIKey           string
+	BaseURL          string
+	Model            string
+	Client           *http.Client
+	CodexBinary      string
+	CodexModel       string
+	CodexProfile     string
+	CodexTimeout     time.Duration
+	WorkDir          string
+	KnowledgeService KnowledgeService
 }
 
 // ProviderError preserves the failure class of a model-provider request so

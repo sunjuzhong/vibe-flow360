@@ -32,3 +32,7 @@ func (c *HelixClient) EnsureSchema(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (c *HelixClient) Init(ctx context.Context) error {
+	return c.EnsureSchema(ctx)
+}
