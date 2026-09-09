@@ -981,3 +981,107 @@ printf '{"records":[{"id":"draft-other","name":"Other"},{"id":"draft-123","name"
 		t.Fatalf("unexpected reconciliation result: %#v", result)
 	}
 }
+
+func TestTransientSSLFailureRecognizesTLSHandshakeErrors(t *testing.T) {
+	for _, message := range []string{
+		"flow360: requests.exceptions.SSLError: HTTPSConnectionPool(host='flow360-api.simulation.cloud', port=443): Max retries exceeded",
+		"flow360: urllib3.exceptions.SSLEOFError: EOF occurred in violation of protocol (_ssl.c:1002)",
+		"flow360: SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed",
+		"flow360: [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate (_ssl.c:1002)",
+	} {
+		if !transientSSLFailure(message) {
+			t.Fatalf("expected TLS failure to be recognized as transient: %s", message)
+		}
+	}
+	for _, message := range []string{
+		"flow360: command not found",
+		"flow360: Flow360AuthorisationError: wrong API key",
+		"flow360: draft list: Bad request",
+	} {
+		if transientSSLFailure(message) {
+			t.Fatalf("unrelated failure must not be retried: %s", message)
+		}
+	}
+}
+
+func TestRunWithTimeoutRetriesTransientTLSFailure(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "count")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+count=0
+if [ -f "` + countPath + `" ]; then count=$(cat "` + countPath + `"); fi
+count=$((count + 1))
+printf '%s' "$count" > "` + countPath + `"
+if [ "$count" -le 2 ]; then
+  echo 'urllib3.exceptions.SSLEOFError: EOF occurred in violation of protocol (_ssl.c:1002)' >&2
+  exit 1
+fi
+printf '{"ok":true}'
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: 5*time.Second}
+	raw, err := client.jsonCommand(context.Background(), "draft", "list", "--project-id", "prj-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"ok"`) {
+		t.Fatalf("retried command did not return the JSON payload: %s", raw)
+	}
+	count, readErr := os.ReadFile(countPath)
+	if readErr != nil || string(count) != "3" {
+		t.Fatalf("expected two retries then success: %q %v", count, readErr)
+	}
+}
+
+func TestRunWithTimeoutGivesUpAfterTLSPersists(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "count")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+count=0
+if [ -f "` + countPath + `" ]; then count=$(cat "` + countPath + `"); fi
+count=$((count + 1))
+printf '%s' "$count" > "` + countPath + `"
+echo 'requests.exceptions.SSLError: Max retries exceeded (Caused by SSLEOFError(8, .EOF occurred in violation of protocol.))' >&2
+exit 1
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: 5*time.Second}
+	if _, err := client.jsonCommand(context.Background(), "draft", "list", "--project-id", "prj-1"); err == nil {
+		t.Fatal("persistent TLS failure unexpectedly succeeded")
+	}
+	count, readErr := os.ReadFile(countPath)
+	if readErr != nil || string(count) != "3" {
+		t.Fatalf("expected bounded retries, got %q %v", count, readErr)
+	}
+}
+
+func TestRunWithTimeoutDoesNotRetryNonTransientFailure(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "count")
+	binaryPath := filepath.Join(dir, "fake-flow360")
+	script := `#!/bin/sh
+count=0
+if [ -f "` + countPath + `" ]; then count=$(cat "` + countPath + `"); fi
+count=$((count + 1))
+printf '%s' "$count" > "` + countPath + `"
+echo 'Flow360AuthorisationError: invalid API key' >&2
+exit 1
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Binary: binaryPath, Timeout: 5*time.Second}
+	if _, err := client.jsonCommand(context.Background(), "draft", "list", "--project-id", "prj-1"); err == nil {
+		t.Fatal("non-transient failure unexpectedly succeeded")
+	}
+	count, readErr := os.ReadFile(countPath)
+	if readErr != nil || string(count) != "1" {
+		t.Fatalf("non-transient failure must not be retried: %q %v", count, readErr)
+	}
+}

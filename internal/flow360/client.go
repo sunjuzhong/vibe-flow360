@@ -1238,33 +1238,79 @@ func compactOutput(data []byte) string {
 	return value
 }
 
+const maxTransientTLSRetries = 2
+
+// transientSSLFailure reports whether a Flow360 CLI failure was caused by an
+// interrupted TLS handshake to flow360-api.simulation.cloud. The production
+// TLS frontend intermittently drops handshakes under connection churn, which
+// surfaces as SSLEOFError or certificate verification failures before any HTTP
+// application data is transmitted. Retrying in that boundary is idempotent.
+func transientSSLFailure(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	for _, needle := range []string{
+		"ssleoferror",
+		"sslerror",
+		"ssl:",
+		"eof occurred in violation of protocol",
+		"certificate verify failed",
+		"unable to get local issuer certificate",
+		"tlsv1 alert",
+		"tls handshake",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Client) run(parent context.Context, args ...string) ([]byte, error) {
 	return c.runWithTimeout(parent, c.commandTimeout(), args...)
 }
 
 func (c *Client) runWithTimeout(parent context.Context, timeout time.Duration, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-
 	commandArgs := c.commandArgs(args...)
-	cmd := exec.CommandContext(ctx, c.runtimeBinary(), commandArgs...)
-	if c.APIKey != "" {
-		cmd.Env = append(os.Environ(), "FLOW360_APIKEY="+c.APIKey)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if ctx.Err() == context.DeadlineExceeded {
-		return nil, fmt.Errorf("flow360 command timed out after %s", timeout)
-	}
-	if err != nil {
+	var (
+		output  []byte
+		lastErr error
+	)
+	for attempt := 0; attempt <= maxTransientTLSRetries; attempt++ {
+		ctx, cancel := context.WithTimeout(parent, timeout)
+
+		cmd := exec.CommandContext(ctx, c.runtimeBinary(), commandArgs...)
+		if c.APIKey != "" {
+			cmd.Env = append(os.Environ(), "FLOW360_APIKEY="+c.APIKey)
+		}
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		output, lastErr = cmd.Output()
+		expired := ctx.Err() == context.DeadlineExceeded
+		cancel()
+
+		if expired {
+			return nil, fmt.Errorf("flow360 command timed out after %s", timeout)
+		}
+		if lastErr == nil {
+			return output, nil
+		}
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {
-			message = err.Error()
+			message = lastErr.Error()
 		}
-		return nil, fmt.Errorf("flow360: %s", message)
+		if !transientSSLFailure(message) || attempt == maxTransientTLSRetries {
+			return nil, fmt.Errorf("flow360: %s", message)
+		}
+		// Backoff before a new handshake. The timeout budget for this attempt is
+		// still bounded by the caller's deadline through the parent context.
+		timer := time.NewTimer(time.Duration((attempt+1) * 300) * time.Millisecond)
+		select {
+		case <-parent.Done():
+			timer.Stop()
+			return nil, fmt.Errorf("flow360 command interrupted while retrying TLS handshake")
+		case <-timer.C:
+		}
 	}
-	return output, nil
+	return nil, fmt.Errorf("flow360: %s", strings.TrimSpace(lastErr.Error()))
 }
 
 func (c *Client) commandArgs(args ...string) []string {
