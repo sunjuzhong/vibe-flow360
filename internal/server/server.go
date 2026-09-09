@@ -3046,7 +3046,12 @@ func (s *Server) flow360DraftParameterSchema(c *gin.Context) {
 		return
 	}
 	sourceType := draftSourceType(detail.Info)
-	form, err := s.flow360.PlanFormSchema(c.Request.Context(), sourceType, "case", detail.SimulationParams)
+	// A Draft is an editable SimulationParams document, regardless of which
+	// resource originally created it. Build the complete Geometry→Case route so
+	// a Case-derived Draft does not lose its meshing configuration merely
+	// because its source metadata says "Case". The returned source_type still
+	// describes provenance; it is not used to narrow the Form projection.
+	form, err := s.flow360.PlanFormSchema(c.Request.Context(), "Geometry", "case", detail.SimulationParams)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
