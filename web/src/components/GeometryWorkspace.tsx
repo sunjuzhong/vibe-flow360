@@ -1087,7 +1087,7 @@ export default function GeometryWorkspace({
       <aside className="geometry-review-panel">
         <div className={`geometry-readiness-card ${review.readiness}`}>
           <div className="geometry-panel-heading">
-            <div><span>GEOMETRY PREFLIGHT</span><strong>{readiness.label}</strong></div>
+            <div><span>{t('Geometry preflight')}</span><strong>{t(readiness.label)}</strong></div>
             {review.readiness === 'ready'
               ? <CheckCircle2 size={20} />
               : review.readiness === 'blocked'
@@ -1101,7 +1101,7 @@ export default function GeometryWorkspace({
               className="blocked"
               disabled={blockingCount === 0}
               onClick={() => setActiveCapabilityPanel('health')}
-            >{blockingCount} blockers</button>
+            title={t('Review blocking checks before meshing')}>{blockingCount} {t('blockers')}</button>
             <button
               type="button"
               className="warning"
@@ -1626,7 +1626,8 @@ export default function GeometryWorkspace({
                     <button
                       type="button"
                       onClick={() => focusDiagnostic(check.entityIds ?? [])}
-                      title={t('Focus the first affected surface')}
+                      aria-label={t('Select and focus affected surfaces in the 3D viewer')}
+                      title={t('Select and focus affected surfaces in the 3D viewer')}
                     ><LocateFixed size={11} /> {t('Locate')}</button>
                   )}
                 </div>

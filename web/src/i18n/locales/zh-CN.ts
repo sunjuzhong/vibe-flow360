@@ -1,6 +1,19 @@
 import type { LocalePack } from './types'
 
 const messages: Record<string, string> = {
+  'Active Draft': '当前草稿',
+  'Ask in context': '在上下文中提问',
+  'Geometry preflight': '几何预检',
+  'Opening…': '正在打开…',
+  'Review before running': '运行前审查',
+  'Review blocking checks before meshing': '请先审查并解决阻塞检查项，再进行网格生成。',
+  'Select and focus affected surfaces in the 3D viewer': '将在 3D 视图中选中并聚焦受影响的表面',
+  'Send message': '发送消息',
+  'Some project resources could not be synchronized. Check your network connection and retry.': '部分项目资源同步失败，请检查网络连接后重试。',
+  'Project synchronization failed. Check your network connection and retry.': '项目同步失败，请检查网络连接后重试。',
+  'This resource could not be synchronized. Check your connection and retry.': '此资源同步失败，请检查网络连接后重试。',
+  'There are blocking checks. Open Configure Draft, resolve them, and validate the saved version before running.': '存在阻塞检查项。请打开“配置草稿”解决问题并校验保存版本后再运行。',
+  'I’ll use this context as the primary context and can reference other Resources and Drafts in this Project.': '我会将当前上下文作为主要依据，并可引用此项目中的其他资源和草稿。',
   'About {title}': '关于 {title}',
   'Simulation parameters': '仿真参数',
   Models: '模型',

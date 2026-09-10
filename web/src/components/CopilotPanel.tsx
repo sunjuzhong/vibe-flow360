@@ -254,7 +254,7 @@ export default function CopilotPanel({
       <div className="copilot-header">
         <span className="ai-avatar"><Sparkles size={17} /></span>
         <div>
-          <strong>Simulation Copilot</strong>
+          <strong>{t('Simulation Copilot')}</strong>
           <span>
             {agent?.mode === 'codex-app-server'
               ? `External Codex streaming · ${agent.model}`
@@ -282,8 +282,8 @@ export default function CopilotPanel({
         {!sessionLoading && !messages.length && (
           <div className="copilot-empty">
             <Sparkles size={23} />
-            <h3>Ask in context</h3>
-            <p>{`I’ll use this ${scopeType} as the primary context and can reference other Resources and Drafts in this Project.`}</p>
+            <h3>{t('Ask in context')}</h3>
+            <p>{t('I’ll use this context as the primary context and can reference other Resources and Drafts in this Project.')}</p>
             {suggestions.length > 0 && (
               <div className="copilot-suggestions">
                 {suggestions.map((suggestion) => (
@@ -405,10 +405,10 @@ export default function CopilotPanel({
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Ask about this context…"
-          aria-label="Ask Simulation Copilot"
+          placeholder={t('Ask about this context…')}
+          aria-label={t('Ask Simulation Copilot')}
         />
-        <div><span>Review before running</span><button className="send-button" disabled={!input.trim() || busy || sessionLoading}><ArrowUp size={16} /></button></div>
+        <div><span>{t('Review before running')}</span><button className="send-button" aria-label={t('Send message')} disabled={!input.trim() || busy || sessionLoading}><ArrowUp size={16} /></button></div>
       </form>
       <AgentClarificationDialog
         open={shouldShowCopilotClarification(open, clarificationAction)}

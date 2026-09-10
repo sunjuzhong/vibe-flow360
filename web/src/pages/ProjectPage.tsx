@@ -663,16 +663,15 @@ export default function ProjectPage() {
         }
         if (cancelled) return
         if (manifest.status === 'partial') {
-          setSyncError(
-            `Project metadata sync completed with ${Object.keys(manifest.failures).length} failures. Local successful snapshots remain available.`,
-          )
+          setSyncError(t('Some project resources could not be synchronized. Check your network connection and retry.'))
         }
         if (manifest.status === 'failed') {
-          setSyncError('Project synchronization failed. Trying the most recent local mirror.')
+          setSyncError(t('Project synchronization failed. Check your network connection and retry.'))
         }
       } catch (cause) {
         if (cancelled) return
-        setSyncError(String(cause).replace('Error: ', ''))
+        console.error('Project synchronization failed', cause)
+        setSyncError(t('Project synchronization failed. Check your network connection and retry.'))
       } finally {
         if (!cancelled) {
           setSyncing(false)
@@ -1111,10 +1110,10 @@ export default function ProjectPage() {
             {Object.keys(syncManifest.failures).length} synchronization failures
           </summary>
           <ul>
-            {Object.entries(syncManifest.failures).map(([resource, message]) => (
+            {Object.entries(syncManifest.failures).map(([resource]) => (
               <li key={resource}>
                 <strong>{resource}</strong>
-                <span>{message}</span>
+                <span>{t('This resource could not be synchronized. Check your connection and retry.')}</span>
               </li>
             ))}
           </ul>
