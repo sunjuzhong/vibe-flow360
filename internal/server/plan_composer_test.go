@@ -805,7 +805,7 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 		"parameter assistance, not geometry generation",
 		"runtime Flow360 form_schema as the parameter mapping table",
 		"Do not rely on a hardcoded list",
-		"parameter_index covers every schema field",
+		"request-scoped schema skills",
 		"Never claim CAD dimensions",
 		"Read the schema catalog field-by-field",
 		"Never invent a nearby field name",
@@ -956,9 +956,9 @@ func TestSchemaPromptCatalogPreservesArrayItemUnionContracts(t *testing.T) {
 	}
 }
 
-func TestSchemaPromptCatalogIndexesEveryFieldWhenDetailsExceedBudget(t *testing.T) {
-	properties := make(map[string]any, 700)
-	for index := 0; index < 700; index++ {
+func TestSchemaPromptCatalogBuildsRequestScopedSkillsWhenDetailsExceedBudget(t *testing.T) {
+	properties := make(map[string]any, 2500)
+	for index := 0; index < 2500; index++ {
 		name := fmt.Sprintf("parameter_%03d", index)
 		properties[name] = map[string]any{
 			"type":        "number",
@@ -982,25 +982,24 @@ func TestSchemaPromptCatalogIndexesEveryFieldWhenDetailsExceedBudget(t *testing.
 		t.Fatalf("catalog exceeded prompt budget: %d", len(catalog))
 	}
 	var decoded struct {
-		TotalFields    int                      `json:"total_fields"`
-		DetailedFields int                      `json:"detailed_fields"`
-		Index          []promptSchemaIndexField `json:"parameter_index"`
-		Fields         []promptSchemaField      `json:"fields"`
+		CatalogMode    string              `json:"catalog_mode"`
+		TotalFields    int                 `json:"total_fields"`
+		SelectedFields int                 `json:"selected_fields"`
+		Skills         []promptSchemaSkill `json:"schema_skills"`
 	}
 	if err := json.Unmarshal(catalog, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.TotalFields != 700 || len(decoded.Index) != 700 || decoded.DetailedFields >= decoded.TotalFields {
-		t.Fatalf("large runtime schema was not compacted without coverage loss: %#v", decoded)
-	}
-	if decoded.Index[len(decoded.Index)-1].Path != "parameter_699" {
-		t.Fatalf("last runtime schema field is missing from index: %#v", decoded.Index[len(decoded.Index)-1])
+	if decoded.CatalogMode != "request-scoped schema skills" || decoded.TotalFields != 2500 || decoded.SelectedFields == 0 || decoded.SelectedFields >= decoded.TotalFields {
+		t.Fatalf("large runtime schema was not converted into request-scoped skills: %#v", decoded)
 	}
 	foundRelevantDetail := false
-	for _, field := range decoded.Fields {
-		if field.Path == "parameter_699" {
-			foundRelevantDetail = true
-			break
+	for _, skill := range decoded.Skills {
+		for _, field := range skill.Fields {
+			if field.Path == "parameter_699" {
+				foundRelevantDetail = true
+				break
+			}
 		}
 	}
 	if !foundRelevantDetail {
