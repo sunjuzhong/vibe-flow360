@@ -1702,6 +1702,14 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
     }
     case 'json':
       return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+    case 'number':
+    case 'integer': {
+      if (typeof value === 'string') {
+        const numeric = Number(value)
+        if (value.trim() !== '' && Number.isFinite(numeric)) return numeric
+      }
+      return value
+    }
     default:
       return value
   }

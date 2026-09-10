@@ -21,7 +21,7 @@ import (
 
 const maxPlanComposerRequestBytes = 300 << 10
 const maxPlanAssistRepairAttempts = 3
-const maxPlanAssistSchemaCatalogBytes = 60 << 10
+const maxPlanAssistSchemaCatalogBytes = 96 << 10
 
 type planComposerRequest struct {
 	ProjectID       string          `json:"project_id"`
