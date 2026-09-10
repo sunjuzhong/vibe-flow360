@@ -308,10 +308,6 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     setError('')
     setDirty(candidateFingerprint(next) !== candidateFingerprint(baseline))
     setSyncError('')
-    setValidation(null)
-    setValidationError(null)
-    setValidatedDraftId('')
-    setValidatedFingerprint('')
   }, [baseline, schema])
 
   const applyCandidate = useCallback((next: Record<string, unknown>, jsonText?: string) => {
@@ -886,7 +882,11 @@ export function draftParameterErrorMessage(cause: unknown, t: (text: string) => 
         .replace('{supportedRelease}', String(cause.details.supported_release || ''))
     }
   }
-  return (cause instanceof Error ? cause.message : String(cause)).replace(/^Error:\s*/, '')
+  const message = (cause instanceof Error ? cause.message : String(cause)).replace(/^Error:\s*/, '')
+  if (message.includes('Draft metadata is unavailable')) {
+    return t('Draft metadata is still loading. Please wait a moment and try again.')
+  }
+  return message
 }
 
 export function draftValidationFailureKind(cause: unknown): 'network' | 'schema' {

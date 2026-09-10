@@ -1148,8 +1148,11 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 		if draftErr != nil {
 			return planComposerContext{}, draftErr
 		}
-		if len(draftDetail.Info) == 0 || json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
-			return planComposerContext{}, errors.New("Draft metadata is unavailable")
+		if len(draftDetail.Info) == 0 {
+			return planComposerContext{}, errors.New("Draft metadata is unavailable: the Draft may still be initializing. Please wait a moment and try again.")
+		}
+		if json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
+			return planComposerContext{}, fmt.Errorf("Draft metadata is invalid (length=%d): please refresh the Draft and try again", len(draftDetail.Info))
 		}
 		if err := validatePlanComposerDraftIdentity(request, draftInfo); err != nil {
 			return planComposerContext{}, err
