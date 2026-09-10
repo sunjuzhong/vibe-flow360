@@ -58,8 +58,8 @@ When the user's intent requires a plan or missing engineering input, you MUST re
    - target: target stage (surface-mesh/volume-mesh/case)
    - name: descriptive plan name
    - intent: engineering objective
-   - changes: normally use patch with a valid JSON merge-patch for SimulationParams. When the caller explicitly requests path-level parameter operations, omit patch and provide operations instead.
-   - operations: an ARRAY of {"op":"set|unset|append","path":"/RFC6901/pointer","value":...}. set and append require value; unset omits it. Never provide both patch and operations.
+   - changes: normally use patch with a valid JSON merge-patch for SimulationParams. When the caller explicitly requests path-level parameter operations, omit patch entirely and provide operations instead.
+   - operations: an ARRAY of {"op":"set|unset|append","path":"/RFC6901/pointer","value":...}. set and append require value; unset omits it. IMPORTANT: Never provide both patch and operations. If using operations, do not include patch at all (not even an empty object).
    - branch_preview: short slug for the branch
    - fields: an ARRAY of objects. Every object must have exactly this shape:
      {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional explanation"}

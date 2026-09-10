@@ -113,13 +113,25 @@ func TestParseAcceptsPathLevelDraftOperations(t *testing.T) {
 
 func TestParseRejectsAmbiguousOrMalformedParameterOperations(t *testing.T) {
 	for _, raw := range []string{
-		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","patch":{},"operations":[{"op":"set","path":"/a","value":1}],"fields":[]}]}`,
 		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[{"op":"set","path":"models/0","value":1}],"fields":[]}]}`,
 		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[{"op":"unset","path":"/models","value":true}],"fields":[]}]}`,
 	} {
 		if _, err := Parse(raw); !errors.Is(err, ErrInvalidOperation) {
 			t.Fatalf("expected invalid operation error for %s, got %v", raw, err)
 		}
+	}
+}
+
+func TestParseAllowsEmptyPatchWithOperations(t *testing.T) {
+	// LLMs sometimes return both patch: {} and operations. The empty patch
+	// should be ignored in favor of operations.
+	raw := `{"version":"v1","kind":"update-draft","message":"ok","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","patch":{},"operations":[{"op":"set","path":"/a","value":1}],"fields":[]}]}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("expected empty patch + operations to be allowed, got %v", err)
+	}
+	if len(action.Proposals) != 1 || len(action.Proposals[0].Operations) != 1 {
+		t.Fatalf("expected operations to be preserved, got %#v", action.Proposals)
 	}
 }
 

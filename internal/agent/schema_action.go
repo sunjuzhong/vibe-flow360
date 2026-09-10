@@ -369,6 +369,19 @@ func validateProposal(p Proposal) error {
 func validateProposalChanges(p Proposal) error {
 	hasPatch := len(p.Patch) > 0
 	hasOperations := len(p.Operations) > 0
+	
+	// If both are present, prefer operations and clear the empty patch
+	// This handles cases where the LLM returns both despite instructions
+	if hasPatch && hasOperations {
+		// Check if patch is actually non-empty (contains real data, not just {})
+		var patchObject map[string]json.RawMessage
+		if err := json.Unmarshal(p.Patch, &patchObject); err == nil && len(patchObject) == 0 {
+			// Empty patch - ignore it in favor of operations
+			p.Patch = nil
+			hasPatch = false
+		}
+	}
+	
 	if hasPatch == hasOperations {
 		return fmt.Errorf("%w: provide exactly one of patch or operations", ErrInvalidOperation)
 	}
