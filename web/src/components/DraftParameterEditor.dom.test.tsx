@@ -472,7 +472,7 @@ describe('Draft parameter validation navigation', () => {
     expect(buttonWithText(container, 'Form').hasAttribute('disabled')).toBe(false)
 
     vi.mocked(api.validateDraftParameters).mockRejectedValue(new TypeError('Failed to fetch'))
-    await click(buttonWithText(container, 'Validate again'))
+    await click(buttonWithText(container, 'Validate'))
     expect(container.textContent).toContain('Validation connection failed')
     expect(container.textContent).toContain('candidate is still local')
     expect(buttonWithText(container, 'Retry validation')).not.toBeNull()

@@ -90,6 +90,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const candidateValueRef = useRef<Record<string, unknown>>(initialBaseline)
   const saveRequestRef = useRef(0)
   const saveOperationRef = useRef(false)
+  const initialValidationDoneRef = useRef(false)
 
   currentDraftIdRef.current = draftId
   onSavedRef.current = onSaved
@@ -108,6 +109,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     setAIMessages([])
     setCanonicalCandidate(null)
     aiMessageIDRef.current = 0
+    initialValidationDoneRef.current = false
   }, [draftId])
 
   useEffect(() => {
@@ -230,6 +232,8 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint || localValidation.blocking) return
     const validateImmediately = immediateValidationFingerprintRef.current === candidateResult.fingerprint
     if (validateImmediately) immediateValidationFingerprintRef.current = ''
+    if (!validateImmediately && initialValidationDoneRef.current) return
+    initialValidationDoneRef.current = true
     const candidate = candidateValueRef.current
     validationTimerRef.current = window.setTimeout(() => {
       validationTimerRef.current = null
@@ -362,6 +366,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     setAIPrompt('')
     setAILoading(true)
     try {
+      const target = resourceTargetType(resource.type)
       const response = await api.assistPlanForm({
         project_id: project.id,
         project_name: project.name,
@@ -369,7 +374,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         source_type: resource.type,
         source_name: resource.name,
         draft_id: draftId,
-        target: 'case',
+        target,
         intent: prompt,
         prompt,
         patch: draftAIAssistPatch(baseline, candidate),
@@ -936,4 +941,17 @@ export function applyDraftAIProposal(
   proposalPatch: Record<string, unknown>,
 ) {
   return applyJSONMergePatch(candidate ?? baseline, proposalPatch)
+}
+
+function resourceTargetType(resourceType: string): string {
+  const normalized = resourceType.toLowerCase().replace(/[_\s]/g, '-')
+  const targetMap: Record<string, string> = {
+    'geometry': 'geometry',
+    'surface-mesh': 'surface-mesh',
+    'surfacemesh': 'surface-mesh',
+    'volume-mesh': 'volume-mesh',
+    'volumemesh': 'volume-mesh',
+    'case': 'case',
+  }
+  return targetMap[normalized] || 'case'
 }
