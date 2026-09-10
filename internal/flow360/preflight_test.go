@@ -187,6 +187,22 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	if targetCount := findSchemaByTitle(surfaceSchema, "Target Surface Node Count"); targetCount != nil {
 		t.Fatalf("legacy mesher form exposed unsupported target node count: %#v", targetCount)
 	}
+	betaResult, err := client.PreflightSimulationParams(
+		context.Background(),
+		"Geometry",
+		"case",
+		json.RawMessage(`{"unit_system":{"name":"SI"},"private_attribute_asset_cache":{"use_inhouse_mesher":true}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var betaSurfaceSchema map[string]any
+	if err := json.Unmarshal(betaResult.EditorSchemas["SurfaceMesh"], &betaSurfaceSchema); err != nil {
+		t.Fatal(err)
+	}
+	if targetCount := findSchemaByTitle(betaSurfaceSchema, "Target Surface Node Count"); targetCount == nil {
+		t.Fatal("beta surface mesher form did not expose target surface node count")
+	}
 	var volumeSchema map[string]any
 	if err := json.Unmarshal(result.EditorSchemas["VolumeMesh"], &volumeSchema); err != nil {
 		t.Fatal(err)
@@ -233,6 +249,33 @@ func TestPreflightSimulationParamsWithInstalledSchema(t *testing.T) {
 	if momentCenter == nil || valueSchema["type"] != "array" || valueSchema["minItems"] != float64(3) {
 		t.Fatalf("expected a three-component Moment Center quantity, got %#v", momentCenter)
 	}
+}
+
+func TestProbeDraftFormTypes(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	result, err := NewClient().PreflightSimulationParams(
+		context.Background(), "Geometry", "case", json.RawMessage(`{"unit_system":{"name":"SI"}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, encoded := range result.EditorSchemas {
+		var schema map[string]any
+		if err := json.Unmarshal(encoded, &schema); err != nil {
+			t.Fatal(err)
+		}
+		countSchemaTypes(schema, counts)
+	}
+	if counts["tuple"] == 0 {
+		t.Fatalf("installed schema prefixItems were not projected as tuples: %#v", counts)
+	}
+	if counts["json"] >= 46 {
+		t.Fatalf("expected tuple projection to reduce raw JSON fields, got %#v", counts)
+	}
+	t.Logf("installed editor type counts: %#v", counts)
 }
 
 func TestInstalledSchemaRestoresOmittedAutomatedFarfieldMethod(t *testing.T) {
@@ -531,6 +574,31 @@ func findSchemaByType(node map[string]any, nodeType string) map[string]any {
 		}
 	}
 	return nil
+}
+
+func countSchemaTypes(node map[string]any, counts map[string]int) {
+	if nodeType, _ := node["type"].(string); nodeType != "" {
+		counts[nodeType]++
+	}
+	for _, key := range []string{"properties", "variants"} {
+		switch children := node[key].(type) {
+		case map[string]any:
+			for _, child := range children {
+				if object, ok := child.(map[string]any); ok {
+					countSchemaTypes(object, counts)
+				}
+			}
+		case []any:
+			for _, child := range children {
+				if object, ok := child.(map[string]any); ok {
+					countSchemaTypes(object, counts)
+				}
+			}
+		}
+	}
+	if items, ok := node["items"].(map[string]any); ok {
+		countSchemaTypes(items, counts)
+	}
 }
 
 func findQuantitySchema(node map[string]any) map[string]any {

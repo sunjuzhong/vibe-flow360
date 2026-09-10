@@ -780,6 +780,32 @@ def normalize(node, inherited_unit=None):
     unit = node.get("$units", unit)
     base = metadata(node)
     base.update({key: value for key, value in outer.items() if key not in base})
+    # Pydantic emits fixed-length heterogeneous arrays as JSON Schema
+    # prefixItems, often without type: array or a homogeneous items
+    # schema. These are Flow360's axes, vectors, cameras and colors. Keep the
+    # wire array but expose one structured tuple control instead of JSON text.
+    prefix_items = node.get("prefixItems")
+    min_items = node.get("minItems")
+    max_items = node.get("maxItems")
+    if (
+        isinstance(prefix_items, list)
+        and min_items == max_items
+        and isinstance(min_items, int)
+        and min_items == len(prefix_items)
+        and 2 <= min_items <= 4
+    ):
+        normalized_items = [normalize(item, unit) for item in prefix_items]
+        item_types = {item.get("type") for item in normalized_items}
+        # The tuple field presently has one shared item schema. Numeric mixed
+        # tuples (for example integer+number color definitions) safely use a
+        # number input; otherwise retain a uniform scalar type only.
+        if item_types <= {"integer", "number"}:
+            item_type = "number" if "number" in item_types else "integer"
+        elif len(item_types) == 1 and next(iter(item_types)) in ("string", "boolean"):
+            item_type = next(iter(item_types))
+        else:
+            item_type = "json"
+        return {**base, "type": "tuple", "items": {"type": item_type}, "minItems": min_items, "maxItems": max_items}
     choice_key, choices = alternatives(node)
     if choices:
         if len(choices) == 1:
@@ -889,6 +915,29 @@ EDITOR_ROOTS = {
 # normalize() below.
 EDITOR_CONTEXT_ROOTS = {"version", "unit_system"}
 
+def beta_surface_mesher_enabled():
+    cache = original_params.get("private_attribute_asset_cache", {})
+    return isinstance(cache, dict) and bool(
+        cache.get("use_inhouse_mesher") or cache.get("use_geometry_AI")
+    )
+
+def omit_legacy_surface_node_count(schema):
+    """Avoid offering this beta-only control for legacy surface meshing."""
+    if beta_surface_mesher_enabled() or not isinstance(schema, dict):
+        return schema
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        properties.pop("target_surface_node_count", None)
+        for child in properties.values():
+            omit_legacy_surface_node_count(child)
+    required = schema.get("required")
+    if isinstance(required, list):
+        schema["required"] = [name for name in required if name != "target_surface_node_count"]
+    for variant in schema.get("variants", []):
+        omit_legacy_surface_node_count(variant)
+    omit_legacy_surface_node_count(schema.get("items"))
+    return schema
+
 def projected_editor_schema(stage):
     root = {
         "type": "object",
@@ -912,6 +961,8 @@ def projected_editor_schema(stage):
         if not raw:
             continue
         leaf = normalize(raw)
+        if stage == "SurfaceMesh" and path == ("meshing",):
+            leaf = omit_legacy_surface_node_count(leaf)
         leaf["path"] = ".".join(path)
         leaf["required"] = False
         cursor = root
