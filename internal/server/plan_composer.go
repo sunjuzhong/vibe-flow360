@@ -21,7 +21,10 @@ import (
 
 const maxPlanComposerRequestBytes = 300 << 10
 const maxPlanAssistRepairAttempts = 3
-const maxPlanAssistSchemaCatalogBytes = 32 << 10
+
+// A complete parameter index can exceed the Agent context budget on production
+// Case schemas and makes every form edit unnecessarily expensive.
+const maxPlanAssistSchemaCatalogBytes = 24 << 10
 
 type planComposerRequest struct {
 	ProjectID       string          `json:"project_id"`
@@ -1052,7 +1055,7 @@ This is parameter assistance, not geometry generation. Never claim CAD dimension
 
 %s when the requested values can be supported. Its operations may only address fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
 
-Treat the runtime Flow360 form_schema as the parameter mapping table for the installed solver version. Do not rely on a hardcoded list of supported natural-language parameters. Resolve the user's wording semantically against every catalog path, title, description, type, unit, enum, model choice, and union variant. The compact parameter_index covers every schema field when the detailed catalog is too large; use it to find candidates, then use the supplied detailed field contracts and preflight repair loop to produce exact values. If multiple schema fields remain genuinely plausible after considering stage and baseline context, ask one focused clarification instead of guessing.
+Treat the runtime Flow360 form_schema as the parameter mapping table for the installed solver version. Do not rely on a hardcoded list of supported natural-language parameters. Resolve the user's wording semantically against the supplied request-scoped schema skills: each skill contains exact paths, titles, descriptions, types, units, enums, model choices, and union variants selected from the live schema for this request. Use only these detailed field contracts and the preflight repair loop to produce exact values. If multiple schema fields remain genuinely plausible after considering stage and baseline context, ask one focused clarification instead of guessing.
 
 Read the schema catalog field-by-field before composing operations. Convert catalog dot paths to RFC 6901 JSON Pointers. Use set for a scalar, quantity, entity-list, or existing object child; set on an existing object preserves unspecified canonical children. Use append only to add one complete new array item. Use unset to remove one field or array item. Never set an entire existing object array such as models, meshing.refinements, meshing.volume_zones, or outputs, and never replace an existing object array item; address the item's child path instead. Quantities use {"value":...,"units":"..."}; enum and model values must exactly match the catalog. Never invent a nearby field name and never emit patch together with operations.
 
@@ -1148,11 +1151,8 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 		if draftErr != nil {
 			return planComposerContext{}, draftErr
 		}
-		if len(draftDetail.Info) == 0 {
-			return planComposerContext{}, errors.New("Draft metadata is unavailable: the Draft may still be initializing. Please wait a moment and try again.")
-		}
-		if json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
-			return planComposerContext{}, fmt.Errorf("Draft metadata is invalid (length=%d): please refresh the Draft and try again", len(draftDetail.Info))
+		if len(draftDetail.Info) == 0 || json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
+			return planComposerContext{}, errors.New("Draft metadata is unavailable")
 		}
 		if err := validatePlanComposerDraftIdentity(request, draftInfo); err != nil {
 			return planComposerContext{}, err
@@ -1280,30 +1280,24 @@ type promptSchemaIndexField struct {
 	Title string `json:"n,omitempty"`
 }
 
+// promptSchemaSkill is a request-scoped, stage-specific slice of the live
+// schema. It is generated for every Agent request, so it cannot drift from the
+// installed Flow360 solver contract.
+type promptSchemaSkill struct {
+	Name   string              `json:"name"`
+	Stage  string              `json:"stage"`
+	Fields []promptSchemaField `json:"fields"`
+}
+
 func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.RawMessage, error) {
 	fields := make([]promptSchemaField, 0, 128)
-	index := make([]promptSchemaIndexField, 0, 256)
-	indexed := make(map[string]struct{}, 256)
 	for _, stage := range form.Stages {
 		var root map[string]any
 		if err := json.Unmarshal(form.Schemas[stage], &root); err != nil {
 			return nil, err
 		}
 		collectPromptSchemaFields(stage, "", root, &fields, 0)
-		collectPromptSchemaIndex(stage, "", root, &index, indexed, 0)
 	}
-
-	// Pre-compress all fields to minimize context size from the start
-	for i := range fields {
-		compressPromptSchemaField(&fields[i])
-	}
-
-	// Compress the index: drop titles, keep only path + type
-	for i := range index {
-		index[i].Title = ""
-	}
-
-	// Check if full schema fits in budget
 	full := map[string]any{
 		"source":       "runtime Flow360 form schema",
 		"stages":       form.Stages,
@@ -1315,7 +1309,6 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return payload, err
 	}
 
-	// Build ranked field list for selective inclusion
 	query := strings.Join(queries, " ")
 	type rankedField struct {
 		Field promptSchemaField
@@ -1333,36 +1326,41 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return ranked[i].Order < ranked[j].Order
 	})
 
-	// Build compact schema with index only (no detailed fields yet)
-	detailed := make([]promptSchemaField, 0, len(fields))
+	skillsByStage := make(map[string]int, len(form.Stages))
+	skills := make([]promptSchemaSkill, 0, len(form.Stages))
+	for _, stage := range form.Stages {
+		skillsByStage[stage] = len(skills)
+		skills = append(skills, promptSchemaSkill{
+			Name:   "flow360-" + strings.ToLower(strings.ReplaceAll(stage, " ", "-")) + "-parameters",
+			Stage:  stage,
+			Fields: make([]promptSchemaField, 0),
+		})
+	}
 	compact := map[string]any{
 		"source":        "runtime Flow360 form schema",
+		"catalog_mode":  "request-scoped schema skills",
 		"stages":        form.Stages,
 		"total_fields":  len(fields),
-		"indexed_paths": len(index),
-		"parameter_index_keys": map[string]string{
-			"s": "stage", "p": "path", "t": "type",
-		},
-		"parameter_index": index,
-		"fields":          detailed,
+		"schema_skills": skills,
 	}
-
-	// Add fields one by one until budget is exceeded
 	for _, candidate := range ranked {
-		compact["fields"] = append(detailed, candidate.Field)
+		skillIndex := skillsByStage[candidate.Field.Stage]
+		skills[skillIndex].Fields = append(skills[skillIndex].Fields, candidate.Field)
 		next, marshalErr := json.Marshal(compact)
 		if marshalErr != nil {
 			return nil, marshalErr
 		}
 		if len(next) > maxPlanAssistSchemaCatalogBytes {
-			compact["fields"] = detailed
+			skills[skillIndex].Fields = skills[skillIndex].Fields[:len(skills[skillIndex].Fields)-1]
 			break
 		}
-		detailed = append(detailed, candidate.Field)
 		payload = next
 	}
-	compact["detailed_fields"] = len(detailed)
-	compact["fields"] = detailed
+	selected := 0
+	for _, skill := range skills {
+		selected += len(skill.Fields)
+	}
+	compact["selected_fields"] = selected
 	payload, err = json.Marshal(compact)
 	if err != nil {
 		return nil, err
@@ -1371,29 +1369,6 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return nil, fmt.Errorf("Flow360 parameter index exceeds the safe Agent context budget")
 	}
 	return payload, nil
-}
-
-// compressPromptSchemaField strips verbose data to minimize token usage
-func compressPromptSchemaField(field *promptSchemaField) {
-	field.Description = ""
-	if len(field.Options) > 6 {
-		field.Options = field.Options[:6]
-	}
-	if len(field.UnitOptions) > 6 {
-		field.UnitOptions = field.UnitOptions[:6]
-	}
-	if len(field.ModelChoices) > 6 {
-		field.ModelChoices = field.ModelChoices[:6]
-	}
-	if len(field.EntityChoices) > 6 {
-		field.EntityChoices = field.EntityChoices[:6]
-	}
-	if len(field.DefaultEntities) > 6 {
-		field.DefaultEntities = field.DefaultEntities[:6]
-	}
-	if len(field.Variants) > 4 {
-		field.Variants = field.Variants[:4]
-	}
 }
 
 func collectPromptSchemaIndex(stage, path string, node map[string]any, index *[]promptSchemaIndexField, seen map[string]struct{}, depth int) {
