@@ -2535,6 +2535,9 @@ button { color: inherit; }
 .draft-parameter-form .input-field__control > select,
 .draft-parameter-form .input-field__control > textarea { min-height: 44px; padding: 10px 12px; border-color: #cbd1c3; border-radius: 9px; background: #fff; font-size: 13px; }
 .draft-parameter-form .input-field__control > textarea.plan-code-input { color: #d9e9bf; border-color: #414a3a; background: #252a21; font: 12px/1.55 'DM Mono'; }
+.draft-parameter-form .schema-tuple-inputs { display: grid; grid-template-columns: repeat(auto-fit,minmax(74px,1fr)); gap: 8px; }
+.draft-parameter-form .schema-tuple-inputs label { display: grid; gap: 4px; color: #78816f; font: 700 10px/1 'DM Mono'; text-align: center; }
+.draft-parameter-form .schema-tuple-inputs input { width: 100%; min-height: 42px; padding: 8px; text-align: center; }
 .draft-parameter-form .input-field--toggle { align-items: center; }
 .draft-parameter-form .input-field__toggle-control { min-height: 44px; padding: 0 12px; border: 1px solid #cbd1c3; border-radius: 9px; background: #fff; }
 .draft-parameter-form .input-field__toggle-control > small { font-size: 10px; }

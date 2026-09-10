@@ -776,7 +776,7 @@ export type DynamicFormRecommendation = {
 }
 
 export type DynamicFormSchema = {
-  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'multi_select' | 'quantity' | 'expression' | 'union' | 'entity_assignment' | 'entity_list' | 'field_removal' | 'json'
+  type: 'object' | 'array' | 'tuple' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'multi_select' | 'quantity' | 'expression' | 'union' | 'entity_assignment' | 'entity_list' | 'field_removal' | 'json'
   title?: string
   description?: string
   default?: unknown

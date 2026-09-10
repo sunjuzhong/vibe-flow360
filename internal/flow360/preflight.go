@@ -857,7 +857,15 @@ def normalize(node, inherited_unit=None):
             },
         }
     if node_type == "array":
-        return {**base, "type": "array", "items": normalize(node.get("items", {}))}
+        items = normalize(node.get("items", {}))
+        min_items = node.get("minItems")
+        max_items = node.get("maxItems")
+        # Fixed numeric vectors (directions, axes, camera positions and RGB/RGBA
+        # colors) are common Flow360 values. Project them as a first-class tuple
+        # rather than forcing engineers to edit JSON punctuation.
+        if min_items == max_items and isinstance(min_items, int) and 2 <= min_items <= 4 and items.get("type") in ("number", "integer"):
+            return {**base, "type": "tuple", "items": items, "minItems": min_items, "maxItems": max_items}
+        return {**base, "type": "array", "items": items}
     if node_type in ("string", "number", "integer", "boolean"):
         return {**base, "type": node_type}
     return {**base, "type": "json"}

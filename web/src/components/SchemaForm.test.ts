@@ -145,6 +145,18 @@ describe('schema-driven Flow360 form', () => {
     expect(schema.variants?.map(variantLabel)).toEqual(['Slater Porous Bleed / Wall Rotation', 'Vector', 'Fixed value / Expression'])
   })
 
+  it('renders fixed numeric vectors as a structured tuple and preserves the wire array', () => {
+    const vector: DynamicFormSchema = { type: 'tuple', title: 'Direction', minItems: 3, maxItems: 3, items: { type: 'number' } }
+    const canonical = [0, 1, 0]
+    const hydrated = hydrateSchemaValue(vector, canonical, true)
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, { schema: vector, value: hydrated, onChange: () => undefined }))
+    expect(markup).toContain('schema-tuple-inputs')
+    expect(markup).toContain('>X<')
+    expect(markup).toContain('>Y<')
+    expect(markup).toContain('>Z<')
+    expect(serializeValue(vector, hydrated, true)).toEqual(canonical)
+  })
+
   it('disables empty entity bulk actions and describes the current entity kind as an item', () => {
     const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
       schema: { type: 'entity_list', title: 'Surfaces', entity_kind: 'Surface', entity_choices: [] },
