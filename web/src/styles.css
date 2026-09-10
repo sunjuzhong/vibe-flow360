@@ -2268,6 +2268,9 @@ button { color: inherit; }
 .draft-parameter-editor { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; padding: 18px 18px 0; color: #4d5448; font-size: 13px; }
 .draft-parameter-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .draft-parameter-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.draft-parameter-toolbar-actions > button { display: inline-flex; min-height: 30px; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid #d1d5ca; border-radius: 7px; color: #687060; background: #fff; font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.draft-parameter-toolbar-actions > button:hover:not(:disabled) { border-color: #a7b77a; color: #4d6418; background: #f1f5e7; }
+.draft-parameter-toolbar-actions > button:disabled { cursor: not-allowed; opacity: .4; }
 .draft-parameter-editor > [role="tabpanel"] { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
 .draft-preview-action { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #d1d5ca; border-radius: 8px; color: #687060; background: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
 .draft-preview-action:hover,.draft-preview-action.active { border-color: #a7b77a; color: #4d6418; background: #f1f5e7; }
@@ -2314,6 +2317,9 @@ button { color: inherit; }
 .draft-editor-modes button:disabled { cursor: not-allowed; opacity: .42; }
 .draft-parameter-save { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 14px; border: 1px solid #9eb644; border-radius: 8px; color: #26300f; background: #b7d74f; font-size: 12px; font-weight: 700; cursor: pointer; }
 .draft-parameter-save:disabled { cursor: not-allowed; opacity: .45; }
+.draft-parameter-discard { display: inline-flex; min-height: 37px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #d1d5ca; border-radius: 8px; color: #687060; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.draft-parameter-discard:hover:not(:disabled) { border-color: #c9a09a; color: #884235; background: #fdf5f3; }
+.draft-parameter-discard:disabled { cursor: not-allowed; opacity: .4; }
 .draft-parameter-form { overflow: visible; padding-right: 3px; }
 .draft-parameter-form > .schema-object { margin: 0; }
 .draft-parameter-form-guide {

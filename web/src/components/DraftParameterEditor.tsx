@@ -725,7 +725,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
           {validating ? <RefreshCw size={13} className="spin" /> : <ShieldCheck size={13} />}
           {validating ? t('Validating current parameters…') : validationIsCurrent ? t('Validate again') : t('Validate')}
         </button>
-        <button type="button" disabled={!dirty || saving} onClick={discard}>
+        <button type="button" className="draft-parameter-discard" disabled={!dirty || saving} onClick={discard}>
           <RotateCcw size={13} />{t('Discard changes')}
         </button>
         <button
