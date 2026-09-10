@@ -7487,7 +7487,7 @@ button { color: inherit; }
   left: 50%;
   display: flex;
   width: min(1200px, calc(100vw - 40px));
-  max-height: calc(100vh - 116px);
+  height: min(780px, calc(100vh - 116px));
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #d0d3c8;
@@ -7497,7 +7497,6 @@ button { color: inherit; }
   box-shadow: 0 24px 70px rgba(25, 29, 21, .28);
   transform: translate(-50%, -50%);
 }
-.project-parameters-dialog:has(.draft-config-workspace) { height: min(780px, calc(100vh - 116px)); }
 .project-parameters-header {
   display: grid;
   min-height: 72px;
