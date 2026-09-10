@@ -870,39 +870,24 @@ def normalize(node, inherited_unit=None):
         return {**base, "type": node_type}
     return {**base, "type": "json"}
 
-EDITOR_PATHS = {
-    "SurfaceMesh": (
-        ("meshing", "defaults", "surface_max_edge_length"),
-        ("meshing", "defaults", "surface_edge_growth_rate"),
-        ("meshing", "defaults", "curvature_resolution_angle"),
-        ("meshing", "defaults", "surface_max_aspect_ratio"),
-        ("meshing", "defaults", "surface_max_adaptation_iterations"),
-        ("meshing", "defaults", "target_surface_node_count"),
-        ("meshing", "refinements"),
-        ("meshing", "surface_meshing"),
-        ("meshing", "outputs"),
-    ),
-    "VolumeMesh": (
-        ("meshing", "defaults", "boundary_layer_first_layer_thickness"),
-        ("meshing", "defaults", "boundary_layer_growth_rate"),
-        ("meshing", "defaults", "volume_edge_growth_rate"),
-        ("meshing", "defaults", "sliding_interface_tolerance"),
-        ("meshing", "gap_treatment_strength"),
-        ("meshing", "volume_zones"),
-        ("meshing", "refinements"),
-        ("meshing", "volume_meshing"),
-    ),
-    "Case": (
-        ("operating_condition",),
-        ("models",),
-        ("time_stepping",),
-        ("run_control",),
-        ("reference_geometry",),
-        ("outputs",),
-        ("user_defined_fields",),
-        ("user_defined_dynamics",),
-    ),
+# The Draft editor is a projection of the installed SimulationParams schema,
+# not a curated catalog of commonly-used knobs.  A previous fixed list of deep
+# paths silently hid valid controls whenever Flow360 added a field or a model
+# variant carried a less common configuration.  Keep the execution-stage
+# grouping, but derive every editable root subtree at runtime.  Both mesh
+# stages intentionally expose the meshing subtree; the server merges their
+# projections into one coherent Form group.
+EDITOR_ROOTS = {
+    "SurfaceMesh": ("meshing",),
+    "VolumeMesh": ("meshing",),
 }
+
+# These fields establish the document/runtime context rather than an
+# engineering decision. They remain in the canonical candidate and JSON
+# fallback, but changing them in the Form could make a Draft incompatible with
+# its remote Flow360 context. Private attributes are removed recursively by
+# normalize() below.
+EDITOR_CONTEXT_ROOTS = {"version", "unit_system"}
 
 def projected_editor_schema(stage):
     root = {
@@ -912,15 +897,17 @@ def projected_editor_schema(stage):
         "properties": {},
         "required": [],
     }
-    for path in EDITOR_PATHS.get(stage, ()):
-        if path == ("meshing", "defaults", "target_surface_node_count"):
-            asset_cache = original_params.get("private_attribute_asset_cache", {})
-            supports_target_count = bool(
-                asset_cache.get("use_inhouse_mesher")
-                or asset_cache.get("use_geometry_AI")
-            )
-            if not supports_target_count:
-                continue
+    if stage == "Case":
+        paths = [
+            (name,)
+            for name in full_schema.get("properties", {})
+            if name != "meshing"
+            and name not in EDITOR_CONTEXT_ROOTS
+            and not name.startswith("private_attribute")
+        ]
+    else:
+        paths = [(name,) for name in EDITOR_ROOTS.get(stage, ())]
+    for path in paths:
         raw = schema_at_path(path)
         if not raw:
             continue
