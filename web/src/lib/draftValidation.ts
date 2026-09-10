@@ -103,7 +103,7 @@ function validateLocalNode(schema: DynamicFormSchema, value: unknown, path: stri
     ))
     return [...missing, ...children]
   }
-  if (schema.type === 'array') {
+  if (schema.type === 'array' || schema.type === 'tuple') {
     if (!Array.isArray(value)) return [issue('type', 'Enter a list value.')]
     const issues: DraftValidationIssue[] = []
     if (schema.minItems !== undefined && value.length < schema.minItems) issues.push(issue('min_items', `Add at least ${schema.minItems} item${schema.minItems === 1 ? '' : 's'}.`))

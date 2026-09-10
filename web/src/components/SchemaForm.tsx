@@ -586,6 +586,31 @@ function SchemaField({
   if (schema.type === 'multi_select') {
     return <MultiSelectField schema={schema} value={value} onChange={onChange} title={displayTitle} fieldID={fieldID} configured={configured} showAll={showAll} status={configurationStatus(schema, configured, showAll)} fieldIssues={fieldIssues} messages={fieldMessages} />
   }
+  if (schema.type === 'tuple') {
+    const length = schema.minItems ?? schema.maxItems ?? 3
+    const values = Array.isArray(value) ? value : Array.from({ length }, () => '')
+    const item = schema.items ?? { type: 'number' as const }
+    return (
+      <InputField id={fieldID} className="schema-field schema-tuple-field" label={displayTitle} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={configurationStatus(schema, configured, showAll)} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
+        <div className="schema-tuple-inputs" aria-label={`${displayTitle} components`}>
+          {Array.from({ length }, (_, index) => (
+            <label key={index}>
+              <span>{tupleComponentLabel(title, index)}</span>
+              <input
+                type={item.type === 'integer' || item.type === 'number' ? 'number' : 'text'}
+                step={item.type === 'integer' ? 1 : 'any'}
+                min={item.minimum}
+                max={item.maximum}
+                disabled={disabled}
+                value={String(values[index] ?? '')}
+                onChange={(event) => onChange(values.map((entry, itemIndex) => itemIndex === index ? event.target.value : entry))}
+              />
+            </label>
+          ))}
+        </div>
+      </InputField>
+    )
+  }
   if (schema.type === 'array') {
     if (isComplexArrayItem(schema.items)) {
       return <ComplexArrayField schema={schema} value={value} onChange={onChange} path={path} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} rootTabContent={rootTabContent} configured={configured} showAll={showAll} messages={branchMessages} />
@@ -780,7 +805,7 @@ function SchemaField({
   if (schema.type === 'json') {
     return (
       <InputField id={fieldID} className="schema-field" label={displayTitle} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={configurationStatus(schema, configured, showAll)} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
-        <textarea id={fieldID} className="plan-code-input" value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
+        <textarea id={fieldID} className="plan-code-input" aria-label={`${displayTitle} (JSON only)`} value={String(value ?? '{}')} onChange={(event) => onChange(event.target.value)} />
       </InputField>
     )
   }
@@ -800,6 +825,13 @@ function SchemaField({
       />
     </InputField>
   )
+}
+
+function tupleComponentLabel(title: string, index: number) {
+  const lower = title.toLowerCase()
+  if (lower.includes('color')) return ['R', 'G', 'B', 'A'][index] ?? String(index + 1)
+  if (lower.includes('axis') || lower.includes('direction') || lower.includes('position') || lower.includes('look') || lower.includes('up') || lower.includes('scale')) return ['X', 'Y', 'Z'][index] ?? String(index + 1)
+  return String(index + 1)
 }
 
 function isComplexArrayItem(schema?: DynamicFormSchema) {
@@ -1573,6 +1605,8 @@ export function initialValue(schema: DynamicFormSchema, sparse = false): unknown
     }
     case 'array':
       return []
+    case 'tuple':
+      return Array.from({ length: schema.minItems ?? schema.maxItems ?? 3 }, () => initialValue(schema.items ?? { type: 'number' }, sparse))
     case 'quantity':
       return { value: initialValue(schema.value_schema ?? { type: 'number' }, sparse), units: schema.unit ?? '' }
     case 'expression':
@@ -1624,6 +1658,10 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
     case 'array':
       return Array.isArray(value)
         ? value.map((item) => hydrateSchemaValue(schema.items ?? { type: 'json' }, item, sparse))
+        : initialValue(schema, sparse)
+    case 'tuple':
+      return Array.isArray(value)
+        ? value.map((item) => hydrateSchemaValue(schema.items ?? { type: 'number' }, item, sparse))
         : initialValue(schema, sparse)
     case 'entity_list': {
       if (!isRecord(value)) return initialValue(schema, sparse)
@@ -1685,6 +1723,12 @@ export function serializeValue(schema: DynamicFormSchema, value: unknown, sparse
     }
     case 'array':
       return (Array.isArray(value) ? value : []).map((item) => serializeValue(schema.items ?? { type: 'json' }, item, sparse))
+    case 'tuple': {
+      const items = Array.isArray(value) ? value : []
+      const expected = schema.minItems ?? schema.maxItems
+      if (expected !== undefined && items.length !== expected) throw new Error(`${schema.title || schema.path || 'Tuple'} requires exactly ${expected} values.`)
+      return items.map((item) => serializeValue(schema.items ?? { type: 'number' }, item, sparse))
+    }
     case 'multi_select': {
       const object = isRecord(value) ? value : {}
       const valueKey = schema.value_key || 'items'
@@ -1837,7 +1881,7 @@ function negativeOneOrPositiveIntegerUnion(schema: DynamicFormSchema): { integer
 }
 
 function isSingleControlRootSchema(schema: DynamicFormSchema): boolean {
-  return ['string', 'number', 'integer', 'boolean', 'enum', 'quantity'].includes(schema.type)
+  return ['string', 'number', 'integer', 'boolean', 'enum', 'quantity', 'tuple'].includes(schema.type)
     || negativeOneOrPositiveIntegerUnion(schema) !== null
 }
 
@@ -1899,6 +1943,7 @@ function schemaValueMatches(schema: DynamicFormSchema, value: unknown): boolean 
     case 'multi_select':
       return isRecord(value)
     case 'array':
+    case 'tuple':
       return Array.isArray(value)
     case 'boolean':
       return typeof value === 'boolean'
