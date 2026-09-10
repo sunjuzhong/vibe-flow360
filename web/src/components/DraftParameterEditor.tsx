@@ -301,7 +301,6 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   }, [draftId, formValue, schema])
 
   const replaceCandidate = useCallback((next: Record<string, unknown>, jsonText?: string) => {
-    immediateValidationFingerprintRef.current = candidateFingerprint(next)
     setCanonicalCandidate(next)
     setJSONValue(jsonText ?? JSON.stringify(next, null, 2))
     setPreviewValue(next)
@@ -387,6 +386,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       const next = applyDraftAIProposal(baseline, candidate, response.proposal.patch)
       const aiChanges = diffParameterValues(candidate, next)
       const assistantMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
+      immediateValidationFingerprintRef.current = candidateFingerprint(next)
       applyCandidate(next)
       setAIMessages((current) => [...current, {
         id: assistantMessageID,
@@ -946,11 +946,11 @@ export function applyDraftAIProposal(
 function resourceTargetType(resourceType: string): string {
   const normalized = resourceType.toLowerCase().replace(/[_\s]/g, '-')
   const targetMap: Record<string, string> = {
-    'geometry': 'geometry',
-    'surface-mesh': 'surface-mesh',
-    'surfacemesh': 'surface-mesh',
-    'volume-mesh': 'volume-mesh',
-    'volumemesh': 'volume-mesh',
+    'geometry': 'case',
+    'surface-mesh': 'volume-mesh',
+    'surfacemesh': 'volume-mesh',
+    'volume-mesh': 'case',
+    'volumemesh': 'case',
     'case': 'case',
   }
   return targetMap[normalized] || 'case'
