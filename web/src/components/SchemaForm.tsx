@@ -597,8 +597,9 @@ function SchemaField({
             <label key={index}>
               <span>{tupleComponentLabel(title, index)}</span>
               <input
-                type={item.type === 'integer' || item.type === 'number' ? 'number' : 'text'}
-                step={item.type === 'integer' ? 1 : 'any'}
+                type={item.type === 'integer' ? 'number' : 'text'}
+                inputMode={item.type === 'number' ? 'decimal' : undefined}
+                step={item.type === 'integer' ? 1 : undefined}
                 min={item.minimum}
                 max={item.maximum}
                 disabled={disabled}
@@ -813,8 +814,9 @@ function SchemaField({
     <InputField id={fieldID} className="schema-field" label={displayTitle} path={collapsibleObjects ? undefined : path} required={schema.required === true} disabled={disabled} status={configurationStatus(schema, configured, showAll)} help={collapsibleObjects ? <SchemaDescriptionHelp description={schema.description} title={title} /> : undefined} description={!collapsibleObjects ? localizedSchemaDescription(schema.description) : undefined} hideLabel={rootTabContent} messages={fieldMessages}>
       <input
         id={fieldID}
-        type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
-        step={schema.type === 'integer' ? 1 : schema.type === 'number' ? 'any' : undefined}
+        type={schema.type === 'integer' ? 'number' : 'text'}
+        inputMode={schema.type === 'number' ? 'decimal' : undefined}
+        step={schema.type === 'integer' ? 1 : undefined}
         required={schema.required === true}
         min={schema.minimum}
         max={schema.maximum}
@@ -1700,6 +1702,14 @@ export function hydrateSchemaValue(schema: DynamicFormSchema, value: unknown, sp
     }
     case 'json':
       return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+    case 'number':
+    case 'integer': {
+      if (typeof value === 'string') {
+        const numeric = Number(value)
+        if (value.trim() !== '' && Number.isFinite(numeric)) return numeric
+      }
+      return value
+    }
     default:
       return value
   }

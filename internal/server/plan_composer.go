@@ -21,7 +21,7 @@ import (
 
 const maxPlanComposerRequestBytes = 300 << 10
 const maxPlanAssistRepairAttempts = 3
-const maxPlanAssistSchemaCatalogBytes = 60 << 10
+const maxPlanAssistSchemaCatalogBytes = 32 << 10
 
 type planComposerRequest struct {
 	ProjectID       string          `json:"project_id"`
@@ -1148,8 +1148,11 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 		if draftErr != nil {
 			return planComposerContext{}, draftErr
 		}
-		if len(draftDetail.Info) == 0 || json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
-			return planComposerContext{}, errors.New("Draft metadata is unavailable")
+		if len(draftDetail.Info) == 0 {
+			return planComposerContext{}, errors.New("Draft metadata is unavailable: the Draft may still be initializing. Please wait a moment and try again.")
+		}
+		if json.Unmarshal(draftDetail.Info, &draftInfo) != nil {
+			return planComposerContext{}, fmt.Errorf("Draft metadata is invalid (length=%d): please refresh the Draft and try again", len(draftDetail.Info))
 		}
 		if err := validatePlanComposerDraftIdentity(request, draftInfo); err != nil {
 			return planComposerContext{}, err
@@ -1289,6 +1292,18 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		collectPromptSchemaFields(stage, "", root, &fields, 0)
 		collectPromptSchemaIndex(stage, "", root, &index, indexed, 0)
 	}
+
+	// Pre-compress all fields to minimize context size from the start
+	for i := range fields {
+		compressPromptSchemaField(&fields[i])
+	}
+
+	// Compress the index: drop titles, keep only path + type
+	for i := range index {
+		index[i].Title = ""
+	}
+
+	// Check if full schema fits in budget
 	full := map[string]any{
 		"source":       "runtime Flow360 form schema",
 		"stages":       form.Stages,
@@ -1300,6 +1315,7 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return payload, err
 	}
 
+	// Build ranked field list for selective inclusion
 	query := strings.Join(queries, " ")
 	type rankedField struct {
 		Field promptSchemaField
@@ -1317,6 +1333,7 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return ranked[i].Order < ranked[j].Order
 	})
 
+	// Build compact schema with index only (no detailed fields yet)
 	detailed := make([]promptSchemaField, 0, len(fields))
 	compact := map[string]any{
 		"source":        "runtime Flow360 form schema",
@@ -1324,21 +1341,13 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		"total_fields":  len(fields),
 		"indexed_paths": len(index),
 		"parameter_index_keys": map[string]string{
-			"s": "stage", "p": "path", "t": "type", "n": "title",
+			"s": "stage", "p": "path", "t": "type",
 		},
 		"parameter_index": index,
 		"fields":          detailed,
 	}
-	if base, marshalErr := json.Marshal(compact); marshalErr != nil {
-		return nil, marshalErr
-	} else if len(base) > maxPlanAssistSchemaCatalogBytes {
-		// Titles improve semantic routing, but paths and types are the complete
-		// executable contract. Drop only titles before ever dropping a path.
-		for i := range index {
-			index[i].Title = ""
-		}
-		compact["parameter_index"] = index
-	}
+
+	// Add fields one by one until budget is exceeded
 	for _, candidate := range ranked {
 		compact["fields"] = append(detailed, candidate.Field)
 		next, marshalErr := json.Marshal(compact)
@@ -1362,6 +1371,29 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return nil, fmt.Errorf("Flow360 parameter index exceeds the safe Agent context budget")
 	}
 	return payload, nil
+}
+
+// compressPromptSchemaField strips verbose data to minimize token usage
+func compressPromptSchemaField(field *promptSchemaField) {
+	field.Description = ""
+	if len(field.Options) > 6 {
+		field.Options = field.Options[:6]
+	}
+	if len(field.UnitOptions) > 6 {
+		field.UnitOptions = field.UnitOptions[:6]
+	}
+	if len(field.ModelChoices) > 6 {
+		field.ModelChoices = field.ModelChoices[:6]
+	}
+	if len(field.EntityChoices) > 6 {
+		field.EntityChoices = field.EntityChoices[:6]
+	}
+	if len(field.DefaultEntities) > 6 {
+		field.DefaultEntities = field.DefaultEntities[:6]
+	}
+	if len(field.Variants) > 4 {
+		field.Variants = field.Variants[:4]
+	}
 }
 
 func collectPromptSchemaIndex(stage, path string, node map[string]any, index *[]promptSchemaIndexField, seen map[string]struct{}, depth int) {

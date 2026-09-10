@@ -120,13 +120,14 @@ function validateLocalNode(schema: DynamicFormSchema, value: unknown, path: stri
     return validateLocalNode(schema.value_schema ?? { type: 'number' }, value.value, path)
   }
   if (schema.type === 'number' || schema.type === 'integer') {
-    if (typeof value !== 'number' || !Number.isFinite(value) || schema.type === 'integer' && !Number.isInteger(value)) {
+    const numericValue = typeof value === 'string' ? Number(value) : value
+    if (typeof numericValue !== 'number' || !Number.isFinite(numericValue) || schema.type === 'integer' && !Number.isInteger(numericValue)) {
       return [issue('number_format', schema.type === 'integer' ? 'Enter a whole number.' : 'Enter a number.')]
     }
-    if (schema.minimum !== undefined && value < schema.minimum) return [issue('minimum', `Enter ${schema.minimum} or greater.`)]
-    if (schema.maximum !== undefined && value > schema.maximum) return [issue('maximum', `Enter ${schema.maximum} or less.`)]
-    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) return [issue('exclusive_minimum', `Enter a value greater than ${schema.exclusiveMinimum}.`)]
-    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) return [issue('exclusive_maximum', `Enter a value less than ${schema.exclusiveMaximum}.`)]
+    if (schema.minimum !== undefined && numericValue < schema.minimum) return [issue('minimum', `Enter ${schema.minimum} or greater.`)]
+    if (schema.maximum !== undefined && numericValue > schema.maximum) return [issue('maximum', `Enter ${schema.maximum} or less.`)]
+    if (schema.exclusiveMinimum !== undefined && numericValue <= schema.exclusiveMinimum) return [issue('exclusive_minimum', `Enter a value greater than ${schema.exclusiveMinimum}.`)]
+    if (schema.exclusiveMaximum !== undefined && numericValue >= schema.exclusiveMaximum) return [issue('exclusive_maximum', `Enter a value less than ${schema.exclusiveMaximum}.`)]
   }
   if (schema.type === 'string' && typeof value === 'string') {
     if (schema.minLength !== undefined && value.length < schema.minLength) return [issue('min_length', `Enter at least ${schema.minLength} characters.`)]

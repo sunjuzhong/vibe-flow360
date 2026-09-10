@@ -97,8 +97,9 @@ export default function QuantityField({
         {scalarValue ? (
           <input
             {...controlProps}
-            type="number"
-            step={valueSchema.type === 'integer' ? 1 : 'any'}
+            type={valueSchema.type === 'integer' ? 'number' : 'text'}
+            inputMode={valueSchema.type === 'number' ? 'decimal' : undefined}
+            step={valueSchema.type === 'integer' ? 1 : undefined}
             min={numberConstraint(valueSchema, 'minimum')}
             max={numberConstraint(valueSchema, 'maximum')}
             value={String(object.value ?? '')}
