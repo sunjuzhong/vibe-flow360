@@ -7497,8 +7497,8 @@ button { color: inherit; }
   box-shadow: 0 24px 70px rgba(25, 29, 21, .28);
   transform: translate(-50%, -50%);
 }
-.project-parameters-dialog:has(.draft-config-workspace) { width: min(1120px, calc(100vw - 40px)); height: min(780px, calc(100vh - 116px)); }
-.project-parameters-dialog:has(.draft-config-workspace.ai-open) { width: min(1320px, calc(100vw - 40px)); }
+.project-parameters-dialog:has(.draft-config-workspace) { width: min(1200px, calc(100vw - 40px)); height: min(780px, calc(100vh - 116px)); }
+.project-parameters-dialog:has(.draft-config-workspace.ai-open) { width: min(1200px, calc(100vw - 40px)); }
 .project-parameters-header {
   display: grid;
   min-height: 72px;

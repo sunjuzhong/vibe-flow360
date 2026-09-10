@@ -107,7 +107,7 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComposerContext) (planAssistResponse, error) {
 	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt)
 	if err != nil {
-		return planAssistResponse{}, errors.New("could not prepare the active Flow360 schema for the Agent")
+		return planAssistResponse{}, fmt.Errorf("could not prepare the active Flow360 schema for the Agent: %w", err)
 	}
 	contextPayload, err := json.Marshal(agent.ChatContextPayload{
 		ProjectID: composer.Request.ProjectID, ProjectName: composer.Request.ProjectName,
