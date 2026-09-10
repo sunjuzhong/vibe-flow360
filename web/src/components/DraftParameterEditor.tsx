@@ -222,18 +222,18 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   }, [draftId, t])
 
   useEffect(() => {
-    validationRequestRef.current += 1
-    setValidation(null)
-    setValidatedDraftId('')
-    setValidatedFingerprint('')
-    setValidating(false)
-    if (validationTimerRef.current !== null) window.clearTimeout(validationTimerRef.current)
-    setValidationError(null)
     if (loading || readOnly || !candidateResult.value || !candidateResult.fingerprint || localValidation.blocking) return
     const validateImmediately = immediateValidationFingerprintRef.current === candidateResult.fingerprint
     if (validateImmediately) immediateValidationFingerprintRef.current = ''
     if (!validateImmediately && initialValidationDoneRef.current) return
     initialValidationDoneRef.current = true
+    validationRequestRef.current += 1
+    setValidatedDraftId('')
+    setValidatedFingerprint('')
+    setValidating(false)
+    setValidation(null)
+    setValidationError(null)
+    if (validationTimerRef.current !== null) window.clearTimeout(validationTimerRef.current)
     const candidate = candidateValueRef.current
     validationTimerRef.current = window.setTimeout(() => {
       validationTimerRef.current = null
