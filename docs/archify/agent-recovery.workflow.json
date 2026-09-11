@@ -4,7 +4,7 @@
   "meta": {
     "title": "Agent 驱动的计划与失败恢复工作流",
     "output": "agent-recovery.workflow.html",
-    "viewBox": [720, 900],
+    "viewBox": [720, 380],
     "quality_profile": "showcase",
     "views": [
       { "id": "happy-path", "label": "计划到运行", "focus": ["intent", "context", "plan", "preflight", "approval", "run"], "note": "从工程师意图到提交、监控和结果查看。" },
