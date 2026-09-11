@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Vibe Flow360 项目架构",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/sunjuzhong/vibe-flow360.git",
+      "revision": "2ebb37a5d3ddc1050c8299a6c7f7d0ee4c293a91"
+    },
+    "views": [
+      { "id": "request-path", "label": "本地请求主链路", "focus": ["engineer", "workspace", "server", "domain", "cli", "flow360"], "note": "从浏览器进入本机 Go 服务，经领域编排和 Flow360 CLI 访问远端平台。" },
+      { "id": "agent-loop", "label": "Agent 干预闭环", "focus": ["workspace", "server", "agent", "ai", "knowledge", "localdata"], "note": "查看会话、计划、知识检索与本地状态如何支撑 Agent-first 工作流。" },
+      { "id": "visualization-and-cache", "label": "资源可视化与缓存", "focus": ["workspace", "server", "domain", "localdata", "flow360"], "note": "资源详情、3D 可视化资产、Project mirror 和运行结果通过本地状态复用。" }
+    ]
+  },
+  "components": [
+    {
+      "id": "engineer",
+      "type": "external",
+      "label": "工程师",
+      "sublabel": "浏览器用户",
+      "pos": [40, 330],
+      "size": [130, 64],
+      "sources": [{ "path": "README.md", "line": 61, "label": "本地运行入口" }]
+    },
+    {
+      "id": "workspace",
+      "type": "frontend",
+      "label": "React Web Workspace",
+      "sublabel": "页面 / 3D Viewer / i18n",
+      "pos": [250, 330],
+      "size": [190, 64],
+      "sources": [
+        { "path": "web/src/App.tsx", "line": 49, "label": "路由入口" },
+        { "path": "web/package.json", "line": 11, "label": "React + Three.js" }
+      ]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "Go HTTP Server",
+      "sublabel": "Gin /api + embedded Web",
+      "pos": [520, 330],
+      "size": [180, 64],
+      "sources": [
+        { "path": "internal/server/server.go", "line": 45, "label": "嵌入 Web 资源" },
+        { "path": "internal/server/server.go", "line": 108, "label": "服务构造" },
+        { "path": "internal/server/server.go", "line": 343, "label": "API 路由" }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent 服务与干预引擎",
+      "sublabel": "会话 / 计划 / 修复",
+      "pos": [520, 150],
+      "size": [190, 64],
+      "sources": [
+        { "path": "internal/agent/service.go", "line": 72, "label": "模型服务" },
+        { "path": "internal/agent/engine.go", "line": 13, "label": "干预生命周期" }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Flow360 领域服务",
+      "sublabel": "同步 / 资源 / 计划 / 结果",
+      "pos": [790, 330],
+      "size": [195, 64],
+      "sources": [
+        { "path": "internal/server/server.go", "line": 48, "label": "服务依赖组合" },
+        { "path": "internal/server/server.go", "line": 350, "label": "资源与计划 API" }
+      ]
+    },
+    {
+      "id": "localdata",
+      "type": "database",
+      "label": "本地 .vibesim 数据",
+      "sublabel": "mirror / cache / plans / jobs",
+      "pos": [790, 550],
+      "size": [195, 64],
+      "sources": [
+        { "path": "internal/server/server.go", "line": 111, "label": "数据根目录" },
+        { "path": "internal/server/server.go", "line": 116, "label": "本地 stores" },
+        { "path": "docs/en/overview/architecture.md", "line": 9, "label": "本地职责" }
+      ]
+    },
+    {
+      "id": "ai",
+      "type": "external",
+      "label": "AI Provider / Codex",
+      "sublabel": "可配置模型调用",
+      "pos": [790, 150],
+      "size": [195, 64],
+      "sources": [
+        { "path": "internal/agent/service.go", "line": 73, "label": "Provider 配置" },
+        { "path": "internal/agent/codex_provider.go", "line": 253, "label": "Codex App Server" }
+      ]
+    },
+    {
+      "id": "knowledge",
+      "type": "database",
+      "label": "Knowledge Base",
+      "sublabel": "local index / HelixDB 可选",
+      "pos": [520, 550],
+      "size": [190, 64],
+      "sources": [
+        { "path": "internal/knowledge/service.go", "line": 21, "label": "向量存储选择" },
+        { "path": "internal/knowledge/service.go", "line": 62, "label": "可插拔接口" }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "Flow360 CLI Adapter",
+      "sublabel": "本地运行时 / 认证 / 命令",
+      "pos": [1060, 330],
+      "size": [190, 64],
+      "sources": [
+        { "path": "internal/flow360/client.go", "line": 60, "label": "CLI 客户端" },
+        { "path": "cmd/server/cli.go", "line": 232, "label": "运行时初始化" }
+      ]
+    },
+    {
+      "id": "flow360",
+      "type": "cloud",
+      "label": "Flow360 Cloud",
+      "sublabel": "权威项目与远端 CFD",
+      "pos": [1320, 330],
+      "size": [190, 64],
+      "sources": [
+        { "path": "README.md", "line": 39, "label": "远端计算边界" },
+        { "path": "internal/flow360/client.go", "line": 182, "label": "项目查询" }
+      ]
+    }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "本机 Vibe Flow360", "wraps": ["workspace", "server", "agent", "domain", "localdata", "knowledge", "cli"] },
+    { "kind": "security-group", "label": "外部服务与远端计算", "wraps": ["ai", "flow360"] }
+  ],
+  "connections": [
+    { "id": "engineer-workspace", "from": "engineer", "to": "workspace", "label": "浏览器交互", "variant": "emphasis" },
+    { "id": "workspace-server", "from": "workspace", "to": "server", "label": "HTTP / SSE", "variant": "emphasis" },
+    { "id": "server-agent", "from": "server", "to": "agent", "label": "上下文与会话", "fromSide": "top", "toSide": "bottom" },
+    { "id": "server-domain", "from": "server", "to": "domain", "label": "资源与运行 API" },
+    { "id": "domain-localdata", "from": "domain", "to": "localdata", "label": "本地持久化", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "agent-ai", "from": "agent", "to": "ai", "label": "模型请求", "variant": "security" },
+    { "id": "agent-knowledge", "from": "agent", "to": "knowledge", "label": "检索工程上下文", "fromSide": "left", "toSide": "top", "via": [[20, 182], [20, 500], [615, 500]], "labelSegment": 0 },
+    { "id": "domain-cli", "from": "domain", "to": "cli", "label": "Flow360 命令", "variant": "dashed" },
+    { "id": "cli-flow360", "from": "cli", "to": "flow360", "label": "项目 / Draft / Case", "variant": "emphasis", "labelDy": 56 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "系统形态", "items": ["单机 Go 服务承载 API、Agent 编排和本地状态", "React + Vite Web 作为交互层，3D 能力位于同一前端工作区"] },
+    { "dot": "emerald", "title": "核心闭环", "items": ["浏览项目与资源 → 生成或编辑计划 → 本地 preflight", "用户审查并批准后，经 Flow360 CLI 提交远端运行", "状态、日志、结果与失败恢复回到本地工作区"] },
+    { "dot": "rose", "title": "边界与约束", "items": ["Flow360 Cloud 保持项目、Draft、网格和 Case 的权威性", "API key 留在本地服务进程，不返回 Web 应用", "AI 负责建议与诊断，不能替用户批准计费操作"] }
+  ]
+}
