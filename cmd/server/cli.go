@@ -57,7 +57,7 @@ func writeRootUsage(output io.Writer) {
 
 Usage:
   %s init [options]   Install and verify all runtime dependencies
-  %s serve [options]  Start the Vibe Flow360 server
+  %s serve [action] [options]  Start, stop, or restart the Vibe Flow360 server
   %s clean <target>   Remove regenerable local cache data
   %s clean-mirror     Remove mirrored Project files older than one week
   %s version          Print the build/Flow360 version
@@ -187,13 +187,38 @@ func runCleanMirror(args []string, stdout, stderr io.Writer) error {
 }
 
 func runServe(args []string, stdout, stderr io.Writer) error {
+	action := "start"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	if action != "start" && action != "stop" && action != "restart" {
+		return fmt.Errorf("unknown serve action %q; use start, stop, or restart", action)
+	}
+
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	address := flags.String("addr", ":9292", "HTTP listen address")
 	envFile := flags.String("env-file", ".env", "dotenv file to load")
+	daemon := flags.Bool("daemon", false, "run the server in the background")
+	pidFile := flags.String("pid-file", "", "daemon PID file (default: <data-dir>/vibe-flow360.pid)")
+	logFile := flags.String("log-file", "", "daemon log file (default: <data-dir>/vibe-flow360.log)")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: %s serve [--addr :9292] [--env-file .env]\n", commandName)
-		flags.PrintDefaults()
+		fmt.Fprintf(flags.Output(), `Usage:
+  %s serve [start] [--daemon] [options]
+  %s serve stop [options]
+  %s serve restart [--daemon] [options]
+
+Without --daemon, start and restart run in the foreground. The stop command
+controls a server previously started with --daemon.
+
+Options:
+  --addr string       HTTP listen address (default ":9292")
+  --env-file string   dotenv file to load (default ".env")
+  --daemon            run the server in the background
+  --pid-file string   daemon PID file (default: <data-dir>/vibe-flow360.pid)
+  --log-file string   daemon log file (default: <data-dir>/vibe-flow360.log)
+`, commandName, commandName, commandName)
 	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -202,10 +227,31 @@ func runServe(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("serve does not accept positional arguments")
+		return fmt.Errorf("serve accepts at most one action: start, stop, or restart")
 	}
 	if err := config.LoadDotEnv(*envFile); err != nil {
 		return fmt.Errorf("load %s: %w", *envFile, err)
+	}
+	dataDir := firstValue(os.Getenv("VIBESIM_DATA_DIR"), ".vibesim")
+	resolvedPIDFile := firstValue(*pidFile, filepath.Join(dataDir, "vibe-flow360.pid"))
+	resolvedLogFile := firstValue(*logFile, filepath.Join(dataDir, "vibe-flow360.log"))
+
+	if action == "stop" {
+		if *daemon {
+			return errors.New("--daemon is not valid with serve stop")
+		}
+		return stopDaemon(resolvedPIDFile, stdout)
+	}
+	if action == "restart" {
+		if err := stopDaemonIfRunning(resolvedPIDFile, stdout); err != nil {
+			return err
+		}
+	}
+	if *daemon {
+		return startDaemon(daemonOptions{
+			Address: *address, EnvFile: *envFile, PIDFile: resolvedPIDFile,
+			LogFile: resolvedLogFile,
+		}, stdout)
 	}
 
 	logger := log.New(stderr, "", log.LstdFlags)

@@ -35,6 +35,23 @@ FLOW360_APIKEY=your-key ./vibe-flow360 init --no-login
 ./vibe-flow360 serve
 ```
 
+The explicit lifecycle form is equivalent:
+
+```bash
+./vibe-flow360 serve start
+```
+
+To run in the background, then restart or stop that daemon:
+
+```bash
+./vibe-flow360 serve start --daemon
+./vibe-flow360 serve restart --daemon
+./vibe-flow360 serve stop
+```
+
+Daemon state and output default to `.vibesim/vibe-flow360.pid` and
+`.vibesim/vibe-flow360.log`. Override them with `--pid-file` and `--log-file`.
+
 Open [http://localhost:9292](http://localhost:9292).
 
 Use another address or dotenv file when needed:

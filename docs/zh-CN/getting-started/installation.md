@@ -33,6 +33,23 @@ FLOW360_APIKEY=your-key ./vibe-flow360 init --no-login
 ./vibe-flow360 serve
 ```
 
+也可以显式使用生命周期命令：
+
+```bash
+./vibe-flow360 serve start
+```
+
+如需在后台运行，以及重启或停止后台服务：
+
+```bash
+./vibe-flow360 serve start --daemon
+./vibe-flow360 serve restart --daemon
+./vibe-flow360 serve stop
+```
+
+后台服务状态和日志默认写入 `.vibesim/vibe-flow360.pid` 与
+`.vibesim/vibe-flow360.log`，可通过 `--pid-file` 和 `--log-file` 覆盖。
+
 打开 [http://localhost:9292](http://localhost:9292)。
 
 如需使用其他地址或 dotenv 文件：

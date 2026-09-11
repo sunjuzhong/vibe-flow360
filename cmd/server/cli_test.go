@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,6 +78,80 @@ func TestServerURL(t *testing.T) {
 		if got := serverURL(input); got != want {
 			t.Errorf("serverURL(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestServeHelpDocumentsLifecycleAndDaemon(t *testing.T) {
+	var output bytes.Buffer
+	if err := runCLI([]string{"serve", "--help"}, strings.NewReader(""), &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"serve [start]", "serve stop", "serve restart", "--daemon", "--pid-file", "--log-file"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("serve help is missing %q:\n%s", expected, output.String())
+		}
+	}
+}
+
+func TestServeRejectsUnknownLifecycleAction(t *testing.T) {
+	err := runCLI([]string{"serve", "status"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "unknown serve action") {
+		t.Fatalf("unknown serve action error = %v", err)
+	}
+}
+
+func TestDaemonRecordRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "run", "server.pid")
+	want := daemonRecord{PID: os.Getpid(), Address: ":9292", StartedAt: time.Now().UTC().Truncate(time.Second)}
+	if err := writeDaemonRecord(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readDaemonRecord(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PID != want.PID || got.Address != want.Address || !got.StartedAt.Equal(want.StartedAt) {
+		t.Fatalf("daemon record = %#v, want %#v", got, want)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("PID file is not JSON: %v", err)
+	}
+}
+
+func TestStopDaemonTerminatesRecordedProcess(t *testing.T) {
+	command := exec.Command("sleep", "30")
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	t.Cleanup(func() {
+		if processAlive(command.Process.Pid) {
+			_ = command.Process.Kill()
+		}
+		select {
+		case <-done:
+		default:
+		}
+	})
+	pidFile := filepath.Join(t.TempDir(), "server.pid")
+	if err := writeDaemonRecord(pidFile, daemonRecord{PID: command.Process.Pid}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := stopDaemon(pidFile, &output); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
+		t.Fatalf("PID file was not removed: %v", err)
+	}
+	if !strings.Contains(output.String(), "stopped") {
+		t.Fatalf("stop output = %q", output.String())
 	}
 }
 
