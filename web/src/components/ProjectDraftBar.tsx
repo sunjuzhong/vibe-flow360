@@ -68,6 +68,7 @@ export default function ProjectDraftBar({
   const [name, setName] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState('')
+  const [configureBusy, setConfigureBusy] = useState(false)
 
   useEffect(() => {
     setEditingName(false)
@@ -79,6 +80,12 @@ export default function ProjectDraftBar({
     setName(activeDraft?.name ?? '')
     setRenameError('')
     setEditingName(true)
+  }
+  const startConfigure = () => {
+    if (configureBusy || detailLoading) return
+    setConfigureBusy(true)
+    onConfigure()
+    window.setTimeout(() => setConfigureBusy(false), 500)
   }
 
   const submitRename = async (event: FormEvent) => {
@@ -153,7 +160,7 @@ export default function ProjectDraftBar({
         </HelpTooltip>
       </div>
 
-      <div className="project-draft-select">
+      <div className={`project-draft-select ${drafts.length === 1 ? 'project-draft-select--single' : ''}`}>
         {editingName ? (
           <form className="project-draft-rename" onSubmit={submitRename}>
             <input
@@ -179,7 +186,11 @@ export default function ProjectDraftBar({
             {renameError && <span role="alert">{renameError}</span>}
           </form>
         ) : (
-        <select
+        drafts.length === 1 && !loading ? (
+          <span className="project-draft-single" aria-label={t('Active Draft')}>
+            {activeDraft?.name || t('Untitled Draft')} · {t(draftStatus(activeDraft!, selectedDetail, true) === 'unknown' ? 'Draft' : draftStatus(activeDraft!, selectedDetail, true))}
+          </span>
+        ) : <select
           aria-label="Switch active Draft"
           value={selectedId}
           disabled={loading || drafts.length === 0}
@@ -218,19 +229,19 @@ export default function ProjectDraftBar({
         </button>
         <button
           type="button"
-          onClick={onConfigure}
+          onClick={startConfigure}
           disabled={!selectedId || detailLoading}
           title={t('Edit, validate, save, and optionally run this Draft')}
           className="project-draft-configure"
         >
           <SlidersHorizontal size={14} />
-          <span>{detailLoading ? t('Reading…') : t('Configure Draft')}</span>
+          <span>{detailLoading || configureBusy ? t('Opening…') : t('Configure Draft')}</span>
         </button>
         <button
           type="button"
           onClick={onReviewRun}
           disabled={!selectedId || detailLoading || runReady === false}
-          title={runReady === false ? t('Open Configure Draft and validate the saved version before running.') : t('Review and run this Draft')}
+          title={runReady === false ? t('There are blocking checks. Open Configure Draft, resolve them, and validate the saved version before running.') : t('Review and run this Draft')}
           aria-label={t('Run this Draft')}
           className="project-draft-run"
         >

@@ -84,6 +84,21 @@ export default function ProjectLoadingOverlay({
     return () => window.clearInterval(timer)
   }, [active, estimatedDurationMs, progress, sessionKey])
 
+  useEffect(() => {
+    if (!active || completedSessionRef.current === sessionKey) return
+    const timer = window.setTimeout(() => {
+      completedSessionRef.current = sessionKey
+      setCompleting(true)
+      setDisplayProgress(100)
+      hideTimer.current = window.setTimeout(() => {
+        visibleRef.current = false
+        setVisible(false)
+        setCompleting(false)
+      }, 320)
+    }, Math.max(8_000, estimatedDurationMs * 2))
+    return () => window.clearTimeout(timer)
+  }, [active, estimatedDurationMs, sessionKey])
+
   if (!visible) return null
   const renderedProgress = completing ? 100 : displayProgress
 

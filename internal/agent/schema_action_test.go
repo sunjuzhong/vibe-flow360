@@ -111,8 +111,21 @@ func TestParseAcceptsPathLevelDraftOperations(t *testing.T) {
 	}
 }
 
+func TestParseNormalizesEmptyPatchWithPathLevelOperations(t *testing.T) {
+	raw := `{"version":"v1","kind":"update-draft","message":"Update","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Edit","intent":"Set a value","patch":{},"operations":[{"op":"set","path":"/time_stepping/steps","value":1000}],"fields":[]}]}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal := action.Proposals[0]
+	if len(proposal.Patch) != 0 || len(proposal.Operations) != 1 {
+		t.Fatalf("empty patch was not normalized for operations: %#v", proposal)
+	}
+}
+
 func TestParseRejectsAmbiguousOrMalformedParameterOperations(t *testing.T) {
 	for _, raw := range []string{
+		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","patch":{"a":1},"operations":[{"op":"set","path":"/a","value":1}],"fields":[]}]}`,
 		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[{"op":"set","path":"models/0","value":1}],"fields":[]}]}`,
 		`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[{"op":"unset","path":"/models","value":true}],"fields":[]}]}`,
 	} {

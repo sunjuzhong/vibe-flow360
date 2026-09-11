@@ -79,6 +79,14 @@ func (p *Proposal) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*p = Proposal(wire.proposalAlias)
+	// Path-level operations are the canonical edit representation for a Draft.
+	// Some providers still serialize the omitted merge patch as `{}`. That has
+	// no semantic content and is not ambiguous with operations, so normalize it
+	// before action validation rather than forcing an otherwise valid response
+	// into a repair loop that commonly repeats the same shape.
+	if len(p.Operations) > 0 && emptyJSONObject(p.Patch) {
+		p.Patch = nil
+	}
 	if len(wire.Fields) == 0 || string(wire.Fields) == "null" {
 		return nil
 	}
@@ -117,6 +125,14 @@ func (p *Proposal) UnmarshalJSON(data []byte) error {
 		p.Fields = append(p.Fields, field)
 	}
 	return nil
+}
+
+func emptyJSONObject(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var object map[string]json.RawMessage
+	return json.Unmarshal(raw, &object) == nil && object != nil && len(object) == 0
 }
 
 type Field struct {
