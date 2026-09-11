@@ -140,6 +140,7 @@ engineering decisions.
 ## Documentation
 
 - [Interactive project architecture (中文)](docs/archify/architecture.html) · [Architecture notes](docs/archify/architecture.md)
+- [Detailed Archify architecture set](docs/archify/README.md)
 - [Overview](docs/en/index.md)
 - [Installation](docs/en/getting-started/installation.md)
 - [Projects and resources](docs/en/guides/projects-and-resources.md)

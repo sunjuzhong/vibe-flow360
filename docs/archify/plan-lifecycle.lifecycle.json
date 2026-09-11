@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Simulation Plan 生命周期",
+    "output": "plan-lifecycle.lifecycle.html",
+    "viewBox": [980, 660],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "main-plan", "label": "主生命周期", "focus": ["draft", "editing", "preflight", "approval", "completed"], "note": "从草稿到校验、审批和结果可用的主状态轨道；远端提交作为完成前的运行阶段。" },
+      { "id": "human-gates", "label": "人工与输入等待", "focus": ["preflight", "needs-approval", "needs-input", "approval"], "note": "需要补充输入或用户审批时，流程暂停而不是伪装成完成。" },
+      { "id": "recovery", "label": "失败与恢复", "focus": ["preflight", "failed", "completed"], "note": "失败进入 Agent 修复闭环，修复后回到 preflight，而不是直接修改远端运行。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "计划阶段" },
+    { "id": "waiting", "label": "输入与审批等待" },
+    { "id": "recovery", "label": "Agent 恢复" },
+    { "id": "terminal", "label": "终止状态" }
+  ],
+  "states": [
+    { "id": "draft", "type": "start", "label": "Draft", "sublabel": "created", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "editing", "type": "active", "label": "Editing", "sublabel": "parameters + inputs", "lane": "main", "col": 1, "step": "02" },
+    { "id": "preflight", "type": "decision", "label": "Preflight", "sublabel": "schema + refs", "lane": "main", "col": 2, "step": "03", "tag": "gate" },
+    { "id": "approval", "type": "decision", "label": "Approved", "sublabel": "immutable plan", "lane": "main", "col": 3, "step": "04", "tag": "human" },
+    { "id": "completed", "type": "success", "label": "Completed", "sublabel": "submitted + results", "lane": "main", "col": 4, "step": "05", "tag": "done" },
+    { "id": "needs-approval", "type": "waiting", "label": "Needs Approval", "sublabel": "user review", "lane": "waiting", "col": 0, "tag": "pause" },
+    { "id": "needs-input", "type": "waiting", "label": "Needs Input", "sublabel": "clarification", "lane": "waiting", "col": 1, "tag": "pause" },
+    { "id": "failed", "type": "failure", "label": "Preflight Failed", "sublabel": "recoverable issues", "lane": "recovery", "col": 0, "yOffset": 78, "tag": "repairable" },
+    { "id": "cancelled", "type": "failure", "label": "Cancelled", "sublabel": "user stopped", "lane": "terminal", "col": 0, "tag": "terminal" },
+    { "id": "expired", "type": "failure", "label": "Expired", "sublabel": "timeout", "lane": "terminal", "col": 1, "tag": "terminal" }
+  ],
+  "transitions": [
+    { "id": "draft-editing", "from": "draft", "to": "editing", "variant": "emphasis" },
+    { "id": "editing-preflight", "from": "editing", "to": "preflight", "variant": "emphasis" },
+    { "id": "preflight-approval", "from": "preflight", "to": "approval" },
+    { "id": "approval-completed", "from": "approval", "to": "completed", "variant": "security" },
+    { "id": "preflight-approval-wait", "from": "preflight", "to": "needs-approval", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "preflight-failed", "from": "preflight", "to": "failed", "variant": "security", "fromSide": "left", "toSide": "left", "via": [[320, 157], [320, 385]] },
+    { "id": "failed-retry", "from": "failed", "to": "preflight", "variant": "emphasis", "fromSide": "left", "toSide": "top", "via": [[20, 385], [20, 80], [402, 80]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "主轨道", "items": ["Draft → Editing → Preflight → Approved → Completed", "Completed 的 sublabel 标出 submitted + results，表示远端运行结果已可用"] },
+    { "dot": "amber", "title": "等待状态", "items": ["Needs Input 等待上下文补全", "Needs Approval 等待用户审查，不自动跨过计费或不可逆边界"] },
+    { "dot": "rose", "title": "恢复与退出", "items": ["Preflight Failed 进入 Agent 修复后回到 preflight", "Cancelled / Expired 是终止态，不再指向活动状态"] }
+  ]
+}

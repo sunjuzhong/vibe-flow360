@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Vibe Flow360 后端模块架构",
+    "output": "backend-modules.architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/sunjuzhong/vibe-flow360.git",
+      "revision": "2ebb37a5d3ddc1050c8299a6c7f7d0ee4c293a91"
+    },
+    "views": [
+      { "id": "http-surface", "label": "HTTP API 分层", "focus": ["engineer", "web", "server", "project", "plan"], "note": "从 React API client 进入 Gin 路由，再分发到 Project/Resource 和 Plan/Preflight 模块。" },
+      { "id": "agent-and-knowledge", "label": "Agent 与知识库", "focus": ["server", "agent", "plan", "knowledge", "stores"], "note": "查看 Agent 如何读取上下文、产生计划和干预，并将会话与状态落到本地。" },
+      { "id": "remote-adapter", "label": "远端适配边界", "focus": ["project", "plan", "flowclient", "cli", "cloud"], "note": "Flow360 领域模块通过 Client 和 CLI Adapter 访问 Cloud，不把 Cloud 当成本地存储。" }
+    ]
+  },
+  "components": [
+    { "id": "engineer", "type": "external", "label": "工程师", "sublabel": "浏览器用户", "pos": [40, 350], "size": [130, 60], "sources": [{ "path": "README.md", "line": 61, "label": "本地入口" }] },
+    { "id": "web", "type": "frontend", "label": "React API Client", "sublabel": "路由 / 页面 / 3D", "pos": [230, 350], "size": [180, 60], "sources": [{ "path": "web/src/App.tsx", "line": 49, "label": "前端路由" }, { "path": "web/src/api/client.ts", "line": 1208, "label": "API client" }] },
+    { "id": "server", "type": "backend", "label": "Gin HTTP Server", "sublabel": "嵌入 Web 的本地进程", "pos": [480, 350], "size": [190, 60], "sources": [{ "path": "internal/server/server.go", "line": 45, "label": "embedded Web" }, { "path": "internal/server/server.go", "line": 343, "label": "/api 路由" }] },
+    { "id": "agent", "type": "backend", "label": "Agent + Intervention", "sublabel": "聊天 / 诊断 / 修复", "pos": [480, 150], "size": [190, 60], "sources": [{ "path": "internal/agent/service.go", "line": 72, "label": "Agent service" }, { "path": "internal/agent/engine.go", "line": 13, "label": "Intervention engine" }] },
+    { "id": "project", "type": "backend", "label": "Project / Resource", "sublabel": "同步 / Draft / 资源详情", "pos": [750, 260], "size": [195, 60], "sources": [{ "path": "internal/server/server.go", "line": 350, "label": "Project API" }, { "path": "internal/server/project_sync.go", "line": 1, "label": "同步模块" }] },
+    { "id": "plan", "type": "backend", "label": "Plan / Preflight", "sublabel": "参数 / 审批 / 运行", "pos": [750, 450], "size": [195, 60], "sources": [{ "path": "internal/server/server.go", "line": 409, "label": "Plan API" }, { "path": "internal/plans/store.go", "line": 1, "label": "计划存储" }] },
+    { "id": "knowledge", "type": "database", "label": "Knowledge Base", "sublabel": "local / HelixDB", "pos": [750, 80], "size": [195, 60], "sources": [{ "path": "internal/knowledge/service.go", "line": 21, "label": "存储选择" }, { "path": "internal/knowledge/service.go", "line": 62, "label": "可插拔接口" }] },
+    { "id": "stores", "type": "database", "label": ".vibesim Stores", "sublabel": "mirror / cache / jobs / sessions", "pos": [1040, 550], "size": [210, 60], "sources": [{ "path": "internal/server/server.go", "line": 111, "label": "dataDir" }, { "path": "internal/server/server.go", "line": 116, "label": "store 初始化" }] },
+    { "id": "flowclient", "type": "backend", "label": "flow360.Client", "sublabel": "命令、重试、运行时", "pos": [1040, 260], "size": [190, 60], "sources": [{ "path": "internal/flow360/client.go", "line": 60, "label": "Client 构造" }, { "path": "internal/flow360/client.go", "line": 182, "label": "项目查询" }] },
+    { "id": "cli", "type": "backend", "label": "Flow360 CLI", "sublabel": "本地 Python 运行时", "pos": [1290, 260], "size": [180, 60], "sources": [{ "path": "cmd/server/cli.go", "line": 232, "label": "init runtime" }, { "path": "internal/flow360/client.go", "line": 75, "label": "binary resolve" }] },
+    { "id": "cloud", "type": "cloud", "label": "Flow360 Cloud", "sublabel": "权威资源与 CFD", "pos": [1530, 260], "size": [180, 60], "sources": [{ "path": "README.md", "line": 39, "label": "远端边界" }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "本机 Vibe Flow360 进程与数据", "wraps": ["web", "server", "agent", "project", "plan", "knowledge", "stores", "flowclient", "cli"] },
+    { "kind": "security-group", "label": "外部服务边界", "wraps": ["cloud"] }
+  ],
+  "connections": [
+    { "id": "engineer-web", "from": "engineer", "to": "web", "label": "浏览器交互", "variant": "emphasis" },
+    { "id": "web-server", "from": "web", "to": "server", "label": "HTTP / SSE", "variant": "emphasis" },
+    { "id": "server-agent", "from": "server", "to": "agent", "label": "上下文 / 会话", "fromSide": "top", "toSide": "bottom" },
+    { "id": "server-project", "from": "server", "to": "project", "label": "Project API", "labelAt": [710, 256] },
+    { "id": "server-plan", "from": "server", "to": "plan", "label": "Plan API", "fromSide": "right", "toSide": "left" },
+    { "id": "agent-knowledge", "from": "agent", "to": "knowledge", "label": "检索上下文", "fromSide": "right", "toSide": "left", "variant": "dashed" },
+    { "id": "plan-stores", "from": "plan", "to": "stores", "label": "计划 / 运行状态", "fromSide": "right", "toSide": "left" },
+    { "id": "project-flowclient", "from": "project", "to": "flowclient", "label": "资源命令" },
+    { "id": "plan-flowclient", "from": "plan", "to": "flowclient", "label": "提交 / 状态", "fromSide": "right", "toSide": "bottom", "variant": "dashed" },
+    { "id": "flowclient-cli", "from": "flowclient", "to": "cli", "label": "CLI exec", "variant": "dashed", "labelDy": -24 },
+    { "id": "cli-cloud", "from": "cli", "to": "cloud", "label": "Project + Case", "variant": "emphasis", "labelDy": -24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "模块边界", "items": ["internal/server 负责 HTTP 编排，不等于每个业务模块都是独立进程", "Project/Resource 与 Plan/Preflight 是两条主要业务分支"] },
+    { "dot": "emerald", "title": "持久化", "items": [".vibesim 统一承载镜像、缓存、计划、任务和会话", "Knowledge Base 可切换 local index 或 HelixDB"] },
+    { "dot": "rose", "title": "外部调用", "items": ["flow360.Client 负责运行时解析、命令调用、超时和重试", "Flow360 Cloud 保留权威资源与远端 CFD 计算"] }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Vibe Flow360 本地数据流",
+    "output": "local-data.dataflow.html",
+    "viewBox": [1480, 900],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "resource-path", "label": "资源到 Viewer", "focus": ["cloud", "cli", "domain", "mirror", "asset", "viewer"], "note": "区分 Project metadata、资源详情和按需可视化资产的本地化路径。" },
+      { "id": "plan-path", "label": "计划与 preflight", "focus": ["browser", "domain", "plan", "agent"], "note": "Draft 参数进入本地计划，再由 Agent 消费问题与上下文。" },
+      { "id": "agent-path", "label": "计划与解释", "focus": ["browser", "plan", "agent"], "note": "计划状态和证据进入 Agent Context，供修复建议与人工审查使用。" }
+    ]
+  },
+  "stages": [
+    { "label": "来源" },
+    { "label": "接入" },
+    { "label": "规范化" },
+    { "label": "本地状态" },
+    { "label": "消费" }
+  ],
+  "nodes": [
+    { "id": "cloud", "type": "cloud", "label": "Flow360 Cloud", "sublabel": "Project / Case", "stage": 0, "row": 0, "tag": "authority" },
+    { "id": "browser", "type": "external", "label": "工程师", "sublabel": "intent / review", "stage": 0, "row": 4, "tag": "human" },
+    { "id": "cli", "type": "backend", "label": "Flow360 CLI", "sublabel": "remote commands", "stage": 1, "row": 0, "tag": "adapter" },
+    { "id": "domain", "type": "backend", "label": "Flow360 Domain", "sublabel": "handlers + sync", "stage": 2, "row": 0, "tag": "normalize" },
+    { "id": "mirror", "type": "database", "label": "Project Mirror", "sublabel": "metadata snapshot", "stage": 3, "row": 0, "tag": "local" },
+    { "id": "asset", "type": "database", "label": "Visualization Cache", "sublabel": "UVF / preview", "stage": 3, "row": 1, "tag": "on demand" },
+    { "id": "plan", "type": "database", "label": "Plan Stores", "sublabel": "draft / run state", "stage": 3, "row": 4, "tag": "reviewable" },
+    { "id": "viewer", "type": "frontend", "label": "React + Three.js", "sublabel": "tree / fields", "stage": 4, "row": 1, "tag": "visual" },
+    { "id": "agent", "type": "backend", "label": "Agent Context", "sublabel": "evidence + proposals", "stage": 4, "row": 4, "tag": "assist" }
+  ],
+  "flows": [
+    { "id": "cloud-cli", "from": "cloud", "to": "cli", "label": "remote JSON", "classification": "authoritative", "variant": "security", "route": "straight" },
+    { "id": "cli-domain", "from": "cli", "to": "domain", "label": "command output", "classification": "normalized", "variant": "emphasis", "route": "straight" },
+    { "id": "domain-mirror", "from": "domain", "to": "mirror", "label": "Project metadata", "classification": "cacheable", "variant": "default", "route": "straight" },
+    { "id": "domain-asset", "from": "domain", "to": "asset", "label": "UVF", "classification": "on demand", "variant": "dashed", "fromSide": "bottom", "toSide": "left", "via": [[530, 215], [650, 215], [650, 271]], "labelAt": [650, 215] },
+    { "id": "asset-viewer", "from": "asset", "to": "viewer", "label": "manifest + buffers", "classification": "UVF", "variant": "emphasis", "route": "straight" },
+    { "id": "browser-plan", "from": "browser", "to": "plan", "label": "draft inputs", "classification": "human reviewed", "variant": "security", "route": "straight" },
+    { "id": "plan-agent", "from": "plan", "to": "agent", "label": "issues + evidence", "classification": "repair context", "variant": "security", "route": "straight" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "资源路径", "items": ["metadata 进入 Project Mirror，打开资源后才下载可视化资产", "UVF manifest、geometry buffer 和 field 数据由 React + Three.js 消费"] },
+    { "dot": "emerald", "title": "工作流状态", "items": ["Plan stores 保存 Draft、preflight、审批、运行和恢复状态", "Agent 读 evidence，输出 proposal + patch，仍回到人工审查"] },
+    { "dot": "rose", "title": "消费边界", "items": ["Viewer 只消费本地 mirror 与按需可视化缓存", "Agent 只接收可审查的计划问题和证据上下文"] }
+  ]
+}

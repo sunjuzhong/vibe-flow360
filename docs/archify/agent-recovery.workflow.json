@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Agent 驱动的计划与失败恢复工作流",
+    "output": "agent-recovery.workflow.html",
+    "viewBox": [1600, 900],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "happy-path", "label": "计划到运行", "focus": ["intent", "context", "plan", "preflight", "approval", "run"], "note": "从工程师意图到提交、监控和结果查看。" },
+      { "id": "preflight-repair", "label": "Preflight 修复", "focus": ["preflight", "diagnose", "repair", "approval"], "note": "失败进入 Intervention，由 Agent 读取证据、提出 patch，再回到校验。" },
+      { "id": "human-gate", "label": "人工审批边界", "focus": ["preflight", "approval", "run"], "note": "通过校验后仍需用户审查，批准才会触发远端提交。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "计划主路径" },
+    { "id": "exceptions", "label": "Agent Intervention", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "understand", "label": "理解与准备", "fromCol": 0, "toCol": 1 },
+    { "id": "quality", "label": "校验与审查", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "execute", "label": "提交与监控", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["intent", "context", "plan", "preflight", "approval", "run"],
+  "nodes": [
+    { "id": "intent", "lane": "main", "col": 0, "width": 40, "type": "external", "label": "意图", "sublabel": "自然语言", "tag": "input" },
+    { "id": "context", "lane": "main", "col": 1, "width": 40, "type": "backend", "label": "上下文", "sublabel": "Project" },
+    { "id": "plan", "lane": "main", "col": 2, "width": 40, "type": "backend", "label": "计划", "sublabel": "patch" },
+    { "id": "preflight", "lane": "main", "col": 3, "width": 40, "type": "security", "label": "校验", "sublabel": "schema", "tag": "gate" },
+    { "id": "approval", "lane": "main", "col": 4, "width": 40, "type": "security", "label": "审批", "sublabel": "human", "tag": "human" },
+    { "id": "run", "lane": "main", "col": 5, "width": 40, "type": "cloud", "label": "运行", "sublabel": "CLI", "tag": "remote" },
+    { "id": "diagnose", "lane": "exceptions", "col": 2, "width": 40, "type": "backend", "label": "诊断", "sublabel": "evidence" },
+    { "id": "repair", "lane": "exceptions", "col": 3, "width": 40, "type": "backend", "label": "修复", "sublabel": "diff" }
+  ],
+  "edges": [
+    { "id": "intent-context", "from": "intent", "to": "context", "role": "main", "variant": "emphasis" },
+    { "id": "context-plan", "from": "context", "to": "plan", "role": "main" },
+    { "id": "plan-preflight", "from": "plan", "to": "preflight", "role": "main", "variant": "emphasis", "route": "straight" },
+    { "id": "preflight-approval", "from": "preflight", "to": "approval", "role": "main", "route": "straight", "label": "" },
+    { "id": "approval-run", "from": "approval", "to": "run", "role": "main", "variant": "security" },
+    { "id": "preflight-diagnose", "from": "preflight", "to": "diagnose", "role": "error", "variant": "security" },
+    { "id": "diagnose-repair", "from": "diagnose", "to": "repair", "role": "branch", "route": "straight" },
+    { "id": "repair-preflight", "from": "repair", "to": "preflight", "role": "return", "variant": "emphasis", "route": "straight" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "证据驱动", "items": ["Agent 读取 Project、资源、Draft、preflight、状态和日志上下文", "修复建议以 proposal + diff 形式回到计划"] },
+    { "dot": "rose", "title": "人工边界", "items": ["preflight 通过不等于允许提交", "不可逆、计费和远端运行动作保留明确批准节点"] },
+    { "dot": "emerald", "title": "恢复闭环", "items": ["preflight 与远端运行失败都进入 diagnose → repair → preflight", "恢复后回到审查或重新提交，而不是直接修改远端运行"] }
+  ]
+}

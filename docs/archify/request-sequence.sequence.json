@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Project 浏览与同步请求时序",
+    "output": "request-sequence.sequence.html",
+    "viewBox": [1500, 900],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "browser-to-api", "label": "浏览器到 API", "focus": ["browser", "react", "gin", "domain"], "note": "前端通过 API client 调用本机 Gin 服务，服务再进入领域模块。" },
+      { "id": "cache-and-mirror", "label": "Mirror 与缓存", "focus": ["domain", "mirror", "client"], "note": "先读取本地 Project mirror；需要远端刷新时才进入 Flow360 Client。" },
+      { "id": "cli-roundtrip", "label": "CLI 往返", "focus": ["client", "cli", "cloud", "domain", "react"], "note": "Flow360 Client 启动 CLI，解析 JSON 结果，再将规范化数据返回前端。" }
+    ]
+  },
+  "participants": [
+    { "id": "browser", "type": "external", "label": "工程师", "sublabel": "Browser" },
+    { "id": "react", "type": "frontend", "label": "React", "sublabel": "api/client.ts" },
+    { "id": "gin", "type": "backend", "label": "Gin", "sublabel": "/api handler" },
+    { "id": "domain", "type": "backend", "label": "Domain", "sublabel": "sync / resource" },
+    { "id": "mirror", "type": "database", "label": "Mirror", "sublabel": ".vibesim/projects" },
+    { "id": "client", "type": "backend", "label": "Client", "sublabel": "timeouts / retries" },
+    { "id": "cli", "type": "backend", "label": "CLI", "sublabel": "project list" },
+    { "id": "cloud", "type": "cloud", "label": "Flow360 Cloud", "sublabel": "authoritative API" }
+  ],
+  "segments": [
+    { "from": 160, "to": 300, "label": "本地 API 请求" },
+    { "from": 320, "to": 510, "label": "镜像与远端查询" },
+    { "from": 530, "to": 720, "label": "返回与渲染" }
+  ],
+  "messages": [
+    { "id": "open-project", "from": "browser", "to": "react", "y": 185, "label": "打开 Project", "variant": "default", "note": "web/src/App.tsx:59-69" },
+    { "id": "list-projects", "from": "react", "to": "gin", "y": 225, "label": "GET /api/flow360/projects", "variant": "emphasis", "note": "web/src/api/client.ts:1213" },
+    { "id": "route-projects", "from": "gin", "to": "domain", "y": 265, "label": "flow360Projects handler", "variant": "default", "note": "internal/server/server.go:350-352" },
+    { "id": "read-mirror", "from": "domain", "to": "mirror", "y": 315, "label": "read cached snapshot", "variant": "default", "note": "internal/projectmirror/store.go" },
+    { "id": "mirror-hit", "from": "mirror", "to": "domain", "y": 355, "label": "projects + freshness", "variant": "return" },
+    { "id": "start-sync", "from": "domain", "to": "client", "y": 405, "label": "sync / refresh", "variant": "emphasis", "note": "internal/server/project_sync.go" },
+    { "id": "invoke-cli", "from": "client", "to": "cli", "y": 445, "label": "flow360 project list", "variant": "default", "note": "internal/flow360/client.go:182+" },
+    { "id": "cloud-query", "from": "cli", "to": "cloud", "y": 485, "label": "remote project query", "variant": "security" },
+    { "id": "cloud-json", "from": "cloud", "to": "cli", "y": 525, "label": "JSON response", "variant": "return" },
+    { "id": "parse-json", "from": "cli", "to": "client", "y": 565, "label": "parse + validate JSON", "variant": "return" },
+    { "id": "write-mirror", "from": "client", "to": "mirror", "y": 605, "label": "persist mirror", "variant": "dashed", "note": "metadata-only initial sync" },
+    { "id": "domain-result", "from": "domain", "to": "gin", "y": 655, "label": "normalized response", "variant": "return" },
+    { "id": "api-result", "from": "gin", "to": "react", "y": 695, "label": "200 JSON", "variant": "return" },
+    { "id": "render-project", "from": "react", "to": "browser", "y": 735, "label": "render tree / status", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "react", "from": 220, "to": 710, "type": "frontend" },
+    { "participant": "gin", "from": 250, "to": 670, "type": "backend" },
+    { "participant": "domain", "from": 270, "to": 660, "type": "backend" },
+    { "participant": "mirror", "from": 315, "to": 620, "type": "database" },
+    { "participant": "client", "from": 410, "to": 575, "type": "backend" },
+    { "participant": "cli", "from": 445, "to": 535, "type": "backend" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "请求入口", "items": ["React API client 是浏览器到本机服务的稳定边界", "Gin handler 再调用 Project domain，不让页面直接调用 CLI"] },
+    { "dot": "emerald", "title": "缓存策略", "items": ["Project mirror 优先提供本地可用数据", "强制同步才经过 Client → CLI → Flow360 Cloud 往返"] },
+    { "dot": "rose", "title": "权威性", "items": ["本地 mirror 是工作区副本，不替代 Cloud authoritative resource", "初始同步以 metadata 为主，大型可视化资产按需加载"] }
+  ]
+}
