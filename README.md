@@ -139,7 +139,7 @@ engineering decisions.
 
 ## Documentation
 
-- [Interactive project architecture (中文)](docs/architecture.html) · [Architecture notes](docs/architecture.md)
+- [Interactive project architecture (中文)](docs/archify/architecture.html) · [Architecture notes](docs/archify/architecture.md)
 - [Overview](docs/en/index.md)
 - [Installation](docs/en/getting-started/installation.md)
 - [Projects and resources](docs/en/guides/projects-and-resources.md)

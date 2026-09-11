@@ -1,6 +1,6 @@
 # Vibe Flow360 项目架构
 
-交互式架构图： [architecture.html](./architecture.html)。图中的组件、连接和源码定位由 `docs/architecture.json` 定义；规格基于仓库 revision `2ebb37a5d3ddc1050c8299a6c7f7d0ee4c293a91` 生成。
+交互式架构图： [architecture.html](./architecture.html)。图中的组件、连接和源码定位由 `architecture.json` 定义；规格基于仓库 revision `2ebb37a5d3ddc1050c8299a6c7f7d0ee4c293a91` 生成。
 
 ## 架构结论
 
@@ -21,14 +21,14 @@ React Web Workspace ── HTTP / SSE ──> Go HTTP Server
 
 | 组件 | 职责 | 代码证据 |
 | --- | --- | --- |
-| React Web Workspace | 路由、Project/Resource/Case 工作区、3D Viewer 和本地化 UI | [`web/src/App.tsx`](../web/src/App.tsx)、[`web/package.json`](../web/package.json) |
-| Go HTTP Server | 创建 Gin 路由、嵌入 Web、组合所有领域服务和存储依赖 | [`internal/server/server.go`](../internal/server/server.go) |
-| Agent 服务与干预引擎 | 管理模型 provider、聊天上下文、preflight/运行失败干预、修复建议和恢复流程 | [`internal/agent/service.go`](../internal/agent/service.go)、[`internal/agent/engine.go`](../internal/agent/engine.go) |
-| Flow360 领域服务 | Project 同步、资源详情、Draft 参数、计划、导入、比较、结果和后台任务 | [`internal/server/server.go`](../internal/server/server.go) 的 `/api` 路由与服务依赖 |
-| `.vibesim` 本地数据 | 保存计划、导入、Project mirror、Flow360 cache、聊天、干预、比较工作区、预览和任务状态 | [`internal/server/server.go`](../internal/server/server.go) 的 `dataDir` stores |
-| Knowledge Base | 默认本地索引，也可切换 HelixDB；向量存储和 embedding provider 通过接口替换 | [`internal/knowledge/service.go`](../internal/knowledge/service.go) |
-| Flow360 CLI Adapter | 解析本地/托管运行时、配置 profile 和环境、执行 Flow360 命令并读取项目/资源/运行状态 | [`internal/flow360/client.go`](../internal/flow360/client.go) |
-| Flow360 Cloud | 承载权威项目、Draft、网格、Case 和远端 CFD 计算 | [`README.md`](../README.md) 的“Local workspace, cloud computation”说明 |
+| React Web Workspace | 路由、Project/Resource/Case 工作区、3D Viewer 和本地化 UI | [`web/src/App.tsx`](../../web/src/App.tsx)、[`web/package.json`](../../web/package.json) |
+| Go HTTP Server | 创建 Gin 路由、嵌入 Web、组合所有领域服务和存储依赖 | [`internal/server/server.go`](../../internal/server/server.go) |
+| Agent 服务与干预引擎 | 管理模型 provider、聊天上下文、preflight/运行失败干预、修复建议和恢复流程 | [`internal/agent/service.go`](../../internal/agent/service.go)、[`internal/agent/engine.go`](../../internal/agent/engine.go) |
+| Flow360 领域服务 | Project 同步、资源详情、Draft 参数、计划、导入、比较、结果和后台任务 | [`internal/server/server.go`](../../internal/server/server.go) 的 `/api` 路由与服务依赖 |
+| `.vibesim` 本地数据 | 保存计划、导入、Project mirror、Flow360 cache、聊天、干预、比较工作区、预览和任务状态 | [`internal/server/server.go`](../../internal/server/server.go) 的 `dataDir` stores |
+| Knowledge Base | 默认本地索引，也可切换 HelixDB；向量存储和 embedding provider 通过接口替换 | [`internal/knowledge/service.go`](../../internal/knowledge/service.go) |
+| Flow360 CLI Adapter | 解析本地/托管运行时、配置 profile 和环境、执行 Flow360 命令并读取项目/资源/运行状态 | [`internal/flow360/client.go`](../../internal/flow360/client.go) |
+| Flow360 Cloud | 承载权威项目、Draft、网格、Case 和远端 CFD 计算 | [`README.md`](../../README.md) 的“Local workspace, cloud computation”说明 |
 
 ## 关键运行链路
 
@@ -47,4 +47,4 @@ React Web Workspace ── HTTP / SSE ──> Go HTTP Server
 
 ## 维护提示
 
-架构图描述的是当前代码验证出的运行边界，不把 `internal/` 目录中的每个 Go 包都当作独立进程。新增 API、持久化 store、外部 provider 或部署边界时，应同步更新 `docs/architecture.json` 的源码证据和本页的职责说明。
+架构图描述的是当前代码验证出的运行边界，不把 `internal/` 目录中的每个 Go 包都当作独立进程。新增 API、持久化 store、外部 provider 或部署边界时，应同步更新 `docs/archify/architecture.json` 的源码证据和本页的职责说明。
