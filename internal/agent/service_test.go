@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,6 +53,50 @@ func TestCompleteReturnsTypedNonRetryableProviderFailure(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("non-retryable failure made %d calls", calls.Load())
+	}
+}
+
+func TestChatWithValidationRepairsPathLevelOperationsWithoutPatch(t *testing.T) {
+	var calls atomic.Int32
+	var repairRequest []byte
+	writeCompletion := func(w http.ResponseWriter, content string) {
+		response, err := json.Marshal(map[string]any{
+			"choices": []any{map[string]any{
+				"message": map[string]string{"role": "assistant", "content": content},
+			}},
+		})
+		if err != nil {
+			t.Fatalf("marshal provider response: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read provider request: %v", err)
+		}
+		if calls.Add(1) == 1 {
+			writeCompletion(w, `{"version":"v1","kind":"create-plan","message":"Update","proposals":[{"id":"edit","action":"VolumeMesh","target":"case","name":"Edit","intent":"Set steps","patch":{"time_stepping":{"steps":100}},"operations":[{"op":"set","path":"/time_stepping/steps","value":100}],"branch_preview":"edit","fields":[]}]}`)
+			return
+		}
+		repairRequest = append([]byte(nil), body...)
+		writeCompletion(w, `{"version":"v1","kind":"create-plan","message":"Updated","proposals":[{"id":"edit","action":"VolumeMesh","target":"case","name":"Edit","intent":"Set steps","operations":[{"op":"set","path":"/time_stepping/steps","value":100}],"branch_preview":"edit","fields":[]}]}`)
+	}))
+	defer provider.Close()
+
+	service := &Service{Provider: "builtin", APIKey: "test", BaseURL: provider.URL, Model: "test", Client: provider.Client()}
+	_, action, err := service.ChatWithValidation(context.Background(), ChatRequest{
+		Message: "Fill the active plan form using an operations array and no patch.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action == nil || len(action.Proposals) != 1 || len(action.Proposals[0].Operations) != 1 || len(action.Proposals[0].Patch) != 0 {
+		t.Fatalf("path-level repair did not preserve the exclusive operations contract: %#v", action)
+	}
+	if !strings.Contains(string(repairRequest), "operations only") || !strings.Contains(string(repairRequest), "omit patch entirely") {
+		t.Fatalf("repair prompt did not preserve the operations contract: %s", repairRequest)
 	}
 }
 

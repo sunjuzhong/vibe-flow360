@@ -382,18 +382,21 @@ func ValidateAndRepair(ctx context.Context, rawResponse string, s *Service, requ
 		return action, nil
 	}
 
+	changeContract := validationRepairChangeContract(request, rawResponse)
 	repairPrompt := fmt.Sprintf(`Your previous response could not be parsed as a valid AgentAction v1 JSON object.
 Please respond with ONLY a valid JSON object in a fenced code block. The schema is:
 - version: "v1"
 - kind: "create-plan", "update-draft", or "request-missing-input"
 - message: string (required)
 - proposals: array (for create-plan). Every proposal must contain id, action, target, name,
-  intent, patch (a JSON object), branch_preview, and fields.
+  intent, the parameter edit representation required below, branch_preview, and fields.
 - proposals[].fields: ARRAY of objects shaped exactly as
   {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional"}.
   Never emit fields as an object/map; use [] when empty.
 - update-draft must contain exactly one proposal with id, draft_id, target "draft", name,
-  intent, patch, and fields. Use it only for a current Draft edit that must not run.
+  intent, the parameter edit representation required below, and fields. Use it only for
+  a current Draft edit that must not run.
+%s
 - questions: array (for request-missing-input), each with field, message, urgency, reason, type
   (text|number|select|boolean), and optional unit/options/default/min/max/placeholder/recommendation.
   Always include type. Include a safe evidence-based default and recommendation whenever possible.
@@ -402,11 +405,14 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
 
 Use the same language as the original user request for all human-readable string values. Keep JSON keys, enum values, and SimulationParams paths unchanged.
 
+The validation error was:
+%v
+
 The original user request was:
 %s
 
 Your previous response was:
-%s`, truncate(request.Message, 1000), truncate(rawResponse, 2000))
+%s`, changeContract, err, truncate(request.Message, 1000), truncate(rawResponse, 2000))
 
 	if s.effectiveProvider() == "codex" {
 		repaired, repairErr := s.chatWithCodex(ctx, AgentSystemPrompt(), repairPrompt, request.Model)
@@ -472,6 +478,20 @@ Your previous response was:
 		return Action{}, fmt.Errorf("repair also failed: %v (original: %v)", repairErr, err)
 	}
 	return action, nil
+}
+
+func validationRepairChangeContract(request ChatRequest, rawResponse string) string {
+	// Plan-form prompts use path-level operations as the public Agent contract.
+	// Keep that contract through the generic validation repair loop; otherwise
+	// the repair prompt's historical patch-only wording can make the model emit
+	// both representations and fail the mutually-exclusive schema check again.
+	text := strings.ToLower(request.Message + "\n" + rawResponse)
+	if strings.Contains(text, "operations array") ||
+		strings.Contains(text, "path-level operations") ||
+		strings.Contains(text, `"operations"`) {
+		return `- Parameter edits: use exactly one of these representations. For this request, use operations only and omit patch entirely (do not emit patch:{}, patch:null, or any other patch value). operations must be an array of {"op":"set|unset|append","path":"/non-root/rfc6901/pointer",...}; set and append require a non-null value, while unset must omit value. Never emit both patch and operations.`
+	}
+	return `- Parameter edits: use exactly one of patch or operations, never both. For this request, use patch only: patch must be a JSON object and operations must be omitted entirely. Never emit patch and operations together.`
 }
 
 func providerFallback(request ChatRequest, err error) string {

@@ -131,6 +131,9 @@ func emptyJSONObject(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return false
 	}
+	if strings.TrimSpace(string(raw)) == "null" {
+		return true
+	}
 	var object map[string]json.RawMessage
 	return json.Unmarshal(raw, &object) == nil && object != nil && len(object) == 0
 }

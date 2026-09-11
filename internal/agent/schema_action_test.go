@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -112,14 +113,16 @@ func TestParseAcceptsPathLevelDraftOperations(t *testing.T) {
 }
 
 func TestParseNormalizesEmptyPatchWithPathLevelOperations(t *testing.T) {
-	raw := `{"version":"v1","kind":"update-draft","message":"Update","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Edit","intent":"Set a value","patch":{},"operations":[{"op":"set","path":"/time_stepping/steps","value":1000}],"fields":[]}]}`
-	action, err := Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	proposal := action.Proposals[0]
-	if len(proposal.Patch) != 0 || len(proposal.Operations) != 1 {
-		t.Fatalf("empty patch was not normalized for operations: %#v", proposal)
+	for _, patch := range []string{"{}", "null"} {
+		raw := fmt.Sprintf(`{"version":"v1","kind":"update-draft","message":"Update","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Edit","intent":"Set a value","patch":%s,"operations":[{"op":"set","path":"/time_stepping/steps","value":1000}],"fields":[]}]}`, patch)
+		action, err := Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proposal := action.Proposals[0]
+		if len(proposal.Patch) != 0 || len(proposal.Operations) != 1 {
+			t.Fatalf("empty patch %s was not normalized for operations: %#v", patch, proposal)
+		}
 	}
 }
 
