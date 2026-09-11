@@ -141,6 +141,9 @@ engineering decisions.
 
 - [Interactive project architecture (中文)](docs/archify/architecture.html) · [Architecture notes](docs/archify/architecture.md)
 - [Detailed Archify architecture set](docs/archify/README.md)
+- [Backend modules](docs/archify/backend-modules.architecture.html) · [Agent recovery workflow](docs/archify/agent-recovery.workflow.html)
+- [Project request sequence](docs/archify/request-sequence.sequence.html) · [Local data flow](docs/archify/local-data.dataflow.html)
+- [Simulation Plan lifecycle](docs/archify/plan-lifecycle.lifecycle.html)
 - [Overview](docs/en/index.md)
 - [Installation](docs/en/getting-started/installation.md)
 - [Projects and resources](docs/en/guides/projects-and-resources.md)
