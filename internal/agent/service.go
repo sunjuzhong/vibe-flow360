@@ -202,18 +202,7 @@ func (s *Service) Chat(ctx context.Context, request ChatRequest) (string, error)
 		return providerFallback(request, fmt.Errorf("AI provider returned %s", response.Status)), nil
 	}
 
-	var result struct {
-		Choices []struct {
-			Message Message `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return "", fmt.Errorf("decode AI response: %w", err)
-	}
-	if len(result.Choices) == 0 || strings.TrimSpace(result.Choices[0].Message.Content) == "" {
-		return "", errors.New("AI provider returned an empty response")
-	}
-	return result.Choices[0].Message.Content, nil
+	return decodeProviderCompletion(data)
 }
 
 // ChatStream streams provider deltas when the configured provider can expose
@@ -331,18 +320,70 @@ func (s *Service) Complete(ctx context.Context, systemPrompt, userPrompt, reques
 		}
 		return "", providerErr
 	}
-	var result struct {
+	return decodeProviderCompletion(data)
+}
+
+func decodeProviderCompletion(data []byte) (string, error) {
+	var envelope struct {
 		Choices []struct {
-			Message Message `json:"message"`
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+			Text string `json:"text"`
 		} `json:"choices"`
+		OutputText string `json:"output_text"`
+		Output     []struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
 	}
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := json.Unmarshal(data, &envelope); err != nil {
 		return "", fmt.Errorf("decode AI response: %w", err)
 	}
-	if len(result.Choices) == 0 || strings.TrimSpace(result.Choices[0].Message.Content) == "" {
-		return "", errors.New("AI provider returned an empty response")
+	for _, choice := range envelope.Choices {
+		if content := decodeProviderMessageContent(choice.Message.Content); content != "" {
+			return content, nil
+		}
+		if content := strings.TrimSpace(choice.Text); content != "" {
+			return content, nil
+		}
 	}
-	return result.Choices[0].Message.Content, nil
+	if content := strings.TrimSpace(envelope.OutputText); content != "" {
+		return content, nil
+	}
+	var output strings.Builder
+	for _, item := range envelope.Output {
+		for _, part := range item.Content {
+			output.WriteString(part.Text)
+		}
+	}
+	if content := strings.TrimSpace(output.String()); content != "" {
+		return content, nil
+	}
+	return "", errors.New("AI provider returned an empty response")
+}
+
+func decodeProviderMessageContent(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.TrimSpace(text)
+	}
+	var parts []struct {
+		Text    string `json:"text"`
+		Content string `json:"content"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	var result strings.Builder
+	for _, part := range parts {
+		result.WriteString(firstNonEmpty(part.Text, part.Content))
+	}
+	return strings.TrimSpace(result.String())
 }
 
 func retryableProviderStatus(status int) bool {
@@ -414,66 +455,11 @@ The original user request was:
 Your previous response was:
 %s`, changeContract, err, truncate(request.Message, 1000), truncate(rawResponse, 2000))
 
-	if s.effectiveProvider() == "codex" {
-		repaired, repairErr := s.chatWithCodex(ctx, AgentSystemPrompt(), repairPrompt, request.Model)
-		if repairErr != nil {
-			return Action{}, fmt.Errorf("Codex repair failed: %w (original parse: %v)", repairErr, err)
-		}
-		action, repairErr := ExtractAndValidateAction(repaired)
-		if repairErr != nil {
-			return Action{}, fmt.Errorf("Codex repair also failed: %v (original: %v)", repairErr, err)
-		}
-		return action, nil
+	repaired, repairErr := s.Complete(ctx, AgentSystemPrompt(), repairPrompt, request.Model)
+	if repairErr != nil {
+		return Action{}, fmt.Errorf("repair failed: %w (original parse: %v)", repairErr, err)
 	}
-
-	model := firstNonEmpty(request.Model, s.Model)
-	systemPrompt := AgentSystemPrompt()
-	repairMessages := []Message{{Role: "system", Content: systemPrompt}}
-	repairMessages = append(repairMessages, Message{Role: "user", Content: repairPrompt})
-
-	payload := struct {
-		Model       string    `json:"model"`
-		Messages    []Message `json:"messages"`
-		Temperature float64   `json:"temperature"`
-	}{
-		Model: model, Messages: repairMessages, Temperature: 0.1,
-	}
-	body, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return Action{}, fmt.Errorf("repair marshal: %w (original parse: %v)", marshalErr, err)
-	}
-
-	req, httpErr := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if httpErr != nil {
-		return Action{}, fmt.Errorf("repair request: %w (original parse: %v)", httpErr, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+s.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	response, doErr := s.Client.Do(req)
-	if doErr != nil {
-		return Action{}, fmt.Errorf("repair call failed: %w (original parse: %v)", doErr, err)
-	}
-	defer response.Body.Close()
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-	if readErr != nil {
-		return Action{}, fmt.Errorf("repair read: %w (original parse: %v)", readErr, err)
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return Action{}, fmt.Errorf("repair returned %d: original parse: %v", response.StatusCode, err)
-	}
-
-	var result struct {
-		Choices []struct {
-			Message Message `json:"message"`
-		} `json:"choices"`
-	}
-	if json.Unmarshal(data, &result) != nil || len(result.Choices) == 0 {
-		return Action{}, fmt.Errorf("repair decode failed: original parse: %v", err)
-	}
-
-	repaired := strings.TrimSpace(result.Choices[0].Message.Content)
-	action, repairErr := ExtractAndValidateAction(repaired)
+	action, repairErr = ExtractAndValidateAction(repaired)
 	if repairErr != nil {
 		return Action{}, fmt.Errorf("repair also failed: %v (original: %v)", repairErr, err)
 	}
@@ -489,7 +475,7 @@ func validationRepairChangeContract(request ChatRequest, rawResponse string) str
 	if strings.Contains(text, "operations array") ||
 		strings.Contains(text, "path-level operations") ||
 		strings.Contains(text, `"operations"`) {
-		return `- Parameter edits: use exactly one of these representations. For this request, use operations only and omit patch entirely (do not emit patch:{}, patch:null, or any other patch value). operations must be an array of {"op":"set|unset|append","path":"/non-root/rfc6901/pointer",...}; set and append require a non-null value, while unset must omit value. Never emit both patch and operations.`
+		return `- Parameter edits: use exactly one of these representations. For this request, use operations only and omit patch entirely (do not emit patch:{}, patch:null, or any other patch value). Generic operations use {"op":"set|unset|append","path":"/non-root/rfc6901/pointer",...}; set and append require a non-null value, while unset must omit value. A new plane-based SliceOutput uses {"op":"create-slice-output","origin":[x,y,z],"normal":[nx,ny,nz],"name":"optional","output_fields":["schema-enum"]} with no path, value, private IDs, or private registry paths. Never emit both patch and operations.`
 	}
 	return `- Parameter edits: use exactly one of patch or operations, never both. For this request, use patch only: patch must be a JSON object and operations must be omitted entirely. Never emit patch and operations together.`
 }

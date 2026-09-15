@@ -2,6 +2,8 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -11,7 +13,7 @@ import (
 
 func TestAgentSystemPromptDeclaresAgentActionV1(t *testing.T) {
 	prompt := AgentSystemPrompt()
-	for _, keyword := range []string{"AgentAction v1", "create-plan", "update-draft", "request-missing-input", "version", "proposals", "questions", "explicit type", "recommended default", "recommendation", "STL", "exact CAD", "STEP"} {
+	for _, keyword := range []string{"AgentAction v1", "create-plan", "update-draft", "request-missing-input", "create-slice-output", "origin", "normal", "output_fields", "private IDs", "version", "proposals", "questions", "explicit type", "recommended default", "recommendation", "STL", "exact CAD", "STEP"} {
 		if !strings.Contains(prompt, keyword) {
 			t.Errorf("system prompt missing %q", keyword)
 		}
@@ -303,6 +305,124 @@ func TestExtractAndValidateActionRejectsInvalidJSON(t *testing.T) {
 	_, err := ExtractAndValidateAction(response)
 	if err == nil {
 		t.Error("expected error for non-JSON response")
+	}
+}
+
+func TestExtractAndValidateActionSalvagesBoundedProviderShapes(t *testing.T) {
+	actionJSON := `{"version":"v1","kind":"request-missing-input","message":"Need info","questions":[{"field":"velocity","message":"Velocity?","urgency":"required","type":"number"}]}`
+	doubleEncoded, err := json.Marshal(actionJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		response string
+	}{
+		{name: "fenced CRLF", response: "Result:\r\n```json\r\n" + actionJSON + "\r\n```"},
+		{name: "prose wrapped", response: "The validated action follows: " + actionJSON + " End."},
+		{name: "double encoded", response: string(doubleEncoded)},
+		{name: "single item array", response: "[" + actionJSON + "]"},
+		{name: "provider wrapper", response: `{"result":{"content":` + string(doubleEncoded) + `}}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			action, err := ExtractAndValidateAction(test.response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if action.Kind != ActionRequestMissingInput || action.Message != "Need info" {
+				t.Fatalf("unexpected salvaged action: %#v", action)
+			}
+		})
+	}
+}
+
+func TestExtractAndValidateActionRejectsAmbiguousMultipleActions(t *testing.T) {
+	first := `{"version":"v1","kind":"request-missing-input","message":"First","questions":[{"field":"a","message":"A?","urgency":"required","type":"text"}]}`
+	second := `{"version":"v1","kind":"request-missing-input","message":"Second","questions":[{"field":"b","message":"B?","urgency":"required","type":"text"}]}`
+	for _, response := range []string{
+		"[" + first + "," + second + "]",
+		first + "\n" + second,
+		"```json\n" + first + "\n```\nOutside the fence: " + second,
+	} {
+		if _, err := ExtractAndValidateAction(response); !errors.Is(err, ErrAmbiguousJSONAction) {
+			t.Fatalf("expected ambiguous action rejection, got %v", err)
+		}
+	}
+}
+
+func TestExtractAndValidateActionDeduplicatesIdenticalCandidates(t *testing.T) {
+	actionJSON := `{"version":"v1","kind":"request-missing-input","message":"Same","questions":[{"field":"a","message":"A?","urgency":"required","type":"text"}]}`
+	for _, response := range []string{
+		actionJSON + "\n" + actionJSON,
+		"```json\n" + actionJSON + "\n```\nRepeated outside: " + actionJSON,
+		`{"primary":` + actionJSON + `,"duplicate":` + actionJSON + `}`,
+	} {
+		action, err := ExtractAndValidateAction(response)
+		if err != nil {
+			t.Fatalf("identical candidates should be deduplicated: %v", err)
+		}
+		if action.Message != "Same" {
+			t.Fatalf("unexpected deduplicated action: %#v", action)
+		}
+	}
+}
+
+func TestExtractAndValidateActionRejectsDistinctActionAfterCandidateLimit(t *testing.T) {
+	first := `{"version":"v1","kind":"request-missing-input","message":"First","questions":[{"field":"a","message":"A?","urgency":"required","type":"text"}]}`
+	second := `{"version":"v1","kind":"request-missing-input","message":"Second","questions":[{"field":"b","message":"B?","urgency":"required","type":"text"}]}`
+	parts := []string{first}
+	for index := 1; index < maxActionJSONCandidates; index++ {
+		parts = append(parts, fmt.Sprintf(`{"filler":%d}`, index))
+	}
+	parts = append(parts, second)
+
+	if _, err := ExtractAndValidateAction(strings.Join(parts, "\n")); !errors.Is(err, ErrJSONActionLimitExceeded) || !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("expected fail-closed candidate limit error preserving invalid JSON semantics, got %v", err)
+	}
+}
+
+func TestExtractAndValidateActionRejectsDistinctActionAfterUnwrapBudget(t *testing.T) {
+	first := map[string]any{
+		"version": "v1", "kind": "request-missing-input", "message": "First",
+		"questions": []any{map[string]any{"field": "a", "message": "A?", "urgency": "required", "type": "text"}},
+	}
+	second := map[string]any{
+		"version": "v1", "kind": "request-missing-input", "message": "Second",
+		"questions": []any{map[string]any{"field": "b", "message": "B?", "urgency": "required", "type": "text"}},
+	}
+	tests := []struct {
+		name     string
+		response map[string]any
+	}{
+		{
+			name: "value budget",
+			response: func() map[string]any {
+				wrapper := map[string]any{"000_action": first, "zzz_action": second}
+				for index := 1; index <= maxActionUnwrapValues; index++ {
+					wrapper[fmt.Sprintf("%03d_filler", index)] = index
+				}
+				return wrapper
+			}(),
+		},
+		{
+			name: "depth budget",
+			response: map[string]any{
+				"a_action": first,
+				"z_nested": map[string]any{"next": map[string]any{"next": map[string]any{"next": map[string]any{"next": second}}}},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := json.Marshal(test.response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ExtractAndValidateAction(string(response)); !errors.Is(err, ErrJSONActionLimitExceeded) || !errors.Is(err, ErrInvalidJSON) {
+				t.Fatalf("expected fail-closed unwrap limit error preserving invalid JSON semantics, got %v", err)
+			}
+		})
 	}
 }
 

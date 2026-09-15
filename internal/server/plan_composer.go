@@ -698,7 +698,7 @@ func planAssistFormRepairPrompt(request planComposerRequest, action agent.Action
 	return fmt.Sprintf(`The previous Flow360 form proposal was rejected before preflight because its values do not match the active stage schema.
 This is a schema-mechanical problem. Repair it autonomously; do not ask the user to choose a field name, discriminator, unit wire shape, or model wiring.
 
-%s Its operations must use only paths present in the supplied schema catalog. Do not copy internal fields from canonical SimulationParams into operation values. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
+%s Generic operations must use only paths present in the supplied schema catalog. A create-slice-output operation instead carries only its typed engineering inputs and is valid only when the catalog exposes SliceOutput and every requested output field. Do not copy internal fields from canonical SimulationParams into operation values. In particular, quantity form values contain only value and units unless the catalog explicitly requests another key. Preserve confirmed engineering values and valid fields.
 
 Original intent: %s
 Repair attempt: %d of %d
@@ -1117,7 +1117,7 @@ Request mode: %s
 
 Treat the runtime Flow360 form_schema as the parameter mapping table for the installed solver version. Do not rely on a hardcoded list of supported natural-language parameters. Resolve the user's wording semantically against the supplied request-scoped schema skills: each skill contains exact paths, titles, descriptions, types, units, enums, model choices, and union variants selected from the live schema for this request. Use only these detailed field contracts and the preflight repair loop to produce exact values. If multiple schema fields remain genuinely plausible after considering stage and baseline context, ask one focused clarification instead of guessing.
 
-Read the schema catalog field-by-field before composing operations. Convert catalog dot paths to RFC 6901 JSON Pointers. Use set for a scalar, quantity, entity-list, or existing object child; set on an existing object preserves unspecified canonical children. Use append only to add one complete new array item. Use unset to remove one field or array item. Never set an entire existing object array such as models, meshing.refinements, meshing.volume_zones, or outputs, and never replace an existing object array item; address the item's child path instead. Quantities use {"value":...,"units":"..."}; enum and model values must exactly match the catalog. Never invent a nearby field name and never emit patch together with operations.
+Read the schema catalog field-by-field before composing operations. Convert catalog dot paths to RFC 6901 JSON Pointers. Use set for a scalar, quantity, entity-list, or existing object child; set on an existing object preserves unspecified canonical children. Use append only to add one complete new array item. Use unset to remove one field or array item. Never set an entire existing object array such as models, meshing.refinements, meshing.volume_zones, or outputs, and never replace an existing object array item; address the item's child path instead. Quantities use {"value":...,"units":"..."}; enum and model values must exactly match the catalog. Never invent a nearby field name and never emit patch together with operations. When the engineering objective requires sampling requested Case output fields on a newly defined plane and the schema exposes SliceOutput and those exact fields, use create-slice-output instead of generic append. Express only origin, normal, optional name, and requested output_fields; the server owns entity IDs and private registry updates.
 
 Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact and include only deliberate path-level operations.
 
@@ -1149,10 +1149,11 @@ func planAssistScopeType(request planComposerRequest) string {
 }
 
 func planAssistActionContract(request planComposerRequest, prefix string) string {
+	typedOperation := ` The operations array may use the typed {"op":"create-slice-output","origin":[x,y,z],"normal":[nx,ny,nz],"name":"optional","output_fields":["schema-enum"]} operation when a new plane-based SliceOutput is required. Coordinates use the Project length unit. Never author private_attribute paths or IDs, and never combine this typed operation with a separate Slice or outputs append.`
 	if request.DraftID != "" {
-		return fmt.Sprintf(`%s update-draft proposal with draft_id %q, target "draft", an operations array, and no patch. This is an editable change to the current Draft and does not run it.`, prefix, request.DraftID)
+		return fmt.Sprintf(`%s update-draft proposal with draft_id %q, target "draft", an operations array, and no patch. This is an editable change to the current Draft and does not run it.%s`, prefix, request.DraftID, typedOperation)
 	}
-	return fmt.Sprintf("%s create-plan proposal with an operations array and no patch for the same %s-to-%s route.", prefix, request.SourceType, request.Target)
+	return fmt.Sprintf("%s create-plan proposal with an operations array and no patch for the same %s-to-%s route.%s", prefix, request.SourceType, request.Target, typedOperation)
 }
 
 func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {

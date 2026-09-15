@@ -826,6 +826,27 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 	}
 }
 
+func TestPlanAssistPromptIncludesTypedSliceOutputContractForChineseIntent(t *testing.T) {
+	const intent = "我想在z=0平面创建一个平面，用来查看一下这个面上的速度。"
+	prompt := planAssistPrompt(planComposerRequest{
+		SourceType: "Case", Target: "case", DraftID: "draft-1",
+		Intent: intent, Prompt: intent, Mode: "edit",
+	})
+	for _, expected := range []string{
+		intent,
+		`"op":"create-slice-output"`,
+		`"origin":[x,y,z]`,
+		`"normal":[nx,ny,nz]`,
+		`"output_fields":["schema-enum"]`,
+		"newly defined plane",
+		"server owns entity IDs and private registry updates",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("request-scoped Slice output contract is missing %q: %s", expected, prompt)
+		}
+	}
+}
+
 func TestPlanAssistPromptSeparatesEditAndRepairIntent(t *testing.T) {
 	tests := []struct {
 		name     string

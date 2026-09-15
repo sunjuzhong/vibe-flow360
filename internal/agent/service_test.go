@@ -100,6 +100,37 @@ func TestChatWithValidationRepairsPathLevelOperationsWithoutPatch(t *testing.T) 
 	}
 }
 
+func TestChatWithValidationDecodesRepairProviderEnvelope(t *testing.T) {
+	var calls atomic.Int32
+	repaired := `{"version":"v1","kind":"request-missing-input","message":"Need info","questions":[{"field":"velocity","message":"Velocity?","urgency":"required","type":"number"}]}`
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if calls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"not valid JSON"}}]}`))
+			return
+		}
+		response, err := json.Marshal(map[string]any{
+			"output": []any{map[string]any{
+				"content": []any{map[string]any{"type": "output_text", "text": repaired}},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write(response)
+	}))
+	defer provider.Close()
+
+	service := &Service{Provider: "builtin", APIKey: "test", BaseURL: provider.URL, Model: "test", Client: provider.Client()}
+	_, action, err := service.ChatWithValidation(context.Background(), ChatRequest{Message: "Fill the plan form."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action == nil || action.Kind != ActionRequestMissingInput || calls.Load() != 2 {
+		t.Fatalf("repair envelope was not decoded through the normal provider path: action=%#v calls=%d", action, calls.Load())
+	}
+}
+
 func TestLocalPlanIncludesGeometryAndSafetyBoundary(t *testing.T) {
 	result := localPlan(ChatRequest{
 		Message:  "Analyze lift and drag for this wing at 45 m/s",

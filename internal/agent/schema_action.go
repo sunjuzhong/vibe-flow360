@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -61,9 +62,13 @@ type Proposal struct {
 // Paths use RFC 6901 JSON Pointer syntax. Existing objects are updated without
 // replacing unspecified children; array growth is explicit through append.
 type ParameterOperation struct {
-	Op    string `json:"op"`
-	Path  string `json:"path"`
-	Value any    `json:"value,omitempty"`
+	Op           string    `json:"op"`
+	Path         string    `json:"path,omitempty"`
+	Value        any       `json:"value,omitempty"`
+	Origin       []float64 `json:"origin,omitempty"`
+	Normal       []float64 `json:"normal,omitempty"`
+	Name         string    `json:"name,omitempty"`
+	OutputFields []string  `json:"output_fields,omitempty"`
 }
 
 // UnmarshalJSON keeps the wire contract canonical (fields is an array), while
@@ -166,22 +171,24 @@ type QuestionOption struct {
 }
 
 var (
-	ErrUnknownAction      = errors.New("schema: unknown action kind")
-	ErrInvalidVersion     = errors.New("schema: unsupported action version")
-	ErrMissingMessage     = errors.New("schema: message is required")
-	ErrMissingFields      = errors.New("schema: proposal missing required fields")
-	ErrInvalidProvenance  = errors.New("schema: invalid provenance")
-	ErrInvalidJSON        = errors.New("schema: action is not valid JSON")
-	ErrIncompatibleSource = errors.New("schema: source type is incompatible with target")
-	ErrInvalidPatch       = errors.New("schema: patch must be valid JSON")
-	ErrMissingProposals   = errors.New("schema: create-plan kind requires at least one proposal")
-	ErrInvalidDraftUpdate = errors.New("schema: update-draft kind requires exactly one Draft patch proposal")
-	ErrMissingQuestions   = errors.New("schema: request-missing-input kind requires at least one question")
-	ErrAmbiguousAction    = errors.New("schema: proposals and questions are mutually exclusive")
-	ErrInvalidQuestion    = errors.New("schema: question missing required fields")
-	ErrInvalidUrgency     = errors.New("schema: invalid question urgency")
-	ErrDangerousPatch     = errors.New("schema: patch contains potentially dangerous operations")
-	ErrInvalidOperation   = errors.New("schema: invalid parameter operation")
+	ErrUnknownAction           = errors.New("schema: unknown action kind")
+	ErrInvalidVersion          = errors.New("schema: unsupported action version")
+	ErrMissingMessage          = errors.New("schema: message is required")
+	ErrMissingFields           = errors.New("schema: proposal missing required fields")
+	ErrInvalidProvenance       = errors.New("schema: invalid provenance")
+	ErrInvalidJSON             = errors.New("schema: action is not valid JSON")
+	ErrIncompatibleSource      = errors.New("schema: source type is incompatible with target")
+	ErrInvalidPatch            = errors.New("schema: patch must be valid JSON")
+	ErrMissingProposals        = errors.New("schema: create-plan kind requires at least one proposal")
+	ErrInvalidDraftUpdate      = errors.New("schema: update-draft kind requires exactly one Draft patch proposal")
+	ErrMissingQuestions        = errors.New("schema: request-missing-input kind requires at least one question")
+	ErrAmbiguousAction         = errors.New("schema: proposals and questions are mutually exclusive")
+	ErrInvalidQuestion         = errors.New("schema: question missing required fields")
+	ErrInvalidUrgency          = errors.New("schema: invalid question urgency")
+	ErrDangerousPatch          = errors.New("schema: patch contains potentially dangerous operations")
+	ErrInvalidOperation        = errors.New("schema: invalid parameter operation")
+	ErrAmbiguousJSONAction     = errors.New("schema: response contains multiple valid actions")
+	ErrJSONActionLimitExceeded = fmt.Errorf("%w: bounded decode limits exceeded", ErrInvalidJSON)
 )
 
 var validKinds = map[ActionKind]struct{}{
@@ -413,6 +420,9 @@ func validateProposalChanges(p Proposal) error {
 }
 
 func validateParameterOperation(operation ParameterOperation) error {
+	if operation.Op == "create-slice-output" {
+		return validateCreateSliceOutputOperation(operation)
+	}
 	path := strings.TrimSpace(operation.Path)
 	if path == "" || path == "/" || !strings.HasPrefix(path, "/") {
 		return errors.New("path must be a non-root JSON Pointer")
@@ -428,6 +438,56 @@ func validateParameterOperation(operation ParameterOperation) error {
 		}
 	default:
 		return fmt.Errorf("unsupported op %q", operation.Op)
+	}
+	return nil
+}
+
+// ValidateParameterOperation validates one public schema action operation.
+// Server-side compilers use it as a defense-in-depth boundary when operations
+// are constructed outside the JSON Action parser.
+func ValidateParameterOperation(operation ParameterOperation) error {
+	return validateParameterOperation(operation)
+}
+
+func validateCreateSliceOutputOperation(operation ParameterOperation) error {
+	if strings.TrimSpace(operation.Path) != "" || operation.Value != nil {
+		return errors.New("create-slice-output does not accept path or value")
+	}
+	if len(operation.Origin) != 3 || len(operation.Normal) != 3 {
+		return errors.New("create-slice-output requires three-component origin and normal vectors")
+	}
+	for _, component := range append(append([]float64(nil), operation.Origin...), operation.Normal...) {
+		if math.IsNaN(component) || math.IsInf(component, 0) {
+			return errors.New("create-slice-output vectors must contain finite numbers")
+		}
+	}
+	normalScale := math.Max(math.Abs(operation.Normal[0]), math.Max(math.Abs(operation.Normal[1]), math.Abs(operation.Normal[2])))
+	if normalScale == 0 || math.IsNaN(normalScale) || math.IsInf(normalScale, 0) {
+		return errors.New("create-slice-output normal must be non-zero")
+	}
+	normalMagnitude := math.Hypot(
+		math.Hypot(operation.Normal[0]/normalScale, operation.Normal[1]/normalScale),
+		operation.Normal[2]/normalScale,
+	)
+	if math.IsNaN(normalMagnitude) || math.IsInf(normalMagnitude, 0) || normalMagnitude == 0 {
+		return errors.New("create-slice-output normal must be non-zero")
+	}
+	if len(operation.Name) > 200 {
+		return errors.New("create-slice-output name exceeds 200 characters")
+	}
+	if len(operation.OutputFields) == 0 || len(operation.OutputFields) > 64 {
+		return errors.New("create-slice-output requires between one and 64 output fields")
+	}
+	seen := make(map[string]struct{}, len(operation.OutputFields))
+	for _, field := range operation.OutputFields {
+		field = strings.TrimSpace(field)
+		if field == "" || len(field) > 128 {
+			return errors.New("create-slice-output output fields must be non-empty and at most 128 characters")
+		}
+		if _, duplicate := seen[field]; duplicate {
+			return fmt.Errorf("create-slice-output output field %q is duplicated", field)
+		}
+		seen[field] = struct{}{}
 	}
 	return nil
 }

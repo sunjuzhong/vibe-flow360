@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
@@ -109,6 +110,67 @@ func TestParseAcceptsPathLevelDraftOperations(t *testing.T) {
 	}
 	if proposal.Operations[0].Path != "/models/0/turbulence_model_solver/absolute_tolerance" {
 		t.Fatalf("operation path was not preserved: %#v", proposal.Operations[0])
+	}
+}
+
+func TestParseAcceptsCreateSliceOutputOperation(t *testing.T) {
+	raw := `{
+  "version":"v1",
+  "kind":"update-draft",
+  "message":"Add the requested plane output.",
+  "proposals":[{
+    "id":"slice-output",
+    "draft_id":"draft-1",
+    "target":"draft",
+    "name":"Plane output",
+    "intent":"Inspect velocity on z=0.",
+    "operations":[{
+      "op":"create-slice-output",
+      "origin":[0,0,0],
+      "normal":[0,0,1],
+      "output_fields":["velocity_m_per_s"]
+    }],
+    "fields":[]
+  }]
+}`
+	action, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := action.Proposals[0].Operations[0]
+	if operation.Op != "create-slice-output" || len(operation.Origin) != 3 || len(operation.OutputFields) != 1 {
+		t.Fatalf("typed Slice output operation was not preserved: %#v", operation)
+	}
+}
+
+func TestParseRejectsMalformedCreateSliceOutputOperation(t *testing.T) {
+	for _, operation := range []string{
+		`{"op":"create-slice-output","path":"/outputs","origin":[0,0,0],"normal":[0,0,1],"output_fields":["velocity_m_per_s"]}`,
+		`{"op":"create-slice-output","origin":[0,0],"normal":[0,0,1],"output_fields":["velocity_m_per_s"]}`,
+		`{"op":"create-slice-output","origin":[0,0,0],"normal":[0,0,0],"output_fields":["velocity_m_per_s"]}`,
+		`{"op":"create-slice-output","origin":[0,0,0],"normal":[0,0,1],"output_fields":[]}`,
+	} {
+		raw := fmt.Sprintf(`{"version":"v1","kind":"update-draft","message":"bad","proposals":[{"id":"x","draft_id":"d","target":"draft","name":"x","intent":"x","operations":[%s],"fields":[]}]}`, operation)
+		if _, err := Parse(raw); !errors.Is(err, ErrInvalidOperation) {
+			t.Fatalf("expected invalid operation for %s, got %v", operation, err)
+		}
+	}
+}
+
+func TestValidateCreateSliceOutputOperationHandlesHugeFiniteNormal(t *testing.T) {
+	operation := ParameterOperation{
+		Op: "create-slice-output", Origin: []float64{0, 0, 0},
+		Normal:       []float64{math.MaxFloat64, math.MaxFloat64, math.MaxFloat64},
+		OutputFields: []string{"velocity_m_per_s"},
+	}
+	if err := ValidateParameterOperation(operation); err != nil {
+		t.Fatalf("overflow-safe normal validation rejected a finite vector: %v", err)
+	}
+	for _, invalid := range []float64{math.Inf(1), math.NaN()} {
+		operation.Normal = []float64{invalid, 0, 1}
+		if err := ValidateParameterOperation(operation); err == nil {
+			t.Fatalf("non-finite normal component %v was accepted", invalid)
+		}
 	}
 }
 

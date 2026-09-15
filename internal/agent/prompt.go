@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -24,6 +25,10 @@ const (
 	maxUserFeedbackBytes      = 2000
 	maxHistoryTurns           = 20
 	maxUserMessageBytes       = 4000
+	maxActionResponseBytes    = 256 << 10
+	maxActionJSONCandidates   = 16
+	maxActionUnwrapDepth      = 4
+	maxActionUnwrapValues     = 64
 )
 
 var tripleBacktick = "`" + "`" + "`"
@@ -59,7 +64,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
    - name: descriptive plan name
    - intent: engineering objective
    - changes: normally use patch with a valid JSON merge-patch for SimulationParams. When the caller explicitly requests path-level parameter operations, omit patch and provide operations instead.
-   - operations: an ARRAY of {"op":"set|unset|append","path":"/RFC6901/pointer","value":...}. set and append require value; unset omits it. Never provide both patch and operations.
+   - operations: an ARRAY of bounded parameter operations. Generic operations use {"op":"set|unset|append","path":"/RFC6901/pointer","value":...}; set and append require value and unset omits it. When the engineering request requires a new plane-based Case output and the active schema exposes SliceOutput plus the requested fields, use the typed operation {"op":"create-slice-output","origin":[x,y,z],"normal":[nx,ny,nz],"name":"optional","output_fields":["schema-enum"]}. Coordinates are numeric values in the Project length unit. The application creates and registers the Slice entity atomically; never emit private_attribute paths, private IDs, or a separate generic append for that SliceOutput. Never provide both patch and operations.
    - branch_preview: short slug for the branch
    - fields: an ARRAY of objects. Every object must have exactly this shape:
      {"key":"SimulationParams path","value":<JSON value>,"provenance":"provided|derived|inferred|defaulted","description":"optional explanation"}
@@ -97,6 +102,7 @@ When the user's intent requires a plan or missing engineering input, you MUST re
 - Keep the action JSON compact — only include fields that matter.
 - Treat form_schema as the authoritative catalog for the installed Flow360 version. Use only listed SimulationParams paths, exact enum/model values, documented quantity units, and the required {"value": number, "units": "unit"} wire shape. Never translate a human CFD term into a guessed snake_case field.
 - Preserve the supplied SimulationParams as the canonical baseline. Return the requested sparse change representation, never a replacement document. When path-level operations are requested, use operations only and never replace a complex object array. Otherwise return a sparse merge-patch. Do not copy private_attribute fields unless an active schema field explicitly supplies the entity payload.
+- Use create-slice-output only when the user's engineering objective requires sampling requested Case fields on a newly defined plane. Derive the plane origin and normal from the user's coordinates and orientation, and use only output field enum values exposed by the active schema. Use ordinary set/unset/append for all other edits and for outputs that reference already registered entities.
 - Canonical SimulationParams can contain internal discriminator keys that the editable form intentionally omits. Do not echo type_name or any other baseline-only child into a quantity/object patch unless that exact child path appears in form_schema.
 - Respect stage ownership: SurfaceMesh fields configure surface meshing, VolumeMesh fields configure volume meshing, and Case fields configure physics, operating condition, time stepping, numerics, and outputs. Do not put a valid concept under the wrong stage path.
 - When a schema field exposes recommendation/default_model/default_entities with high confidence, prefer that evidence-backed value and record it as derived or defaulted. Exact schema and preflight errors override general CFD memory.
@@ -350,35 +356,268 @@ Respond with the JSON object in a fenced code block.`)
 }
 
 func ExtractAndValidateAction(response string) (Action, error) {
-	jsonStr := extractJSONBlock(response)
-	if jsonStr == "" {
+	response = strings.TrimSpace(response)
+	if response == "" || len(response) > maxActionResponseBytes {
 		return Action{}, ErrInvalidJSON
 	}
-	return Parse(jsonStr)
+	candidates, limitExceeded := extractJSONCandidates(response)
+	if limitExceeded {
+		return Action{}, ErrJSONActionLimitExceeded
+	}
+	if len(candidates) == 0 {
+		return Action{}, ErrInvalidJSON
+	}
+
+	state := actionDecodeState{
+		valid:     make([]Action, 0, 1),
+		validKeys: make(map[string]struct{}, 1),
+	}
+	for _, candidate := range candidates {
+		collectValidActions(candidate, 0, &state)
+		if state.limitExceeded {
+			return Action{}, ErrJSONActionLimitExceeded
+		}
+		if len(state.valid) > 1 {
+			return Action{}, ErrAmbiguousJSONAction
+		}
+	}
+	if len(state.valid) == 1 {
+		return state.valid[0], nil
+	}
+	if state.firstValidationErr != nil {
+		return Action{}, state.firstValidationErr
+	}
+	return Action{}, ErrInvalidJSON
 }
 
-func extractJSONBlock(text string) string {
-	patterns := []string{
-		tripleBacktick + "json\n",
-		tripleBacktick + "JSON\n",
-		tripleBacktick + "\n",
+func extractJSONCandidates(text string) ([]string, bool) {
+	candidates := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	limitExceeded := false
+	appendCandidate := func(raw string) {
+		trimmed, key, ok := canonicalJSONCandidate(raw)
+		if !ok {
+			return
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return
+		}
+		seen[key] = struct{}{}
+		if len(candidates) >= maxActionJSONCandidates {
+			limitExceeded = true
+			return
+		}
+		candidates = append(candidates, trimmed)
 	}
-	for _, prefix := range patterns {
-		idx := strings.Index(text, prefix)
-		if idx == -1 {
+	appendCandidate(text)
+	for _, fenced := range extractFencedJSONCandidates(text) {
+		appendCandidate(fenced)
+		for _, nested := range extractBalancedJSONCandidates(fenced) {
+			appendCandidate(nested)
+		}
+	}
+	for _, balanced := range extractBalancedJSONCandidates(text) {
+		appendCandidate(balanced)
+	}
+	return candidates, limitExceeded
+}
+
+func canonicalJSONCandidate(raw string) (string, string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(trimmed) > maxActionResponseBytes {
+		return "", "", false
+	}
+	var value any
+	if json.Unmarshal([]byte(trimmed), &value) != nil {
+		return "", "", false
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return "", "", false
+	}
+	return trimmed, string(canonical), true
+}
+
+func extractFencedJSONCandidates(text string) []string {
+	candidates := make([]string, 0, 1)
+	remaining := text
+	for {
+		open := strings.Index(remaining, tripleBacktick)
+		if open < 0 {
+			break
+		}
+		bodyStart := open + len(tripleBacktick)
+		lineEnd := strings.IndexByte(remaining[bodyStart:], '\n')
+		if lineEnd < 0 {
+			break
+		}
+		language := strings.TrimSpace(strings.TrimSuffix(remaining[bodyStart:bodyStart+lineEnd], "\r"))
+		bodyStart += lineEnd + 1
+		closeOffset := strings.Index(remaining[bodyStart:], tripleBacktick)
+		if closeOffset < 0 {
+			break
+		}
+		if language == "" || strings.EqualFold(language, "json") {
+			body := strings.TrimSpace(remaining[bodyStart : bodyStart+closeOffset])
+			if body != "" && len(body) <= maxActionResponseBytes {
+				candidates = append(candidates, body)
+			}
+		}
+		remaining = remaining[bodyStart+closeOffset+len(tripleBacktick):]
+	}
+	return candidates
+}
+
+func extractBalancedJSONCandidates(text string) []string {
+	candidates := make([]string, 0, 1)
+	start := -1
+	stack := make([]byte, 0, 8)
+	inString := false
+	escaped := false
+	for index := 0; index < len(text); index++ {
+		current := text[index]
+		if start < 0 {
+			if current == '{' || current == '[' {
+				start = index
+				stack = append(stack[:0], current)
+			}
 			continue
 		}
-		start := idx + len(prefix)
-		end := strings.Index(text[start:], tripleBacktick)
-		if end != -1 {
-			return strings.TrimSpace(text[start : start+end])
+		if inString {
+			if escaped {
+				escaped = false
+			} else if current == '\\' {
+				escaped = true
+			} else if current == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch current {
+		case '"':
+			inString = true
+		case '{', '[':
+			stack = append(stack, current)
+			if len(stack) > 32 {
+				start = -1
+				stack = stack[:0]
+			}
+		case '}', ']':
+			if len(stack) == 0 || (current == '}' && stack[len(stack)-1] != '{') || (current == ']' && stack[len(stack)-1] != '[') {
+				start = -1
+				stack = stack[:0]
+				continue
+			}
+			stack = stack[:len(stack)-1]
+			if len(stack) == 0 {
+				candidate := strings.TrimSpace(text[start : index+1])
+				if json.Valid([]byte(candidate)) {
+					candidates = append(candidates, candidate)
+				}
+				start = -1
+			}
 		}
 	}
+	return candidates
+}
 
-	firstBrace := strings.Index(text, "{")
-	lastBrace := strings.LastIndex(text, "}")
-	if firstBrace != -1 && lastBrace != -1 && firstBrace < lastBrace {
-		return strings.TrimSpace(text[firstBrace : lastBrace+1])
+type actionDecodeState struct {
+	examined           int
+	valid              []Action
+	validKeys          map[string]struct{}
+	firstValidationErr error
+	limitExceeded      bool
+}
+
+func collectValidActions(raw string, depth int, state *actionDecodeState) {
+	if state.limitExceeded || len(state.valid) > 1 {
+		return
 	}
-	return ""
+	if len(raw) > maxActionResponseBytes {
+		state.limitExceeded = true
+		return
+	}
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return
+	}
+	collectValidActionValue(value, depth, state)
+}
+
+func collectValidActionValue(value any, depth int, state *actionDecodeState) {
+	if state.limitExceeded || len(state.valid) > 1 {
+		return
+	}
+	if depth > maxActionUnwrapDepth || state.examined >= maxActionUnwrapValues {
+		state.limitExceeded = true
+		return
+	}
+	state.examined++
+	switch typed := value.(type) {
+	case map[string]any:
+		if looksLikeAgentAction(typed) {
+			encoded, err := json.Marshal(typed)
+			if err != nil {
+				return
+			}
+			action, err := Parse(string(encoded))
+			if err == nil {
+				key, keyErr := json.Marshal(action)
+				if keyErr == nil {
+					if _, duplicate := state.validKeys[string(key)]; !duplicate {
+						state.validKeys[string(key)] = struct{}{}
+						state.valid = append(state.valid, action)
+					}
+				}
+			} else if state.firstValidationErr == nil {
+				state.firstValidationErr = err
+			}
+			return
+		}
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			collectValidActionValue(typed[key], depth+1, state)
+			if state.limitExceeded || len(state.valid) > 1 {
+				return
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			collectValidActionValue(item, depth+1, state)
+			if state.limitExceeded || len(state.valid) > 1 {
+				return
+			}
+		}
+	case string:
+		decoded := strings.TrimSpace(typed)
+		if decoded == "" || len(decoded) > maxActionResponseBytes {
+			return
+		}
+		candidates, limitExceeded := extractJSONCandidates(decoded)
+		if limitExceeded {
+			state.limitExceeded = true
+			return
+		}
+		for _, candidate := range candidates {
+			collectValidActions(candidate, depth+1, state)
+			if state.limitExceeded || len(state.valid) > 1 {
+				return
+			}
+		}
+	}
+}
+
+func looksLikeAgentAction(value map[string]any) bool {
+	_, hasKind := value["kind"]
+	_, hasMessage := value["message"]
+	if hasKind && hasMessage {
+		return true
+	}
+	_, hasProposals := value["proposals"]
+	_, hasQuestions := value["questions"]
+	return hasProposals || hasQuestions
 }
