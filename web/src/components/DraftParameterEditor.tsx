@@ -30,6 +30,8 @@ type Props = {
 export type DraftParameterEditorHandle = {
   discard: () => void
   save: () => Promise<boolean>
+  applyCandidate: (parameters: Record<string, unknown>) => void
+  getCandidate: () => Record<string, unknown>
 }
 
 type DraftEditorHistory = {
@@ -529,7 +531,12 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     }
   }, [candidateResult.error, candidateResult.fingerprint, candidateResult.value, persistCandidate, schema, t, validateCandidate])
 
-  useImperativeHandle(ref, () => ({ discard, save }), [discard, save])
+  useImperativeHandle(ref, () => ({
+    discard,
+    save,
+    applyCandidate,
+    getCandidate: () => candidateValueRef.current,
+  }), [applyCandidate, discard, save])
 
   const validateNow = () => {
     if (!candidateResult.value || !candidateResult.fingerprint || validating) return

@@ -364,6 +364,7 @@ func (s *Server) routes() {
 		api.PUT("/flow360/drafts/:draft_id/name", s.renameFlow360Draft)
 		api.DELETE("/flow360/drafts/:draft_id", s.deleteFlow360Draft)
 		api.GET("/flow360/drafts/:draft_id/parameters/schema", s.flow360DraftParameterSchema)
+		api.POST("/flow360/drafts/:draft_id/parameters/convert-units", s.convertFlow360DraftParameterUnits)
 		api.POST("/flow360/drafts/:draft_id/parameters/validate", s.validateFlow360DraftParameters)
 		api.PATCH("/flow360/drafts/:draft_id/parameters", s.patchFlow360DraftParameters)
 		api.PUT("/flow360/drafts/:draft_id/parameters", s.updateFlow360DraftParameters)
@@ -1327,6 +1328,14 @@ func (s *Server) runPlan(c *gin.Context) {
 
 func (s *Server) submitPlanToFlow360(ctx context.Context, plan plans.Plan) (json.RawMessage, error) {
 	if plan.RemoteIDs == nil || strings.TrimSpace(plan.RemoteIDs.DraftID) == "" {
+		merged, err := plans.MergedSimulationParams(plan)
+		if err != nil {
+			return nil, err
+		}
+		options := flow360DraftRunOptions(merged)
+		if options.UseInHouse || options.UseGAI {
+			return s.flow360.RunDraftWithOptions(ctx, plan.SourceID, plan.Name, plan.Target, plan.Patch, options)
+		}
 		return s.flow360.RunDraft(ctx, plan.SourceID, plan.Name, plan.Target, plan.Patch)
 	}
 	merged, err := plans.MergedSimulationParams(plan)
@@ -1338,12 +1347,32 @@ func (s *Server) submitPlanToFlow360(ctx context.Context, plan plans.Plan) (json
 		return nil, err
 	}
 	s.syncCachedDraftParameters(plan.RemoteIDs.DraftID, canonical)
-	result, err := s.flow360.RunExistingDraft(ctx, plan.RemoteIDs.DraftID, plan.Target)
+	options := flow360DraftRunOptions(merged)
+	if options.UseGAI && !options.UseInHouse {
+		return nil, errors.New("Geometry AI requires the beta mesher")
+	}
+	var result json.RawMessage
+	if options.UseInHouse || options.UseGAI {
+		result, err = s.flow360.RunExistingDraftWithOptions(ctx, plan.RemoteIDs.DraftID, plan.Target, options)
+	} else {
+		result, err = s.flow360.RunExistingDraft(ctx, plan.RemoteIDs.DraftID, plan.Target)
+	}
 	if err != nil {
 		return nil, err
 	}
 	s.syncDraftListSnapshot(ctx, plan.ProjectID)
 	return result, nil
+}
+
+func flow360DraftRunOptions(params json.RawMessage) flow360.DraftRunOptions {
+	var root map[string]any
+	if json.Unmarshal(params, &root) != nil {
+		return flow360.DraftRunOptions{}
+	}
+	cache, _ := root["private_attribute_asset_cache"].(map[string]any)
+	useInHouse, _ := cache["use_inhouse_mesher"].(bool)
+	useGAI, _ := cache["use_geometry_AI"].(bool)
+	return flow360.DraftRunOptions{UseInHouse: useInHouse, UseGAI: useGAI}
 }
 
 func publicExecutionError(err error) error {
@@ -3069,6 +3098,34 @@ func (s *Server) flow360DraftParameterSchema(c *gin.Context) {
 		"schema":            json.RawMessage(schema),
 		"baseline":          detail.SimulationParams,
 	})
+}
+
+func (s *Server) convertFlow360DraftParameterUnits(c *gin.Context) {
+	draftID := strings.TrimSpace(c.Param("draft_id"))
+	if draftID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDraftParametersRequestBytes)
+	var request struct {
+		SimulationParams json.RawMessage `json:"simulation_params"`
+		UnitSystem       string          `json:"unit_system"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil || !json.Valid(request.SimulationParams) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Draft unit conversion request"})
+		return
+	}
+	converted, err := s.flow360.ConvertDraftParameterUnitSystem(c.Request.Context(), request.SimulationParams, request.UnitSystem)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	var value any
+	if err := json.Unmarshal(converted, &value); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 returned invalid converted Draft parameters"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"simulation_params": value})
 }
 
 const maxDraftParametersRequestBytes = 2 << 20

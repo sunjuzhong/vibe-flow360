@@ -1,9 +1,10 @@
-import { AlertCircle, Check, Copy, FileJson2, RefreshCw, Save, X } from 'lucide-react'
+import { AlertCircle, Check, Copy, FileJson2, RefreshCw, Save, Settings2, X } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import type { DraftParameterSchemaResponse, ProjectInfo, ResourceDetail, ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import DraftParameterEditor, { type DraftParameterEditorHandle } from './DraftParameterEditor'
+import DraftSettingsPanel from './DraftSettingsPanel'
 
 type Props = {
   draftId: string
@@ -53,13 +54,19 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
   const [dirty, setDirty] = useState(false)
   const [closeGuardOpen, setCloseGuardOpen] = useState(false)
   const [saveClosing, setSaveClosing] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsParameters, setSettingsParameters] = useState<Record<string, unknown> | null>(null)
   const editorRef = useRef<DraftParameterEditorHandle>(null)
   const cancelClose = useCallback(() => {
     setCloseGuardOpen(false)
     onCloseCancelled?.()
   }, [onCloseCancelled])
   const closeGuardRef = useFocusTrap<HTMLElement>(closeGuardOpen, cancelClose, '.draft-close-guard-cancel')
-  useEffect(() => setCopied(false), [draftId])
+  useEffect(() => {
+    setCopied(false)
+    setSettingsOpen(false)
+    setSettingsParameters(null)
+  }, [draftId])
   const requestClose = useCallback(() => {
     if (dirty) setCloseGuardOpen(true)
     else onClose()
@@ -113,6 +120,19 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
             {copied ? <Check size={13} /> : <Copy size={13} />}<code>{draftId}</code>
           </button>
         </div>
+        <button
+          type="button"
+          className="project-parameters-settings"
+          onClick={() => {
+            setSettingsParameters(editorRef.current?.getCandidate() ?? detail?.simulation_params ?? {})
+            setSettingsOpen(true)
+          }}
+          disabled={loading || !detail?.simulation_params}
+          title={t('Open Draft settings')}
+          aria-label={t('Open Draft settings')}
+        >
+          <Settings2 size={15} />
+        </button>
         <button type="button" className="project-parameters-close" onClick={requestClose} aria-label={t('Close Draft configuration')}><X size={17} /></button>
       </header>
 
@@ -148,6 +168,17 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
             : <div className="detail-empty">{t('Flow360 did not return simulation parameters.')}</div>
         )}
       </div>
+      {settingsOpen && settingsParameters && (
+        <div className="draft-settings-overlay">
+          <DraftSettingsPanel
+            draftId={draftId}
+            parameters={settingsParameters}
+            solverVersion={project?.solver_version}
+            onApply={(next) => editorRef.current?.applyCandidate(next)}
+            onClose={() => setSettingsOpen(false)}
+          />
+        </div>
+      )}
       {closeGuardOpen && <div className="draft-close-guard-backdrop">
         <section ref={closeGuardRef} className="draft-close-guard" role="alertdialog" aria-modal="true" aria-labelledby="draft-close-guard-title" aria-describedby="draft-close-guard-description" tabIndex={-1}>
           <AlertCircle size={20} />

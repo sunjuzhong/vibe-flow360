@@ -7539,7 +7539,7 @@ button { color: inherit; }
   display: grid;
   min-height: 72px;
   flex: 0 0 auto;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 12px;
   padding: 10px 14px 10px 18px;
@@ -7559,6 +7559,20 @@ button { color: inherit; }
 .project-parameters-copy { display: inline-flex; max-width: 190px; min-height: 25px; align-items: center; gap: 5px; padding: 0 7px; border: 0; border-radius: 5px; color: #626a5d; background: transparent; cursor: pointer; }
 .project-parameters-copy:hover { color: #52651f; background: #e9eedf; }
 .project-parameters-copy code { overflow: hidden; font: 8px 'DM Mono'; text-overflow: ellipsis; white-space: nowrap; }
+.project-parameters-settings {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d2d4cb;
+  border-radius: 7px;
+  color: #68725c;
+  background: #fff;
+  cursor: pointer;
+}
+.project-parameters-settings:hover:not(:disabled) { color: #52651f; background: #e9eedf; }
+.project-parameters-settings:disabled { cursor: not-allowed; opacity: .45; }
 .project-parameters-header > .project-parameters-close {
   display: grid;
   width: 31px;
@@ -7590,6 +7604,40 @@ button { color: inherit; }
 .draft-close-guard-actions button { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #d6dacd; border-radius: 7px; color: #586052; background: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
 .draft-close-guard-actions button.primary { border-color: #718a2e; color: #fff; background: #718a2e; }
 .draft-close-guard-actions button:disabled { cursor: not-allowed; opacity: .55; }
+
+.draft-settings-overlay { position: absolute; z-index: 76; inset: 0; padding: 18px; background: rgba(247,248,242,.94); }
+.draft-settings-panel { display: flex; width: min(720px, 100%); height: 100%; margin: 0 auto; flex-direction: column; overflow: hidden; border: 1px solid #d0d6c4; border-radius: 12px; background: #fff; box-shadow: 0 18px 55px rgba(35,43,27,.18); }
+.draft-settings-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 1px solid #e0e4d9; background: #f3f6ed; }
+.draft-settings-panel__header > div { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; column-gap: 7px; }
+.draft-settings-panel__header svg { grid-row: span 2; color: #667f26; }
+.draft-settings-panel__header strong { color: #37412d; font-size: 15px; }
+.draft-settings-panel__header span { color: #7a8371; font-size: 10px; }
+.draft-settings-panel__header > button { min-height: 30px; padding: 0 10px; border: 1px solid #d1d7c8; border-radius: 7px; color: #697260; background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
+.draft-settings-panel__body { display: grid; gap: 16px; overflow-y: auto; padding: 20px; }
+.draft-settings-section { display: grid; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid #e7eae2; }
+.draft-settings-section:last-child { padding-bottom: 0; border-bottom: 0; }
+.draft-settings-section__title strong,
+.draft-settings-section__title span { display: block; }
+.draft-settings-section__title strong { color: #3c4634; font-size: 13px; }
+.draft-settings-section__title span { margin-top: 3px; color: #818a7b; font-size: 10px; line-height: 1.45; }
+.draft-settings-section > label:not(.draft-settings-toggle) { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(180px, 1fr); align-items: center; gap: 14px; color: #606a57; font-size: 11px; font-weight: 700; }
+.draft-settings-section select { min-height: 38px; padding: 0 10px; border: 1px solid #cfd6c6; border-radius: 7px; color: #394232; background: #fff; font-size: 11px; }
+.draft-settings-section select:focus { border-color: #94ad4e; box-shadow: 0 0 0 3px rgba(148,173,78,.15); outline: 0; }
+.draft-settings-section select:disabled { color: #727b6f; background: #f3f4f0; }
+.draft-settings-toggle { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.draft-settings-toggle span strong,
+.draft-settings-toggle span small { display: block; }
+.draft-settings-toggle span strong { color: #4a5541; font-size: 11px; }
+.draft-settings-toggle span small { margin-top: 3px; color: #858d81; font-size: 10px; }
+.draft-settings-toggle input { width: 42px; height: 24px; accent-color: #84a33b; }
+.draft-settings-note { display: flex; align-items: flex-start; gap: 7px; margin: 0; padding: 9px 10px; border: 1px solid #e6deb9; border-radius: 7px; color: #806927; background: #fff9e7; font-size: 10px; line-height: 1.45; }
+.draft-settings-note svg { flex: 0 0 auto; margin-top: 1px; }
+.draft-settings-error { display: flex; align-items: flex-start; gap: 7px; margin: 0; padding: 9px 10px; border: 1px solid #edc9c0; border-radius: 7px; color: #994b3b; background: #fff5f2; font-size: 10px; line-height: 1.45; }
+.draft-settings-error svg { flex: 0 0 auto; margin-top: 1px; }
+.draft-settings-panel__footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px; border-top: 1px solid #e0e4d9; background: #f7f8f3; }
+.draft-settings-panel__footer small { color: #7b8475; font-size: 9px; line-height: 1.45; }
+.draft-settings-panel__footer button { display: inline-flex; min-height: 35px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #839a3f; border-radius: 7px; color: #fff; background: #718a2e; font-size: 10px; font-weight: 700; cursor: pointer; }
+.draft-settings-panel__footer button:disabled { cursor: wait; opacity: .55; }
 
 .project-page > .project-sync-state {
   position: fixed;
@@ -7678,6 +7726,14 @@ button { color: inherit; }
 }
 
 @media (max-width: 680px) {
+  .project-parameters-header { grid-template-columns: auto minmax(0,1fr) auto auto; gap: 8px; padding-inline: 11px; }
+  .project-parameters-meta { grid-column: 2 / -1; grid-row: 2; justify-items: start; }
+  .project-parameters-header > .project-parameters-settings,
+  .project-parameters-header > .project-parameters-close { grid-row: 1; }
+  .draft-settings-overlay { padding: 8px; }
+  .draft-settings-section > label:not(.draft-settings-toggle) { grid-template-columns: 1fr; gap: 6px; }
+  .draft-settings-panel__footer { align-items: stretch; flex-direction: column; }
+  .draft-settings-panel__footer button { justify-content: center; }
   .draft-parameter-form .input-field { grid-template-columns: minmax(0,1fr); gap: 10px; padding: 12px; }
   .project-page { padding-top: 58px; }
   .project-shell-header { height: 58px; grid-template-columns: auto minmax(0, 1fr) auto; }

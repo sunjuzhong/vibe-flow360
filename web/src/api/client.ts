@@ -1257,6 +1257,11 @@ export const api = {
     remove<DraftRecord>(`/api/flow360/drafts/${encodeURIComponent(draftId)}?confirmed=${confirmed ? 'true' : 'false'}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`),
   draftParameterSchema: (draftId: string) =>
     json<DraftParameterSchemaResponse>(`/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/schema`),
+  convertDraftParameterUnits: (draftId: string, simulationParams: Record<string, unknown>, unitSystem: string) =>
+    mutate<{ simulation_params: Record<string, unknown> }>(
+      `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/convert-units`,
+      { simulation_params: simulationParams, unit_system: unitSystem },
+    ),
   validateDraftParameters: (draftId: string, simulationParams: Record<string, unknown>, paths: string[] = []) =>
     mutate<DraftParameterValidationResponse>(
       `/api/flow360/drafts/${encodeURIComponent(draftId)}/parameters/validate`,
