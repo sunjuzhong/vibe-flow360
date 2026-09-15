@@ -12,6 +12,7 @@ type Props = {
   selectedDetail: ResourceDetail | null
   loading: boolean
   detailLoading: boolean
+  detailError: string
   error: string
   onSelect: (draftId: string) => void
   onEnter: (draftId: string) => void
@@ -51,6 +52,7 @@ export default function ProjectDraftBar({
   selectedDetail,
   loading,
   detailLoading,
+  detailError,
   error,
   onSelect,
   onEnter,
@@ -69,6 +71,7 @@ export default function ProjectDraftBar({
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState('')
   const [configureBusy, setConfigureBusy] = useState(false)
+  const detailReady = Boolean(selectedId && selectedDetail?.id === selectedId && !detailLoading && !detailError)
 
   useEffect(() => {
     setEditingName(false)
@@ -82,7 +85,7 @@ export default function ProjectDraftBar({
     setEditingName(true)
   }
   const startConfigure = () => {
-    if (configureBusy || detailLoading) return
+    if (configureBusy || !detailReady) return
     setConfigureBusy(true)
     onConfigure()
     window.setTimeout(() => setConfigureBusy(false), 500)
@@ -151,7 +154,7 @@ export default function ProjectDraftBar({
   }
 
   return (
-    <section className="project-draft-inline" aria-label="Project drafts" aria-busy={loading}>
+    <section className="project-draft-inline" aria-label="Project drafts" aria-busy={loading || detailLoading}>
       <div className="project-draft-heading" aria-label="Draft mode">
         <span className="project-draft-heading__icon"><GitPullRequestDraft size={15} /></span>
         <strong>Draft</strong>
@@ -230,13 +233,14 @@ export default function ProjectDraftBar({
         <button
           type="button"
           onClick={startConfigure}
-          disabled={!selectedId || detailLoading}
+          disabled={!detailReady || configureBusy}
           title={t('Edit, validate, save, and optionally run this Draft')}
           className="project-draft-configure"
         >
           <SlidersHorizontal size={14} />
-          <span>{detailLoading || configureBusy ? t('Opening…') : t('Configure Draft')}</span>
+          <span>{detailLoading || configureBusy || (!detailReady && !detailError) ? t('Opening…') : detailError ? t('Draft unavailable') : t('Configure Draft')}</span>
         </button>
+        {detailError && <button type="button" className="project-draft-utility" onClick={onRefresh} title={t('Retry loading Draft')} aria-label={t('Retry loading Draft')}><RefreshCw size={14} /></button>}
         <button
           type="button"
           onClick={onReviewRun}

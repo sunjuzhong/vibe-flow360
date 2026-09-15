@@ -1174,6 +1174,7 @@ export default function ProjectPage() {
                   selectedDetail={draftDetail}
                   loading={draftsLoading}
                   detailLoading={draftDetailLoading}
+                  detailError={draftDetailError}
                   error={draftsError}
                   onSelect={openDraftContext}
                   onEnter={openDraftContext}

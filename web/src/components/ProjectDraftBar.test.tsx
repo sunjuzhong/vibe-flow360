@@ -33,6 +33,7 @@ describe('ProjectDraftBar', () => {
         selectedDetail={null}
         loading={false}
         detailLoading={false}
+        detailError=""
         error=""
         onSelect={() => undefined}
         onEnter={() => undefined}
@@ -68,6 +69,7 @@ describe('ProjectDraftBar', () => {
         selectedDetail={{ id: 'draft-2', type: 'Draft', state: { status: 'submitted' } }}
         loading={false}
         detailLoading={false}
+        detailError=""
         error=""
         onSelect={() => undefined}
         onEnter={() => undefined}
@@ -99,5 +101,55 @@ describe('ProjectDraftBar', () => {
     expect(markup).not.toContain('aria-label="Refresh Drafts"')
     expect(markup).not.toContain('Active Draft')
     expect(markup).not.toContain('Draft menu')
+  })
+
+  it('keeps Configure Draft disabled until the selected Draft detail is ready', () => {
+    const markup = render(
+      <ProjectDraftBar
+        mode="draft"
+        drafts={[{ id: 'draft-2', name: 'High AoA', status: 'draft' }]}
+        selectedId="draft-2"
+        selectedDetail={null}
+        loading={false}
+        detailLoading={false}
+        detailError=""
+        error=""
+        onSelect={() => undefined}
+        onEnter={() => undefined}
+        onCreate={() => undefined}
+        onConfigure={() => undefined}
+        onReviewRun={() => undefined}
+        onRename={async () => undefined}
+        onManage={() => undefined}
+        onRefresh={() => undefined}
+      />,
+    )
+    expect(markup).toContain('disabled=""')
+    expect(markup).toContain('Opening…')
+    expect(markup).not.toContain('>Configure Draft</span>')
+  })
+
+  it('enables Configure Draft only for the matching loaded detail', () => {
+    const markup = render(
+      <ProjectDraftBar
+        mode="draft"
+        drafts={[{ id: 'draft-2', name: 'High AoA', status: 'draft' }]}
+        selectedId="draft-2"
+        selectedDetail={{ id: 'draft-2', type: 'Draft', simulation_params: {} }}
+        loading={false}
+        detailLoading={false}
+        detailError=""
+        error=""
+        onSelect={() => undefined}
+        onEnter={() => undefined}
+        onCreate={() => undefined}
+        onConfigure={() => undefined}
+        onReviewRun={() => undefined}
+        onRename={async () => undefined}
+        onManage={() => undefined}
+        onRefresh={() => undefined}
+      />,
+    )
+    expect(markup).toContain('>Configure Draft</span>')
   })
 })

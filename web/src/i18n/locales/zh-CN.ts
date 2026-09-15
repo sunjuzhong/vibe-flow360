@@ -466,6 +466,8 @@ const messages: Record<string, string> = {
   'Inspect active Draft parameters': '查看当前草稿参数',
   'Validate, review, and run this Draft': '验证、审查并运行此草稿',
   'Retry loading Drafts': '重试加载草稿',
+  'Retry loading Draft': '重试加载草稿',
+  'Draft unavailable': '草稿不可用',
   'Select a folder to view its projects': '选择文件夹以查看项目',
   'This folder has no cached projects': '此文件夹没有缓存的项目',
   'This folder has no projects': '此文件夹没有项目',
