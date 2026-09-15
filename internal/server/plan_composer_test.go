@@ -1007,6 +1007,89 @@ func TestSchemaPromptCatalogBuildsRequestScopedSkillsWhenDetailsExceedBudget(t *
 	}
 }
 
+func TestSchemaPromptCatalogBalancesStagesForVagueIntentUnderBudget(t *testing.T) {
+	stages := []string{"SurfaceMesh", "VolumeMesh", "Case"}
+	schemas := make(map[string]json.RawMessage, len(stages))
+	for _, stage := range stages {
+		properties := make(map[string]any, 900)
+		for index := 0; index < 900; index++ {
+			name := fmt.Sprintf("%s_parameter_%04d", strings.ToLower(stage), index)
+			properties[name] = map[string]any{
+				"type":        "number",
+				"title":       fmt.Sprintf("%s parameter %04d", stage, index),
+				"description": "Runtime schema detail for stage-balanced selection.",
+			}
+		}
+		if stage == "SurfaceMesh" {
+			properties["oversized_details"] = map[string]any{
+				"type":        "string",
+				"title":       "Oversized details",
+				"description": strings.Repeat("This field is intentionally too large for the compact schema. ", 1000),
+			}
+			properties["surface_target"] = map[string]any{
+				"type":        "number",
+				"title":       "Surface target",
+				"description": "A compact field that should remain available after an oversized candidate.",
+			}
+		}
+		schema, err := json.Marshal(map[string]any{"type": "object", "properties": properties})
+		if err != nil {
+			t.Fatal(err)
+		}
+		schemas[stage] = schema
+	}
+	form := flow360.PlanFormSchema{Stages: stages, Schemas: schemas}
+
+	first, err := schemaPromptCatalog(form, "请帮我优化一下")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := schemaPromptCatalog(form, "请帮我优化一下")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) > maxPlanAssistSchemaCatalogBytes {
+		t.Fatalf("catalog exceeded prompt budget: %d", len(first))
+	}
+	if string(first) != string(second) {
+		t.Fatal("vague prompt produced nondeterministic compact schema")
+	}
+
+	var decoded struct {
+		SelectedFields int                 `json:"selected_fields"`
+		Skills         []promptSchemaSkill `json:"schema_skills"`
+	}
+	if err := json.Unmarshal(first, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.SelectedFields < len(stages) {
+		t.Fatalf("compact schema did not reserve one field per stage: %#v", decoded)
+	}
+	for _, stage := range stages {
+		var skill *promptSchemaSkill
+		for index := range decoded.Skills {
+			if decoded.Skills[index].Stage == stage {
+				skill = &decoded.Skills[index]
+				break
+			}
+		}
+		if skill == nil || len(skill.Fields) == 0 {
+			t.Fatalf("compact schema omitted active stage %q: %#v", stage, decoded.Skills)
+		}
+	}
+	foundCompactSuccessor := false
+	for _, skill := range decoded.Skills {
+		for _, field := range skill.Fields {
+			if field.Path == "surface_target" {
+				foundCompactSuccessor = true
+			}
+		}
+	}
+	if !foundCompactSuccessor {
+		t.Fatalf("compact schema stopped at oversized candidate instead of scanning later fields")
+	}
+}
+
 func TestPromptSchemaIndexExpandsNestedArrayAndUnionPaths(t *testing.T) {
 	root := map[string]any{
 		"type": "object",

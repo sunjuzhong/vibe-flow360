@@ -178,6 +178,86 @@ describe('Draft parameter validation navigation', () => {
     expect(prompt?.value).toContain('Do not change any values.')
   })
 
+  it('renders request-missing-input as an assistant clarification and keeps the composer usable', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
+    vi.spyOn(api, 'assistPlanForm').mockResolvedValue({
+      action: {
+        version: 'v1',
+        kind: 'request-missing-input',
+        message: 'I need more information before changing the Draft.',
+        questions: [{
+          field: 'case.solver.max_steps',
+          message: 'Which maximum step count should I use?',
+          reason: 'The request did not specify a value.',
+          urgency: 'required',
+          type: 'number',
+          unit: 'steps',
+          min: 1,
+          max: 1000,
+          placeholder: 'For example, 200',
+          default: 100,
+          options: [{ value: '100', label: 'Standard' }],
+        }],
+      },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-clarification" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    const prompt = container.querySelector<HTMLTextAreaElement>('.draft-ai-composer textarea')!
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    if (!valueSetter) throw new Error('AI prompt textarea is unavailable')
+    await act(async () => {
+      valueSetter.call(prompt, 'Set the solver steps')
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('.draft-ai-composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    const assistant = container.querySelector<HTMLElement>('.draft-ai-message.assistant')
+    expect(assistant?.textContent).toContain('I need more information before changing the Draft.')
+    expect(assistant?.textContent).toContain('case.solver.max_steps')
+    expect(assistant?.textContent).toContain('The request did not specify a value.')
+    expect(assistant?.textContent).toContain('required')
+    expect(assistant?.textContent).toContain('number')
+    expect(assistant?.textContent).toContain('steps')
+    expect(assistant?.textContent).toContain('1')
+    expect(assistant?.textContent).toContain('1000')
+    expect(assistant?.textContent).toContain('For example, 200')
+    expect(assistant?.textContent).toContain('Standard (100)')
+    expect(container.querySelector('.draft-ai-message.error')).toBeNull()
+    expect(prompt.disabled).toBe(false)
+    expect(api.assistPlanForm).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'Set the solver steps',
+      history: [],
+    }))
+
+    await act(async () => {
+      valueSetter.call(prompt, 'Use the suggested value')
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('.draft-ai-composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+    expect(api.assistPlanForm).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(api.assistPlanForm).mock.calls[1][0].history).toEqual([
+      { role: 'user', content: 'Set the solver steps' },
+      { role: 'assistant', content: expect.stringContaining('case.solver.max_steps') },
+    ])
+  })
+
   it('navigates errors across tabs and clears every stale projection after the fingerprint changes', async () => {
     await act(async () => {
       root.render(<I18nProvider><DraftParameterEditor draftId="draft-1" parameters={baseline} /></I18nProvider>)

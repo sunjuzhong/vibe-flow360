@@ -1337,30 +1337,113 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		})
 	}
 	compact := map[string]any{
-		"source":        "runtime Flow360 form schema",
-		"catalog_mode":  "request-scoped schema skills",
-		"stages":        form.Stages,
-		"total_fields":  len(fields),
-		"schema_skills": skills,
+		"source":          "runtime Flow360 form schema",
+		"catalog_mode":    "request-scoped schema skills",
+		"stages":          form.Stages,
+		"total_fields":    len(fields),
+		"schema_skills":   skills,
+		"selected_fields": 0,
 	}
-	for _, candidate := range ranked {
-		skillIndex := skillsByStage[candidate.Field.Stage]
-		skills[skillIndex].Fields = append(skills[skillIndex].Fields, candidate.Field)
+	selected := 0
+	selectedOrders := make(map[int]struct{}, len(ranked))
+	type selectedPromptSchemaField struct {
+		Candidate rankedField
+		Field     promptSchemaField
+		Minimal   bool
+	}
+	selectedByStage := make(map[string]selectedPromptSchemaField, len(form.Stages))
+	payload, err = json.Marshal(compact)
+	if err != nil {
+		return nil, err
+	}
+	appendField := func(candidate rankedField, field promptSchemaField) (bool, error) {
+		skillIndex, ok := skillsByStage[candidate.Field.Stage]
+		if !ok {
+			return false, nil
+		}
+		skills[skillIndex].Fields = append(skills[skillIndex].Fields, field)
+		selected++
+		compact["selected_fields"] = selected
 		next, marshalErr := json.Marshal(compact)
 		if marshalErr != nil {
-			return nil, marshalErr
+			skills[skillIndex].Fields = skills[skillIndex].Fields[:len(skills[skillIndex].Fields)-1]
+			selected--
+			compact["selected_fields"] = selected
+			return false, marshalErr
 		}
 		if len(next) > maxPlanAssistSchemaCatalogBytes {
 			skills[skillIndex].Fields = skills[skillIndex].Fields[:len(skills[skillIndex].Fields)-1]
-			break
+			selected--
+			compact["selected_fields"] = selected
+			return false, nil
 		}
 		payload = next
+		selectedOrders[candidate.Order] = struct{}{}
+		return true, nil
 	}
-	selected := 0
-	for _, skill := range skills {
-		selected += len(skill.Fields)
+
+	// Reserve a minimal field for each stage before spending budget on detail.
+	// This prevents a high-relevance field from starving later active stages.
+	for _, stage := range form.Stages {
+		for _, candidate := range ranked {
+			if candidate.Field.Stage != stage {
+				continue
+			}
+			added, appendErr := appendField(candidate, compactPromptSchemaField(candidate.Field))
+			if appendErr != nil {
+				return nil, appendErr
+			}
+			if added {
+				selectedByStage[stage] = selectedPromptSchemaField{Candidate: candidate, Field: compactPromptSchemaField(candidate.Field), Minimal: true}
+				break
+			}
+		}
 	}
-	compact["selected_fields"] = selected
+
+	// Upgrade reserved fields to their full schema entries when the remaining
+	// budget allows it. Failed candidates are skipped deterministically.
+	for _, stage := range form.Stages {
+		current, ok := selectedByStage[stage]
+		if !ok {
+			continue
+		}
+		for _, candidate := range ranked {
+			if candidate.Field.Stage != stage || (!current.Minimal && candidate.Order == current.Candidate.Order) {
+				continue
+			}
+			skillIndex := skillsByStage[stage]
+			skills[skillIndex].Fields = skills[skillIndex].Fields[:len(skills[skillIndex].Fields)-1]
+			selected--
+			compact["selected_fields"] = selected
+			delete(selectedOrders, current.Candidate.Order)
+			added, appendErr := appendField(candidate, candidate.Field)
+			if appendErr != nil {
+				return nil, appendErr
+			}
+			if added {
+				selectedByStage[stage] = selectedPromptSchemaField{Candidate: candidate, Field: candidate.Field}
+				break
+			}
+			restored, restoreErr := appendField(current.Candidate, current.Field)
+			if restoreErr != nil {
+				return nil, restoreErr
+			}
+			if !restored {
+				return nil, fmt.Errorf("Flow360 parameter index exceeds the safe Agent context budget")
+			}
+			selectedByStage[stage] = current
+		}
+	}
+
+	for _, candidate := range ranked {
+		if _, alreadySelected := selectedOrders[candidate.Order]; alreadySelected {
+			continue
+		}
+		// Keep scanning after an oversized candidate; a later field may still fit.
+		if _, appendErr := appendField(candidate, candidate.Field); appendErr != nil {
+			return nil, appendErr
+		}
+	}
 	payload, err = json.Marshal(compact)
 	if err != nil {
 		return nil, err
@@ -1369,6 +1452,10 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		return nil, fmt.Errorf("Flow360 parameter index exceeds the safe Agent context budget")
 	}
 	return payload, nil
+}
+
+func compactPromptSchemaField(field promptSchemaField) promptSchemaField {
+	return promptSchemaField{Stage: field.Stage, Path: field.Path, Type: field.Type}
 }
 
 func collectPromptSchemaIndex(stage, path string, node map[string]any, index *[]promptSchemaIndexField, seen map[string]struct{}, depth int) {
