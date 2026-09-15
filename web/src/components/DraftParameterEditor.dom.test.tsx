@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, type DraftParameterValidationResponse, type DynamicFormSchema } from '../api/client'
+import { api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { I18nProvider } from '../i18n'
 import DraftParameterEditor from './DraftParameterEditor'
 
@@ -154,6 +154,28 @@ describe('Draft parameter validation navigation', () => {
     container.remove()
     vi.restoreAllMocks()
     vi.useRealTimers()
+  })
+
+  it('opens the AI Draft session with a field-specific explanation prompt', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-explain" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    const action = container.querySelector<HTMLButtonElement>('.schema-field-ai-explain')
+    expect(action).not.toBeNull()
+    expect(action?.getAttribute('aria-label')).toContain('Explain')
+    await click(action!)
+
+    const session = container.querySelector<HTMLElement>('.draft-ai-session')
+    const prompt = container.querySelector<HTMLTextAreaElement>('.draft-ai-composer textarea')
+    expect(session).not.toBeNull()
+    expect(prompt?.value).toContain('meshing.defaults')
+    expect(prompt?.value).toContain('Do not change any values.')
   })
 
   it('navigates errors across tabs and clears every stale projection after the fingerprint changes', async () => {

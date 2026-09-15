@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, TriangleAlert } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 export type FieldState = 'neutral' | 'error' | 'warning' | 'success'
 
@@ -37,6 +37,8 @@ export type FieldShellProps = {
   controlClassName?: string
 }
 
+export const FieldLabelActionContext = createContext<ReactNode | null>(null)
+
 function classes(...values: Array<string | false | undefined>) {
   return values.filter(Boolean).join(' ')
 }
@@ -68,6 +70,7 @@ export function FieldShell({
   className,
   controlClassName,
 }: FieldShellProps) {
+  const labelAction = useContext(FieldLabelActionContext)
   const errorMessages = messages.filter((message) => (message.level ?? 'error') === 'error')
   const effectiveTone: FieldState = errorMessages.length
     ? 'error'
@@ -107,8 +110,9 @@ export function FieldShell({
       data-field-path={path}
       aria-disabled={disabled || undefined}
     >
-      <label className="field-shell__label-wrap input-field__label-wrap" htmlFor={id}>
-        <span className="field-shell__label input-field__label">
+      <div className="field-shell__label-wrap input-field__label-wrap">
+        <label className="field-shell__label-wrap-label" htmlFor={id}>
+          <span className="field-shell__label input-field__label">
           {!hideLabel && (
             <span className="field-shell__title-row input-field__title-row">
               <strong>
@@ -121,8 +125,10 @@ export function FieldShell({
           )}
           {path ? <code>{path}</code> : null}
           {description ? <small id={`${id}-description`} className="field-shell__description input-field__description">{description}</small> : null}
-        </span>
-      </label>
+          </span>
+        </label>
+        {labelAction && !hideLabel ? <span className="field-shell__label-action">{labelAction}</span> : null}
+      </div>
       <div className={classes('field-shell__control', controlClassName)}>
         {typeof children === 'function' ? children(controlProps) : children}
       </div>

@@ -6,6 +6,20 @@ import { cleanSchemaDescription, complexArrayCopy, complexArrayVariantGroup, con
 import { variantLabel } from './schema-fields/common'
 
 describe('schema-driven Flow360 form', () => {
+  it('renders the optional AI explanation action beside, not inside, the field label', () => {
+    const schema: DynamicFormSchema = { type: 'object', properties: { alpha: { type: 'number', title: 'Alpha' } } }
+    const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
+      schema,
+      value: { alpha: 2 },
+      onChange: () => undefined,
+      onExplainField: () => undefined,
+    }))
+    const labelEnd = markup.indexOf('</label>')
+    const action = markup.indexOf('schema-field-ai-explain')
+    expect(action).toBeGreaterThan(labelEnd)
+    expect(markup).toContain('aria-label="Explain Alpha with AI"')
+  })
+
   it('keeps deep type menus inside the viewport and flips them above the trigger', () => {
     expect(placeFloatingMenu(
       { left: 650, right: 690, top: 700, bottom: 734, width: 40, height: 34 },

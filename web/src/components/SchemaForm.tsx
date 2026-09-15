@@ -13,6 +13,7 @@ import NegativeOneOrPositiveIntegerField from './schema-fields/NegativeOneOrPosi
 import QuantityField from './schema-fields/QuantityField'
 import UnionVariantPicker from './schema-fields/UnionVariantPicker'
 import { FieldShell, InputField, ToggleField, type FieldControlProps, type FieldMessage } from './InputField'
+import { FieldLabelActionContext } from './FieldShell'
 
 type SchemaFormDialogProps = {
   schema: DynamicFormSchema
@@ -44,10 +45,18 @@ type SchemaFormFieldsProps = {
   issues?: Array<{ path?: string; message: string; level?: 'error' | 'warning' }>
   focusIssuePath?: string
   focusIssueRequest?: number
+  onExplainField?: (field: SchemaFieldExplanation) => void
+}
+
+export type SchemaFieldExplanation = {
+  path: string
+  title: string
+  description?: string
 }
 
 const ExpressionValidationContext = createContext<ExpressionValidator | undefined>(undefined)
 const FieldIssueContext = createContext<SchemaFormFieldsProps['issues']>([])
+const ExplainFieldContext = createContext<SchemaFormFieldsProps['onExplainField']>(undefined)
 
 export default function SchemaFormDialog({
   schema,
@@ -135,7 +144,9 @@ export function SchemaFormFields(props: SchemaFormFieldsProps) {
   return (
     <FieldIssueContext.Provider value={props.issues ?? []}>
       <ExpressionValidationContext.Provider value={props.expressionValidator}>
-        <SchemaFormFieldsContent {...props} />
+        <ExplainFieldContext.Provider value={props.onExplainField}>
+          <SchemaFormFieldsContent {...props} />
+        </ExplainFieldContext.Provider>
       </ExpressionValidationContext.Provider>
     </FieldIssueContext.Provider>
   )
@@ -275,6 +286,61 @@ function SchemaFormFieldsContent({
   return <SchemaField schema={schema} value={value} onChange={onChange} path="" sparse={sparse} showAll={showAll} configured baseline={baseline} addLabel={addLabel} removeLabel={removeLabel} collapsibleObjects={collapsibleObjects} />
 }
 
+function SchemaField(props: SchemaFieldProps) {
+  const onExplainField = useContext(ExplainFieldContext)
+  const title = props.schema.title || humanize(props.path.split('.').pop() || 'Simulation parameters')
+  const displayTitle = formatSchemaLabel(title)
+  const labelAction = schemaFieldExplainAction(onExplainField, props.path, displayTitle, props.schema.description)
+  return (
+    <FieldLabelActionContext.Provider value={labelAction}>
+      <SchemaFieldContent {...props} />
+    </FieldLabelActionContext.Provider>
+  )
+}
+
+function schemaFieldExplainAction(
+  onExplainField: SchemaFormFieldsProps['onExplainField'],
+  path: string,
+  title: string,
+  description?: string,
+) {
+  if (!onExplainField || !path) return null
+  const label = localizeSchemaText('Explain {title} with AI').replace('{title}', title)
+  return (
+    <button
+      type="button"
+      className="schema-field-ai-explain"
+      aria-label={label}
+      title={label}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onExplainField({ path, title, description })
+      }}
+    >
+      <Sparkles size={12} aria-hidden="true" />
+    </button>
+  )
+}
+
+type SchemaFieldProps = {
+  schema: DynamicFormSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  path: string
+  sparse: boolean
+  showAll: boolean
+  configured: boolean
+  baseline?: unknown
+  addLabel: string
+  removeLabel: string
+  collapsibleObjects: boolean
+  rootTabContent?: boolean
+  embeddedObjectContent?: boolean
+  visibleObjectKeys?: Set<string>
+  compactUnion?: boolean
+}
+
 export type SchemaGroupStats = { unconfigured: number; modified: number; errors: number; warnings: number }
 
 export function schemaGroupStats(
@@ -310,7 +376,7 @@ function groupStatsLabel(stats: SchemaGroupStats) {
   return labels.join(', ')
 }
 
-function SchemaField({
+function SchemaFieldContent({
   schema,
   value,
   onChange,
@@ -326,24 +392,9 @@ function SchemaField({
   embeddedObjectContent = false,
   visibleObjectKeys,
   compactUnion = false,
-}: {
-  schema: DynamicFormSchema
-  value: unknown
-  onChange: (value: unknown) => void
-  path: string
-  sparse: boolean
-  showAll: boolean
-  configured: boolean
-  baseline?: unknown
-  addLabel: string
-  removeLabel: string
-  collapsibleObjects: boolean
-  rootTabContent?: boolean
-  embeddedObjectContent?: boolean
-  visibleObjectKeys?: Set<string>
-  compactUnion?: boolean
-}) {
+}: SchemaFieldProps) {
   const issues = useContext(FieldIssueContext)
+  const onExplainField = useContext(ExplainFieldContext)
   const title = schema.title || humanize(path.split('.').pop() || 'Simulation parameters')
   const displayTitle = formatSchemaLabel(title)
   const fieldID = schemaFieldID(path)
@@ -470,6 +521,7 @@ function SchemaField({
                 defaulted={hasExplicitDefault(child)}
                 showAll={showAll}
                 invalid={invalid}
+                labelAction={schemaFieldExplainAction(onExplainField, childPath, formatSchemaLabel(childTitle), child.description)}
               >
                 {editor}
               </RootFieldSection>
@@ -493,6 +545,7 @@ function SchemaField({
             {configurationStatus(schema, configured, showAll) && <small className="schema-field-state">{configurationStatus(schema, configured, showAll)}</small>}
             <ChevronDown size={16} />
           </summary>
+          {schemaFieldExplainAction(onExplainField, path, displayTitle, schema.description)}
           <div className="schema-section-body">{fields}</div>
         </details>
       )
@@ -1224,6 +1277,7 @@ function RootFieldSection({
   defaulted,
   showAll,
   invalid,
+  labelAction,
   children,
 }: {
   title: string
@@ -1232,6 +1286,7 @@ function RootFieldSection({
   defaulted: boolean
   showAll: boolean
   invalid: boolean
+  labelAction?: ReactNode
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -1249,6 +1304,7 @@ function RootFieldSection({
         {showAll && !configured && <small className="schema-field-state">{localizeSchemaText(defaulted ? 'Default value' : 'Not configured')}</small>}
         <ChevronDown size={16} />
       </summary>
+      {labelAction}
       <div className="schema-section-body">{children}</div>
     </details>
   )

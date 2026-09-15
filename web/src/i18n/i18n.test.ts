@@ -92,6 +92,14 @@ describe('language settings', () => {
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })
 
+  it('covers Draft parameter AI explanation copy in Chinese', () => {
+    const messages = [
+      'Explain {title} with AI',
+      'Explain the Draft parameter "{title}" at "{path}" in plain language. Include what it controls, valid values or units, common mistakes, and how to choose it for this simulation. Do not change any values.',
+    ]
+    expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
+  })
+
   it('covers the new Project source selector in Chinese', () => {
     const messages = [
       'Project source method',

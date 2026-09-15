@@ -1,13 +1,13 @@
 import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, Redo2, RefreshCw, RotateCcw, Save, ShieldCheck, Sparkles, TriangleAlert, Undo2 } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { APIError, api, type AgentAction, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
+import { APIError, api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { candidateFingerprint, localDraftValidation, normalizeDraftValidation, type DraftValidationIssue } from '../lib/draftValidation'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
 import JsonPreview from './JsonPreview'
 import DraftAISession, { type DraftAISessionMessage } from './DraftAISession'
 import { applyJSONMergePatch, diffParameterValues } from './PlanParameterReview'
-import { hydrateSchemaValue, SchemaFormFields, serializeValue, type ExpressionValidator } from './SchemaForm'
+import { hydrateSchemaValue, SchemaFormFields, serializeValue, type ExpressionValidator, type SchemaFieldExplanation } from './SchemaForm'
 
 type EditorMode = 'form' | 'json' | 'preview'
 
@@ -111,6 +111,14 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     aiMessageIDRef.current = 0
     initialValidationDoneRef.current = false
   }, [draftId])
+
+  const explainParameter = useCallback((field: SchemaFieldExplanation) => {
+    const prompt = t('Explain the Draft parameter "{title}" at "{path}" in plain language. Include what it controls, valid values or units, common mistakes, and how to choose it for this simulation. Do not change any values.')
+      .replace('{title}', field.title)
+      .replace('{path}', field.path)
+    setAIPrompt(prompt)
+    setAIOpen(true)
+  }, [t])
 
   useEffect(() => {
     let active = true
@@ -378,15 +386,6 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       })
       if (currentDraftIdRef.current !== requestDraftId) return
       if (latestFingerprintRef.current !== requestFingerprint) throw new Error(t('The Draft changed while AI was preparing a response. Review the latest candidate and ask again.'))
-      if (response.action.kind === 'request-missing-input') {
-        const assistantMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
-        setAIMessages((current) => [...current, {
-          id: assistantMessageID,
-          role: 'assistant',
-          content: draftAIClarificationMessage(response.action, t),
-        }])
-        return
-      }
       if (!response.proposal) throw new Error(response.action.message || t('AI did not return parameter changes.'))
       const next = applyDraftAIProposal(baseline, candidate, response.proposal.patch)
       const aiChanges = diffParameterValues(candidate, next)
@@ -689,6 +688,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
               .map((issue) => ({ path: issue.path, message: issue.message, level: issue.severity }))}
             focusIssuePath={focusedValidationIssue?.path}
             focusIssueRequest={focusedValidationIssue?.request}
+            onExplainField={project && resource ? explainParameter : undefined}
             onChange={(next) => {
               applyCandidate(buildDraftParameters(schema, next))
             }}
@@ -896,36 +896,6 @@ export function draftParameterErrorMessage(cause: unknown, t: (text: string) => 
     return t('Draft metadata is still loading. Please wait a moment and try again.')
   }
   return message
-}
-
-export function draftAIClarificationMessage(action: AgentAction, t: (text: string) => string = (text) => text): string {
-  const lines = [action.message.trim()].filter(Boolean)
-  for (const question of action.questions ?? []) {
-    const details = [
-      question.field,
-      question.message,
-      question.reason,
-      question.recommendation,
-      question.options?.length
-        ? question.options.map((option) => option.label || option.value).join(', ')
-        : '',
-      question.default !== undefined ? draftAIClarificationValue(question.default) : '',
-    ].filter(Boolean)
-    if (details.length) lines.push(details.join(' — '))
-  }
-  for (const warning of action.warnings ?? []) {
-    if (warning.trim()) lines.push(warning.trim())
-  }
-  for (const assumption of action.assumptions ?? []) {
-    if (assumption.trim()) lines.push(assumption.trim())
-  }
-  return lines.join('\n') || t('AI needs more information before changing this Draft.')
-}
-
-function draftAIClarificationValue(value: unknown): string {
-  if (typeof value === 'string') return value
-  const serialized = JSON.stringify(value)
-  return serialized === undefined ? String(value) : serialized
 }
 
 export function draftValidationFailureKind(cause: unknown): 'network' | 'schema' {
