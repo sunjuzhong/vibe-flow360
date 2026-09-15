@@ -1337,30 +1337,66 @@ func schemaPromptCatalog(form flow360.PlanFormSchema, queries ...string) (json.R
 		})
 	}
 	compact := map[string]any{
-		"source":        "runtime Flow360 form schema",
-		"catalog_mode":  "request-scoped schema skills",
-		"stages":        form.Stages,
-		"total_fields":  len(fields),
-		"schema_skills": skills,
+		"source":          "runtime Flow360 form schema",
+		"catalog_mode":    "request-scoped schema skills",
+		"stages":          form.Stages,
+		"total_fields":    len(fields),
+		"schema_skills":   skills,
+		"selected_fields": 0,
 	}
-	for _, candidate := range ranked {
+	selected := 0
+	selectedOrders := make(map[int]struct{}, len(fields))
+	appendField := func(candidate rankedField) (bool, error) {
 		skillIndex := skillsByStage[candidate.Field.Stage]
 		skills[skillIndex].Fields = append(skills[skillIndex].Fields, candidate.Field)
+		compact["selected_fields"] = selected + 1
 		next, marshalErr := json.Marshal(compact)
 		if marshalErr != nil {
-			return nil, marshalErr
+			skills[skillIndex].Fields = skills[skillIndex].Fields[:len(skills[skillIndex].Fields)-1]
+			compact["selected_fields"] = selected
+			return false, marshalErr
 		}
 		if len(next) > maxPlanAssistSchemaCatalogBytes {
 			skills[skillIndex].Fields = skills[skillIndex].Fields[:len(skills[skillIndex].Fields)-1]
-			break
+			compact["selected_fields"] = selected
+			return false, nil
 		}
+		selected++
+		selectedOrders[candidate.Order] = struct{}{}
 		payload = next
+		return true, nil
 	}
-	selected := 0
-	for _, skill := range skills {
-		selected += len(skill.Fields)
+
+	// Reserve one best-ranked field for every active stage before filling the
+	// remaining budget globally. A large or irrelevant prompt must not make
+	// the first stage consume the entire catalog and hide later-stage fields.
+	for _, stage := range form.Stages {
+		for _, candidate := range ranked {
+			if candidate.Field.Stage != stage {
+				continue
+			}
+			if _, alreadySelected := selectedOrders[candidate.Order]; alreadySelected {
+				continue
+			}
+			appended, err := appendField(candidate)
+			if err != nil {
+				return nil, err
+			}
+			if appended {
+				break
+			}
+		}
 	}
-	compact["selected_fields"] = selected
+	for _, candidate := range ranked {
+		if _, alreadySelected := selectedOrders[candidate.Order]; alreadySelected {
+			continue
+		}
+		// Keep scanning after a field that does not fit: later fields may have
+		// smaller contracts and still fit inside the bounded payload.
+		if _, err := appendField(candidate); err != nil {
+			return nil, err
+		}
+	}
 	payload, err = json.Marshal(compact)
 	if err != nil {
 		return nil, err

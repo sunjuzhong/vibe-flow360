@@ -1665,6 +1665,7 @@ Object.assign(messages, {
   'No AI changes yet': '暂无 AI 修改',
   'Ask AI to modify the current unsaved Draft. Each request and its parameter changes will stay in this session.': '让 AI 修改当前未保存的草稿。每轮指令及其参数改动都会保留在此会话中。',
   'AI is preparing a Draft update…': 'AI 正在准备草稿改动…',
+  'AI needs more information before changing this Draft.': 'AI 需要更多信息才能修改此草稿。',
   'AI change failed': 'AI 修改失败',
   'This Project uses Flow360 {cloudVersion} parameters. Upgrade Vibe Flow360 to a release that supports Flow360 {supportedRelease}.': '此项目使用 Flow360 {cloudVersion} 参数格式。请升级 Vibe Flow360，以支持 Flow360 {supportedRelease}。',
   'Vibe Flow360 could not update its Flow360 {supportedRelease} compatibility components automatically. Check the network connection and retry.': 'Vibe Flow360 无法自动更新 Flow360 {supportedRelease} 兼容组件。请检查网络连接后重试。',

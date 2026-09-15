@@ -1007,6 +1007,66 @@ func TestSchemaPromptCatalogBuildsRequestScopedSkillsWhenDetailsExceedBudget(t *
 	}
 }
 
+func TestSchemaPromptCatalogBalancesActiveStagesForVagueNonEnglishPrompt(t *testing.T) {
+	makeSchema := func(prefix string) json.RawMessage {
+		properties := make(map[string]any, 900)
+		for index := 0; index < 900; index++ {
+			name := fmt.Sprintf("%s_parameter_%03d", prefix, index)
+			properties[name] = map[string]any{
+				"type":        "number",
+				"title":       fmt.Sprintf("%s Parameter %03d", prefix, index),
+				"description": strings.Repeat("Runtime schema detail for deterministic stage coverage. ", 4),
+				"minimum":     0,
+				"maximum":     1000,
+			}
+		}
+		raw, err := json.Marshal(map[string]any{"type": "object", "properties": properties})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+
+	form := flow360.PlanFormSchema{
+		Stages: []string{"SurfaceMesh", "VolumeMesh", "Case"},
+		Schemas: map[string]json.RawMessage{
+			"SurfaceMesh": makeSchema("surface"),
+			"VolumeMesh":  makeSchema("volume"),
+			"Case":        makeSchema("case"),
+		},
+	}
+	first, err := schemaPromptCatalog(form, "请帮我优化一下")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := schemaPromptCatalog(form, "请帮我优化一下")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatal("vague non-English schema selection is not deterministic")
+	}
+	if len(first) > maxPlanAssistSchemaCatalogBytes {
+		t.Fatalf("catalog exceeded prompt budget: %d", len(first))
+	}
+
+	var decoded struct {
+		SelectedFields int                 `json:"selected_fields"`
+		Skills         []promptSchemaSkill `json:"schema_skills"`
+	}
+	if err := json.Unmarshal(first, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.SelectedFields == 0 || len(decoded.Skills) != len(form.Stages) {
+		t.Fatalf("unexpected compact schema metadata: %#v", decoded)
+	}
+	for _, skill := range decoded.Skills {
+		if len(skill.Fields) == 0 {
+			t.Fatalf("stage %s was omitted from balanced compact schema", skill.Stage)
+		}
+	}
+}
+
 func TestPromptSchemaIndexExpandsNestedArrayAndUnionPaths(t *testing.T) {
 	root := map[string]any{
 		"type": "object",
