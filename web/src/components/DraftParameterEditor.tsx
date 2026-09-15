@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, Redo2, RefreshCw, RotateCcw, Save, ShieldCheck, Sparkles, TriangleAlert, Undo2 } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { APIError, api, type AgentAction, type DraftParameterValidationResponse, type DynamicFormSchema, type PlanAssistMode, type ProjectInfo, type ResourceNode } from '../api/client'
+import { APIError, api, type AgentAction, type DraftParameterSchemaResponse, type DraftParameterValidationResponse, type DynamicFormSchema, type PlanAssistMode, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { candidateFingerprint, localDraftValidation, normalizeDraftValidation, type DraftValidationIssue } from '../lib/draftValidation'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
@@ -14,6 +14,7 @@ type EditorMode = 'form' | 'json' | 'preview'
 type Props = {
   draftId: string
   parameters?: Record<string, unknown>
+  preloadedSchema?: DraftParameterSchemaResponse | null
   onSaved?: (parameters: Record<string, unknown>) => void
   onReviewRun?: () => void
   project?: ProjectInfo
@@ -40,6 +41,7 @@ type DraftEditorHistory = {
 const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(function DraftParameterEditor({
   draftId,
   parameters,
+  preloadedSchema,
   onSaved,
   onReviewRun,
   project,
@@ -54,14 +56,14 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const { t } = useI18n()
   const initialBaseline = useMemo(() => parameters ?? {}, [parameters])
   const [baseline, setBaseline] = useState<Record<string, unknown>>(initialBaseline)
-  const [schema, setSchema] = useState<DynamicFormSchema | null>(null)
+  const [schema, setSchema] = useState<DynamicFormSchema | null>(() => preloadedSchema?.schema ?? null)
   const [mode, setMode] = useState<EditorMode>('form')
   const [formValue, setFormValue] = useState<unknown>(initialBaseline)
   const [jsonValue, setJSONValue] = useState(() => JSON.stringify(initialBaseline, null, 2))
   const [previewValue, setPreviewValue] = useState<unknown>(initialBaseline)
   const [canonicalCandidate, setCanonicalCandidate] = useState<Record<string, unknown> | null>(null)
   const [history, setHistory] = useState<DraftEditorHistory>(() => ({ past: [], present: initialBaseline, future: [] }))
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !readOnly && !preloadedSchema)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
@@ -132,15 +134,14 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     }
     const retrying = schemaLoadedDraftRef.current === draftId
     schemaLoadedDraftRef.current = draftId
-    setLoading(true)
+    setLoading(!preloadedSchema)
     setError('')
     setSchemaError('')
     if (!retrying) {
       setDirty(false)
       setJSONValue(JSON.stringify(initialBaseline, null, 2))
     }
-    api.draftParameterSchema(draftId)
-      .then((response) => {
+    const loadSchema = (response: DraftParameterSchemaResponse) => {
         if (!active) return
         const canonical = response.baseline
         let editorCandidate = canonical
@@ -157,7 +158,13 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         setPreviewValue(editorCandidate)
         setCanonicalCandidate(null)
         if (!retrying || editorCandidate !== canonical) setMode('form')
-      })
+    }
+    if (preloadedSchema) {
+      loadSchema(preloadedSchema)
+      return () => { active = false }
+    }
+    api.draftParameterSchema(draftId)
+      .then(loadSchema)
       .catch((cause) => {
         if (!active) return
         setSchema(null)
@@ -166,7 +173,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       })
       .finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [draftId, readOnly, schemaLoadNonce])
+  }, [draftId, preloadedSchema, readOnly, schemaLoadNonce])
 
   const candidateResult = useMemo(() => {
     try {

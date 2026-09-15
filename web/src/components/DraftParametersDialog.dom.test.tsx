@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, type DynamicFormSchema } from '../api/client'
+import { api, type DraftParameterSchemaResponse, type DynamicFormSchema } from '../api/client'
 import { I18nProvider } from '../i18n'
 import DraftParametersDialog from './DraftParametersDialog'
 
@@ -16,6 +16,7 @@ const schema: DynamicFormSchema = {
   },
 }
 const baseline = { solver: { max_steps: 10 } }
+const preloadedSchema: DraftParameterSchemaResponse = { schema_version: 1, source_type: 'Case', stages: ['Case'], schema, baseline }
 
 function button(container: HTMLElement, text: string) {
   const result = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent?.includes(text))
@@ -75,6 +76,7 @@ describe('DraftParametersDialog close protection', () => {
         detail={{ id: 'draft-close', type: 'Draft', simulation_params: baseline }}
         loading={false}
         error=""
+        preloadedSchema={preloadedSchema}
         onClose={onClose}
         onRetry={() => undefined}
       /></I18nProvider>)
@@ -84,6 +86,7 @@ describe('DraftParametersDialog close protection', () => {
       await vi.runOnlyPendingTimersAsync()
       await Promise.resolve()
     })
+    expect(api.draftParameterSchema).not.toHaveBeenCalled()
     const input = container.querySelector<HTMLInputElement>('#schema-solver-max_steps')
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     if (!input || !valueSetter) throw new Error('Maximum steps input is unavailable')

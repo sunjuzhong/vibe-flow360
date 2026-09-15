@@ -1,7 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import type { DraftParameterSchemaResponse } from '../api/client'
 import DraftParametersDialog from './DraftParametersDialog'
 import { I18nProvider } from '../i18n'
+
+const preloadedSchema: DraftParameterSchemaResponse = {
+  schema_version: 1,
+  source_type: 'Case',
+  stages: ['Case'],
+  schema: { type: 'object' as const },
+  baseline: { operating_condition: {} },
+}
 
 describe('DraftParametersDialog', () => {
   it('renders a focused parameters-only dialog', () => {
@@ -12,6 +21,7 @@ describe('DraftParametersDialog', () => {
         detail={{ id: 'draft-1', type: 'Draft', simulation_params: { operating_condition: {} } }}
         loading={false}
         error=""
+        preloadedSchema={preloadedSchema}
         onClose={() => undefined}
         onRetry={() => undefined}
       /></I18nProvider>,
@@ -22,7 +32,7 @@ describe('DraftParametersDialog', () => {
     expect(markup).toContain('draft-1')
     expect(markup).toContain('aria-label="Copy Draft ID"')
     expect(markup).toContain('Draft matches the saved Flow360 version.')
-    expect(markup).toContain('Loading the installed Flow360 schema…')
+    expect(markup).not.toContain('Loading the installed Flow360 schema…')
     expect(markup).not.toContain('Resource details')
     expect(markup).not.toContain('Overview')
     expect(markup).not.toContain('Summary')

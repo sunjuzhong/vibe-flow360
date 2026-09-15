@@ -1,6 +1,6 @@
 import { Check, ChevronRight, GitPullRequestDraft, Pencil, Play, Plus, RefreshCw, Settings2, SlidersHorizontal, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import type { DraftRecord, ResourceDetail } from '../api/client'
+import type { DraftParameterSchemaResponse, DraftRecord, ResourceDetail } from '../api/client'
 import { useI18n } from '../i18n'
 import HelpTooltip from './HelpTooltip'
 import { resourceStatus } from './ResourceDetailPanel'
@@ -10,6 +10,7 @@ type Props = {
   drafts: DraftRecord[]
   selectedId: string
   selectedDetail: ResourceDetail | null
+  parameterSchema: DraftParameterSchemaResponse | null
   loading: boolean
   detailLoading: boolean
   detailError: string
@@ -50,6 +51,7 @@ export default function ProjectDraftBar({
   drafts,
   selectedId,
   selectedDetail,
+  parameterSchema,
   loading,
   detailLoading,
   detailError,
@@ -72,6 +74,7 @@ export default function ProjectDraftBar({
   const [renameError, setRenameError] = useState('')
   const [configureBusy, setConfigureBusy] = useState(false)
   const detailReady = Boolean(selectedId && selectedDetail?.id === selectedId && !detailLoading && !detailError)
+  const configureReady = detailReady && Boolean(parameterSchema)
 
   useEffect(() => {
     setEditingName(false)
@@ -85,7 +88,7 @@ export default function ProjectDraftBar({
     setEditingName(true)
   }
   const startConfigure = () => {
-    if (configureBusy || !detailReady) return
+    if (configureBusy || !configureReady) return
     setConfigureBusy(true)
     onConfigure()
     window.setTimeout(() => setConfigureBusy(false), 500)
@@ -233,12 +236,12 @@ export default function ProjectDraftBar({
         <button
           type="button"
           onClick={startConfigure}
-          disabled={!detailReady || configureBusy}
+          disabled={!configureReady || configureBusy}
           title={t('Edit, validate, save, and optionally run this Draft')}
           className="project-draft-configure"
         >
           <SlidersHorizontal size={14} />
-          <span>{detailLoading || configureBusy || (!detailReady && !detailError) ? t('Opening…') : detailError ? t('Draft unavailable') : t('Configure Draft')}</span>
+          <span>{detailLoading || configureBusy || (!configureReady && !detailError) ? t('Opening…') : detailError ? t('Draft unavailable') : t('Configure Draft')}</span>
         </button>
         {detailError && <button type="button" className="project-draft-utility" onClick={onRefresh} title={t('Retry loading Draft')} aria-label={t('Retry loading Draft')}><RefreshCw size={14} /></button>}
         <button

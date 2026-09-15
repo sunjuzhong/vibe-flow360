@@ -20,6 +20,7 @@ import {
   type Flow360Status,
   type Flow360DataResponse,
   type DraftRecord,
+  type DraftParameterSchemaResponse,
   type GeometryComparison,
   type GeometryDiagnosticReport,
   type ProjectInfo,
@@ -443,6 +444,7 @@ export default function ProjectPage() {
   const [draftDetail, setDraftDetail] = useState<ResourceDetail | null>(null)
   const [draftDetailLoading, setDraftDetailLoading] = useState(false)
   const [draftDetailError, setDraftDetailError] = useState('')
+  const [draftParameterSchema, setDraftParameterSchema] = useState<{ draftId: string; response: DraftParameterSchemaResponse } | null>(null)
   const draftDetailRequestRef = useRef(0)
   const [chatOpen, setChatOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
@@ -712,20 +714,27 @@ export default function ProjectPage() {
     const requestId = ++draftDetailRequestRef.current
     if (!activeDraftId) {
       setDraftDetail(null)
+      setDraftParameterSchema(null)
       setDraftDetailError('')
       return
     }
     setDraftDetailLoading(true)
     setDraftDetailError('')
     setDraftDetail(null)
+    setDraftParameterSchema(null)
     try {
-      const response = await api.resourceDetail('Draft', activeDraftId, false, projectId)
+      const [detailResponse, schemaResponse] = await Promise.all([
+        api.resourceDetail('Draft', activeDraftId, false, projectId),
+        api.draftParameterSchema(activeDraftId),
+      ])
       if (requestId !== draftDetailRequestRef.current) return
-      if (!isDraftDetailFor(activeDraftId, response.data)) throw new Error('Flow360 returned a different Draft than the one requested.')
-      setDraftDetail(response.data)
+      if (!isDraftDetailFor(activeDraftId, detailResponse.data)) throw new Error('Flow360 returned a different Draft than the one requested.')
+      setDraftDetail(detailResponse.data)
+      setDraftParameterSchema({ draftId: activeDraftId, response: schemaResponse })
     } catch (cause) {
       if (requestId !== draftDetailRequestRef.current) return
       setDraftDetail(null)
+      setDraftParameterSchema(null)
       setDraftDetailError(String(cause).replace('Error: ', ''))
     } finally {
       if (requestId === draftDetailRequestRef.current) setDraftDetailLoading(false)
@@ -1172,6 +1181,7 @@ export default function ProjectPage() {
                   drafts={drafts}
                   selectedId={activeDraftId}
                   selectedDetail={draftDetail}
+                  parameterSchema={draftParameterSchema?.draftId === activeDraftId ? draftParameterSchema.response : null}
                   loading={draftsLoading}
                   detailLoading={draftDetailLoading}
                   detailError={draftDetailError}
@@ -1421,6 +1431,7 @@ export default function ProjectPage() {
               draftId={activeDraft.id}
               draftName={activeDraft.name}
               detail={draftDetail}
+              preloadedSchema={draftParameterSchema?.draftId === activeDraft.id ? draftParameterSchema.response : null}
               loading={draftDetailLoading}
               error={draftDetailError}
               project={project ?? undefined}

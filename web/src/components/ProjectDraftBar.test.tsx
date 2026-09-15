@@ -1,9 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
+import type { DraftParameterSchemaResponse } from '../api/client'
 import { I18nProvider } from '../i18n'
 import { draftRecords } from './ProjectDraftBar'
 import ProjectDraftBar from './ProjectDraftBar'
+
+const parameterSchema: DraftParameterSchemaResponse = {
+  schema_version: 1,
+  source_type: 'Case',
+  stages: ['Case'],
+  schema: { type: 'object' as const },
+  baseline: {},
+}
 
 function render(node: ReactNode) {
   return renderToStaticMarkup(<I18nProvider>{node}</I18nProvider>)
@@ -31,6 +40,7 @@ describe('ProjectDraftBar', () => {
         ]}
         selectedId="draft-1"
         selectedDetail={null}
+        parameterSchema={parameterSchema}
         loading={false}
         detailLoading={false}
         detailError=""
@@ -67,6 +77,7 @@ describe('ProjectDraftBar', () => {
         ]}
         selectedId="draft-2"
         selectedDetail={{ id: 'draft-2', type: 'Draft', state: { status: 'submitted' } }}
+        parameterSchema={parameterSchema}
         loading={false}
         detailLoading={false}
         detailError=""
@@ -110,6 +121,7 @@ describe('ProjectDraftBar', () => {
         drafts={[{ id: 'draft-2', name: 'High AoA', status: 'draft' }]}
         selectedId="draft-2"
         selectedDetail={null}
+        parameterSchema={null}
         loading={false}
         detailLoading={false}
         detailError=""
@@ -129,6 +141,34 @@ describe('ProjectDraftBar', () => {
     expect(markup).not.toContain('>Configure Draft</span>')
   })
 
+  it('keeps Configure Draft disabled until the selected Draft schema is preloaded', () => {
+    const markup = render(
+      <ProjectDraftBar
+        mode="draft"
+        drafts={[{ id: 'draft-2', name: 'High AoA', status: 'draft' }]}
+        selectedId="draft-2"
+        selectedDetail={{ id: 'draft-2', type: 'Draft', simulation_params: {} }}
+        parameterSchema={null}
+        loading={false}
+        detailLoading={false}
+        detailError=""
+        error=""
+        onSelect={() => undefined}
+        onEnter={() => undefined}
+        onCreate={() => undefined}
+        onConfigure={() => undefined}
+        onReviewRun={() => undefined}
+        onRename={async () => undefined}
+        onManage={() => undefined}
+        onRefresh={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('disabled=""')
+    expect(markup).toContain('Opening…')
+    expect(markup).not.toContain('>Configure Draft</span>')
+  })
+
   it('enables Configure Draft only for the matching loaded detail', () => {
     const markup = render(
       <ProjectDraftBar
@@ -136,6 +176,7 @@ describe('ProjectDraftBar', () => {
         drafts={[{ id: 'draft-2', name: 'High AoA', status: 'draft' }]}
         selectedId="draft-2"
         selectedDetail={{ id: 'draft-2', type: 'Draft', simulation_params: {} }}
+        parameterSchema={parameterSchema}
         loading={false}
         detailLoading={false}
         detailError=""

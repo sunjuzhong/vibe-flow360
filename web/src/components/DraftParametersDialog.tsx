@@ -1,6 +1,6 @@
 import { AlertCircle, Check, Copy, FileJson2, RefreshCw, Save, X } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
-import type { ProjectInfo, ResourceDetail, ResourceNode } from '../api/client'
+import type { DraftParameterSchemaResponse, ProjectInfo, ResourceDetail, ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import DraftParameterEditor, { type DraftParameterEditorHandle } from './DraftParameterEditor'
@@ -11,6 +11,7 @@ type Props = {
   detail: ResourceDetail | null
   loading: boolean
   error: string
+  preloadedSchema?: DraftParameterSchemaResponse | null
   project?: ProjectInfo
   resource?: ResourceNode
   onClose: () => void
@@ -32,6 +33,7 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
   detail,
   loading,
   error,
+  preloadedSchema,
   project,
   resource,
   onClose,
@@ -132,6 +134,7 @@ const DraftParametersDialog = forwardRef<HTMLElement, Props>(function DraftParam
                 ref={editorRef}
                 draftId={draftId}
                 parameters={detail.simulation_params}
+                preloadedSchema={preloadedSchema}
                 project={project}
                 resource={resource}
                 externalPatch={externalPatch}

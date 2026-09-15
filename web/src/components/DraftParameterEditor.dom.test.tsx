@@ -156,6 +156,22 @@ describe('Draft parameter validation navigation', () => {
     vi.useRealTimers()
   })
 
+  it('uses a preloaded schema without a duplicate schema request or loading state', async () => {
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor
+        draftId="draft-preloaded"
+        parameters={baseline}
+        preloadedSchema={{ schema_version: 1, source_type: 'Case', stages: ['Case'], schema, baseline }}
+      /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(api.draftParameterSchema).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Loading the installed Flow360 schema…')
+    expect(container.querySelector('#schema-meshing-defaults-target_count')).not.toBeNull()
+  })
+
   it('opens the AI Draft session with a field-specific explanation prompt', async () => {
     const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
     const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
