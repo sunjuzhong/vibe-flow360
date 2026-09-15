@@ -178,6 +178,95 @@ describe('Draft parameter validation navigation', () => {
     expect(prompt?.value).toContain('Do not change any values.')
   })
 
+  it('populates localized quick prompts without submitting them', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
+    const assist = vi.spyOn(api, 'assistPlanForm')
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-quick-prompts" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    const prompt = container.querySelector<HTMLTextAreaElement>('.draft-ai-composer textarea')!
+    for (const [label, expected] of [
+      ['Modify parameters', 'Modify the current Draft parameters.'],
+      ['Fix validation', 'Make the current Draft pass Flow360 validation.'],
+      ['Explain a parameter', 'without modifying any parameter values'],
+    ]) {
+      await click(buttonWithText(container, label))
+      expect(prompt.value).toContain(expected)
+    }
+    expect(assist).not.toHaveBeenCalled()
+  })
+
+  it('records an explicit explanation without changing or revalidating the candidate', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
+    const onCandidateChange = vi.fn()
+    vi.spyOn(api, 'assistPlanForm').mockResolvedValue({
+      mode: 'explain',
+      explanation: 'Maximum steps limits the number of solver iterations. No values were changed.',
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-explain-submit" parameters={baseline} project={project} resource={resource} onCandidateChange={onCandidateChange} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+    const validationCalls = vi.mocked(api.validateDraftParameters).mock.calls.length
+    const candidateCalls = onCandidateChange.mock.calls.length
+
+    await click(container.querySelector<HTMLButtonElement>('.schema-field-ai-explain')!)
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('.draft-ai-composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(api.assistPlanForm).toHaveBeenCalledWith(expect.objectContaining({ mode: 'explain', autonomous: false }))
+    expect(container.querySelector('.draft-ai-message.assistant')?.textContent).toContain('No values were changed.')
+    expect(container.querySelector('.draft-ai-message-changes')).toBeNull()
+    expect(container.querySelector<HTMLButtonElement>('.draft-parameter-save')?.disabled).toBe(true)
+    expect(vi.mocked(api.validateDraftParameters).mock.calls.length).toBe(validationCalls)
+    expect(onCandidateChange.mock.calls.length).toBe(candidateCalls)
+    expect(api.updateDraftParameters).not.toHaveBeenCalled()
+  })
+
+  it('keeps validation repair mutation-capable and marks the request autonomous', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
+    vi.spyOn(api, 'assistPlanForm').mockResolvedValue({
+      mode: 'repair',
+      action: { version: 'v1', kind: 'update-draft', message: 'Repaired validation.', proposals: [] },
+      proposal: {
+        id: 'repair', action: 'Case', target: 'draft', name: 'Repair', intent: 'Pass validation',
+        patch: { case: { solver: { max_steps: 200 } } }, branch_preview: 'repair', fields: [],
+      },
+      preflight: { valid: true, issues: [], schema_version: 1, form_schema: schema },
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-repair" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    await click(buttonWithText(container, 'Fix validation'))
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('.draft-ai-composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(api.assistPlanForm).toHaveBeenCalledWith(expect.objectContaining({ mode: 'repair', autonomous: true }))
+    expect(container.querySelector('.draft-ai-message-changes')?.textContent).toContain('case.solver.max_steps')
+    expect(container.querySelector<HTMLButtonElement>('.draft-parameter-save')?.disabled).toBe(false)
+  })
+
   it('renders request-missing-input as an assistant clarification and keeps the composer usable', async () => {
     const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
     const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
@@ -239,6 +328,8 @@ describe('Draft parameter validation navigation', () => {
     expect(api.assistPlanForm).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Set the solver steps',
       history: [],
+      mode: 'edit',
+      autonomous: false,
     }))
 
     await act(async () => {

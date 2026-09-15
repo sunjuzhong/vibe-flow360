@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/sunjuzhong/vibe-flow360/internal/agent"
 	"github.com/sunjuzhong/vibe-flow360/internal/flow360"
 	"github.com/sunjuzhong/vibe-flow360/internal/plans"
@@ -822,6 +823,120 @@ func TestPlanAssistPromptUsesDefaultsWithoutInventingGeometryEvidence(t *testing
 	}
 	if !strings.Contains(prompt, "Use the language of the Plan intent and User form instruction") {
 		t.Fatalf("plan assist prompt does not preserve the user's language: %s", prompt)
+	}
+}
+
+func TestPlanAssistPromptSeparatesEditAndRepairIntent(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     string
+		expected string
+	}{
+		{name: "edit stays scoped", mode: "edit", expected: "Do not add unrelated defaults or broaden the request merely to make the entire Draft pass validation."},
+		{name: "repair completes validation", mode: "repair", expected: "The user explicitly selected validation repair."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			prompt := planAssistPrompt(planComposerRequest{
+				SourceType: "Case", Target: "case", DraftID: "draft-1",
+				Intent: "Update the Draft", Prompt: "Update the Draft", Mode: test.mode,
+			})
+			if !strings.Contains(prompt, test.expected) {
+				t.Fatalf("%s prompt is missing its mode contract: %s", test.mode, prompt)
+			}
+		})
+	}
+}
+
+func TestExplainSchemaNativePlanReturnsTextWithoutActionOrProposal(t *testing.T) {
+	var requestBody string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		requestBody = string(body)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Maximum steps limits solver iterations. No values were changed."}}]}`))
+	}))
+	defer model.Close()
+
+	app := &Server{agent: &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()}}
+	result, err := app.explainSchemaNativePlan(context.Background(), planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "project-1", SourceID: "case-1", SourceType: "Case", DraftID: "draft-1",
+			Target: "case", Intent: "Explain maximum steps", Prompt: "Explain maximum steps. Do not change any values.", Mode: "explain",
+		},
+		Name: "Case", Baseline: json.RawMessage(`{"case":{"solver":{"max_steps":100}}}`),
+		Form: flow360.PlanFormSchema{Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{
+			"Case": json.RawMessage(`{"type":"object","properties":{"max_steps":{"type":"integer","title":"Maximum steps"}}}`),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "explain" || result.Explanation == "" || result.Action != nil || result.Proposal != nil || result.Preflight != nil {
+		t.Fatalf("explanation escaped the read-only response contract: %#v", result)
+	}
+	for _, expected := range []string{"read-only explanation", "Do not return AgentAction JSON", "Do not change any values."} {
+		if !strings.Contains(requestBody, expected) {
+			t.Fatalf("explanation request is missing %q: %s", expected, requestBody)
+		}
+	}
+}
+
+func TestAssistPlanFormExplainLoadsSchemaWithoutPreflight(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	temp := t.TempDir()
+	preflightMarker := filepath.Join(temp, "preflight-called")
+	flowBinary := filepath.Join(temp, "flow360")
+	flowScript := `#!/bin/sh
+case "$*" in
+  "draft info draft-1") printf '%s' '{"id":"draft-1","project_id":"project-1","source_id":"case-1","source_type":"Case"}' ;;
+  "draft state draft-1") printf '%s' '{"status":"draft"}' ;;
+  "draft simulation-params get draft-1") printf '%s' '{"simulation_params":{"time_stepping":{"max_steps":100}}}' ;;
+  "case info case-1") printf '%s' '{"id":"case-1","project_id":"project-1","name":"Case"}' ;;
+  "case state case-1") printf '%s' '{"status":"completed"}' ;;
+  *) printf 'unexpected arguments: %s' "$*" >&2; exit 2 ;;
+esac
+`
+	if err := os.WriteFile(flowBinary, []byte(flowScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	python := filepath.Join(temp, "python")
+	pythonScript := `#!/bin/sh
+if ! grep -q '"schema_only":true' "$3"; then
+  printf 'called' > "` + preflightMarker + `"
+  printf 'validation path invoked' >&2
+  exit 2
+fi
+printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues":[],"form_schema":{"type":"object","properties":{}},"editor_schemas":{"Case":{"type":"object","properties":{"time_stepping":{"type":"object","properties":{"max_steps":{"type":"integer","title":"Maximum steps"}}}}}}}'
+`
+	if err := os.WriteFile(python, []byte(pythonScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", python)
+
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Maximum steps limits solver iterations. No values were changed."}}]}`))
+	}))
+	defer model.Close()
+
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360: &flow360.Client{Binary: flowBinary, Timeout: time.Second},
+	}
+	recorder := httptest.NewRecorder()
+	requestContext, _ := gin.CreateTestContext(recorder)
+	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/plans/assist", strings.NewReader(`{
+		"project_id":"project-1","source_id":"case-1","source_type":"Case","draft_id":"draft-1",
+		"target":"case","prompt":"Explain maximum steps. Do not change values.","mode":"explain"
+	}`))
+	requestContext.Request.Header.Set("Content-Type", "application/json")
+
+	app.assistPlanForm(requestContext)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"mode":"explain"`) {
+		t.Fatalf("unexpected explanation response %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(preflightMarker); !os.IsNotExist(err) {
+		t.Fatalf("explanation context entered the Flow360 preflight path: %v", err)
 	}
 }
 

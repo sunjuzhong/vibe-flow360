@@ -2416,12 +2416,15 @@ button { color: inherit; }
 .draft-ai-message-changes em { color: #8b9186; font-size: 9px; font-style: normal; }
 .draft-ai-thinking { display: flex; align-items: center; gap: 7px; color: #64734b; font-size: 10px; }
 .draft-ai-composer { flex: 0 0 auto; padding: 11px; border-top: 1px solid #dce0d5; background: #f9faf6; }
+.draft-ai-quick-prompts { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.draft-ai-quick-prompts button { width: auto; min-height: 26px; padding: 0 8px; border: 1px solid #d4dac8; border-radius: 999px; color: #687060; background: #fff; font-size: 9px; font-weight: 700; cursor: pointer; }
+.draft-ai-quick-prompts button:hover,.draft-ai-quick-prompts button:focus-visible,.draft-ai-quick-prompts button.active { border-color: #96aa59; color: #536b19; background: #eef4df; }
 .draft-ai-composer textarea { width: 100%; min-height: 78px; resize: vertical; padding: 9px 10px; border: 1px solid #ccd2c3; border-radius: 9px; outline: 0; color: #464d42; background: #fff; font: 11px/1.5 inherit; }
 .draft-ai-composer textarea:focus { border-color: #94aa50; box-shadow: 0 0 0 3px rgba(148,170,80,.12); }
-.draft-ai-composer > div { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
-.draft-ai-composer > div > span { min-width: 0; flex: 1; color: #8a9184; font-size: 9px; line-height: 1.35; }
-.draft-ai-composer button { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; padding: 0; border: 1px solid #6d7f3e; border-radius: 9px; color: #fff; background: #5d7130; cursor: pointer; }
-.draft-ai-composer button:disabled { cursor: not-allowed; opacity: .4; }
+.draft-ai-composer-footer { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.draft-ai-composer-footer > span { min-width: 0; flex: 1; color: #8a9184; font-size: 9px; line-height: 1.35; }
+.draft-ai-composer-footer button { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; padding: 0; border: 1px solid #6d7f3e; border-radius: 9px; color: #fff; background: #5d7130; cursor: pointer; }
+.draft-ai-composer-footer button:disabled { cursor: not-allowed; opacity: .4; }
 .draft-config-actions { z-index: 4; display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 9px; margin: 14px -18px 0; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid #dfe1d9; background: rgba(250,250,247,.97); box-shadow: 0 -8px 22px rgba(35,42,28,.08); backdrop-filter: blur(10px); }
 .draft-config-actions > span { min-width: 0; flex: 1; color: #686e64; font-size: 11px; line-height: 1.4; }
 .draft-parameter-validate { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #b8c29f; border-radius: 8px; color: #5f702f; background: #f4f7eb; font-size: 12px; font-weight: 700; cursor: pointer; }

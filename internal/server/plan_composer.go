@@ -40,6 +40,7 @@ type planComposerRequest struct {
 	ConfirmedInputs json.RawMessage `json:"confirmed_inputs,omitempty"`
 	History         []agent.Message `json:"history,omitempty"`
 	Autonomous      bool            `json:"autonomous,omitempty"`
+	Mode            string          `json:"mode,omitempty"`
 }
 
 type planFormSchemaResponse struct {
@@ -48,7 +49,9 @@ type planFormSchemaResponse struct {
 }
 
 type planAssistResponse struct {
-	Action         agent.Action             `json:"action"`
+	Mode           string                   `json:"mode,omitempty"`
+	Action         *agent.Action            `json:"action,omitempty"`
+	Explanation    string                   `json:"explanation,omitempty"`
 	Proposal       *agent.Proposal          `json:"proposal,omitempty"`
 	Preflight      *flow360.PreflightResult `json:"preflight,omitempty"`
 	RepairAttempts int                      `json:"repair_attempts,omitempty"`
@@ -89,18 +92,62 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI form filling requires a configured AI or Codex provider"})
 		return
 	}
-	composer, err := s.loadPlanComposerContext(c.Request.Context(), request)
+	var composer planComposerContext
+	var err error
+	if request.Mode == "explain" {
+		composer, err = s.loadPlanComposerExplanationContext(c.Request.Context(), request)
+	} else {
+		composer, err = s.loadPlanComposerContext(c.Request.Context(), request)
+	}
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, flow360ErrorResponse(err))
 		return
 	}
-	result, err := s.generateSchemaNativePlan(c.Request.Context(), composer)
+	var result planAssistResponse
+	if request.Mode == "explain" {
+		result, err = s.explainSchemaNativePlan(c.Request.Context(), composer)
+	} else {
+		result, err = s.generateSchemaNativePlan(c.Request.Context(), composer)
+	}
 	if err != nil {
 		status, response := planAssistAgentError(err)
 		c.JSON(status, response)
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// explainSchemaNativePlan uses the same canonical Draft and live schema context
+// as parameter assistance, but deliberately bypasses AgentAction parsing,
+// proposal compilation, Flow360 preflight, and every mutation repair path.
+func (s *Server) explainSchemaNativePlan(ctx context.Context, composer planComposerContext) (planAssistResponse, error) {
+	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt)
+	if err != nil {
+		return planAssistResponse{}, fmt.Errorf("could not prepare the active Flow360 schema for the Agent: %w", err)
+	}
+	contextPayload, err := json.Marshal(agent.ChatContextPayload{
+		ProjectID: composer.Request.ProjectID, ProjectName: composer.Request.ProjectName,
+		ScopeType: planAssistScopeType(composer.Request), ScopeID: composer.Request.DraftID,
+		SourceID: composer.Request.SourceID, SourceType: composer.Request.SourceType,
+		SourceName: composer.Name, Target: composer.Request.Target,
+		SimulationParams: composer.Baseline, FormSchema: catalog,
+		RuntimeSkills: agentskills.Instructions(agentskills.ParameterAuthoring),
+	})
+	if err != nil {
+		return planAssistResponse{}, errors.New("could not prepare the plan context")
+	}
+	reply, err := s.agent.Chat(ctx, agent.ChatRequest{
+		Message: planAssistExplanationPrompt(composer.Request), Context: string(contextPayload),
+		History: composer.Request.History, Session: "web:plan-composer:explain",
+	})
+	if err != nil {
+		return planAssistResponse{}, err
+	}
+	reply = strings.TrimSpace(reply)
+	if reply == "" {
+		return planAssistResponse{}, errors.New("AI returned an empty parameter explanation")
+	}
+	return planAssistResponse{Mode: "explain", Explanation: reply}, nil
 }
 
 // generateSchemaNativePlan is the shared parameter intelligence used by the
@@ -136,7 +183,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		return planAssistResponse{}, err
 	}
 	if action.Kind == agent.ActionRequestMissingInput {
-		return planAssistResponse{Action: *action}, nil
+		return planAssistResponse{Mode: composer.Request.Mode, Action: action}, nil
 	}
 	activeSchema, err := combinedPlanFormSchema(composer.Form)
 	if err != nil {
@@ -163,7 +210,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 				err = errors.New("the Agent requested user input for a schema-mechanical form correction")
 				continue
 			}
-			return planAssistResponse{Action: *repairedAction, RepairAttempts: repairAttempts}, nil
+			return planAssistResponse{Mode: composer.Request.Mode, Action: repairedAction, RepairAttempts: repairAttempts}, nil
 		}
 		action = repairedAction
 		proposal, err = preparePlanAssistProposal(*action, composer, activeSchema)
@@ -174,6 +221,9 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	preflight, merged, err := s.preflightPlanAssistProposal(ctx, composer, proposal)
 	if err != nil {
 		return planAssistResponse{}, errors.New("AI form values could not be checked with Flow360: " + err.Error())
+	}
+	if composer.Request.Mode == "edit" {
+		return finalizePlanAssistResponse(composer, action, proposal, preflight, 0, false)
 	}
 
 	autoRepaired := false
@@ -350,6 +400,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		issues, _ := json.Marshal(preflight.Issues)
 		return planAssistResponse{}, fmt.Errorf("the parameter Agent could not produce a schema-valid Flow360 setup after %d autonomous repairs; remaining preflight issues: %s", maxPlanAssistRepairAttempts, issues)
 	}
+	return finalizePlanAssistResponse(composer, action, proposal, preflight, repairAttempts, autoRepaired)
+}
+
+func finalizePlanAssistResponse(composer planComposerContext, action *agent.Action, proposal agent.Proposal, preflight flow360.PreflightResult, repairAttempts int, autoRepaired bool) (planAssistResponse, error) {
 	if preflight.Valid && len(preflight.CanonicalParams) > 0 && string(preflight.CanonicalParams) != "null" {
 		canonicalPatch, canonicalErr := planAssistCanonicalPatch(composer.Baseline, preflight.CanonicalParams)
 		if canonicalErr != nil {
@@ -376,7 +430,7 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		}
 	}
 	return planAssistResponse{
-		Action: *action, Proposal: &proposal, Preflight: &preflight,
+		Mode: composer.Request.Mode, Action: action, Proposal: &proposal, Preflight: &preflight,
 		RepairAttempts: repairAttempts, AutoRepaired: autoRepaired,
 	}, nil
 }
@@ -1050,10 +1104,16 @@ func planAssistMergePatchDifference(baseline, desired any) (any, bool) {
 }
 
 func planAssistPrompt(request planComposerRequest) string {
+	modeInstruction := "Change only the parameter values explicitly requested by the user. Do not add unrelated defaults or broaden the request merely to make the entire Draft pass validation."
+	if request.Mode == "repair" {
+		modeInstruction = "The user explicitly selected validation repair. Diagnose the current Draft and make the smallest coherent set of changes required for Flow360 validation to pass."
+	}
 	base := fmt.Sprintf(`Fill the active Flow360 plan form for an EXISTING %s resource from the user's engineering intent.
 This is parameter assistance, not geometry generation. Never claim CAD dimensions, format, topology, or provenance unless they are explicitly present in the supplied context. Refer to it as the existing %s resource when evidence is absent.
 
 %s when the requested values can be supported. Its operations may only address fields from the supplied stage schema catalog. Preserve inherited values unless the user asks to change them.
+
+Request mode: %s
 
 Treat the runtime Flow360 form_schema as the parameter mapping table for the installed solver version. Do not rely on a hardcoded list of supported natural-language parameters. Resolve the user's wording semantically against the supplied request-scoped schema skills: each skill contains exact paths, titles, descriptions, types, units, enums, model choices, and union variants selected from the live schema for this request. Use only these detailed field contracts and the preflight repair loop to produce exact values. If multiple schema fields remain genuinely plausible after considering stage and baseline context, ask one focused clarification instead of guessing.
 
@@ -1070,8 +1130,15 @@ When the user asks for a basic, baseline, demonstration, or first-pass simulatio
 Use the language of the Plan intent and User form instruction for all human-readable response text. Keep AgentAction JSON keys, enum values, and SimulationParams paths unchanged.
 
 Plan intent: %s
-User form instruction: %s`, request.SourceType, request.SourceType, planAssistActionContract(request, "Return exactly one"), request.Intent, request.Prompt)
+User form instruction: %s`, request.SourceType, request.SourceType, planAssistActionContract(request, "Return exactly one"), modeInstruction, request.Intent, request.Prompt)
 	return base
+}
+
+func planAssistExplanationPrompt(request planComposerRequest) string {
+	return fmt.Sprintf(`Explain the user's question about the current Flow360 Draft using the supplied canonical SimulationParams and live form schema.
+This is a read-only explanation. Do not propose, set, unset, append, repair, validate, or canonicalize parameter values. Do not return AgentAction JSON or claim that the Draft changed. Answer directly in concise plain language and use the language of the user's question.
+
+User question: %s`, request.Prompt)
 }
 
 func planAssistScopeType(request planComposerRequest) string {
@@ -1108,9 +1175,14 @@ func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
 	request.Target = strings.TrimSpace(request.Target)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Prompt = strings.TrimSpace(request.Prompt)
+	request.Mode = strings.ToLower(strings.TrimSpace(request.Mode))
 	request.History = normalizePlanAssistHistory(request.History)
 	if request.ProjectID == "" || request.SourceID == "" || request.SourceType == "" || request.Target == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "project, source resource, source type, and target are required"})
+		return planComposerRequest{}, false
+	}
+	if request.Mode != "" && request.Mode != "explain" && request.Mode != "edit" && request.Mode != "repair" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "plan form mode must be explain, edit, or repair"})
 		return planComposerRequest{}, false
 	}
 	if len(request.Patch) == 0 {
@@ -1143,6 +1215,18 @@ func normalizePlanAssistHistory(history []agent.Message) []agent.Message {
 }
 
 func (s *Server) loadPlanComposerContext(ctx context.Context, request planComposerRequest) (planComposerContext, error) {
+	return s.loadPlanComposerContextWithSchema(ctx, request, s.flow360.PlanFormSchema)
+}
+
+func (s *Server) loadPlanComposerExplanationContext(ctx context.Context, request planComposerRequest) (planComposerContext, error) {
+	return s.loadPlanComposerContextWithSchema(ctx, request, s.flow360.PlanFormSchemaReadOnly)
+}
+
+func (s *Server) loadPlanComposerContextWithSchema(
+	ctx context.Context,
+	request planComposerRequest,
+	loadSchema func(context.Context, string, string, json.RawMessage) (flow360.PlanFormSchema, error),
+) (planComposerContext, error) {
 	draftID := strings.TrimSpace(request.DraftID)
 	var draftParams json.RawMessage
 	var draftInfo map[string]any
@@ -1187,7 +1271,7 @@ func (s *Server) loadPlanComposerContext(ctx context.Context, request planCompos
 	if err != nil {
 		return planComposerContext{}, err
 	}
-	form, err := s.flow360.PlanFormSchema(ctx, detail.Type, request.Target, baseline)
+	form, err := loadSchema(ctx, detail.Type, request.Target, baseline)
 	if err != nil {
 		return planComposerContext{}, err
 	}

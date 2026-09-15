@@ -845,12 +845,16 @@ export type PlanFormSchemaResponse = {
 }
 
 export type PlanAssistResponse = {
-  action: AgentAction
+  mode?: PlanAssistMode
+  action?: AgentAction
+  explanation?: string
   proposal?: AgentProposal
   preflight?: Omit<PlanPreflight, 'validated_revision' | 'validated_at'>
   repair_attempts?: number
   auto_repaired?: boolean
 }
+
+export type PlanAssistMode = 'explain' | 'edit' | 'repair'
 
 export type SimulationPlan = {
   id: string
@@ -1447,6 +1451,7 @@ export const api = {
     confirmed_inputs?: Record<string, unknown>
     history?: ChatMessage[]
     autonomous?: boolean
+    mode?: PlanAssistMode
   }) => mutate<PlanAssistResponse>('/api/plans/assist', input),
   preflightPlan: (planId: string) =>
     mutate<SimulationPlan>(`/api/plans/${encodeURIComponent(planId)}/preflight`),

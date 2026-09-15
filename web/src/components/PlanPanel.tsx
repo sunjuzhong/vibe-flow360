@@ -382,17 +382,19 @@ export default function PlanPanel({
         confirmed_inputs: confirmedOverride,
         autonomous: true,
       })
-      setAssistAction(response.action)
-      const pendingQuestions = response.action.questions?.filter(
+      if (!response.action) throw new Error(t('AI did not return a parameter action.'))
+      const action = response.action
+      setAssistAction(action)
+      const pendingQuestions = action.questions?.filter(
         (question) => !Object.prototype.hasOwnProperty.call(confirmedOverride, question.field),
       ) ?? []
-      const repeatedQuestions = response.action.kind === 'request-missing-input'
-        && Boolean(response.action.questions?.length)
+      const repeatedQuestions = action.kind === 'request-missing-input'
+        && Boolean(action.questions?.length)
         && pendingQuestions.length === 0
       setAssistStalled(repeatedQuestions)
       setClarificationAction(
-        response.action.kind === 'request-missing-input' && pendingQuestions.length
-          ? { ...response.action, questions: pendingQuestions }
+        action.kind === 'request-missing-input' && pendingQuestions.length
+          ? { ...action, questions: pendingQuestions }
           : null,
       )
       setAssistPreflight(response.preflight ?? null)
@@ -473,9 +475,11 @@ export default function PlanPanel({
         patch: selected.patch,
         autonomous: true,
       })
-      if (!response.proposal) throw new Error(response.action.message || 'AI did not return a parameter repair.')
+      const action = response.action
+      if (!action) throw new Error(t('AI did not return a parameter repair.'))
+      if (!response.proposal) throw new Error(action.message || t('AI did not return a parameter repair.'))
       setRepairCandidate({
-        action: response.action,
+        action,
         proposal: response.proposal,
         preflight: response.preflight,
         attempts: response.repair_attempts ?? 0,

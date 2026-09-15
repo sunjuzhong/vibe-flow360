@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, Redo2, RefreshCw, RotateCcw, Save, ShieldCheck, Sparkles, TriangleAlert, Undo2 } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { APIError, api, type AgentAction, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
+import { APIError, api, type AgentAction, type DraftParameterValidationResponse, type DynamicFormSchema, type PlanAssistMode, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { candidateFingerprint, localDraftValidation, normalizeDraftValidation, type DraftValidationIssue } from '../lib/draftValidation'
 import JsonEditor, { jsonSyntaxIssue } from './JsonEditor'
@@ -75,6 +75,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const [validatedFingerprint, setValidatedFingerprint] = useState('')
   const [focusedValidationIssue, setFocusedValidationIssue] = useState<{ id: string; path?: string; request: number } | null>(null)
   const [aiPrompt, setAIPrompt] = useState('')
+  const [aiMode, setAIMode] = useState<PlanAssistMode>('edit')
   const [aiLoading, setAILoading] = useState(false)
   const [aiOpen, setAIOpen] = useState(false)
   const [aiMessages, setAIMessages] = useState<DraftAISessionMessage[]>([])
@@ -106,6 +107,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     setAILoading(false)
     setAIOpen(false)
     setAIPrompt('')
+    setAIMode('edit')
     setAIMessages([])
     setCanonicalCandidate(null)
     aiMessageIDRef.current = 0
@@ -117,6 +119,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       .replace('{title}', field.title)
       .replace('{path}', field.path)
     setAIPrompt(prompt)
+    setAIMode('explain')
     setAIOpen(true)
   }, [t])
 
@@ -362,6 +365,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     if (!project || !resource || !aiPrompt.trim() || aiLoading) return
     const requestDraftId = draftId
     const prompt = aiPrompt.trim()
+    const requestMode = aiMode
     const candidate = candidateResult.value ?? baseline
     const requestFingerprint = candidateFingerprint(candidate)
     const userMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
@@ -382,20 +386,33 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         prompt,
         patch: draftAIAssistPatch(baseline, candidate),
         history: draftAIConversationHistory(aiMessages),
-        autonomous: true,
+        autonomous: requestMode === 'repair',
+        mode: requestMode,
       })
       if (currentDraftIdRef.current !== requestDraftId) return
       if (latestFingerprintRef.current !== requestFingerprint) throw new Error(t('The Draft changed while AI was preparing a response. Review the latest candidate and ask again.'))
-      if (response.action.kind === 'request-missing-input') {
+      if (response.mode === 'explain') {
+        if (!response.explanation?.trim()) throw new Error(t('AI did not return a parameter explanation.'))
         const assistantMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
         setAIMessages((current) => [...current, {
           id: assistantMessageID,
           role: 'assistant',
-          content: draftAIClarificationMessage(response.action, t),
+          content: response.explanation!.trim(),
         }])
         return
       }
-      if (!response.proposal) throw new Error(response.action.message || t('AI did not return parameter changes.'))
+      const action = response.action
+      if (!action) throw new Error(t('AI did not return parameter changes.'))
+      if (action.kind === 'request-missing-input') {
+        const assistantMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
+        setAIMessages((current) => [...current, {
+          id: assistantMessageID,
+          role: 'assistant',
+          content: draftAIClarificationMessage(action, t),
+        }])
+        return
+      }
+      if (!response.proposal) throw new Error(action.message || t('AI did not return parameter changes.'))
       const next = applyDraftAIProposal(baseline, candidate, response.proposal.patch)
       const aiChanges = diffParameterValues(candidate, next)
       const assistantMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
@@ -404,7 +421,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       setAIMessages((current) => [...current, {
         id: assistantMessageID,
         role: 'assistant',
-        content: response.action.message,
+        content: action.message,
         changes: aiChanges,
       }])
     } catch (cause) {
@@ -759,8 +776,13 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       {project && resource && aiOpen && <DraftAISession
         messages={aiMessages}
         prompt={aiPrompt}
+        mode={aiMode}
         loading={aiLoading}
         onPromptChange={setAIPrompt}
+        onQuickPrompt={(nextMode, prompt) => {
+          setAIMode(nextMode)
+          setAIPrompt(prompt)
+        }}
         onSubmit={() => void fillWithAI()}
         onClose={() => setAIOpen(false)}
       />}

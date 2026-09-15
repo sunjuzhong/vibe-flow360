@@ -9,8 +9,10 @@ describe('DraftAISession', () => {
       <I18nProvider><DraftAISession
         messages={[]}
         prompt=""
+        mode="edit"
         loading={false}
         onPromptChange={() => undefined}
+        onQuickPrompt={() => undefined}
         onSubmit={() => undefined}
         onClose={() => undefined}
       /></I18nProvider>,
@@ -32,8 +34,10 @@ describe('DraftAISession', () => {
           { id: '3', role: 'error', content: 'Provider unavailable.' },
         ]}
         prompt=""
+        mode="edit"
         loading={false}
         onPromptChange={() => undefined}
+        onQuickPrompt={() => undefined}
         onSubmit={() => undefined}
         onClose={() => undefined}
       /></I18nProvider>,
@@ -44,5 +48,26 @@ describe('DraftAISession', () => {
     expect(markup).toContain('1 parameter changes')
     expect(markup).toContain('Provider unavailable.')
     expect(markup).toContain('AI change failed')
+  })
+
+  it('renders accessible quick prompts for editing, repair, and explanation', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider><DraftAISession
+        messages={[]}
+        prompt=""
+        mode="repair"
+        loading={false}
+        onPromptChange={() => undefined}
+        onQuickPrompt={() => undefined}
+        onSubmit={() => undefined}
+        onClose={() => undefined}
+      /></I18nProvider>,
+    )
+
+    expect(markup).toContain('aria-label="Quick prompts"')
+    expect(markup).toContain('Modify parameters')
+    expect(markup).toContain('Fix validation')
+    expect(markup).toContain('Explain a parameter')
+    expect(markup).toContain('aria-pressed="true"')
   })
 })

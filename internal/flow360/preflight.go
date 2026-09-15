@@ -95,15 +95,29 @@ func (c *Client) preflightSimulationParamsOnce(
 	target string,
 	params json.RawMessage,
 ) (PreflightResult, error) {
+	normalizedRoot, levels, err := preflightLevels(rootType, target)
+	if err != nil {
+		return PreflightResult{}, err
+	}
+	result, err := c.simulationSchemaContextOnce(ctx, normalizedRoot, levels, params, false)
+	if err != nil {
+		return PreflightResult{}, err
+	}
+	return addDraftEntityReferencePreflight(result, params, levels), nil
+}
+
+func (c *Client) simulationSchemaContextOnce(
+	ctx context.Context,
+	normalizedRoot string,
+	levels []string,
+	params json.RawMessage,
+	schemaOnly bool,
+) (PreflightResult, error) {
 	if !json.Valid(params) {
 		return PreflightResult{}, errors.New("SimulationParams must be valid JSON")
 	}
 	if len(params) > maxPreflightInputSize {
 		return PreflightResult{}, errors.New("SimulationParams exceeds the preflight size limit")
-	}
-	normalizedRoot, levels, err := preflightLevels(rootType, target)
-	if err != nil {
-		return PreflightResult{}, err
 	}
 	python, err := c.flow360Python()
 	if err != nil {
@@ -114,6 +128,7 @@ func (c *Client) preflightSimulationParamsOnce(
 		"root_type":      normalizedRoot,
 		"levels":         levels,
 		"params":         json.RawMessage(params),
+		"schema_only":    schemaOnly,
 	})
 	if err != nil {
 		return PreflightResult{}, fmt.Errorf("encode preflight request: %w", err)
@@ -174,7 +189,7 @@ func (c *Client) preflightSimulationParamsOnce(
 			return PreflightResult{}, fmt.Errorf("Flow360 schema preflight returned an invalid %s editor schema", stage)
 		}
 	}
-	return addDraftEntityReferencePreflight(result, params, levels), nil
+	return result, nil
 }
 
 func addDraftEntityReferencePreflight(result PreflightResult, params json.RawMessage, levels []string) PreflightResult {
@@ -207,6 +222,30 @@ func (c *Client) PlanFormSchema(
 	if err != nil {
 		return PlanFormSchema{}, err
 	}
+	return projectPlanFormSchema(normalizedRoot, target, stages, result)
+}
+
+// PlanFormSchemaReadOnly loads the installed schema projection without
+// validating or canonicalizing SimulationParams. It is intended for
+// explanation-only callers that must not enter the preflight path.
+func (c *Client) PlanFormSchemaReadOnly(
+	ctx context.Context,
+	rootType string,
+	target string,
+	params json.RawMessage,
+) (PlanFormSchema, error) {
+	normalizedRoot, stages, err := preflightLevels(rootType, target)
+	if err != nil {
+		return PlanFormSchema{}, err
+	}
+	result, err := c.simulationSchemaContextOnce(ctx, normalizedRoot, stages, params, true)
+	if err != nil {
+		return PlanFormSchema{}, err
+	}
+	return projectPlanFormSchema(normalizedRoot, target, stages, result)
+}
+
+func projectPlanFormSchema(normalizedRoot, target string, stages []string, result PreflightResult) (PlanFormSchema, error) {
 	schemas := make(map[string]json.RawMessage, len(stages))
 	for _, stage := range stages {
 		schema, ok := result.EditorSchemas[stage]
@@ -296,53 +335,58 @@ if request.get("schema_version") != 1:
 
 params = copy.deepcopy(request["params"])
 original_params = copy.deepcopy(params)
-# Draft.get_simulation_params() can omit wire metadata that is implicit in the
-# server-side Draft context. Local validation needs it explicitly, otherwise
-# Flow360 accepts typed Expressions without running their dimension checks.
-params.setdefault("version", package_version("flow360"))
-params.setdefault("unit_system", {"name": "SI"})
-
-# Cloud payloads may omit fields equal to their Pydantic defaults. Flow360
-# 25.10 validation currently inspects AutomatedFarfield.method on the raw wire
-# dictionary before Pydantic has a chance to restore its default, producing a
-# bare KeyError. Materialize the authoritative installed-schema default only in
-# this validation copy; original_params remains unchanged for diffs and saves.
-meshing = params.get("meshing")
-if isinstance(meshing, dict):
-    farfield_method_default = AutomatedFarfield.model_fields["method"].default
-    for zones_key in ("volume_zones", "zones"):
-        zones = meshing.get(zones_key)
-        if not isinstance(zones, list):
-            continue
-        for zone in zones:
-            if (
-                isinstance(zone, dict)
-                and zone.get("type") == "AutomatedFarfield"
-                and "method" not in zone
-            ):
-                zone["method"] = farfield_method_default
 root_type = request.get("root_type")
 if root_type == "Case":
     root_type = None
 levels = request["levels"]
 validation_level = levels[0] if len(levels) == 1 else levels
+schema_only = request.get("schema_only") is True
 
-try:
-    validated, errors, validation_warnings = services.validate_model(
-        params_as_dict=params,
-        validated_by=services.ValidationCalledBy.LOCAL,
-        root_item_type=root_type,
-        validation_level=validation_level,
-    )
-except Exception as error:
+if schema_only:
     validated = None
-    errors = [{
-        "type": "schema_input",
-        "loc": [],
-        "msg": str(error),
-        "ctx": {"relevant_for": levels},
-    }]
+    errors = []
     validation_warnings = []
+else:
+    # Draft.get_simulation_params() can omit wire metadata that is implicit in
+    # the server-side Draft context. Local validation needs it explicitly,
+    # otherwise Flow360 accepts typed Expressions without checking dimensions.
+    params.setdefault("version", package_version("flow360"))
+    params.setdefault("unit_system", {"name": "SI"})
+
+    # Cloud payloads may omit fields equal to their Pydantic defaults. Flow360
+    # 25.10 validation currently inspects AutomatedFarfield.method on the raw
+    # wire dictionary before Pydantic restores its default.
+    meshing = params.get("meshing")
+    if isinstance(meshing, dict):
+        farfield_method_default = AutomatedFarfield.model_fields["method"].default
+        for zones_key in ("volume_zones", "zones"):
+            zones = meshing.get(zones_key)
+            if not isinstance(zones, list):
+                continue
+            for zone in zones:
+                if (
+                    isinstance(zone, dict)
+                    and zone.get("type") == "AutomatedFarfield"
+                    and "method" not in zone
+                ):
+                    zone["method"] = farfield_method_default
+
+    try:
+        validated, errors, validation_warnings = services.validate_model(
+            params_as_dict=params,
+            validated_by=services.ValidationCalledBy.LOCAL,
+            root_item_type=root_type,
+            validation_level=validation_level,
+        )
+    except Exception as error:
+        validated = None
+        errors = [{
+            "type": "schema_input",
+            "loc": [],
+            "msg": str(error),
+            "ctx": {"relevant_for": levels},
+        }]
+        validation_warnings = []
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")

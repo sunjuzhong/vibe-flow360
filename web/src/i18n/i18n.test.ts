@@ -96,6 +96,16 @@ describe('language settings', () => {
     const messages = [
       'Explain {title} with AI',
       'Explain the Draft parameter "{title}" at "{path}" in plain language. Include what it controls, valid values or units, common mistakes, and how to choose it for this simulation. Do not change any values.',
+      'Quick prompts',
+      'Modify parameters',
+      'Fix validation',
+      'Explain a parameter',
+      'Modify the current Draft parameters. Describe the parameter names or paths and the values to set.',
+      'Make the current Draft pass Flow360 validation. Change only the fields required by the current validation issues.',
+      'Explain a Draft parameter without modifying any parameter values. Parameter name or path:',
+      'AI did not return a parameter explanation.',
+      'AI did not return a parameter action.',
+      'AI did not return a parameter repair.',
     ]
     expect(messages.filter((message) => !hasTranslation(message, 'zh-CN'))).toEqual([])
   })

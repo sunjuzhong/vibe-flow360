@@ -383,6 +383,10 @@ func (s *Server) finishAICreateParameters(c *gin.Context, session aiCreateSessio
 		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent could not produce a schema-valid Flow360 setup: " + err.Error(), "project_id": prepared.ProjectID})
 		return
 	}
+	if assisted.Action == nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the parameter Agent returned an incomplete Flow360 parameter response", "project_id": prepared.ProjectID})
+		return
+	}
 	if assisted.Action.Kind == agent.ActionRequestMissingInput {
 		fields := aiCreateParameterClarificationFields(assisted.Action.Questions)
 		if len(fields) == 0 {
