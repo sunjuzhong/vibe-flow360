@@ -79,9 +79,12 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const [aiPrompt, setAIPrompt] = useState('')
   const [aiMode, setAIMode] = useState<PlanAssistMode>('edit')
   const [aiLoading, setAILoading] = useState(false)
+  const [aiSessionLoading, setAISessionLoading] = useState(false)
   const [aiOpen, setAIOpen] = useState(false)
   const [aiMessages, setAIMessages] = useState<DraftAISessionMessage[]>([])
   const aiMessageIDRef = useRef(0)
+  const aiSessionScopeRef = useRef('')
+  const aiRequestScopeRef = useRef('')
   const jsonValueRef = useRef(jsonValue)
   const schemaLoadedDraftRef = useRef('')
   const latestFingerprintRef = useRef('')
@@ -107,6 +110,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     saveOperationRef.current = false
     setSaving(false)
     setAILoading(false)
+    setAISessionLoading(false)
     setAIOpen(false)
     setAIPrompt('')
     setAIMode('edit')
@@ -115,6 +119,36 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     aiMessageIDRef.current = 0
     initialValidationDoneRef.current = false
   }, [draftId])
+
+  useEffect(() => {
+    const scope = project ? `${project.id}\u0000draft\u0000${draftId}` : ''
+    aiSessionScopeRef.current = scope
+    aiRequestScopeRef.current = ''
+    setAIMessages([])
+    aiMessageIDRef.current = 0
+    if (!project) {
+      setAISessionLoading(false)
+      return
+    }
+
+    setAISessionLoading(true)
+    api.agentChatSession(project.id, 'draft', draftId)
+      .then((session) => {
+        if (aiSessionScopeRef.current !== scope || aiRequestScopeRef.current === scope) return
+        aiMessageIDRef.current = session.messages.length
+        setAIMessages(session.messages.map((message, index) => ({
+          id: `${draftId}-restored-${index}`,
+          role: message.role,
+          content: message.content,
+        })))
+      })
+      .catch(() => {
+        if (aiSessionScopeRef.current === scope && aiRequestScopeRef.current !== scope) setAIMessages([])
+      })
+      .finally(() => {
+        if (aiSessionScopeRef.current === scope) setAISessionLoading(false)
+      })
+  }, [draftId, project?.id])
 
   const explainParameter = useCallback((field: SchemaFieldExplanation) => {
     const prompt = t('Explain the Draft parameter "{title}" at "{path}" in plain language. Include what it controls, valid values or units, common mistakes, and how to choose it for this simulation. Do not change any values.')
@@ -369,8 +403,9 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   }, [applyCandidate, draftId, externalPatch, loading, onExternalPatchApplied])
 
   const fillWithAI = async () => {
-    if (!project || !resource || !aiPrompt.trim() || aiLoading) return
+    if (!project || !resource || !aiPrompt.trim() || aiLoading || aiSessionLoading) return
     const requestDraftId = draftId
+    const requestScope = `${project.id}\u0000draft\u0000${requestDraftId}`
     const prompt = aiPrompt.trim()
     const requestMode = aiMode
     const candidate = candidateResult.value ?? baseline
@@ -379,6 +414,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     setAIMessages((current) => [...current, { id: userMessageID, role: 'user', content: prompt }])
     setAIPrompt('')
     setAILoading(true)
+    aiRequestScopeRef.current = requestScope
     try {
       const target = resourceTargetType(resource.type)
       const response = await api.assistPlanForm({
@@ -436,7 +472,10 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       const errorMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
       setAIMessages((current) => [...current, { id: errorMessageID, role: 'error', content: draftParameterErrorMessage(cause, t) }])
     } finally {
-      if (currentDraftIdRef.current === requestDraftId) setAILoading(false)
+      if (currentDraftIdRef.current === requestDraftId) {
+        setAILoading(false)
+        if (aiRequestScopeRef.current === requestScope) aiRequestScopeRef.current = ''
+      }
     }
   }
 
@@ -785,6 +824,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         prompt={aiPrompt}
         mode={aiMode}
         loading={aiLoading}
+        sessionLoading={aiSessionLoading}
         onPromptChange={setAIPrompt}
         onQuickPrompt={(nextMode, prompt) => {
           setAIMode(nextMode)

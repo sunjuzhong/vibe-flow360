@@ -1,5 +1,7 @@
 import { AlertCircle, ArrowRight, ArrowUp, RefreshCw, Sparkles, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { PlanAssistMode } from '../api/client'
 import { useI18n } from '../i18n'
 import type { ParameterChange } from './PlanParameterReview'
@@ -16,13 +18,14 @@ type Props = {
   prompt: string
   mode: PlanAssistMode
   loading: boolean
+  sessionLoading?: boolean
   onPromptChange: (value: string) => void
   onQuickPrompt: (mode: PlanAssistMode, prompt: string) => void
   onSubmit: () => void
   onClose: () => void
 }
 
-export default function DraftAISession({ messages, prompt, mode, loading, onPromptChange, onQuickPrompt, onSubmit, onClose }: Props) {
+export default function DraftAISession({ messages, prompt, mode, loading, sessionLoading = false, onPromptChange, onQuickPrompt, onSubmit, onClose }: Props) {
   const { t } = useI18n()
   const conversationEndRef = useRef<HTMLDivElement | null>(null)
   const quickPrompts: Array<{ mode: PlanAssistMode; label: string; prompt: string }> = [
@@ -59,7 +62,13 @@ export default function DraftAISession({ messages, prompt, mode, loading, onProm
       </header>
 
       <div className="draft-ai-conversation" aria-live="polite">
-        {!messages.length && !loading && (
+        {sessionLoading && !messages.length && (
+          <div className="draft-ai-empty">
+            <RefreshCw size={18} className="spin" />
+            <p>{t('Loading this conversation…')}</p>
+          </div>
+        )}
+        {!messages.length && !loading && !sessionLoading && (
           <div className="draft-ai-empty">
             <span><Sparkles size={18} /></span>
             <strong>{t('No AI changes yet')}</strong>
@@ -69,7 +78,9 @@ export default function DraftAISession({ messages, prompt, mode, loading, onProm
         {messages.map((message) => (
           <article className={`draft-ai-message ${message.role}`} key={message.id}>
             <strong>{t(message.role === 'user' ? 'You' : message.role === 'assistant' ? 'AI' : 'AI change failed')}</strong>
-            <p>{message.content}</p>
+            <div className="draft-ai-message-markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{message.content}</ReactMarkdown>
+            </div>
             {message.changes && message.changes.length > 0 && (
               <div className="draft-ai-message-changes">
                 <span>{t('{count} parameter changes').replace('{count}', String(message.changes.length))}</span>
@@ -86,7 +97,7 @@ export default function DraftAISession({ messages, prompt, mode, loading, onProm
             )}
           </article>
         ))}
-        {loading && (
+        {loading && !sessionLoading && (
           <div className="draft-ai-thinking">
             <RefreshCw size={14} className="spin" />
             <span>{t('AI is preparing a Draft update…')}</span>
@@ -117,7 +128,7 @@ export default function DraftAISession({ messages, prompt, mode, loading, onProm
         />
         <div className="draft-ai-composer-footer">
           <span>{t('AI changes use the current unsaved Form or JSON candidate.')}</span>
-          <button type="submit" disabled={loading || !prompt.trim()} aria-label={t('Send Draft change')}>
+          <button type="submit" disabled={loading || sessionLoading || !prompt.trim()} aria-label={t('Send Draft change')}>
             {loading ? <RefreshCw size={14} className="spin" /> : <ArrowUp size={15} />}
           </button>
         </div>

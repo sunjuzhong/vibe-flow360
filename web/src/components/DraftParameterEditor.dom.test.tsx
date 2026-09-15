@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
+import { api, type ChatSession, type DraftParameterValidationResponse, type DynamicFormSchema, type ProjectInfo, type ResourceNode } from '../api/client'
 import { I18nProvider } from '../i18n'
 import DraftParameterEditor from './DraftParameterEditor'
 
@@ -147,6 +147,12 @@ describe('Draft parameter validation navigation', () => {
     })
     vi.spyOn(api, 'validateDraftParameters').mockResolvedValue(validation)
     vi.spyOn(api, 'updateDraftParameters').mockResolvedValue({ simulation_params: baseline })
+    vi.spyOn(api, 'agentChatSession').mockResolvedValue({
+      project_id: 'project-1',
+      scope_type: 'draft',
+      scope_id: 'draft',
+      messages: [],
+    })
   })
 
   afterEach(async () => {
@@ -192,6 +198,47 @@ describe('Draft parameter validation navigation', () => {
     expect(session).not.toBeNull()
     expect(prompt?.value).toContain('meshing.defaults')
     expect(prompt?.value).toContain('Do not change any values.')
+  })
+
+  it('restores only the active Draft AI session and ignores a stale session load', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
+    let resolveFirst: (session: ChatSession) => void = () => undefined
+    const firstSession = new Promise<ChatSession>((resolve) => { resolveFirst = resolve })
+    const secondSession: ChatSession = {
+      project_id: 'project-1', scope_type: 'draft', scope_id: 'draft-second',
+      messages: [{ role: 'assistant', content: '# Second Draft\n\n- restored' }],
+    }
+    vi.mocked(api.agentChatSession).mockImplementation((_projectID, _scopeType, scopeID) => (
+      scopeID === 'draft-first' ? firstSession : Promise.resolve(secondSession)
+    ))
+
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-first" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-second" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    expect(container.textContent).toContain('Second Draft')
+    expect(container.textContent).not.toContain('First Draft')
+    expect(api.agentChatSession).toHaveBeenLastCalledWith('project-1', 'draft', 'draft-second')
+
+    await act(async () => {
+      resolveFirst({
+        project_id: 'project-1', scope_type: 'draft', scope_id: 'draft-first',
+        messages: [{ role: 'assistant', content: '# First Draft' }],
+      })
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(container.textContent).toContain('Second Draft')
+    expect(container.textContent).not.toContain('First Draft')
   })
 
   it('populates localized quick prompts without submitting them', async () => {

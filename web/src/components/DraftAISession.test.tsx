@@ -50,6 +50,31 @@ describe('DraftAISession', () => {
     expect(markup).toContain('AI change failed')
   })
 
+  it('renders GFM Markdown without rendering raw HTML', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider><DraftAISession
+        messages={[{
+          id: 'markdown', role: 'assistant', content: '# Update\n\n- first\n- second with `inline`\n\n```ts\nconst cfl = 3\n```\n\n[Flow360](https://www.flow360.com) [unsafe](javascript:alert(1)) <img src=x onerror=alert(1)>',
+        }]}
+        prompt=""
+        mode="edit"
+        loading={false}
+        onPromptChange={() => undefined}
+        onQuickPrompt={() => undefined}
+        onSubmit={() => undefined}
+        onClose={() => undefined}
+      /></I18nProvider>,
+    )
+
+    expect(markup).toContain('<h1>Update</h1>')
+    expect(markup).toContain('<ul>')
+    expect(markup).toContain('<code>inline</code>')
+    expect(markup).toContain('<pre><code class="language-ts">const cfl = 3')
+    expect(markup).toContain('<a href="https://www.flow360.com">Flow360</a>')
+    expect(markup).not.toContain('javascript:')
+    expect(markup).not.toContain('<img')
+  })
+
   it('renders accessible quick prompts for editing, repair, and explanation', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider><DraftAISession

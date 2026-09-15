@@ -938,10 +938,15 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Maximum steps limits solver iterations. No values were changed."}}]}`))
 	}))
 	defer model.Close()
+	chatSessions, err := agent.NewChatStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	app := &Server{
-		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
-		flow360: &flow360.Client{Binary: flowBinary, Timeout: time.Second},
+		agent:        &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360:      &flow360.Client{Binary: flowBinary, Timeout: time.Second},
+		chatSessions: chatSessions,
 	}
 	recorder := httptest.NewRecorder()
 	requestContext, _ := gin.CreateTestContext(recorder)
@@ -958,6 +963,38 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	}
 	if _, err := os.Stat(preflightMarker); !os.IsNotExist(err) {
 		t.Fatalf("explanation context entered the Flow360 preflight path: %v", err)
+	}
+	persisted, err := chatSessions.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-1"})
+	if err != nil || len(persisted.Messages) != 2 || persisted.Messages[0].Content != "Explain maximum steps. Do not change values." {
+		t.Fatalf("completed Draft assistance was not persisted: %#v, %v", persisted, err)
+	}
+}
+
+func TestPersistDraftPlanAssistConversationUsesDraftScope(t *testing.T) {
+	store, err := agent.NewChatStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &Server{chatSessions: store}
+	app.persistDraftPlanAssistConversation(planComposerRequest{
+		ProjectID: "project-1", DraftID: "draft-1", Prompt: "Explain maximum steps.",
+	}, planAssistResponse{Mode: "explain", Explanation: "# Maximum steps\n\nControls solver iterations."})
+	app.persistDraftPlanAssistConversation(planComposerRequest{
+		ProjectID: "project-1", DraftID: "draft-2", Prompt: "Repair the Draft.",
+	}, planAssistResponse{Action: &agent.Action{Message: "Repaired the validation issue."}})
+
+	draftOne, err := store.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := draftOne.Messages; len(got) != 2 || got[0].Content != "Explain maximum steps." || got[1].Content != "# Maximum steps\n\nControls solver iterations." {
+		t.Fatalf("unexpected Draft session: %#v", draftOne)
+	}
+	if _, err := store.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get("project-1", "draft-1"); !errors.Is(err, agent.ErrChatSessionNotFound) {
+		t.Fatalf("Draft session leaked into a resource scope: %v", err)
 	}
 }
 

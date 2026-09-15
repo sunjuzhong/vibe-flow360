@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"reflect"
 	"sort"
@@ -114,7 +115,38 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		c.JSON(status, response)
 		return
 	}
+	// Draft form assistance has distinct edit/repair semantics, but its transcript
+	// belongs in the same durable, Draft-scoped chat store used by the Copilot.
+	// Persisting after a successful response means failed attempts never replace a
+	// usable prior conversation and does not affect the response sent to the UI.
+	s.persistDraftPlanAssistConversation(request, result)
 	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) persistDraftPlanAssistConversation(request planComposerRequest, result planAssistResponse) {
+	if s.chatSessions == nil || request.ProjectID == "" || request.DraftID == "" {
+		return
+	}
+	assistantMessage := strings.TrimSpace(result.Explanation)
+	if assistantMessage == "" && result.Action != nil {
+		assistantMessage = strings.TrimSpace(result.Action.Message)
+	}
+	if assistantMessage == "" {
+		return
+	}
+	scope, err := agent.ResolveChatScope(agent.ChatScopeDraft, request.DraftID, "")
+	if err != nil {
+		log.Printf("Could not resolve Draft AI session scope for project %s: %v", request.ProjectID, err)
+		return
+	}
+	if _, err := s.chatSessions.AppendScope(
+		request.ProjectID,
+		scope,
+		agent.Message{Role: "user", Content: request.Prompt},
+		agent.Message{Role: "assistant", Content: assistantMessage},
+	); err != nil {
+		log.Printf("Could not persist Draft AI session for project %s: %v", request.ProjectID, err)
+	}
 }
 
 // explainSchemaNativePlan uses the same canonical Draft and live schema context
