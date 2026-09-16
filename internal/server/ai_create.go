@@ -674,6 +674,7 @@ func (s *Server) materializeAICreateDraftParameters(ctx context.Context, project
 	if err != nil {
 		return nil, remoteIDs.DraftID, err
 	}
+	canonical = draftSettingsCanonicalOverlay(canonical, simulationParams)
 	var canonicalObject map[string]any
 	if json.Unmarshal(canonical, &canonicalObject) != nil || len(canonicalObject) == 0 {
 		return nil, remoteIDs.DraftID, errors.New("Flow360 did not return canonical Draft SimulationParams")

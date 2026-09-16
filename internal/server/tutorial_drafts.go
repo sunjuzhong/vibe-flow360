@@ -89,6 +89,7 @@ func (s *Server) createConfiguredFlow360Draft(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 returned invalid canonical Draft parameters", "draft_id": draftID})
 		return
 	}
+	canonical = draftSettingsCanonicalOverlay(canonical, configured)
 	canonical, err = plans.MergeSimulationParams(canonical, json.RawMessage(`{}`))
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Flow360 returned invalid canonical Draft parameters", "draft_id": draftID})

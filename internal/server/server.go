@@ -1346,6 +1346,7 @@ func (s *Server) submitPlanToFlow360(ctx context.Context, plan plans.Plan) (json
 	if err != nil {
 		return nil, err
 	}
+	canonical = draftSettingsCanonicalOverlay(canonical, merged)
 	s.syncCachedDraftParameters(plan.RemoteIDs.DraftID, canonical)
 	options := flow360DraftRunOptions(merged)
 	if options.UseGAI && !options.UseInHouse {
@@ -3233,6 +3234,7 @@ func (s *Server) updateFlow360DraftParameters(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
+	canonical = draftSettingsCanonicalOverlay(canonical, request.SimulationParams)
 	s.syncCachedDraftParameters(draftID, canonical)
 	c.JSON(http.StatusOK, gin.H{"simulation_params": canonical})
 }
@@ -3269,6 +3271,7 @@ func (s *Server) patchFlow360DraftParameters(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
+	canonical = draftSettingsCanonicalOverlay(canonical, merged)
 	s.syncCachedDraftParameters(draftID, canonical)
 	c.JSON(http.StatusOK, gin.H{"simulation_params": canonical})
 }

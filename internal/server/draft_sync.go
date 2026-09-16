@@ -45,6 +45,43 @@ func (s *Server) cacheConfiguredDraftDetail(detail flow360.ResourceDetail, canon
 	s.cacheLiveJSON("resource-detail", "Draft/"+detail.ID, raw)
 }
 
+// draftSettingsCanonicalOverlay keeps local Draft runtime settings visible
+// after a Flow360 simulation-params set/get round trip. The Flow360 canonical
+// payload can omit UI/run-request settings stored under private_attribute_
+// asset_cache, but the app still needs them for Draft settings and run options.
+// Preserve only the small settings surface; canonical entity metadata remains
+// authoritative.
+func draftSettingsCanonicalOverlay(canonical, requested json.RawMessage) json.RawMessage {
+	var canonicalRoot map[string]any
+	var requestedRoot map[string]any
+	if json.Unmarshal(canonical, &canonicalRoot) != nil || json.Unmarshal(requested, &requestedRoot) != nil || canonicalRoot == nil || requestedRoot == nil {
+		return canonical
+	}
+	if unitSystem, ok := requestedRoot["unit_system"]; ok {
+		canonicalRoot["unit_system"] = unitSystem
+	}
+	requestedCache, _ := requestedRoot["private_attribute_asset_cache"].(map[string]any)
+	if len(requestedCache) > 0 {
+		canonicalCache, _ := canonicalRoot["private_attribute_asset_cache"].(map[string]any)
+		if canonicalCache == nil {
+			canonicalCache = map[string]any{}
+		}
+		for _, key := range []string{"project_length_unit", "use_geometry_AI", "use_inhouse_mesher"} {
+			if value, ok := requestedCache[key]; ok {
+				canonicalCache[key] = value
+			}
+		}
+		if len(canonicalCache) > 0 {
+			canonicalRoot["private_attribute_asset_cache"] = canonicalCache
+		}
+	}
+	raw, err := json.Marshal(canonicalRoot)
+	if err != nil {
+		return canonical
+	}
+	return raw
+}
+
 // syncCachedDraftParameters applies the value read back from Flow360 to any
 // existing local detail snapshot. No synthetic partial snapshot is created.
 func (s *Server) syncCachedDraftParameters(draftID string, canonical json.RawMessage) {

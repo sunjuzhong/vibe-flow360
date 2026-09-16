@@ -1081,13 +1081,18 @@ fi
 
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Request = httptest.NewRequest(http.MethodPut, "/api/flow360/drafts/draft-1/parameters", strings.NewReader(`{"simulation_params":{"version":"draft"}}`))
+	context.Request = httptest.NewRequest(http.MethodPut, "/api/flow360/drafts/draft-1/parameters", strings.NewReader(`{"simulation_params":{"version":"draft","private_attribute_asset_cache":{"use_geometry_AI":true,"use_inhouse_mesher":true,"project_length_unit":{"value":1,"units":"mm"}}}}`))
 	context.Request.Header.Set("Content-Type", "application/json")
 	context.Params = gin.Params{{Key: "draft_id", Value: "draft-1"}}
 	app.updateFlow360DraftParameters(context)
 
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"version":"canonical"`) {
 		t.Fatalf("got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	for _, expected := range []string{`"use_geometry_AI":true`, `"use_inhouse_mesher":true`, `"units":"mm"`} {
+		if !strings.Contains(recorder.Body.String(), expected) {
+			t.Fatalf("Draft settings were not preserved in canonical response: missing %s in %s", expected, recorder.Body.String())
+		}
 	}
 
 	recorder = httptest.NewRecorder()

@@ -49,6 +49,42 @@ func TestDraftMutationSnapshotsUseCanonicalCloudValues(t *testing.T) {
 	}
 }
 
+func TestDraftSettingsCanonicalOverlayPreservesRuntimeFlags(t *testing.T) {
+	canonical := json.RawMessage(`{
+		"version":"canonical",
+		"private_attribute_asset_cache":{"project_entity_info":{"draft_entities":[]}}
+	}`)
+	requested := json.RawMessage(`{
+		"version":"draft",
+		"unit_system":{"name":"SI"},
+		"private_attribute_asset_cache":{
+			"project_length_unit":{"value":1,"units":"mm"},
+			"use_geometry_AI":true,
+			"use_inhouse_mesher":true,
+			"project_entity_info":{"draft_entities":[{"id":"local-only"}]}
+		}
+	}`)
+
+	var merged map[string]any
+	if err := json.Unmarshal(draftSettingsCanonicalOverlay(canonical, requested), &merged); err != nil {
+		t.Fatal(err)
+	}
+	cache := merged["private_attribute_asset_cache"].(map[string]any)
+	info := cache["project_entity_info"].(map[string]any)
+	if cache["use_geometry_AI"] != true || cache["use_inhouse_mesher"] != true {
+		t.Fatalf("runtime mesher flags were not preserved: %#v", cache)
+	}
+	if length := cache["project_length_unit"].(map[string]any); length["units"] != "mm" {
+		t.Fatalf("project length setting was not preserved: %#v", cache)
+	}
+	if unit := merged["unit_system"].(map[string]any); unit["name"] != "SI" {
+		t.Fatalf("unit system was not preserved: %#v", merged["unit_system"])
+	}
+	if entities := info["draft_entities"].([]any); len(entities) != 0 {
+		t.Fatalf("canonical entity metadata should not be replaced by requested metadata: %#v", info)
+	}
+}
+
 func TestSyncDraftListSnapshotRefreshesFromFlow360(t *testing.T) {
 	dir := t.TempDir()
 	binaryPath := filepath.Join(dir, "flow360")
