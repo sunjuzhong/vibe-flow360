@@ -67,6 +67,61 @@ describe('DraftParametersDialog close protection', () => {
     vi.useRealTimers()
   })
 
+  it('saves Draft settings changes even when Flow360 validation reports errors', async () => {
+    vi.mocked(api.validateDraftParameters).mockResolvedValue({
+      schema_version: 1,
+      valid: false,
+      issues: [{ level: 'error', code: 'invalid', path: 'models', message: 'Review model setup' }],
+    })
+    vi.mocked(api.updateDraftParameters).mockImplementation(async (_draftId, parameters) => ({ simulation_params: parameters }))
+    const onSynced = vi.fn()
+    await act(async () => {
+      root.render(<I18nProvider><DraftParametersDialog
+        draftId="draft-settings-save"
+        draftName="Settings save"
+        detail={{ id: 'draft-settings-save', type: 'Draft', simulation_params: baseline }}
+        loading={false}
+        error=""
+        preloadedSchema={preloadedSchema}
+        onClose={() => undefined}
+        onRetry={() => undefined}
+        onParametersSynced={onSynced}
+      /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+    })
+
+    await click(container.querySelector<HTMLElement>('[aria-label="Open Draft settings"]')!)
+    const selects = container.querySelectorAll<HTMLSelectElement>('.draft-settings-panel select')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    if (!selects[1] || !valueSetter) throw new Error('Project length unit select is unavailable')
+    await act(async () => {
+      valueSetter.call(selects[1], 'mm')
+      selects[1].dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click(button(container, 'Apply settings'))
+    await click(button(container, 'Save to Draft'))
+
+    expect(api.updateDraftParameters).toHaveBeenCalledTimes(1)
+    expect(api.updateDraftParameters).toHaveBeenCalledWith(
+      'draft-settings-save',
+      expect.objectContaining({
+        private_attribute_asset_cache: expect.objectContaining({
+          project_length_unit: { value: 1, units: 'mm' },
+        }),
+      }),
+      undefined,
+    )
+    expect(onSynced).toHaveBeenCalledWith(expect.objectContaining({
+      private_attribute_asset_cache: expect.objectContaining({
+        project_length_unit: { value: 1, units: 'mm' },
+      }),
+    }))
+  })
+
   it('keeps editing on cancel or save failure and discards only on explicit choice', async () => {
     const onClose = vi.fn()
     await act(async () => {

@@ -1059,6 +1059,42 @@ describe('Draft parameter validation navigation', () => {
     expect(api.updateDraftParameters).not.toHaveBeenCalled()
   })
 
+  it('saves the exact candidate even when current Flow360 validation has errors', async () => {
+    vi.mocked(api.validateDraftParameters).mockResolvedValue({
+      schema_version: 1,
+      valid: false,
+      issues: [{ level: 'error', code: 'invalid', path: 'case.solver.max_steps', message: 'Maximum steps still needs attention' }],
+    })
+    vi.mocked(api.updateDraftParameters).mockImplementation(async (_draftId, parameters) => ({ simulation_params: parameters }))
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-invalid-save" parameters={baseline} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await click(container.querySelector<HTMLElement>('#schema-root-tab-case')!)
+    const input = container.querySelector<HTMLInputElement>('#schema-case-solver-max_steps')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!input || !valueSetter) throw new Error('Maximum steps input is unavailable')
+    await act(async () => {
+      valueSetter.call(input, '25')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flushTimers()
+    await click(buttonWithText(container, 'Validate'))
+    expect(container.textContent).toContain('Flow360 validation needs attention')
+
+    await click(buttonWithText(container, 'Save to Draft'))
+
+    expect(api.updateDraftParameters).toHaveBeenCalledTimes(1)
+    expect(api.updateDraftParameters).toHaveBeenCalledWith(
+      'draft-invalid-save',
+      expect.objectContaining({ case: expect.objectContaining({ solver: { max_steps: 25 } }) }),
+      undefined,
+    )
+    expect(container.textContent).toContain('Draft matches the saved Flow360 version')
+    expect(container.textContent).toContain('Flow360 validation needs attention')
+  })
+
   it('saves a warning-only exact candidate once and establishes a clean baseline', async () => {
     vi.mocked(api.validateDraftParameters).mockResolvedValue({
       schema_version: 1,

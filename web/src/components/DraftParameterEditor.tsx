@@ -554,15 +554,11 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         setSyncError(candidateResult.error || t('Draft SimulationParams are invalid.'))
         return false
       }
-      const currentValidation = await validateCandidate(next, fingerprint)
-      if (!currentValidation || latestFingerprintRef.current !== fingerprint) return false
-      const normalized = normalizeDraftValidation(currentValidation, schema)
-      if (normalized.blocking) return false
       return await persistCandidate(next, fingerprint)
     } finally {
       saveOperationRef.current = false
     }
-  }, [candidateResult.error, candidateResult.fingerprint, candidateResult.value, persistCandidate, schema, t, validateCandidate])
+  }, [candidateResult.error, candidateResult.fingerprint, candidateResult.value, persistCandidate, t])
 
   useImperativeHandle(ref, () => ({
     discard,
@@ -680,7 +676,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
       : validationError?.message
         ? validationError.message
         : saving
-          ? t('Validation passed. Saving this exact version to the Draft…')
+          ? t('Saving this exact version to the Draft…')
           : dirty
             ? t('Changes remain local until you choose Save to Draft.')
             : validationIsCurrent && normalizedValidation.blocking
@@ -689,7 +685,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
                 ? t('Warnings are shown explicitly but do not block saving. Review them before continuing.')
                 : validationIsCurrent && validation?.valid
                   ? dirty ? t('Validation passed. Save this exact version when ready.') : t('The current Draft version is saved and validated.')
-                  : t('Flow360 checks the current candidate before it is saved to the Draft.')
+                  : t('Flow360 validation does not block saving, but must pass before this Draft can run.')
 
   if (readOnly) {
     return <JsonPreview value={previewValue} empty={t('Flow360 did not return simulation parameters.')} className="draft-json-preview" />
