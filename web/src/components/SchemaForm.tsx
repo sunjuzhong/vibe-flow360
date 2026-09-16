@@ -503,7 +503,7 @@ function SchemaFieldContent({
                 addLabel={addLabel}
                 removeLabel={removeLabel}
                 collapsibleObjects={collapsibleObjects}
-                rootTabContent={rootTabContent && child.type !== 'object' && !directRootControl}
+                rootTabContent={rootTabContent && child.type !== 'object'}
                 embeddedObjectContent={rootTabContent && child.type === 'object'}
                 onChange={(next) => onChange({ ...object, [key]: next })}
               />
@@ -1920,6 +1920,12 @@ function singleValueProperty(schema: DynamicFormSchema): [string, DynamicFormSch
   return entries.length === 1 && entries[0][0] === 'value' ? entries[0] : null
 }
 
+function singleQuantityProperty(schema: DynamicFormSchema): [string, DynamicFormSchema] | null {
+  if (schema.type !== 'object') return null
+  const entries = Object.entries(schema.properties ?? {}).filter(([key, child]) => !isDiscriminatorDefault(key, child))
+  return entries.length === 1 && entries[0][1].type === 'quantity' ? entries[0] : null
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -1949,6 +1955,8 @@ function negativeOneOrPositiveIntegerUnion(schema: DynamicFormSchema): { integer
 function isSingleControlRootSchema(schema: DynamicFormSchema): boolean {
   return ['string', 'number', 'integer', 'boolean', 'enum', 'quantity', 'tuple'].includes(schema.type)
     || negativeOneOrPositiveIntegerUnion(schema) !== null
+    || singleQuantityProperty(schema) !== null
+    || schema.type === 'union'
 }
 
 function enumArrayUnion(schema: DynamicFormSchema): { variant: number; schema: DynamicFormSchema; options: string[] } | null {

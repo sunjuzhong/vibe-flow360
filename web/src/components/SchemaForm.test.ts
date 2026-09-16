@@ -742,13 +742,20 @@ describe('schema-driven Flow360 form', () => {
             },
             gap_treatment_strength: { type: 'number', title: 'Gap Treatment Strength' },
             outputs: { type: 'array', title: 'Outputs', items: { type: 'string' } },
+            temperature: {
+              type: 'object',
+              title: 'Effective Temperature',
+              properties: {
+                effective_temperature: { type: 'quantity', title: 'Effective Temperature', unit: 'K', value_schema: { type: 'number' } },
+              },
+            },
           },
         },
       },
     }
     const markup = renderToStaticMarkup(createElement(SchemaFormFields, {
       schema,
-      value: { meshing: {} },
+      value: { meshing: { temperature: { effective_temperature: { value: 110.4, units: 'K' } } } },
       sparse: true,
       showAll: true,
       rootTabs: true,
@@ -758,11 +765,12 @@ describe('schema-driven Flow360 form', () => {
     }))
 
     expect(markup.match(/schema-root-field-section/g)).toHaveLength(2)
-    expect(markup.match(/>Gap Treatment Strength</g)).toHaveLength(1)
     expect(markup.match(/>Outputs</g)).toHaveLength(1)
     expect(markup).toContain('id="schema-meshing-gap_treatment_strength"')
+    expect(markup).toContain('aria-label="Gap Treatment Strength"')
     expect(markup).toMatch(/id="schema-meshing-gap_treatment_strength"[^>]*aria-invalid="true"/)
     expect(markup).toContain('schema-root-array')
+    expect(markup).toContain('id="schema-meshing-temperature-effective_temperature"')
     expect(markup).not.toContain('<legend')
   })
 
@@ -1029,18 +1037,25 @@ describe('schema-driven Flow360 form', () => {
     expect(serializeValue(schema, hydrated, true)).toEqual(canonical)
   })
 
-  it('does not repeat a root union title below its tab', () => {
+  it('does not repeat a root union title below its tab while keeping value type switching available', () => {
     const schema: DynamicFormSchema = {
       type: 'object',
       properties: {
         operating_condition: {
           type: 'union',
           title: 'Operating Condition',
-          variants: [{
-            type: 'object',
-            title: 'GenericReferenceCondition',
-            properties: { mach: { type: 'number', title: 'Mach' } },
-          }],
+          variants: [
+            {
+              type: 'object',
+              title: 'GenericReferenceCondition',
+              properties: { mach: { type: 'number', title: 'Mach' } },
+            },
+            {
+              type: 'object',
+              title: 'AerospaceCondition',
+              properties: { velocity_magnitude: { type: 'quantity', title: 'Velocity Magnitude', unit: 'm/s', value_schema: { type: 'number' } } },
+            },
+          ],
         },
       },
     }
@@ -1055,9 +1070,11 @@ describe('schema-driven Flow360 form', () => {
     }))
 
     expect(markup).toContain('schema-root-union')
-    expect(markup.match(/>Operating Condition</g)).toHaveLength(2)
+    expect(markup.match(/schema-root-field-section/g)).toBeNull()
+    expect(markup).toContain('schema-union-picker')
     expect(markup).toContain('Value type')
     expect(markup).toContain('Generic Reference Condition')
+    expect(markup).toContain('Aerospace Condition')
   })
 
   it('keeps raw schema paths out of the draft root-tab form surface', () => {
