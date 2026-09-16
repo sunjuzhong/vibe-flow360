@@ -869,6 +869,298 @@ func TestPlanAssistPromptSeparatesEditAndRepairIntent(t *testing.T) {
 	}
 }
 
+func TestPlanAssistFollowUpContractUsesHistoryWithoutGuessing(t *testing.T) {
+	history := []agent.Message{
+		{Role: "user", Content: "Explain Geometry Accuracy."},
+		{Role: "assistant", Content: "`meshing.defaults.geometry_accuracy` controls how closely the mesh follows the CAD."},
+	}
+	for _, test := range []struct {
+		name   string
+		prompt string
+	}{
+		{name: "referenced field without value", prompt: "帮我设置一下这个值"},
+		{name: "field title without value", prompt: "Geometry Accuracy"},
+		{name: "subsequent supplied value", prompt: "设置为 0.001 m"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := planComposerRequest{
+				SourceType: "Geometry", Target: "case", DraftID: "draft-1", Mode: "edit",
+				Intent: test.prompt, Prompt: test.prompt, History: history,
+			}
+			chatPrompt, _ := agent.BuildChatPrompt(agent.ChatRequest{
+				Message: planAssistPrompt(request), History: request.History,
+			})
+			for _, expected := range []string{
+				"meshing.defaults.geometry_accuracy",
+				"History identifies the prior field; it never supplies a target value",
+				"return exactly one request-missing-input question for that field and no proposal",
+				"A bare field title without a target value follows the same rule",
+				"When a later turn supplies the value, edit the previously resolved field only",
+			} {
+				if !strings.Contains(chatPrompt, expected) {
+					t.Fatalf("follow-up contract is missing %q: %s", expected, chatPrompt)
+				}
+			}
+			if !strings.Contains(planAssistHistoryQuery(history), "meshing.defaults.geometry_accuracy") {
+				t.Fatalf("request-scoped schema query lost the prior field: %q", planAssistHistoryQuery(history))
+			}
+		})
+	}
+}
+
+func TestGenerateSchemaNativePlanClarifiesResolvedFieldWithoutValue(t *testing.T) {
+	var modelRequests []string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		modelRequests = append(modelRequests, string(body))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"version\":\"v1\",\"kind\":\"request-missing-input\",\"message\":\"Need a target value.\",\"questions\":[{\"field\":\"meshing.defaults.geometry_accuracy\",\"message\":\"What value should Geometry Accuracy use?\",\"urgency\":\"required\",\"reason\":\"No target value was provided.\",\"type\":\"number\"}]}"}}]}`))
+	}))
+	defer model.Close()
+	app := &Server{agent: &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()}}
+	form := flow360.PlanFormSchema{Stages: []string{"SurfaceMesh"}, Schemas: map[string]json.RawMessage{
+		"SurfaceMesh": json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"defaults":{"type":"object","properties":{"geometry_accuracy":{"type":"number","title":"Geometry Accuracy"}}}}}}}`),
+	}}
+	for _, test := range []struct {
+		name    string
+		prompt  string
+		history []agent.Message
+	}{
+		{
+			name: "follow-up reference", prompt: "帮我设置一下这个值",
+			history: []agent.Message{{Role: "assistant", Content: "`meshing.defaults.geometry_accuracy` controls geometry fidelity."}},
+		},
+		{name: "field title only", prompt: "Geometry Accuracy"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
+				Request: planComposerRequest{
+					ProjectID: "project-1", SourceID: "geometry-1", SourceType: "Geometry", DraftID: "draft-1",
+					Target: "surface-mesh", Intent: test.prompt, Prompt: test.prompt, Mode: "edit", History: test.history,
+				},
+				Name: "Geometry", Baseline: json.RawMessage(`{"meshing":{"defaults":{"geometry_accuracy":0.01}}}`), Form: form,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Action == nil || result.Action.Kind != agent.ActionRequestMissingInput || len(result.Action.Questions) != 1 || result.Action.Questions[0].Field != "meshing.defaults.geometry_accuracy" || result.Proposal != nil || result.Preflight != nil {
+				t.Fatalf("missing value did not remain a focused non-mutating clarification: %#v", result)
+			}
+		})
+	}
+	if !strings.Contains(modelRequests[0], "meshing.defaults.geometry_accuracy") || !strings.Contains(modelRequests[0], "History identifies the prior field") {
+		t.Fatalf("follow-up request lost authoritative field context: %s", modelRequests[0])
+	}
+}
+
+func TestGenerateSchemaNativePlanRejectsGuessedFollowUpValueBeforePreflight(t *testing.T) {
+	temp := t.TempDir()
+	preflightMarker := filepath.Join(temp, "preflight-called")
+	python := filepath.Join(temp, "python")
+	if err := os.WriteFile(python, []byte("#!/bin/sh\nprintf called > \""+preflightMarker+"\"\nprintf '%s' '{\"schema_version\":1,\"validator_version\":\"test\",\"valid\":true,\"issues\":[]}'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBESIM_FLOW360_PYTHON", python)
+
+	modelCalls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		modelCalls++
+		content := `{"version":"v1","kind":"update-draft","message":"Applied the recommended default.","proposals":[{"id":"guessed","draft_id":"draft-1","target":"draft","name":"Guessed edit","intent":"set it","operations":[{"op":"set","path":"/meshing/defaults/geometry_accuracy","value":{"value":0.001,"units":"m"}}],"branch_preview":"guessed","fields":[]}],"warnings":[],"assumptions":[]}`
+		encoded, _ := json.Marshal(content)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(encoded) + `}}]}`))
+	}))
+	defer model.Close()
+
+	form := flow360.PlanFormSchema{Stages: []string{"SurfaceMesh"}, Schemas: map[string]json.RawMessage{
+		"SurfaceMesh": json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"defaults":{"type":"object","properties":{"geometry_accuracy":{"type":"quantity","title":"Geometry Accuracy","unit":"m","unit_options":["m"],"value_schema":{"type":"number","exclusiveMinimum":0}}}}}}}}`),
+	}}
+	app := &Server{
+		agent:   &agent.Service{Provider: "builtin", APIKey: "test", BaseURL: model.URL, Model: "test", Client: model.Client()},
+		flow360: &flow360.Client{Binary: "flow360"},
+	}
+	result, err := app.generateSchemaNativePlan(context.Background(), planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "project-1", SourceID: "geometry-1", SourceType: "Geometry", DraftID: "draft-1",
+			Target: "surface-mesh", Intent: "帮我设置一下这个值", Prompt: "帮我设置一下这个值", Mode: "edit",
+			History: []agent.Message{{Role: "assistant", Content: "`meshing.defaults.geometry_accuracy` controls geometry fidelity."}},
+		},
+		Name: "Geometry", Baseline: json.RawMessage(`{"meshing":{"defaults":{"geometry_accuracy":{"value":0.01,"units":"m"}}}}`), Form: form,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls != 1 || result.Action == nil || result.Action.Kind != agent.ActionRequestMissingInput || len(result.Action.Questions) != 1 {
+		t.Fatalf("guessed value was not converted to one clarification: calls=%d result=%#v", modelCalls, result)
+	}
+	if result.Action.Questions[0].Field != "meshing.defaults.geometry_accuracy" || result.Proposal != nil || result.Preflight != nil {
+		t.Fatalf("guessed proposal crossed the server admission boundary: %#v", result)
+	}
+	if _, err := os.Stat(preflightMarker); !os.IsNotExist(err) {
+		t.Fatalf("guessed proposal reached Flow360 preflight: %v", err)
+	}
+	if strings.Contains(result.Action.Questions[0].Message, "0.001") {
+		t.Fatalf("clarification leaked the provider's guessed value: %#v", result.Action.Questions[0])
+	}
+}
+
+func TestPreparePlanAssistProposalAppliesSuppliedValueToPriorField(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"defaults":{"type":"object","properties":{"geometry_accuracy":{"type":"quantity","title":"Geometry Accuracy","unit":"m","unit_options":["m","mm"],"value_schema":{"type":"number","exclusiveMinimum":0}}}}}}}}`)
+	action := agent.Action{
+		Version: agent.ActionVersion, Kind: agent.ActionUpdateDraft, Message: "Updated Geometry Accuracy.",
+		Proposals: []agent.Proposal{{
+			ID: "geometry-accuracy", DraftID: "draft-1", Target: "draft", Name: "Geometry Accuracy", Intent: "Set the supplied value",
+			Operations: []agent.ParameterOperation{{Op: "set", Path: "/meshing/defaults/geometry_accuracy", Value: map[string]any{"value": 0.001, "units": "m"}}}, Fields: []agent.Field{},
+		}},
+	}
+	composer := planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "project-1", SourceID: "geometry-1", SourceType: "Geometry", DraftID: "draft-1", Target: "surface-mesh",
+			Prompt: "设置为 1 mm", Intent: "设置为 1 mm", Mode: "edit",
+			History: []agent.Message{{Role: "assistant", Content: "`meshing.defaults.geometry_accuracy` controls geometry fidelity."}},
+		},
+		Name: "Geometry", Baseline: json.RawMessage(`{"meshing":{"defaults":{"geometry_accuracy":{"value":0.01,"units":"m"}}}}`),
+		Form: flow360.PlanFormSchema{Stages: []string{"SurfaceMesh"}, Schemas: map[string]json.RawMessage{"SurfaceMesh": schema}},
+	}
+	guarded, err := enforcePlanAssistFollowUp(&action, composer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guarded.Kind != agent.ActionUpdateDraft {
+		t.Fatalf("explicit quantity value was incorrectly converted to clarification: %#v", guarded)
+	}
+	proposal, err := preparePlanAssistProposal(*guarded, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := plans.MergeSimulationParams(composer.Baseline, proposal.Patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(merged), `"geometry_accuracy":{"units":"m","value":0.001}`) {
+		t.Fatalf("supplied value did not target the previously resolved field: %s", merged)
+	}
+}
+
+func TestPlanAssistCurrentFieldOutranksHistoricalField(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"meshing":{"type":"object","properties":{"defaults":{"type":"object","properties":{"geometry_accuracy":{"type":"quantity","title":"Geometry Accuracy","unit":"m","unit_options":["m","mm"],"value_schema":{"type":"number"}},"target_count":{"type":"integer","title":"Target count"}}}}}}}`)
+	action := &agent.Action{
+		Version: agent.ActionVersion, Kind: agent.ActionUpdateDraft, Message: "Updated target count.",
+		Proposals: []agent.Proposal{{
+			ID: "target-count", DraftID: "draft-1", Target: "draft", Name: "Target count", Intent: "Set target count",
+			Operations: []agent.ParameterOperation{{Op: "set", Path: "/meshing/defaults/target_count", Value: 200.0}}, Fields: []agent.Field{},
+		}},
+	}
+	composer := planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "project-1", SourceID: "geometry-1", SourceType: "Geometry", DraftID: "draft-1", Target: "surface-mesh",
+			Prompt: "Set target count to 200", Intent: "Set target count to 200", Mode: "edit",
+			History: []agent.Message{{Role: "assistant", Content: "`meshing.defaults.geometry_accuracy` controls geometry fidelity."}},
+		},
+		Name: "Geometry", Baseline: json.RawMessage(`{"meshing":{"defaults":{"geometry_accuracy":{"value":0.01,"units":"m"},"target_count":100}}}`),
+		Form: flow360.PlanFormSchema{Stages: []string{"SurfaceMesh"}, Schemas: map[string]json.RawMessage{"SurfaceMesh": schema}},
+	}
+	guarded, err := enforcePlanAssistFollowUp(action, composer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guarded.Kind != agent.ActionUpdateDraft {
+		t.Fatalf("current target-count evidence was overridden by historical geometry accuracy: %#v", guarded)
+	}
+	proposal, err := preparePlanAssistProposal(*guarded, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := plans.MergeSimulationParams(composer.Baseline, proposal.Patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(merged), `"target_count":200`) || !strings.Contains(string(merged), `"value":0.01`) {
+		t.Fatalf("ordinary edit did not apply only target count: %s", merged)
+	}
+}
+
+func TestPlanAssistSynthesizedSelectClarificationIsSchemaValid(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"solver_mode":{"type":"enum","title":"Solver mode","options":["steady","unsteady"]}}}`)
+	action := &agent.Action{
+		Version: agent.ActionVersion, Kind: agent.ActionUpdateDraft, Message: "Selected a default.",
+		Proposals: []agent.Proposal{{
+			ID: "guessed", DraftID: "draft-1", Target: "draft", Name: "Solver mode", Intent: "set it",
+			Operations: []agent.ParameterOperation{{Op: "set", Path: "/solver_mode", Value: "steady"}}, Fields: []agent.Field{},
+		}},
+	}
+	guarded, err := enforcePlanAssistFollowUp(action, planComposerContext{
+		Request: planComposerRequest{
+			DraftID: "draft-1", SourceType: "Case", Target: "case", Mode: "edit",
+			Prompt: "Please set this value", History: []agent.Message{{Role: "assistant", Content: "`solver_mode` controls temporal advancement."}},
+		},
+		Form: flow360.PlanFormSchema{Stages: []string{"Case"}, Schemas: map[string]json.RawMessage{"Case": schema}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guarded.Kind != agent.ActionRequestMissingInput || len(guarded.Questions) != 1 {
+		t.Fatalf("guessed enum was not converted to one clarification: %#v", guarded)
+	}
+	question := guarded.Questions[0]
+	if question.Type != "select" || !reflect.DeepEqual(question.Options, []agent.QuestionOption{{Value: "steady", Label: "steady"}, {Value: "unsteady", Label: "unsteady"}}) {
+		t.Fatalf("synthesized select clarification lost schema options: %#v", question)
+	}
+	if err := agent.ValidateWithContext(*guarded, nil); err != nil {
+		t.Fatalf("synthesized action bypassed AgentAction validation: %v", err)
+	}
+}
+
+func TestInstalledFlow360PreflightsSuppliedFollowUpQuantity(t *testing.T) {
+	if os.Getenv("VIBESIM_TEST_FLOW360_SCHEMA") != "1" {
+		t.Skip("set VIBESIM_TEST_FLOW360_SCHEMA=1 to exercise the installed Flow360 schema")
+	}
+	baseline, err := os.ReadFile("../../tutorials/T08-automotive-wind-tunnel/simulation.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := flow360.NewClient()
+	form, err := client.PlanFormSchema(context.Background(), "Geometry", "case", baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := combinedPlanFormSchema(form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := &agent.Action{
+		Version: agent.ActionVersion, Kind: agent.ActionUpdateDraft, Message: "Updated the supplied value.",
+		Proposals: []agent.Proposal{{
+			ID: "follow-up", DraftID: "draft-1", Target: "draft", Name: "Follow-up edit", Intent: "Set supplied value",
+			Operations: []agent.ParameterOperation{{Op: "set", Path: "/meshing/defaults/geometry_accuracy", Value: map[string]any{"value": 0.001, "units": "m"}}}, Fields: []agent.Field{},
+		}},
+	}
+	composer := planComposerContext{
+		Request: planComposerRequest{
+			ProjectID: "project-1", SourceID: "geometry-1", SourceType: "Geometry", DraftID: "draft-1", Target: "case",
+			Prompt: "设置为 1 mm", Intent: "设置为 1 mm", Mode: "edit",
+			History: []agent.Message{{Role: "assistant", Content: "`meshing.defaults.geometry_accuracy` controls geometry fidelity."}},
+		},
+		Name: "Geometry", Baseline: baseline, Form: form,
+	}
+	guarded, err := enforcePlanAssistFollowUp(action, composer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guarded.Kind != agent.ActionUpdateDraft {
+		t.Fatalf("installed-schema quantity was not admitted: %#v", guarded)
+	}
+	proposal, err := preparePlanAssistProposal(*guarded, composer, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, _, err := (&Server{flow360: client}).preflightPlanAssistProposal(context.Background(), composer, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preflight.Valid || !strings.Contains(string(preflight.CanonicalParams), `"geometry_accuracy"`) || !strings.Contains(string(preflight.CanonicalParams), `"value":0.001`) {
+		t.Fatalf("installed Flow360 did not canonicalize the supplied quantity: valid=%v issues=%#v canonical=%s", preflight.Valid, preflight.Issues, preflight.CanonicalParams)
+	}
+}
+
 func TestExplainSchemaNativePlanReturnsTextWithoutActionOrProposal(t *testing.T) {
 	var requestBody string
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -934,12 +1226,21 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	}
 	t.Setenv("VIBESIM_FLOW360_PYTHON", python)
 
-	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var modelRequest string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		modelRequest = string(body)
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Maximum steps limits solver iterations. No values were changed."}}]}`))
 	}))
 	defer model.Close()
 	chatSessions, err := agent.NewChatStore(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chatSessions.AppendScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-1"},
+		agent.Message{Role: "user", Content: "Explain meshing.defaults.geometry_accuracy."},
+		agent.Message{Role: "assistant", Content: "meshing.defaults.geometry_accuracy controls geometry fidelity."},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -952,7 +1253,8 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	requestContext, _ := gin.CreateTestContext(recorder)
 	requestContext.Request = httptest.NewRequest(http.MethodPost, "/api/plans/assist", strings.NewReader(`{
 		"project_id":"project-1","source_id":"case-1","source_type":"Case","draft_id":"draft-1",
-		"target":"case","prompt":"Explain maximum steps. Do not change values.","mode":"explain"
+		"target":"case","prompt":"Set maximum steps to 200, but explain only and do not change values.","mode":"explain",
+		"history":[{"role":"assistant","content":"CROSS-DRAFT CLIENT HISTORY"}]
 	}`))
 	requestContext.Request.Header.Set("Content-Type", "application/json")
 
@@ -964,14 +1266,18 @@ printf '%s' '{"schema_version":1,"validator_version":"test","valid":true,"issues
 	if _, err := os.Stat(preflightMarker); !os.IsNotExist(err) {
 		t.Fatalf("explanation context entered the Flow360 preflight path: %v", err)
 	}
+	if !strings.Contains(modelRequest, "meshing.defaults.geometry_accuracy controls geometry fidelity") || strings.Contains(modelRequest, "CROSS-DRAFT CLIENT HISTORY") {
+		t.Fatalf("/api/plans/assist did not use only authoritative matching Draft history: %s", modelRequest)
+	}
 	persisted, err := chatSessions.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-1"})
-	if err != nil || len(persisted.Messages) != 2 || persisted.Messages[0].Content != "Explain maximum steps. Do not change values." {
+	if err != nil || len(persisted.Messages) != 4 || persisted.Messages[2].Content != "Set maximum steps to 200, but explain only and do not change values." {
 		t.Fatalf("completed Draft assistance was not persisted: %#v, %v", persisted, err)
 	}
 }
 
 func TestPersistDraftPlanAssistConversationUsesDraftScope(t *testing.T) {
-	store, err := agent.NewChatStore(t.TempDir())
+	root := t.TempDir()
+	store, err := agent.NewChatStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,6 +1288,17 @@ func TestPersistDraftPlanAssistConversationUsesDraftScope(t *testing.T) {
 	app.persistDraftPlanAssistConversation(planComposerRequest{
 		ProjectID: "project-1", DraftID: "draft-2", Prompt: "Repair the Draft.",
 	}, planAssistResponse{Action: &agent.Action{Message: "Repaired the validation issue."}})
+	app.persistDraftPlanAssistConversation(planComposerRequest{
+		ProjectID: "project-1", DraftID: "draft-3", Prompt: "帮我设置一下这个值",
+	}, planAssistResponse{Action: &agent.Action{
+		Version: agent.ActionVersion, Kind: agent.ActionRequestMissingInput,
+		Message: "请提供几何精度。",
+		Questions: []agent.Question{{
+			Field: "meshing.defaults.geometry_accuracy", Message: "要设置为多少？",
+			Reason: "当前请求没有目标值。", Urgency: "required", Type: "number", Unit: "m",
+			Default: 0.001, Recommendation: "建议根据最小几何特征选择。",
+		}},
+	}})
 
 	draftOne, err := store.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-1"})
 	if err != nil {
@@ -995,6 +1312,23 @@ func TestPersistDraftPlanAssistConversationUsesDraftScope(t *testing.T) {
 	}
 	if _, err := store.Get("project-1", "draft-1"); !errors.Is(err, agent.ErrChatSessionNotFound) {
 		t.Fatalf("Draft session leaked into a resource scope: %v", err)
+	}
+	reopened, err := agent.NewChatStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clarification, err := reopened.GetScope("project-1", agent.ChatScope{Type: agent.ChatScopeDraft, ID: "draft-3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clarification.Messages) != 2 {
+		t.Fatalf("unexpected clarification transcript: %#v", clarification)
+	}
+	transcript := clarification.Messages[1].Content
+	for _, expected := range []string{"meshing.defaults.geometry_accuracy", "要设置为多少？", "当前请求没有目标值。", `"default":0.001`, "建议根据最小几何特征选择。"} {
+		if !strings.Contains(transcript, expected) {
+			t.Fatalf("persisted clarification lost %q after reload: %s", expected, transcript)
+		}
 	}
 }
 

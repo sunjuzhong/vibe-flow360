@@ -100,6 +100,61 @@ func TestChatWithValidationRepairsPathLevelOperationsWithoutPatch(t *testing.T) 
 	}
 }
 
+func TestChatWithValidationAggregatesIndependentShapeErrorsAndRepairsOneBranch(t *testing.T) {
+	var calls atomic.Int32
+	var repairRequest []byte
+	writeCompletion := func(w http.ResponseWriter, content string) {
+		response, err := json.Marshal(map[string]any{
+			"choices": []any{map[string]any{
+				"message": map[string]string{"role": "assistant", "content": content},
+			}},
+		})
+		if err != nil {
+			t.Fatalf("marshal provider response: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read provider request: %v", err)
+		}
+		if calls.Add(1) == 1 {
+			writeCompletion(w, `{"version":"v1","kind":"update-draft","message":"Ambiguous","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Edit","intent":"Set steps","patch":{"time_stepping":{"steps":100}},"operations":[{"op":"set","path":"/time_stepping/steps","value":100}],"fields":[]}],"questions":[{"field":"time_stepping.steps","message":"Which value?","urgency":"required","type":"number"}]}`)
+			return
+		}
+		repairRequest = append([]byte(nil), body...)
+		writeCompletion(w, `{"version":"v1","kind":"update-draft","message":"Updated","proposals":[{"id":"edit","draft_id":"draft-1","target":"draft","name":"Edit","intent":"Set steps","operations":[{"op":"set","path":"/time_stepping/steps","value":100}],"fields":[]}]}`)
+	}))
+	defer provider.Close()
+
+	service := &Service{Provider: "builtin", APIKey: "test", BaseURL: provider.URL, Model: "test", Client: provider.Client()}
+	_, action, err := service.ChatWithValidation(context.Background(), ChatRequest{
+		Message: "Use an operations array to update the current Draft.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected exactly one bounded repair, got %d provider calls", calls.Load())
+	}
+	if action == nil || action.Kind != ActionUpdateDraft || len(action.Proposals) != 1 || len(action.Questions) != 0 || len(action.Proposals[0].Patch) != 0 || len(action.Proposals[0].Operations) != 1 {
+		t.Fatalf("repair did not produce exactly one operations-only proposal branch: %#v", action)
+	}
+	for _, expected := range []string{
+		"proposals and questions are mutually exclusive",
+		"provide exactly one of patch or operations",
+		"proposals only; omit questions entirely",
+		"questions only; omit proposals entirely",
+		"operations only and omit patch entirely",
+	} {
+		if !strings.Contains(string(repairRequest), expected) {
+			t.Fatalf("aggregated repair prompt is missing %q: %s", expected, repairRequest)
+		}
+	}
+}
+
 func TestChatWithValidationDecodesRepairProviderEnvelope(t *testing.T) {
 	var calls atomic.Int32
 	repaired := `{"version":"v1","kind":"request-missing-input","message":"Need info","questions":[{"field":"velocity","message":"Velocity?","urgency":"required","type":"number"}]}`

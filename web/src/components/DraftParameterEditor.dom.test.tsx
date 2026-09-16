@@ -19,7 +19,10 @@ const schema: DynamicFormSchema = {
         defaults: {
           type: 'object',
           title: 'Defaults',
-          properties: { target_count: { type: 'integer', title: 'Target count' } },
+          properties: {
+            target_count: { type: 'integer', title: 'Target count' },
+            geometry_accuracy: { type: 'number', title: 'Geometry Accuracy' },
+          },
         },
       },
     },
@@ -61,7 +64,7 @@ const schema: DynamicFormSchema = {
 }
 
 const baseline = {
-  meshing: { defaults: { target_count: 100 } },
+  meshing: { defaults: { target_count: 100, geometry_accuracy: 0.01 } },
   case: {
     solver: { max_steps: 0 },
     output_fields: { items: ['Cp'] },
@@ -108,6 +111,25 @@ async function flushTimers() {
     await Promise.resolve()
   })
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
+}
+
+const aiEditResponse = (value: number, message = 'Updated target count.') => ({
+  mode: 'edit' as const,
+  action: { version: 'v1' as const, kind: 'update-draft' as const, message, proposals: [] },
+  proposal: {
+    id: 'target-count', action: 'Geometry', target: 'draft', name: 'Target count', intent: 'Set target count',
+    patch: { meshing: { defaults: { target_count: value } } }, branch_preview: 'target-count', fields: [],
+  },
+})
 
 describe('Draft parameter validation navigation', () => {
   let container: HTMLDivElement
@@ -241,6 +263,129 @@ describe('Draft parameter validation navigation', () => {
     expect(container.textContent).not.toContain('First Draft')
   })
 
+  it('rejects a stale AI success after an A-to-B-to-A source replacement', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const sourceA: ResourceNode = { id: 'source-a', name: 'Source A', type: 'Geometry', children: [] }
+    const sourceB: ResourceNode = { id: 'source-b', name: 'Source B', type: 'Geometry', children: [] }
+    const pending = deferred<Awaited<ReturnType<typeof api.assistPlanForm>>>()
+    vi.spyOn(api, 'assistPlanForm').mockReturnValue(pending.promise)
+
+    const render = async (resource: ResourceNode) => {
+      await act(async () => {
+        root.render(<I18nProvider><DraftParameterEditor draftId="draft-race" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+        await Promise.resolve()
+      })
+      await flushTimers()
+    }
+    await render(sourceA)
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    await click(buttonWithText(container, 'Modify parameters'))
+    const form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    expect(api.assistPlanForm).toHaveBeenCalledTimes(1)
+
+    await render(sourceB)
+    await render(sourceA)
+    await act(async () => {
+      pending.resolve(aiEditResponse(999, 'STALE A RESPONSE'))
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(container.textContent).not.toContain('STALE A RESPONSE')
+    expect(container.querySelector('.draft-ai-message-changes')).toBeNull()
+    expect(container.querySelector<HTMLButtonElement>('.draft-parameter-save')?.disabled).toBe(true)
+  })
+
+  it('rejects stale AI errors after source replacement', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const sourceA: ResourceNode = { id: 'source-a', name: 'Source A', type: 'Geometry', children: [] }
+    const sourceB: ResourceNode = { id: 'source-b', name: 'Source B', type: 'Geometry', children: [] }
+    const pending = deferred<Awaited<ReturnType<typeof api.assistPlanForm>>>()
+    vi.spyOn(api, 'assistPlanForm').mockReturnValue(pending.promise)
+
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-error-race" parameters={baseline} project={project} resource={sourceA} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    await click(buttonWithText(container, 'Modify parameters'))
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('.draft-ai-composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-error-race" parameters={baseline} project={project} resource={sourceB} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await act(async () => {
+      pending.reject(new Error('STALE FAILURE'))
+      await Promise.resolve()
+    })
+    await flushTimers()
+
+    expect(container.textContent).not.toContain('STALE FAILURE')
+    expect(container.querySelector('.draft-ai-message.error')).toBeNull()
+  })
+
+  it('keeps the current request loading when an older request settles and blocks duplicate submits synchronously', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const sourceA: ResourceNode = { id: 'source-a', name: 'Source A', type: 'Geometry', children: [] }
+    const sourceB: ResourceNode = { id: 'source-b', name: 'Source B', type: 'Geometry', children: [] }
+    const first = deferred<Awaited<ReturnType<typeof api.assistPlanForm>>>()
+    const second = deferred<Awaited<ReturnType<typeof api.assistPlanForm>>>()
+    vi.spyOn(api, 'assistPlanForm').mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    const render = async (resource: ResourceNode) => {
+      await act(async () => {
+        root.render(<I18nProvider><DraftParameterEditor draftId="draft-finally-race" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+        await Promise.resolve()
+      })
+      await flushTimers()
+    }
+    await render(sourceA)
+    await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
+    await click(buttonWithText(container, 'Modify parameters'))
+    let form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    expect(api.assistPlanForm).toHaveBeenCalledTimes(1)
+
+    await render(sourceB)
+    await click(buttonWithText(container, 'Modify parameters'))
+    form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    expect(api.assistPlanForm).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('.draft-ai-thinking')).not.toBeNull()
+
+    await act(async () => {
+      first.resolve(aiEditResponse(888, 'STALE FIRST RESPONSE'))
+      await Promise.resolve()
+    })
+    await flushTimers()
+    expect(container.querySelector('.draft-ai-thinking')).not.toBeNull()
+    expect(container.textContent).not.toContain('STALE FIRST RESPONSE')
+
+    await act(async () => {
+      second.resolve(aiEditResponse(222, 'CURRENT SECOND RESPONSE'))
+      await Promise.resolve()
+    })
+    await flushTimers()
+    expect(container.querySelector('.draft-ai-thinking')).toBeNull()
+    expect(container.textContent).toContain('CURRENT SECOND RESPONSE')
+  })
+
   it('populates localized quick prompts without submitting them', async () => {
     const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
     const resource: ResourceNode = { id: 'resource-1', name: 'Case', type: 'Case', children: [] }
@@ -296,6 +441,82 @@ describe('Draft parameter validation navigation', () => {
     expect(vi.mocked(api.validateDraftParameters).mock.calls.length).toBe(validationCalls)
     expect(onCandidateChange.mock.calls.length).toBe(candidateCalls)
     expect(api.updateDraftParameters).not.toHaveBeenCalled()
+  })
+
+  it('scopes explanation mode to one turn and edits the explained field only after a value is supplied', async () => {
+    const project: ProjectInfo = { id: 'project-1', name: 'Project', solver_version: '25.1', tags: [], root_item: { id: 'root', type: 'Folder' } }
+    const resource: ResourceNode = { id: 'resource-1', name: 'Geometry', type: 'Geometry', children: [] }
+    vi.spyOn(api, 'assistPlanForm')
+      .mockResolvedValueOnce({
+        mode: 'explain',
+        explanation: '`meshing.defaults.geometry_accuracy` controls how closely the mesh follows the CAD.',
+      })
+      .mockResolvedValueOnce({
+        mode: 'edit',
+        action: {
+          version: 'v1', kind: 'request-missing-input', message: '请提供目标值。',
+          questions: [{
+            field: 'meshing.defaults.geometry_accuracy', message: '要设置为多少？',
+            reason: '当前请求没有目标值。', urgency: 'required', type: 'number',
+          }],
+        },
+      })
+      .mockResolvedValueOnce({
+        mode: 'edit',
+        action: { version: 'v1', kind: 'update-draft', message: '已更新 Geometry Accuracy。', proposals: [] },
+        proposal: {
+          id: 'geometry-accuracy', action: 'Geometry', target: 'draft', name: 'Geometry Accuracy', intent: 'Set geometry accuracy',
+          patch: { meshing: { defaults: { geometry_accuracy: 0.001 } } }, branch_preview: 'geometry-accuracy', fields: [],
+        },
+      })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-turn-mode" parameters={baseline} project={project} resource={resource} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    const explainAction = [...container.querySelectorAll<HTMLButtonElement>('.schema-field-ai-explain')]
+      .find((button) => button.getAttribute('aria-label')?.includes('Geometry Accuracy'))
+    if (!explainAction) throw new Error('Geometry Accuracy explanation action is unavailable')
+    await click(explainAction)
+    const form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
+    const prompt = container.querySelector<HTMLTextAreaElement>('.draft-ai-composer textarea')!
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    if (!valueSetter) throw new Error('AI prompt textarea is unavailable')
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+    expect(vi.mocked(api.assistPlanForm).mock.calls[0][0]).toEqual(expect.objectContaining({ mode: 'explain', autonomous: false }))
+
+    await act(async () => {
+      valueSetter.call(prompt, '帮我设置一下这个值')
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+    expect(vi.mocked(api.assistPlanForm).mock.calls[1][0]).toEqual(expect.objectContaining({
+      prompt: '帮我设置一下这个值', mode: 'edit', autonomous: false,
+    }))
+    expect(vi.mocked(api.assistPlanForm).mock.calls[1][0].history).toBeUndefined()
+    expect(container.querySelector('.draft-ai-message.assistant')?.textContent).toContain('meshing.defaults.geometry_accuracy')
+    expect(container.querySelector<HTMLButtonElement>('.draft-parameter-save')?.disabled).toBe(true)
+
+    await act(async () => {
+      valueSetter.call(prompt, '设置为 0.001 m')
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await flushTimers()
+    expect(vi.mocked(api.assistPlanForm).mock.calls[2][0]).toEqual(expect.objectContaining({
+      prompt: '设置为 0.001 m', mode: 'edit', autonomous: false,
+    }))
+    expect(container.querySelector('.draft-ai-message-changes')?.textContent).toContain('meshing.defaults.geometry_accuracy')
+    expect(container.querySelector<HTMLButtonElement>('.draft-parameter-save')?.disabled).toBe(false)
   })
 
   it('keeps validation repair mutation-capable and marks the request autonomous', async () => {
@@ -390,10 +611,10 @@ describe('Draft parameter validation navigation', () => {
     expect(prompt.disabled).toBe(false)
     expect(api.assistPlanForm).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Set the solver steps',
-      history: [],
       mode: 'edit',
       autonomous: false,
     }))
+    expect(vi.mocked(api.assistPlanForm).mock.calls[0][0].history).toBeUndefined()
 
     await act(async () => {
       valueSetter.call(prompt, 'Use the suggested value')
@@ -406,10 +627,7 @@ describe('Draft parameter validation navigation', () => {
     })
     await flushTimers()
     expect(api.assistPlanForm).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(api.assistPlanForm).mock.calls[1][0].history).toEqual([
-      { role: 'user', content: 'Set the solver steps' },
-      { role: 'assistant', content: expect.stringContaining('case.solver.max_steps') },
-    ])
+    expect(vi.mocked(api.assistPlanForm).mock.calls[1][0].history).toBeUndefined()
   })
 
   it('navigates errors across tabs and clears every stale projection after the fingerprint changes', async () => {

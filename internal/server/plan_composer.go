@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,8 +95,13 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI form filling requires a configured AI or Codex provider"})
 		return
 	}
+	history, err := s.loadPlanAssistHistory(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load Draft AI conversation history"})
+		return
+	}
+	request.History = history
 	var composer planComposerContext
-	var err error
 	if request.Mode == "explain" {
 		composer, err = s.loadPlanComposerExplanationContext(c.Request.Context(), request)
 	} else {
@@ -123,14 +130,33 @@ func (s *Server) assistPlanForm(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) loadPlanAssistHistory(request planComposerRequest) ([]agent.Message, error) {
+	clientHistory := normalizePlanAssistHistory(request.History)
+	if request.DraftID == "" || s.chatSessions == nil {
+		return clientHistory, nil
+	}
+	scope, err := agent.ResolveChatScope(agent.ChatScopeDraft, request.DraftID, "")
+	if err != nil {
+		return nil, err
+	}
+	session, err := s.chatSessions.GetScope(request.ProjectID, scope)
+	if errors.Is(err, agent.ErrChatSessionNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// The current prompt is carried separately and every successful prior turn
+	// is persisted before its response is returned. Therefore no client suffix
+	// is needed for Draft requests, and untrusted history cannot cross scopes.
+	return normalizePlanAssistHistory(session.Messages), nil
+}
+
 func (s *Server) persistDraftPlanAssistConversation(request planComposerRequest, result planAssistResponse) {
 	if s.chatSessions == nil || request.ProjectID == "" || request.DraftID == "" {
 		return
 	}
-	assistantMessage := strings.TrimSpace(result.Explanation)
-	if assistantMessage == "" && result.Action != nil {
-		assistantMessage = strings.TrimSpace(result.Action.Message)
-	}
+	assistantMessage := planAssistAssistantTranscript(result)
 	if assistantMessage == "" {
 		return
 	}
@@ -149,11 +175,40 @@ func (s *Server) persistDraftPlanAssistConversation(request planComposerRequest,
 	}
 }
 
+func planAssistAssistantTranscript(result planAssistResponse) string {
+	if explanation := strings.TrimSpace(result.Explanation); explanation != "" {
+		return explanation
+	}
+	if result.Action == nil {
+		return ""
+	}
+	message := strings.TrimSpace(result.Action.Message)
+	if result.Action.Kind != agent.ActionRequestMissingInput || len(result.Action.Questions) == 0 {
+		return message
+	}
+	context, err := json.Marshal(struct {
+		Kind        agent.ActionKind `json:"kind"`
+		Questions   []agent.Question `json:"questions"`
+		Warnings    []string         `json:"warnings,omitempty"`
+		Assumptions []string         `json:"assumptions,omitempty"`
+	}{
+		Kind: result.Action.Kind, Questions: result.Action.Questions,
+		Warnings: result.Action.Warnings, Assumptions: result.Action.Assumptions,
+	})
+	if err != nil {
+		return message
+	}
+	if message == "" {
+		return "```json\n" + string(context) + "\n```"
+	}
+	return message + "\n\n```json\n" + string(context) + "\n```"
+}
+
 // explainSchemaNativePlan uses the same canonical Draft and live schema context
 // as parameter assistance, but deliberately bypasses AgentAction parsing,
 // proposal compilation, Flow360 preflight, and every mutation repair path.
 func (s *Server) explainSchemaNativePlan(ctx context.Context, composer planComposerContext) (planAssistResponse, error) {
-	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt)
+	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt, planAssistHistoryQuery(composer.Request.History))
 	if err != nil {
 		return planAssistResponse{}, fmt.Errorf("could not prepare the active Flow360 schema for the Agent: %w", err)
 	}
@@ -187,7 +242,7 @@ func (s *Server) explainSchemaNativePlan(ctx context.Context, composer planCompo
 // Flow360 stage schemas, validates the candidate against the real client, and
 // gives the Agent bounded opportunities to repair schema-mechanical failures.
 func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComposerContext) (planAssistResponse, error) {
-	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt)
+	catalog, err := schemaPromptCatalog(composer.Form, composer.Request.Intent, composer.Request.Prompt, planAssistHistoryQuery(composer.Request.History))
 	if err != nil {
 		return planAssistResponse{}, fmt.Errorf("could not prepare the active Flow360 schema for the Agent: %w", err)
 	}
@@ -214,6 +269,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 	if err != nil {
 		return planAssistResponse{}, err
 	}
+	action, err = enforcePlanAssistFollowUp(action, composer)
+	if err != nil {
+		return planAssistResponse{}, err
+	}
 	if action.Kind == agent.ActionRequestMissingInput {
 		return planAssistResponse{Mode: composer.Request.Mode, Action: action}, nil
 	}
@@ -233,6 +292,10 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 			return planAssistResponse{}, repairErr
 		}
 		repairedAction, repairErr = s.resolveAutonomousPlanAssistQuestions(ctx, composer, contextPayload, repairedAction)
+		if repairErr != nil {
+			return planAssistResponse{}, repairErr
+		}
+		repairedAction, repairErr = enforcePlanAssistFollowUp(repairedAction, composer)
 		if repairErr != nil {
 			return planAssistResponse{}, repairErr
 		}
@@ -433,6 +496,386 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		return planAssistResponse{}, fmt.Errorf("the parameter Agent could not produce a schema-valid Flow360 setup after %d autonomous repairs; remaining preflight issues: %s", maxPlanAssistRepairAttempts, issues)
 	}
 	return finalizePlanAssistResponse(composer, action, proposal, preflight, repairAttempts, autoRepaired)
+}
+
+// enforcePlanAssistFollowUp is the server-side admission boundary for manual,
+// context-dependent Draft edits. Conversation history may identify one field,
+// but only the current turn may authorize its value. A provider cannot fill in
+// a default or redirect the edit to another field merely because its action is
+// otherwise schema-valid.
+func enforcePlanAssistFollowUp(action *agent.Action, composer planComposerContext) (*agent.Action, error) {
+	if action == nil || composer.Request.Mode != "edit" || composer.Request.Autonomous || composer.Request.DraftID == "" {
+		return action, nil
+	}
+	field, bound := planAssistFollowUpField(composer.Form, composer.Request)
+	if !bound {
+		return action, nil
+	}
+	if action.Kind == agent.ActionRequestMissingInput {
+		if len(action.Questions) == 1 && action.Questions[0].Field == field.Path {
+			return action, nil
+		}
+		return planAssistMissingValueAction(field)
+	}
+	if len(action.Proposals) != 1 || !planAssistProposalMatchesExplicitFieldValue(action.Proposals[0], field, composer.Request.Prompt) {
+		return planAssistMissingValueAction(field)
+	}
+	return action, nil
+}
+
+func planAssistFollowUpField(form flow360.PlanFormSchema, request planComposerRequest) (promptSchemaField, bool) {
+	fields := make([]promptSchemaField, 0, 128)
+	for _, stage := range form.Stages {
+		var root map[string]any
+		if json.Unmarshal(form.Schemas[stage], &root) == nil {
+			collectPromptSchemaFields(stage, "", root, &fields, 0)
+		}
+	}
+	byPath := make(map[string]promptSchemaField, len(fields))
+	paths := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.Path == "" {
+			continue
+		}
+		if _, exists := byPath[field.Path]; !exists {
+			byPath[field.Path] = field
+			paths = append(paths, field.Path)
+		}
+	}
+	sort.Strings(paths)
+
+	currentMatches := make([]string, 0, 1)
+	for _, path := range paths {
+		field := byPath[path]
+		if planAssistSemanticPhrasePresent(request.Prompt, path) ||
+			(field.Title != "" && planAssistSemanticPhrasePresent(request.Prompt, field.Title)) {
+			currentMatches = append(currentMatches, path)
+		}
+	}
+	if len(currentMatches) == 1 {
+		return byPath[currentMatches[0]], true
+	}
+	// Current-turn field evidence always outranks history. If it names more
+	// than one field, a previous turn must not silently select one of them.
+	if len(currentMatches) > 1 {
+		return promptSchemaField{}, false
+	}
+
+	for index := len(request.History) - 1; index >= 0; index-- {
+		matches := make([]string, 0, 1)
+		for _, path := range paths {
+			if planAssistPathMentioned(request.History[index].Content, path) {
+				matches = append(matches, path)
+			}
+		}
+		if len(matches) == 1 {
+			return byPath[matches[0]], true
+		}
+		if len(matches) > 1 {
+			return promptSchemaField{}, false
+		}
+	}
+	return promptSchemaField{}, false
+}
+
+func planAssistPathMentioned(content, path string) bool {
+	content = strings.ToLower(content)
+	path = strings.ToLower(path)
+	for offset := 0; offset < len(content); {
+		index := strings.Index(content[offset:], path)
+		if index < 0 {
+			return false
+		}
+		index += offset
+		beforeOK := index == 0 || !planAssistPathRune(rune(content[index-1]))
+		after := index + len(path)
+		afterOK := after == len(content) || !planAssistPathRune(rune(content[after]))
+		if beforeOK && afterOK {
+			return true
+		}
+		offset = index + 1
+	}
+	return false
+}
+
+func planAssistPathRune(value rune) bool {
+	return unicode.IsLetter(value) || unicode.IsNumber(value) || strings.ContainsRune("_.[]*", value)
+}
+
+func planAssistSemanticPhrasePresent(value, phrase string) bool {
+	haystack := strings.Join(semanticCatalogTerms(value), " ")
+	needle := strings.Join(semanticCatalogTerms(phrase), " ")
+	return needle != "" && strings.Contains(" "+haystack+" ", " "+needle+" ")
+}
+
+func planAssistProposalMatchesExplicitFieldValue(proposal agent.Proposal, field promptSchemaField, prompt string) bool {
+	type mutation struct {
+		path  string
+		value any
+	}
+	mutations := make([]mutation, 0, len(proposal.Operations)+1)
+	for _, operation := range proposal.Operations {
+		if operation.Op != "set" && operation.Op != "append" {
+			return false
+		}
+		segments, err := planAssistOperationPointer(operation.Path)
+		if err != nil {
+			return false
+		}
+		mutations = append(mutations, mutation{path: strings.Join(segments, "."), value: operation.Value})
+	}
+	if len(proposal.Operations) == 0 {
+		var patch any
+		if len(proposal.Patch) == 0 || json.Unmarshal(proposal.Patch, &patch) != nil {
+			return false
+		}
+		var collect func(string, any)
+		collect = func(path string, value any) {
+			if field.Type == "quantity" && path == field.Path {
+				mutations = append(mutations, mutation{path: path, value: value})
+				return
+			}
+			switch typed := value.(type) {
+			case map[string]any:
+				keys := make([]string, 0, len(typed))
+				for key := range typed {
+					keys = append(keys, key)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					next := key
+					if path != "" {
+						next = path + "." + key
+					}
+					collect(next, typed[key])
+				}
+			default:
+				mutations = append(mutations, mutation{path: path, value: typed})
+			}
+		}
+		collect("", patch)
+	}
+	if len(mutations) == 0 {
+		return false
+	}
+	for _, mutation := range mutations {
+		if mutation.path != field.Path && !strings.HasPrefix(mutation.path, field.Path+".") {
+			return false
+		}
+		if field.Type == "quantity" && mutation.path == field.Path {
+			if !planAssistPromptContainsQuantity(prompt, mutation.value, field) {
+				return false
+			}
+			continue
+		}
+		if !planAssistPromptContainsValue(prompt, mutation.value) {
+			return false
+		}
+	}
+	return true
+}
+
+func planAssistPromptContainsQuantity(prompt string, value any, field promptSchemaField) bool {
+	quantity, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	targetValue, ok := planAssistNumericValue(quantity["value"])
+	if !ok {
+		return false
+	}
+	targetUnit, ok := quantity["units"].(string)
+	if !ok || strings.TrimSpace(targetUnit) == "" {
+		return false
+	}
+	allowedUnits := make([]string, 0, len(field.UnitOptions)+1)
+	if strings.TrimSpace(field.Unit) != "" {
+		allowedUnits = append(allowedUnits, field.Unit)
+	}
+	for _, option := range field.UnitOptions {
+		if unit, ok := option.(string); ok && strings.TrimSpace(unit) != "" {
+			allowedUnits = append(allowedUnits, unit)
+		}
+	}
+	for alias := range field.UnitAliases {
+		allowedUnits = append(allowedUnits, alias)
+	}
+	seen := make(map[string]struct{}, len(allowedUnits))
+	for _, sourceUnit := range allowedUnits {
+		if _, duplicate := seen[sourceUnit]; duplicate {
+			continue
+		}
+		seen[sourceUnit] = struct{}{}
+		if !planAssistSemanticPhrasePresent(prompt, sourceUnit) {
+			continue
+		}
+		for _, token := range planAssistNumberPattern.FindAllString(prompt, -1) {
+			sourceValue, err := strconv.ParseFloat(token, 64)
+			if err != nil {
+				continue
+			}
+			converted, convertible := planAssistConvertQuantity(sourceValue, sourceUnit, targetUnit)
+			if convertible && math.Abs(converted-targetValue) <= 1e-12*math.Max(1, math.Abs(targetValue)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func planAssistNumericValue(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func planAssistConvertQuantity(value float64, sourceUnit, targetUnit string) (float64, bool) {
+	normalize := func(unit string) string {
+		unit = strings.TrimSpace(strings.ToLower(unit))
+		switch unit {
+		case "meter", "meters", "metre", "metres":
+			return "m"
+		case "millimeter", "millimeters", "millimetre", "millimetres":
+			return "mm"
+		case "centimeter", "centimeters", "centimetre", "centimetres":
+			return "cm"
+		case "kilometer", "kilometers", "kilometre", "kilometres":
+			return "km"
+		case "feet", "foot":
+			return "ft"
+		case "inches":
+			return "inch"
+		default:
+			return unit
+		}
+	}
+	sourceUnit = normalize(sourceUnit)
+	targetUnit = normalize(targetUnit)
+	if sourceUnit == targetUnit {
+		return value, true
+	}
+	type conversion struct {
+		dimension string
+		scale     float64
+	}
+	conversions := map[string]conversion{
+		"m":    {dimension: "length", scale: 1},
+		"mm":   {dimension: "length", scale: 1e-3},
+		"cm":   {dimension: "length", scale: 1e-2},
+		"km":   {dimension: "length", scale: 1e3},
+		"inch": {dimension: "length", scale: 0.0254},
+		"ft":   {dimension: "length", scale: 0.3048},
+	}
+	source, sourceOK := conversions[sourceUnit]
+	target, targetOK := conversions[targetUnit]
+	if !sourceOK || !targetOK || source.dimension != target.dimension {
+		return 0, false
+	}
+	return value * source.scale / target.scale, true
+}
+
+var planAssistNumberPattern = regexp.MustCompile(`[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?`)
+
+func planAssistPromptContainsValue(prompt string, value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if len(typed) == 0 {
+			return false
+		}
+		for _, child := range typed {
+			if !planAssistPromptContainsValue(prompt, child) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		if len(typed) == 0 {
+			return false
+		}
+		for _, child := range typed {
+			if !planAssistPromptContainsValue(prompt, child) {
+				return false
+			}
+		}
+		return true
+	case float64, float32, int, int64:
+		numeric, _ := planAssistNumericValue(typed)
+		for _, token := range planAssistNumberPattern.FindAllString(prompt, -1) {
+			candidate, err := strconv.ParseFloat(token, 64)
+			if err == nil && candidate == numeric {
+				return true
+			}
+		}
+		return false
+	case string:
+		valueTerms := strings.Join(semanticCatalogTerms(typed), " ")
+		return valueTerms != "" && strings.Contains(strings.Join(semanticCatalogTerms(prompt), " "), valueTerms)
+	case bool:
+		return strings.Contains(strings.Join(semanticCatalogTerms(prompt), " "), strconv.FormatBool(typed))
+	default:
+		return false
+	}
+}
+
+func planAssistMissingValueAction(field promptSchemaField) (*agent.Action, error) {
+	label := strings.TrimSpace(field.Title)
+	if label == "" {
+		label = field.Path
+	}
+	questionType := "text"
+	switch field.Type {
+	case "integer", "number", "quantity":
+		questionType = "number"
+	case "boolean":
+		questionType = "boolean"
+	case "enum", "select":
+		if len(field.Options) > 0 {
+			questionType = "select"
+		}
+	}
+	question := agent.Question{
+		Field: field.Path, Message: fmt.Sprintf("What value should %s use?", label),
+		Urgency: "required", Reason: "The current request does not contain an explicit target value.",
+		Type: questionType, Unit: field.Unit,
+	}
+	if questionType == "select" {
+		for _, raw := range field.Options {
+			var value string
+			switch typed := raw.(type) {
+			case string:
+				value = typed
+			case float64, bool:
+				value = fmt.Sprint(typed)
+			}
+			if value != "" {
+				question.Options = append(question.Options, agent.QuestionOption{Value: value, Label: value})
+			}
+		}
+		if len(question.Options) == 0 {
+			question.Type = "text"
+		}
+	}
+	action := &agent.Action{
+		Version: agent.ActionVersion, Kind: agent.ActionRequestMissingInput,
+		Message:   "A target value is required before this Draft can be changed.",
+		Questions: []agent.Question{question},
+	}
+	if err := agent.ValidateWithContext(*action, nil); err != nil {
+		return nil, fmt.Errorf("could not synthesize a valid missing-value action: %w", err)
+	}
+	return action, nil
 }
 
 func finalizePlanAssistResponse(composer planComposerContext, action *agent.Action, proposal agent.Proposal, preflight flow360.PreflightResult, repairAttempts int, autoRepaired bool) (planAssistResponse, error) {
@@ -1149,6 +1592,8 @@ Request mode: %s
 
 Treat the runtime Flow360 form_schema as the parameter mapping table for the installed solver version. Do not rely on a hardcoded list of supported natural-language parameters. Resolve the user's wording semantically against the supplied request-scoped schema skills: each skill contains exact paths, titles, descriptions, types, units, enums, model choices, and union variants selected from the live schema for this request. Use only these detailed field contracts and the preflight repair loop to produce exact values. If multiple schema fields remain genuinely plausible after considering stage and baseline context, ask one focused clarification instead of guessing.
 
+Use the authoritative Draft-scoped Conversation History to resolve references in the latest turn, including phrases such as "this value" or a previously explained field title. History identifies the prior field; it never supplies a target value that the user did not provide. If the latest turn asks to change a resolved field but supplies no concrete value, return exactly one request-missing-input question for that field and no proposal. A bare field title without a target value follows the same rule. Defaults and recommendations may be presented in that question, but must not be applied until the user selects or supplies a value. When a later turn supplies the value, edit the previously resolved field only.
+
 Read the schema catalog field-by-field before composing operations. Convert catalog dot paths to RFC 6901 JSON Pointers. Use set for a scalar, quantity, entity-list, or existing object child; set on an existing object preserves unspecified canonical children. Use append only to add one complete new array item. Use unset to remove one field or array item. Never set an entire existing object array such as models, meshing.refinements, meshing.volume_zones, or outputs, and never replace an existing object array item; address the item's child path instead. Quantities use {"value":...,"units":"..."}; enum and model values must exactly match the catalog. Never invent a nearby field name and never emit patch together with operations. When the engineering objective requires sampling requested Case output fields on a newly defined plane and the schema exposes SliceOutput and those exact fields, use create-slice-output instead of generic append. Express only origin, normal, optional name, and requested output_fields; the server owns entity IDs and private registry updates.
 
 Build a coherent setup across all active stages, not a bag of unrelated defaults: relate operating conditions to geometry scale and physical models; relate mesh sizes and boundary layers to the intended fidelity; choose steady versus unsteady time stepping from the phenomenon the user wants to observe; and request outputs needed to judge that objective. Keep inherited valid model blocks intact and include only deliberate path-level operations.
@@ -1205,6 +1650,7 @@ func bindPlanComposerRequest(c *gin.Context) (planComposerRequest, bool) {
 	request.SourceID = strings.TrimSpace(request.SourceID)
 	request.SourceType = strings.TrimSpace(request.SourceType)
 	request.SourceName = strings.TrimSpace(request.SourceName)
+	request.DraftID = strings.TrimSpace(request.DraftID)
 	request.Target = strings.TrimSpace(request.Target)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Prompt = strings.TrimSpace(request.Prompt)
@@ -1245,6 +1691,25 @@ func normalizePlanAssistHistory(history []agent.Message) []agent.Message {
 		result = append(result, agent.Message{Role: role, Content: content})
 	}
 	return result
+}
+
+func planAssistHistoryQuery(history []agent.Message) string {
+	history = normalizePlanAssistHistory(history)
+	if len(history) > 6 {
+		history = history[len(history)-6:]
+	}
+	var query strings.Builder
+	for _, message := range history {
+		content := strings.TrimSpace(message.Content)
+		if runes := []rune(content); len(runes) > 500 {
+			content = string(runes[:500])
+		}
+		if query.Len() > 0 {
+			query.WriteByte(' ')
+		}
+		query.WriteString(content)
+	}
+	return query.String()
 }
 
 func (s *Server) loadPlanComposerContext(ctx context.Context, request planComposerRequest) (planComposerContext, error) {
@@ -1369,25 +1834,26 @@ func planComposerBaseline(sourceParams, draftParams json.RawMessage, draftReques
 }
 
 type promptSchemaField struct {
-	Stage           string `json:"stage"`
-	Path            string `json:"path"`
-	Type            string `json:"type"`
-	Title           string `json:"title,omitempty"`
-	Description     string `json:"description,omitempty"`
-	Required        bool   `json:"required,omitempty"`
-	Unit            string `json:"unit,omitempty"`
-	UnitOptions     []any  `json:"unit_options,omitempty"`
-	Options         []any  `json:"options,omitempty"`
-	Default         any    `json:"default,omitempty"`
-	Minimum         any    `json:"minimum,omitempty"`
-	Maximum         any    `json:"maximum,omitempty"`
-	ModelChoices    []any  `json:"model_choices,omitempty"`
-	EntityChoices   []any  `json:"entity_choices,omitempty"`
-	DefaultModel    string `json:"default_model,omitempty"`
-	DefaultEntities []any  `json:"default_entities,omitempty"`
-	Recommendation  any    `json:"recommendation,omitempty"`
-	Variants        []any  `json:"variants,omitempty"`
-	Items           any    `json:"items,omitempty"`
+	Stage           string            `json:"stage"`
+	Path            string            `json:"path"`
+	Type            string            `json:"type"`
+	Title           string            `json:"title,omitempty"`
+	Description     string            `json:"description,omitempty"`
+	Required        bool              `json:"required,omitempty"`
+	Unit            string            `json:"unit,omitempty"`
+	UnitOptions     []any             `json:"unit_options,omitempty"`
+	UnitAliases     map[string]string `json:"unit_aliases,omitempty"`
+	Options         []any             `json:"options,omitempty"`
+	Default         any               `json:"default,omitempty"`
+	Minimum         any               `json:"minimum,omitempty"`
+	Maximum         any               `json:"maximum,omitempty"`
+	ModelChoices    []any             `json:"model_choices,omitempty"`
+	EntityChoices   []any             `json:"entity_choices,omitempty"`
+	DefaultModel    string            `json:"default_model,omitempty"`
+	DefaultEntities []any             `json:"default_entities,omitempty"`
+	Recommendation  any               `json:"recommendation,omitempty"`
+	Variants        []any             `json:"variants,omitempty"`
+	Items           any               `json:"items,omitempty"`
 }
 
 type promptSchemaIndexField struct {
@@ -1751,6 +2217,14 @@ func collectPromptSchemaFields(stage, path string, node map[string]any, fields *
 	if unitOptions, ok := node["unit_options"].([]any); ok && len(unitOptions) <= 20 {
 		field.UnitOptions = unitOptions
 	}
+	if aliases, ok := node["unit_aliases"].(map[string]any); ok && len(aliases) <= 40 {
+		field.UnitAliases = make(map[string]string, len(aliases))
+		for alias, raw := range aliases {
+			if canonical, ok := raw.(string); ok {
+				field.UnitAliases[alias] = canonical
+			}
+		}
+	}
 	if options, ok := node["options"].([]any); ok && len(options) <= 24 {
 		field.Options = options
 	}
@@ -1785,7 +2259,7 @@ func compactPromptSchemaContract(node map[string]any, depth int) map[string]any 
 	}
 	result := make(map[string]any)
 	for _, key := range []string{
-		"type", "title", "description", "required", "unit", "unit_options", "options",
+		"type", "title", "description", "required", "unit", "unit_options", "unit_aliases", "options",
 		"default", "minimum", "maximum", "model_choices", "entity_choices", "default_model",
 		"default_entities", "recommendation",
 	} {

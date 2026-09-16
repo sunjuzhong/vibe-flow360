@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Code2, Eye, ListTree, Play, Redo2, RefreshCw, RotateCcw, Save, ShieldCheck, Sparkles, TriangleAlert, Undo2 } from 'lucide-react'
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { APIError, api, type AgentAction, type DraftParameterSchemaResponse, type DraftParameterValidationResponse, type DynamicFormSchema, type PlanAssistMode, type ProjectInfo, type ResourceNode } from '../api/client'
 import { useI18n } from '../i18n'
 import { candidateFingerprint, localDraftValidation, normalizeDraftValidation, type DraftValidationIssue } from '../lib/draftValidation'
@@ -87,6 +87,8 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const aiMessageIDRef = useRef(0)
   const aiSessionScopeRef = useRef('')
   const aiRequestScopeRef = useRef('')
+  const aiRequestSequenceRef = useRef(0)
+  const aiActiveRequestRef = useRef(0)
   const jsonValueRef = useRef(jsonValue)
   const schemaLoadedDraftRef = useRef('')
   const latestFingerprintRef = useRef('')
@@ -99,6 +101,8 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const saveRequestRef = useRef(0)
   const saveOperationRef = useRef(false)
   const initialValidationDoneRef = useRef(false)
+  const aiRequestIdentity = `${project?.id ?? ''}\u0000${draftId}\u0000${resource?.type ?? ''}\u0000${resource?.id ?? ''}`
+  const currentAIRequestIdentityRef = useRef(aiRequestIdentity)
 
   currentDraftIdRef.current = draftId
   onSavedRef.current = onSaved
@@ -121,6 +125,14 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     aiMessageIDRef.current = 0
     initialValidationDoneRef.current = false
   }, [draftId])
+
+  useLayoutEffect(() => {
+    if (currentAIRequestIdentityRef.current === aiRequestIdentity) return
+    currentAIRequestIdentityRef.current = aiRequestIdentity
+    aiRequestSequenceRef.current += 1
+    aiActiveRequestRef.current = 0
+    setAILoading(false)
+  }, [aiRequestIdentity])
 
   useEffect(() => {
     const scope = project ? `${project.id}\u0000draft\u0000${draftId}` : ''
@@ -405,11 +417,20 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   }, [applyCandidate, draftId, externalPatch, loading, onExternalPatchApplied])
 
   const fillWithAI = async () => {
-    if (!project || !resource || !aiPrompt.trim() || aiLoading || aiSessionLoading) return
+    if (!project || !resource || !aiPrompt.trim() || aiLoading || aiSessionLoading || aiActiveRequestRef.current !== 0) return
     const requestDraftId = draftId
     const requestScope = `${project.id}\u0000draft\u0000${requestDraftId}`
+    const requestIdentity = aiRequestIdentity
+    const requestSequence = ++aiRequestSequenceRef.current
+    aiActiveRequestRef.current = requestSequence
+    const requestIsCurrent = () => (
+      currentAIRequestIdentityRef.current === requestIdentity
+      && aiRequestSequenceRef.current === requestSequence
+      && aiActiveRequestRef.current === requestSequence
+    )
     const prompt = aiPrompt.trim()
     const requestMode = aiMode
+    setAIMode('edit')
     const candidate = candidateResult.value ?? baseline
     const requestFingerprint = candidateFingerprint(candidate)
     const userMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
@@ -430,11 +451,10 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         intent: prompt,
         prompt,
         patch: draftAIAssistPatch(baseline, candidate),
-        history: draftAIConversationHistory(aiMessages),
         autonomous: requestMode === 'repair',
         mode: requestMode,
       })
-      if (currentDraftIdRef.current !== requestDraftId) return
+      if (!requestIsCurrent()) return
       if (latestFingerprintRef.current !== requestFingerprint) throw new Error(t('The Draft changed while AI was preparing a response. Review the latest candidate and ask again.'))
       if (response.mode === 'explain') {
         if (!response.explanation?.trim()) throw new Error(t('AI did not return a parameter explanation.'))
@@ -470,11 +490,12 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
         changes: aiChanges,
       }])
     } catch (cause) {
-      if (currentDraftIdRef.current !== requestDraftId) return
+      if (!requestIsCurrent()) return
       const errorMessageID = `${requestDraftId}-${++aiMessageIDRef.current}`
       setAIMessages((current) => [...current, { id: errorMessageID, role: 'error', content: draftParameterErrorMessage(cause, t) }])
     } finally {
-      if (currentDraftIdRef.current === requestDraftId) {
+      if (requestIsCurrent()) {
+        aiActiveRequestRef.current = 0
         setAILoading(false)
         if (aiRequestScopeRef.current === requestScope) aiRequestScopeRef.current = ''
       }

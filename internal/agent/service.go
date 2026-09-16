@@ -429,6 +429,10 @@ Please respond with ONLY a valid JSON object in a fenced code block. The schema 
 - version: "v1"
 - kind: "create-plan", "update-draft", or "request-missing-input"
 - message: string (required)
+- top-level branch is a strict union:
+  * create-plan or update-draft => proposals only; omit questions entirely
+  * request-missing-input => questions only; omit proposals entirely
+  * never emit both proposals and questions
 - proposals: array (for create-plan). Every proposal must contain id, action, target, name,
   intent, the parameter edit representation required below, branch_preview, and fields.
 - proposals[].fields: ARRAY of objects shaped exactly as

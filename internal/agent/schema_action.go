@@ -244,8 +244,8 @@ func Parse(raw string) (Action, error) {
 		return action, ErrMissingMessage
 	}
 
-	if len(action.Proposals) > 0 && len(action.Questions) > 0 {
-		return action, ErrAmbiguousAction
+	if err := validateActionShape(action); err != nil {
+		return action, err
 	}
 
 	switch action.Kind {
@@ -324,6 +324,9 @@ func ValidateWithContext(action Action, contextValidation func(Action) error) er
 }
 
 func validateActionSelfConsistency(action Action) error {
+	if err := validateActionShape(action); err != nil {
+		return err
+	}
 	if action.Kind == ActionCreatePlan {
 		if len(action.Proposals) == 0 {
 			return ErrMissingProposals
@@ -354,6 +357,19 @@ func validateActionSelfConsistency(action Action) error {
 		}
 	}
 	return nil
+}
+
+func validateActionShape(action Action) error {
+	errs := make([]error, 0, 2)
+	if len(action.Proposals) > 0 && len(action.Questions) > 0 {
+		errs = append(errs, ErrAmbiguousAction)
+	}
+	for index, proposal := range action.Proposals {
+		if len(proposal.Patch) > 0 && len(proposal.Operations) > 0 {
+			errs = append(errs, fmt.Errorf("proposal %d: %w: provide exactly one of patch or operations", index, ErrInvalidOperation))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func validateDraftUpdate(p Proposal) error {
