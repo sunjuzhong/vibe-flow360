@@ -30,19 +30,9 @@ export default function DraftAISession({ messages, prompt, mode, loading, sessio
   const conversationEndRef = useRef<HTMLDivElement | null>(null)
   const quickPrompts: Array<{ mode: PlanAssistMode; label: string; prompt: string }> = [
     {
-      mode: 'edit',
-      label: t('Modify parameters'),
-      prompt: t('Modify the current Draft parameters. Describe the parameter names or paths and the values to set.'),
-    },
-    {
       mode: 'repair',
       label: t('Fix validation'),
       prompt: t('Make the current Draft pass Flow360 validation. Change only the fields required by the current validation issues.'),
-    },
-    {
-      mode: 'explain',
-      label: t('Explain a parameter'),
-      prompt: t('Explain a Draft parameter without modifying any parameter values. Parameter name or path:'),
     },
   ]
 

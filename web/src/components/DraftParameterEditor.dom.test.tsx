@@ -98,6 +98,17 @@ async function click(element: Element) {
   await flushTimers()
 }
 
+async function enterComposerPrompt(container: HTMLElement, value: string) {
+  const prompt = container.querySelector<HTMLTextAreaElement>('.draft-ai-composer textarea')
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+  if (!prompt || !valueSetter) throw new Error('Draft AI composer is unavailable')
+  await act(async () => {
+    valueSetter.call(prompt, value)
+    prompt.dispatchEvent(new Event('input', { bubbles: true }))
+    await Promise.resolve()
+  })
+}
+
 async function press(element: Element, key: string, shiftKey = false) {
   await act(async () => {
     element.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
@@ -279,7 +290,7 @@ describe('Draft parameter validation navigation', () => {
     }
     await render(sourceA)
     await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
-    await click(buttonWithText(container, 'Modify parameters'))
+    await enterComposerPrompt(container, 'Set target count to 999')
     const form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -313,7 +324,7 @@ describe('Draft parameter validation navigation', () => {
     })
     await flushTimers()
     await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
-    await click(buttonWithText(container, 'Modify parameters'))
+    await enterComposerPrompt(container, 'Set target count to 999')
     await act(async () => {
       container.querySelector<HTMLFormElement>('.draft-ai-composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await Promise.resolve()
@@ -350,7 +361,7 @@ describe('Draft parameter validation navigation', () => {
     }
     await render(sourceA)
     await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
-    await click(buttonWithText(container, 'Modify parameters'))
+    await enterComposerPrompt(container, 'Set target count to 111')
     let form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -360,7 +371,7 @@ describe('Draft parameter validation navigation', () => {
     expect(api.assistPlanForm).toHaveBeenCalledTimes(1)
 
     await render(sourceB)
-    await click(buttonWithText(container, 'Modify parameters'))
+    await enterComposerPrompt(container, 'Set target count to 222')
     form = container.querySelector<HTMLFormElement>('.draft-ai-composer')!
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -399,14 +410,10 @@ describe('Draft parameter validation navigation', () => {
 
     await click(container.querySelector<HTMLInputElement>('.draft-ai-toggle input')!)
     const prompt = container.querySelector<HTMLTextAreaElement>('.draft-ai-composer textarea')!
-    for (const [label, expected] of [
-      ['Modify parameters', 'Modify the current Draft parameters.'],
-      ['Fix validation', 'Make the current Draft pass Flow360 validation.'],
-      ['Explain a parameter', 'without modifying any parameter values'],
-    ]) {
-      await click(buttonWithText(container, label))
-      expect(prompt.value).toContain(expected)
-    }
+    expect(container.textContent).not.toContain('Modify parameters')
+    expect(container.textContent).not.toContain('Explain a parameter')
+    await click(buttonWithText(container, 'Fix validation'))
+    expect(prompt.value).toContain('Make the current Draft pass Flow360 validation.')
     expect(assist).not.toHaveBeenCalled()
   })
 

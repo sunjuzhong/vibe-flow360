@@ -75,7 +75,7 @@ describe('DraftAISession', () => {
     expect(markup).not.toContain('<img')
   })
 
-  it('renders accessible quick prompts for editing, repair, and explanation', () => {
+  it('renders the validation repair quick prompt without parameter edit or explanation shortcuts', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider><DraftAISession
         messages={[]}
@@ -90,9 +90,9 @@ describe('DraftAISession', () => {
     )
 
     expect(markup).toContain('aria-label="Quick prompts"')
-    expect(markup).toContain('Modify parameters')
     expect(markup).toContain('Fix validation')
-    expect(markup).toContain('Explain a parameter')
+    expect(markup).not.toContain('Modify parameters')
+    expect(markup).not.toContain('Explain a parameter')
     expect(markup).toContain('aria-pressed="true"')
   })
 })
