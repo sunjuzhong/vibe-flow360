@@ -983,6 +983,38 @@ describe('Draft parameter validation navigation', () => {
     expect(buttonWithText(container, 'Retry save')).not.toBeNull()
   })
 
+  it('dismisses the local changes notice when clicking outside the status popover', async () => {
+    vi.mocked(api.validateDraftParameters).mockResolvedValue({ schema_version: 1, valid: true, issues: [] })
+    await act(async () => {
+      root.render(<I18nProvider><DraftParameterEditor draftId="draft-unsaved-popover" parameters={baseline} /></I18nProvider>)
+      await Promise.resolve()
+    })
+    await flushTimers()
+    await flushTimers()
+
+    await click(container.querySelector<HTMLElement>('#schema-root-tab-case')!)
+    const input = container.querySelector<HTMLInputElement>('#schema-case-solver-max_steps')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!input || !valueSetter) throw new Error('Maximum steps input is unavailable')
+    await act(async () => {
+      valueSetter.call(input, '20')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flushTimers()
+
+    const popover = container.querySelector<HTMLDetailsElement>('.draft-validation-popover')
+    expect(popover).not.toBeNull()
+    expect(container.textContent).toContain('Unsaved local changes')
+    await act(async () => {
+      popover!.open = true
+    })
+    expect(popover!.open).toBe(true)
+
+    await click(document.body)
+
+    expect(popover!.open).toBe(false)
+  })
+
   it('undoes and redoes Form and external AI changes in one candidate history', async () => {
     const applied = vi.fn()
     await act(async () => {

@@ -94,6 +94,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
   const latestFingerprintRef = useRef('')
   const validationRequestRef = useRef(0)
   const validationTimerRef = useRef<number | null>(null)
+  const validationPopoverRef = useRef<HTMLDetailsElement | null>(null)
   const immediateValidationFingerprintRef = useRef('')
   const currentDraftIdRef = useRef(draftId)
   const onSavedRef = useRef(onSaved)
@@ -133,6 +134,17 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
     aiActiveRequestRef.current = 0
     setAILoading(false)
   }, [aiRequestIdentity])
+
+  useEffect(() => {
+    const closeValidationPopover = (event: MouseEvent) => {
+      const popover = validationPopoverRef.current
+      if (!popover?.open) return
+      if (event.target instanceof Node && popover.contains(event.target)) return
+      popover.open = false
+    }
+    document.addEventListener('click', closeValidationPopover)
+    return () => document.removeEventListener('click', closeValidationPopover)
+  }, [])
 
   useEffect(() => {
     const scope = project ? `${project.id}\u0000draft\u0000${draftId}` : ''
@@ -705,7 +717,7 @@ const DraftParameterEditor = forwardRef<DraftParameterEditorHandle, Props>(funct
           <button type="button" className={`draft-preview-action${mode === 'preview' ? ' active' : ''}`} aria-pressed={mode === 'preview'} onClick={() => selectMode(mode === 'preview' ? 'form' : 'preview')}>
             <Eye size={13} /> {mode === 'preview' ? t('Return to edit') : t('Preview')}
           </button>
-          <details className={`draft-validation-popover ${validationStatusClass}`}>
+          <details ref={validationPopoverRef} className={`draft-validation-popover ${validationStatusClass}`}>
             <summary aria-label={validationStatusTitle} title={validationStatusTitle}>
               {validationStatusIcon}
               <span>{validationStatusTitle}</span>
