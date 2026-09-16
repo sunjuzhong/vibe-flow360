@@ -481,6 +481,17 @@ func (s *Server) generateSchemaNativePlan(ctx context.Context, composer planComp
 		}
 	}
 	if !preflight.Valid {
+		if invalidModelPatch, applied, invalidModelErr := invalidModelEntityPatch(preflight.Issues, merged); invalidModelErr == nil && applied {
+			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, invalidModelPatch); err == nil {
+				repairAttempts++
+				preflight, merged, err = s.preflightPlanAssistProposal(ctx, composer, proposal)
+				if err == nil && preflight.Valid {
+					autoRepaired = true
+				}
+			}
+		}
+	}
+	if !preflight.Valid {
 		if recommendedPatch, applied, recommendationErr := recommendedPlanAssistPatch(preflight.FormSchema, merged); recommendationErr == nil && applied {
 			if proposal.Patch, err = mergePlanAssistPatches(proposal.Patch, recommendedPatch); err == nil {
 				repairAttempts++
@@ -1438,6 +1449,121 @@ func unsupportedPlanAssistPatch(issues []flow360.PreflightIssue, current json.Ra
 	}
 	payload, err := json.Marshal(patch)
 	return payload, err == nil, err
+}
+
+// invalidModelEntityPatch removes boundary-condition model entries that the
+// installed Flow360 validator rejects because their entities are not known
+// imported Surface groups. This commonly happens when a farfield or other
+// ghost/domain entity is incorrectly treated as a body Surface model target.
+func invalidModelEntityPatch(issues []flow360.PreflightIssue, current json.RawMessage) (json.RawMessage, bool, error) {
+	invalid := invalidModelEntityNames(issues)
+	if len(invalid) == 0 {
+		return nil, false, nil
+	}
+	var currentValue map[string]any
+	if json.Unmarshal(current, &currentValue) != nil {
+		return nil, false, errors.New("Flow360 candidate model values are invalid")
+	}
+	models, ok := currentValue["models"].([]any)
+	if !ok || len(models) == 0 {
+		return nil, false, nil
+	}
+	desired := clonePlanAssistValue(currentValue).(map[string]any)
+	desiredModels := make([]any, 0, len(models))
+	applied := false
+	for _, raw := range models {
+		model, ok := raw.(map[string]any)
+		if !ok || !modelReferencesOnlyInvalidEntities(model, invalid) {
+			desiredModels = append(desiredModels, raw)
+			continue
+		}
+		applied = true
+	}
+	if !applied {
+		return nil, false, nil
+	}
+	desired["models"] = desiredModels
+	difference, changed := planAssistMergePatchDifference(currentValue, desired)
+	patch, ok := difference.(map[string]any)
+	if !changed || !ok {
+		return nil, false, nil
+	}
+	payload, err := json.Marshal(patch)
+	return payload, err == nil, err
+}
+
+func invalidModelEntityNames(issues []flow360.PreflightIssue) map[string]struct{} {
+	result := map[string]struct{}{}
+	for _, issue := range issues {
+		message := strings.TrimSpace(issue.Message)
+		if issue.Level != "error" || issue.Code != "value_error" ||
+			strings.TrimSpace(issue.Path) != "models" ||
+			!strings.Contains(message, "not known Surface entities") ||
+			!strings.Contains(message, "appear in the models section") {
+			continue
+		}
+		for _, name := range strings.Split(invalidModelEntityNameSegment(message), ",") {
+			name = strings.Trim(strings.TrimSpace(name), " .;:\"'")
+			if name != "" {
+				result[name] = struct{}{}
+			}
+		}
+	}
+	return result
+}
+
+func invalidModelEntityNameSegment(message string) string {
+	prefix := "section:"
+	if index := strings.Index(message, prefix); index >= 0 {
+		return message[index+len(prefix):]
+	}
+	prefix = "section"
+	if index := strings.Index(message, prefix); index >= 0 {
+		return message[index+len(prefix):]
+	}
+	return ""
+}
+
+func modelReferencesOnlyInvalidEntities(model map[string]any, invalid map[string]struct{}) bool {
+	names := modelEntityReferenceNames(model)
+	if len(names) == 0 {
+		return false
+	}
+	for _, name := range names {
+		if _, rejected := invalid[name]; !rejected {
+			return false
+		}
+	}
+	return true
+}
+
+func modelEntityReferenceNames(model map[string]any) []string {
+	names := []string{}
+	for key, value := range model {
+		if key == "private_attribute_asset_cache" {
+			continue
+		}
+		container, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		stored, ok := container["stored_entities"].([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range stored {
+			if entity, ok := raw.(map[string]any); ok {
+				name := strings.TrimSpace(planAssistString(entity["name"]))
+				if name == "" {
+					name = strings.TrimSpace(planAssistString(entity["private_attribute_id"]))
+				}
+				if name != "" {
+					names = append(names, name)
+				}
+			}
+		}
+	}
+	return names
 }
 
 func removePlanAssistField(current any, path []string) (any, bool) {

@@ -643,6 +643,38 @@ func TestSurfaceRefinementInheritancePatchRequiresAuthoritativeGlobalDefault(t *
 	}
 }
 
+func TestInvalidModelEntityPatchRemovesRejectedFarfieldModelOnly(t *testing.T) {
+	current := json.RawMessage(`{
+		"models":[
+			{"type":"Wall","name":"Aircraft","surfaces":{"stored_entities":[{"name":"wing","private_attribute_id":"wing"}]}},
+			{"type":"Freestream"},
+			{"type":"SymmetryPlane","surfaces":{"stored_entities":[{"name":"farfield","private_attribute_id":"farfield"}]}},
+			{"type":"Fluid"}
+		],
+		"operating_condition":{"alpha":0}
+	}`)
+	patch, applied, err := invalidModelEntityPatch([]flow360.PreflightIssue{{
+		Level: "error", Code: "value_error", Path: "models",
+		Message: "Value error, The following boundaries are not known Surface entities but appear in the models section: farfield.",
+	}}, current)
+	if err != nil || !applied {
+		t.Fatalf("invalid farfield model was not removed: applied=%v err=%v patch=%s", applied, err, patch)
+	}
+	merged, err := plans.MergeSimulationParams(current, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(merged)
+	for _, expected := range []string{`"type":"Wall"`, `"name":"wing"`, `"type":"Freestream"`, `"type":"Fluid"`, `"operating_condition"`} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("cleanup lost %s: patch=%s merged=%s", expected, patch, merged)
+		}
+	}
+	if strings.Contains(text, `"type":"SymmetryPlane"`) || strings.Contains(text, `"name":"farfield"`) {
+		t.Fatalf("cleanup kept rejected farfield model: patch=%s merged=%s", patch, merged)
+	}
+}
+
 func TestAccumulatePlanAssistRepairPreservesEarlierBoundaryCorrection(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"models":{"type":"array"},"time_stepping":{"type":"object","properties":{"steps":{"type":"integer"}}}}}`)
 	current := agent.Proposal{
